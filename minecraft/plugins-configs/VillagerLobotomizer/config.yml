@@ -1,0 +1,102 @@
+#Configuration version - DO NOT MODIFY MANUALLY
+config-version: 6
+
+#List of names that will always keep villagers active (case-insensitive)
+always-active-names:
+  - "alwaysbrain"
+
+#Interval between trapped checks, in ticks, for active villagers
+check-interval: 150
+
+#Interval between trapped checks, in ticks, for inactive villagers
+inactive-check-interval: 150
+
+#Interval between villager trade restocks, in milliseconds
+restock-interval: 540000
+
+#Range (in milliseconds) before restock-interval to start random restock checks. If set to 0, restocking is not randomized. If equal to or greater than restock-interval, restock will always occur.
+restock-random-range: 0
+
+#Whether to only lobotomize villagers with jobs
+only-lobotomize-villagers-with-professions: false
+
+#Whether to only lobotomize villagers that have been traded at least once
+only-lobotomize-villagers-with-experience: false
+
+#Whether to lobotomize villagers in boats/minecarts. Does not apply to villagers riding on non-vehicle entities like horses.
+always-lobotomize-villagers-in-vehicles: true
+
+#Whether to make lobotomized villagers silent. When enabled, villagers will be muted when their AI is disabled.
+silent-lobotomized-villagers: false
+
+#The sound to play when a villager restocks. Leave empty ("") for default sounds.
+#A list of sounds can be found at https://jd.papermc.io/paper/1.21.6/io/papermc/paper/registry/keys/SoundEventKeys.html
+#Use the name found in the description column, e.g. "entity.villager.celebrate" for the sound played when a villager restocks.
+restock-sound: ""
+
+#The sound played when a villager is leveled up. Leave empty ("") for no sound.
+level-up-sound: "entity.villager.celebrate"
+
+#Debug mode. Prints debug messages to the console.
+debug: false
+
+#Chunk debug mode. Prints debug messages related to chunks
+chunk-debug: false
+
+#To ignore villagers stuck in doors, set this to true.
+ignore-villagers-stuck-in-doors: false
+
+#To not lobotomize villagers surrounded by non-solid blocks, set this to true.
+ignore-non-solid-blocks: false
+
+#To check if there is a roof above a villager before lobotomizing, set this to true
+check-roof: true
+
+#Create teams for debugging purposes. This will create colored teams for inactive and active villagers. We use this to color their glowing effect.
+create-debug-teams: false
+
+#Disable the update checker. You can disable this if you don't want to be notified about updates.
+disable-update-checker: false
+
+#Disable chunk forced Villager updating. This'll disable changes to blocks in a chunk from triggering Villagers in the chunk to be updated.
+disable-chunk-villager-updates: false
+
+#Prevent trading with unlobotomized villagers. When enabled, players can only trade with villagers that have been lobotomized.
+prevent-trading-with-unlobotomized-villagers: false
+
+#Message that is sent to players when they try to trade with an unlobotomized villager. Supports MiniMessage.
+unlobotomized-villager-trade-message: "<red>You cannot trade with unlobotomized villagers!</red> <yellow>This villager needs to be lobotomized first.</yellow>"
+
+#Persist lobotomized state across chunk unloads. When enabled, villagers that are lobotomized will remain lobotomized when their chunk is unloaded and reloaded.
+#This prevents lag spikes from villagers needing to be re-evaluated and re-lobotomized after chunk loads.
+persist-lobotomized-state: true
+
+# ===== SENTRY ERROR TRACKING =====
+# Sentry is an error monitoring service that helps developers identify and fix bugs proactively.
+# When enabled, the plugin will automatically report crashes and exceptions to the developers.
+#
+# WHAT DATA IS COLLECTED:
+#   - Exception stack traces and error messages
+#   - Server type and version (Paper, Purpur, Folia, etc.)
+#   - Minecraft version and Bukkit API version
+#   - Java version
+#   - Plugin version
+#   - Thread information and task scheduling context
+#
+# WHAT DATA IS NOT COLLECTED:
+#   - Player names, UUIDs, or any player-identifiable information
+#   - Chat messages or commands
+#   - World data, coordinates, or block information
+#   - Server IP address or hostname
+#   - Server configuration (beyond this plugin's settings)
+#
+# WHY KEEP THIS ENABLED:
+#   - Helps developers discover and fix bugs you might not even report
+#   - Provides context to fix issues specific to your server setup (Folia vs Paper, Java version, etc.)
+#   - Errors are sent automatically - no need to manually report bugs
+#   - All data is anonymized and used solely for debugging purposes
+#
+# PRIVACY: No personally identifiable information (PII) is collected. Only technical error data is sent.
+#
+# Set to false if you prefer not to share error reports with developers.
+enable-sentry: true

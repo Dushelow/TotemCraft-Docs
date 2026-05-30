@@ -1,0 +1,115 @@
+source_line_weight = 10
+# Enables debug logging (such as track start/end location and cause).
+# Also enabled automatically if Plasmo Voice debug is enabled.
+debug = true
+# The default volume. Volume is configured on the client side
+# and can be adjusted via the mod settings.
+default_source_line_volume = 0.5
+# Add enchantment glint to custom discs.
+add_glint_to_custom_discs = false
+# The method for creating/removing a lore on burning/erasing the discs:
+# 
+# DISABLE — Disables any lore manipulations on burn/erase.
+# REPLACE — Replaces the whole lore with a string containing the song name on burn, and removes the lore completely on erase.
+# APPEND — Adds a new line to the end of the lore on burn, and removes the last line on erase.
+# 
+# Default is REPLACE.
+burn_lore_method = "REPLACE"
+# Uses mono sources to play tracks.
+# Quality is worse, but they will now have panning.
+# 
+# Conversion happens on client side, so there is no server overhead.
+mono_sources = false
+# HTTP/HTTPS proxy. Valid formats:
+# http://user:password@ip:port
+# https://user:password@ip:port
+#http_proxy = "http://user:password@ip:port"
+
+[goat_horn]
+# Enable goat horns.
+# Allows burning audio onto the goat horn using /disc burn.
+# When a custom goat horn is used, the audio will be loaded and attached to the player.
+# Use /disc cancel to stop the goat horn audio from playing.
+enabled = false
+# Visualizes the distance to the player who used a custom goat horn.
+# Visualization will be seen only by players with "Visualize Voice Distance" enabled.
+visualize_distance = true
+# Goat horn distance.
+distance = 15
+# Goat horn maximum audio duration in seconds.
+# Set to 0 to disable duration limit.
+max_duration_seconds = 200
+
+[distance]
+# Visualizes the distance to the player who inserted a custom disc into the jukebox.
+# Visualization will be seen only by players with "Visualize Voice Distance" enabled.
+visualize_distance = true
+# Distance if 'enable_beacon_like_distance_amplification' is set
+# to false.
+jukebox_distance = 65
+# With this option enabled you can build a beacon-like pyramid
+# under a jukebox to change the distance of the sound.
+enable_beacon_like_distance_amplification = false
+# The first element is the distance without any pyramid layers.
+# You can add as much layers as you want. Even more or less
+# than the vanilla beacon, but at least one layer is required.  
+beacon_like_distances = [12, 24, 32, 48, 64]
+
+[http_source]
+# Only allow links from trusted sources. You can disable this if
+# the server IP is public and leaking it is not a problem.
+whitelist_enabled = false
+whitelist = ["dropbox.com", "dropboxusercontent.com", "youtube.com", "youtu.be"]
+
+[youtube_source]
+# If you see a error like "Sign in to confirm you're not a bot",
+# you can try using YouTube oauth2 authorization.
+# 
+# On the first start with authorization enabled,
+# you will see "OAUTH INTEGRATION" in your console.
+# Follow the instructions in this prompt.
+# If you do everything right, you will see "Token retrieved successfully" in your console.
+# You only need to do this once;
+# the token will be stored in "pv-addon-discs/.youtube-token" after successful authorization.
+use_oauth2 = false
+# You can check available clients here: https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#available-clients
+clients = ["TV", "WEB"]
+
+# https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#using-a-potoken
+# 
+# You don't need to specify a poToken if using oauth2, and vice versa.
+# If poToken is specified, oauth2 will be disabled.
+#[youtube_source.po_token]
+#token = "paste your po_token here"
+#visitor_data = "paste your visitor_data here"
+
+# https://github.com/lavalink-devs/youtube-source?tab=readme-ov-file#using-a-remote-cipher-server
+#[youtube_source.remote_cipher]
+#url = "http://localhost:8001"
+#password = "your_secret_password"
+
+[local_source]
+# Enable local source. Local source allows to load audio files from specified "path" folder.
+# 
+# Example format:
+# file://test.mp3
+# local://test.mp3
+enabled = true
+# Path used as a root to resolve audio files.
+# If path is empty, "local" folder inside addon's plugin folder will be used ("plugins/pv-addon-discs/local").
+path = ""
+
+[burnable_tag]
+# With this option you can only burn discs that have a special NBT
+# tag. You can use this to add a custom way of getting burnable
+# discs, like buying for in-game currency, or crafting.
+require_burnable_tag = false
+# Enable a recipe for burnable discs. It's a shapeless craft.
+# By default you need a disc + 4 diamonds to get a burnable disc.
+# You can configure recipe item and cost. 
+enable_default_recipe = false
+default_recipe_item = "minecraft:diamond"
+default_recipe_cost = 4
+# A lore that will be added to a burnable disc crafted with the
+# default recipe.
+default_recipe_lore = "Burnable"

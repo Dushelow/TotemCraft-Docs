@@ -1,0 +1,122 @@
+# Main toggle and debug settings
+enabled: true
+debug-messages: false
+metrics: false
+
+# This config is written with 1.21.10 in mind, but is still compatible with earlier versions. Make sure to convert the values
+# Event monitoring configuration
+events:
+  spawn:
+    creature: false
+    vehicle: false
+    entity: false
+  inspections:
+    # This will recheck loaded chunks every {frequency} seconds
+    enabled: false
+    frequency: 300
+
+# Entity management settings
+entities:
+  entity-groups:
+    #ANIMALS:
+      #- COW
+      #- SHEEP
+      #- PIG
+      #- CHICKEN
+    #MONSTERS:
+      #- ZOMBIE
+      #- SKELETON
+      #- CREEPER
+    VEHICLE:
+      - MINECART
+      - MINECART_CHEST
+      - MINECART_FURNACE
+    HOPPERS:
+      - MINECART_HOPPER
+    #VILLAGERS:
+      #- VILLAGER
+    #COPPER_GOLEMS:
+      #- COPPER_GOLEM
+  limits:
+    #ANIMALS: 30
+    #MONSTERS: 30
+    VEHICLE: 30
+    HOPPERS: 10
+    #VILLAGERS: 30
+    #COPPER_GOLEMS: 15
+    #OTHER: 200
+  preservation:
+    named-entities: true
+    raid-entities: true
+  removal:
+    mode: "prevent"
+    # Options:
+    # "enforce" - Actively clean up existing chunks (remove) AND prevent new violations
+    # "enforce-kill" - Actively clean up existing chunks (kill) AND prevent new violations
+    # "prevent" - Only prevent new entities/blocks from exceeding limits
+    # "remove" - Instantly remove excess entities without effects
+    # "kill" - Kill excess entities with death effects/drops
+    armor-stand:
+      drop: false
+      log-warnings: true
+    # This will allow players to be killed by CSL, if they reach the set limit in entities.
+    # This will work with kill, remove, enforce & enforce kill. Since we can't "remove" players in those modes the players will be killed.
+    kill-players: false
+  ignore:
+    metadata:
+      - shopkeeper
+    # This will only work if you have NBTAPI Installed https://modrinth.com/plugin/nbtapi
+    nbt:
+      - "tag"
+
+# Spawn reason filtering
+# To disable, just remove what you don't want.
+spawn-reasons:
+  #- "BREEDING"
+  #- "CHUNK_GEN"
+  #- "DEFAULT"
+  #- "DISPENSE_EGG"
+  #- "DROWNED"
+  #- "EGG"
+  #- "JOCKEY"
+  #- "MOUNT"
+  #- "NATURAL"
+  #- "NETHER_PORTAL"
+  #- "OCELOT_BABY"
+  #- "REINFORCEMENTS"
+  #- "SILVERFISH_BLOCK"
+  #- "SPAWNER"
+  #- "TRAP"
+
+# Block restrictions
+blocks:
+  block-groups:
+    basic:
+      - "STONE"
+      - "DIRT"
+    ores:
+      - "DIAMOND_BLOCK"
+      - "GOLD_BLOCK"
+  limits:
+    SPAWNER: 10
+    HOPPER: 20
+
+# World configuration
+worlds:
+  mode: excluded  # "excluded" or "included"
+  list: []
+
+# Player notification settings
+notifications:
+  enabled: true
+  cooldown-seconds: 3
+  method:
+    title: false
+    message: true
+  messages:
+    entities-blocked: "&7Заблокировано спавн {count} {type} в твоём чанке."
+    entities-removed: "&7Удалено {count} {type} в твоём чанке."
+    reload-complete: "&cКонфиг CSL успешно перезагружен."
+    max-blocks: "&6Нельзя поставить больше &4{material}&6. Максимум на чанк: &2{amount}&6."
+    max-blocks-title: "&6Нельзя поставить больше &4{material}&6."
+    max-blocks-subtitle: "&6Максимум на чанк: &2{amount}. Большое количество воронок вызывает лаги сервера! Обратитесь к администрации для размещения и оптимизации механизма."
