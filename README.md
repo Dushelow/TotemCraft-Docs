@@ -26,8 +26,8 @@
 
 ## Быстрый старт
 
-- **[Деплой сервера с нуля](docs/Deployment/Deployment-on-Hetzner-VPS.md)**
-- **[Общая документация проекта](docs/General-Documentation.md)**
+- **[Деплой сервера с нуля](/docs/deployment/Deployment%20on%20Hetzner%20VPS.md)**
+- **[Общая документация проекта](/docs/General%20Documentation.md)**
 
 ## Структура репозитория
 
