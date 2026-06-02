@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "combos": [
+    {
+      "id": "combo_void_ancient",
+      "label": "Реликвия Первого Мира",
+      "description": "Древний характер + Аура пустоты",
+      "required_traits": ["chr_ancient", "aur_void"],
+      "bonus_points": 500
+    },
+    {
+      "id": "combo_golden_glow",
+      "label": "Золото Глубин",
+      "description": "Золотистый окрас + Светится в темноте",
+      "required_traits": ["app_golden", "fea_glow"],
+      "bonus_points": 400
+    },
+    {
+      "id": "combo_storm_fearless",
+      "label": "Дитя Шторма",
+      "description": "Бесстрашный + Буря",
+      "required_traits": ["chr_fearless", "aur_storm"],
+      "bonus_points": 350
+    },
+    {
+      "id": "combo_crystal_mythic",
+      "label": "Кристалл Вечности",
+      "description": "Кристальный окрас + Мифический характер",
+      "required_traits": ["app_crystal", "chr_mythic"],
+      "bonus_points": 1000
+    },
+    {
+      "id": "combo_ancient_pearls",
+      "label": "Страж Глубин",
+      "description": "Древний окрас + Жемчужины на теле",
+      "required_traits": ["app_ancient", "fea_pearls"],
+      "bonus_points": 450
+    },
+    {
+      "id": "combo_mark_chaos",
+      "label": "Печать Хаоса",
+      "description": "Тайный знак + Хаос",
+      "required_traits": ["fea_mark", "aur_chaos"],
+      "bonus_points": 750
+    },
+    {
+      "id": "combo_wise_ancient_aura",
+      "label": "Мудрец Веков",
+      "description": "Мудрый + Древность",
+      "required_traits": ["chr_wise", "aur_ancient"],
+      "bonus_points": 400
+    },
+    {
+      "id": "combo_rainbow_light",
+      "label": "Радуга Морей",
+      "description": "Радужный + Светлая аура",
+      "required_traits": ["app_rainbow", "aur_light"],
+      "bonus_points": 300
+    },
+    {
+      "id": "combo_dark_void",
+      "label": "Тень Бездны",
+      "description": "Тёмный окрас + Тёмная аура",
+      "required_traits": ["app_dark", "aur_dark"],
+      "bonus_points": 350
+    },
+    {
+      "id": "combo_gem_ocean",
+      "label": "Сокровище Океана",
+      "description": "Вросший самоцвет + Дух океана",
+      "required_traits": ["fea_gem", "aur_ocean"],
+      "bonus_points": 500
+    }
+  ]
+}
