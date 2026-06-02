@@ -1,0 +1,94 @@
+#!/bin/bash
+# =============================================
+# Скрипт бэкапов TotemCraft
+# =============================================
+
+SERVER_DIR="/home/minecraft/server"
+BACKUP_HOST="uYOUR_LOGIN@uYOUR_LOGIN.your-storagebox.de"   # Заменить на свой
+BACKUP_PORT=23
+BACKUP_DIR="totemcraft-backups"
+LOG="/home/minecraft/backup.log"
+DATE=$(date +%Y-%m-%d)
+MONTHLY_DATE=$(date +%Y-%m)
+
+# --- Хелпер логирования ---
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"
+}
+
+# --- Гарантируем save-on даже при ошибке ---
+trap 'screen -r minecraft -X stuff "save-on\n" 2>/dev/null || true; log "→ save-on (trap)"; log "=== БЭКАП ЗАВЕРШЁН С ОШИБКОЙ ==="; echo "" >> "$LOG"' ERR EXIT
+BACKUP_DONE=0
+
+log "=== БЭКАП НАЧАТ ==="
+
+# === Сохраняем мир перед бэкапом ===
+log "→ Останавливаем автосохранение..."
+screen -r minecraft -X stuff "save-off\n" 2>/dev/null || log "ПРЕДУПРЕЖДЕНИЕ: не удалось отправить save-off"
+sleep 3
+screen -r minecraft -X stuff "save-all flush\n" 2>/dev/null || log "ПРЕДУПРЕЖДЕНИЕ: не удалось отправить save-all"
+sleep 8
+
+# === Находим самый свежий предыдущий бэкап для hardlink ===
+PREV_BACKUP=$(ssh -p "$BACKUP_PORT" "$BACKUP_HOST" \
+  "ls -1d ${BACKUP_DIR}/daily-* ${BACKUP_DIR}/monthly-* 2>/dev/null | sort -r | head -n 1" \
+  2>/dev/null || echo "")
+
+# Собираем опции rsync
+RSYNC_OPTS=(-aAX --delete --stats -e "ssh -p ${BACKUP_PORT}")
+
+if [ -n "$PREV_BACKUP" ]; then
+  PREV_NAME=$(basename "$PREV_BACKUP")
+  RSYNC_OPTS+=(--link-dest="../${PREV_NAME}")
+  log "→ Используем hardlink от: $PREV_NAME"
+else
+  log "→ Первый бэкап - полный"
+fi
+
+# Список источников для бэкапа
+RSYNC_SOURCES=(
+  "$SERVER_DIR/2025"
+  "$SERVER_DIR/2025_nether"
+  "$SERVER_DIR/2025_the_end"
+  "$SERVER_DIR/plugins"
+  "$SERVER_DIR"/*.yml
+  "$SERVER_DIR"/*.properties
+)
+
+# === ЕЖЕДНЕВНЫЙ БЭКАП ===
+log "→ Создаём daily-${DATE}..."
+if rsync "${RSYNC_OPTS[@]}" "${RSYNC_SOURCES[@]}" \
+    "${BACKUP_HOST}:${BACKUP_DIR}/daily-${DATE}/" >> "$LOG" 2>&1; then
+  log "→ daily-${DATE} успешно создан"
+else
+  log "ОШИБКА: rsync (daily) завершился с кодом $?"
+  exit 1
+fi
+
+# === ЕЖЕМЕСЯЧНЫЙ БЭКАП (1-го числа) ===
+if [ "$(date +%d)" -eq 1 ]; then
+  log "→ Создаём monthly-${MONTHLY_DATE}..."
+  if rsync -aAX --delete --stats \
+      -e "ssh -p ${BACKUP_PORT}" \
+      --link-dest="../daily-${DATE}" \
+      "${RSYNC_SOURCES[@]}" \
+      "${BACKUP_HOST}:${BACKUP_DIR}/monthly-${MONTHLY_DATE}/" >> "$LOG" 2>&1; then
+    log "→ monthly-${MONTHLY_DATE} создан"
+  else
+    log "ПРЕДУПРЕЖДЕНИЕ: rsync (monthly) завершился с ошибкой"
+  fi
+fi
+
+# === Включаем автосохранение обратно ===
+screen -r minecraft -X stuff "save-on\n" 2>/dev/null || log "ПРЕДУПРЕЖДЕНИЕ: не удалось отправить save-on"
+log "→ Автосохранение включено"
+
+# === Чистим старые daily (оставляем 3 последних) ===
+log "→ Чистим старые daily (оставляем 3 последних)..."
+ssh -p "$BACKUP_PORT" "$BACKUP_HOST" \
+  "ls -1d ${BACKUP_DIR}/daily-* 2>/dev/null | sort -r | tail -n +4 | xargs -r rm -rf" \
+  >> "$LOG" 2>&1 && log "→ Очистка завершена" || log "ПРЕДУПРЕЖДЕНИЕ: очистка завершилась с ошибкой"
+
+trap - ERR EXIT
+log "=== БЭКАП ЗАВЕРШЁН УСПЕШНО ==="
+echo "" >> "$LOG"
