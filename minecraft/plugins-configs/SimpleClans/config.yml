@@ -1,0 +1,307 @@
+# Защита гражданских (не в кланах или нейтральных) от убийств в весе KDR
+safe-civilians: false
+
+# Настройки тега клана
+tag:
+  default-color: '8' # Цвет тега по умолчанию (&8 — серый)
+  max-length: 5 # Максимальная длина тега клана
+  min-length: 2 # Минимальная длина тега клана
+  bracket: # Скобки вокруг тега
+    color: f # Цвет скобок
+    leader-color: f # Цвет скобок для лидера
+    left: '' # Левая скобка (пусто = без скобок)
+    right: '' # Правая скобка
+  separator: # Разделитель между тегом и именем
+    color: f
+    leader-color: '4'
+    char: . # Символ разделителя
+
+# Общие настройки плагина
+settings:
+  enable-gui: false # Включить GUI-интерфейс (если поддерживается версией)
+  disable-messages: false # Отключить все сообщения плагина
+  tameable-mobs-sharing: false # Делить прирученных мобов между членами клана
+  teleport-blocks: false # Блокировать телепортацию (если true — /home не работает)
+  teleport-home-on-spawn: false # Телепортировать на базу клана при спавне/смерти
+  drop-items-on-clan-home: false # Сбрасывать предметы из списка при телепортации на базу
+  keep-items-on-clan-home: false # Сохранять только предметы из списка при телепортации
+  item-list: []
+  show-debug-info: false # Показывать отладочную информацию в консоли
+  enable-auto-groups: false # Автоматически создавать группы в permissions-плагинах
+  chat-compatibility-mode: false # Режим совместимости с чат-плагинами (EssentialsChat и т.п.)
+  rival-limit-percent: 50 # Процент лимита соперников (для баланса войн)
+  use-colorcode-from-prefix-for-name: false # Использовать цвет тега для имени игрока в чате
+  accept-other-alphabets-letters-on-tag: false # Разрешить другие алфавиты (кириллицу) в теге
+  display-chat-tags: false # Показывать теги клана в чате
+  global-friendly-fire: true # Глобальный friendly fire (урон по союзникам/членам клана)
+  unrivable-clans: # Кланы, с которыми нельзя объявлять соперничество
+    - admin
+    - staff
+    - mod
+  show-unverified-on-list: false # Показывать непроверенные кланы в /clan list
+  blacklisted-worlds: []
+  banned-players: []
+  disallowed-tags: # Запрещённые теги клана
+    - vip
+    - clan
+  language: ru_RU # Язык плагина (ru — русский)
+  user-language-selector: false # Разрешить игрокам выбирать свой язык
+  disallowed-tag-colors: # Запрещённые цвета для тегов
+    - k
+  server-name: '&4TotemCraft' # Название сервера (отображается в меню)
+  new-clan-verification-required: false # Требовать верификацию новых кланов модератором
+  allow-regroup-command: false # Разрешить команду regroup (сбор на базу)
+  allow-reset-kdr: false # Разрешить сброс KDR
+  rejoin-cooldown: 60 # Кулдаун на повторное вступление в клан (секунды)
+  rejoin-cooldown-enabled: false # Включить кулдаун на повторное вступление
+  ranking-type: DENSE # Тип ранжирования (DENSE — плотное, без пропусков)
+  list-default-order-by: kdr # Сортировка списка кланов по умолчанию (kdr, members и т.д.)
+  lore-length: 36 # Максимальная длина описания в lore (для предметов?)
+  past-clans-limit: 10 # Лимит прошлых кланов в истории игрока
+  username-regex: (\.|\*){0,1}[a-zA-Z0-9_$]{1,16} # Регулярка для проверки никнеймов
+  tag-regex: '' # Регулярка для проверки тегов (если пусто — стандартная)
+
+# Настройки войн и защиты земель
+war-and-protection:
+  war-enabled: true # Включить систему войн
+  land-sharing: false # Делить земли клана с членами (интеграция с WG/GP)
+  protection-providers: # Провайдеры защиты (WorldGuard и т.д.)
+    - WorldGuardProvider
+    - WorldGuard6Provider
+    - GriefPreventionProvider
+  listeners:
+    priority: HIGHEST # Приоритет листенеров
+    ignored-list: # Игнорируемые действия в войнах
+      PLACE:
+      - PLAYER_HEAD
+      BREAK:
+      - EMERALD_BLOCK
+  set-base-only-in-land: false # Базу клана можно ставить только на своей земле
+  war-normal-expiration-time: 0 # Время истечения войны (нормальное)
+  war-disconnect-expiration-time: 0 # Время истечения войны при дисконнекте
+  edit-all-lands: false # Разрешить редактировать все земли (для админов?)
+  land-creation:
+    only-leaders: false # Только лидеры могут создавать земли
+    only-one-per-clan: true # Только одна земля на клан
+  war-actions: # Действия разрешённые во время войны
+    CONTAINER: true
+    INTERACT: true
+    BREAK: true
+    PLACE: true
+    DAMAGE: true
+    INTERACT_ENTITY: true
+  war-start:
+    request-enabled: true # Требовать запрос на начало войны
+    members-online-max-difference: 5 # Макс. разница в онлайн-игроках для начала войны
+
+# Предотвращение гринда KDR
+kdr-grinding-prevention:
+  enable-max-kills: true # Лимит убийств одного и того же игрока
+  max-kills-per-victim: 10
+  enable-kill-delay: false # Задержка между убийствами одного игрока
+  delay-between-kills: 5
+
+# Команды плагина (можно менять алиасы)
+commands:
+  more: more
+  ally: ally
+  clan: clan
+  accept: accept
+  deny: deny
+  global: global
+  clan_chat: .
+  force-priority: true # Принудительный приоритет команд (если конфликты)
+
+# Экономика
+economy:
+  creation-price: 100.0 # Цена создания клана
+  purchase-clan-create: false # Требовать покупку создания клана
+  verification-price: 1000.0 # Цена верификации клана
+  purchase-clan-verify: false
+  invite-price: 20.0 # Цена инвайта
+  purchase-clan-invite: false
+  home-teleport-price: 5.0 # Цена телепорта на базу
+  purchase-home-teleport: false
+  home-teleport-set-price: 5.0 # Цена установки базы
+  purchase-home-teleport-set: false
+  home-regroup-price: 5.0 # Цена regroup
+  purchase-home-regroup: false
+  discord-creation-price: 1000.0 # Цена создания Discord-канала
+  purchase-discord-create: false
+  unique-tax-on-regroup: true # Уникальный налог на regroup
+  issuer-pays-regroup: true # Платит тот, кто вызывает regroup
+  money-per-kill: false # Деньги за убийство
+  money-per-kill-kdr-multipier: 10
+  purchase-reset-kdr: true # Покупка сброса KDR
+  reset-kdr-price: 10000.0
+  purchase-member-fee-set: false
+  member-fee-set-price: 1000.0
+  member-fee-enabled: false # Включить членский взнос
+  member-fee-last-minute-change-interval: 8
+  max-member-fee: 200.0
+  upkeep: 200.0 # Ежедневный upkeep (содержание клана)
+  upkeep-enabled: false
+  multiply-upkeep-by-clan-size: false
+  charge-upkeep-only-if-member-fee-enabled: true
+  bank-log:
+    enable: true # Логировать банковские операции
+
+# Вес убийств для KDR
+kill-weights:
+  rival: 2.0 # Соперник
+  civilian: 0.0 # Гражданский
+  neutral: 1.0 # Нейтрал
+  ally: -1.0 # Союзник
+  deny-same-ip-kills: false # Запретить убийства с одного IP
+
+# Настройки клана
+clan:
+  homebase-teleport-wait-secs: 10 # Задержка перед телепортом на базу (секунды)
+  homebase-can-be-set-only-once: true # Базу можно установить только один раз
+  min-size-to-set-rival: 3 # Мин. размер клана для соперничества
+  max-length: 25 # Макс. длина полного имени клана
+  max-description-length: 120 # Макс. длина описания клана
+  min-description-length: 10 # Мин. длина описания
+  max-members: 25 # Макс. членов в клане
+  confirmation-for-promote: false # Подтверждение для повышения в лидеры
+  trust-members-by-default: false # Доверять новым членам по умолчанию
+  confirmation-for-demote: false # Подтверждение для понижения
+  percentage-online-to-demote: 100.0 # Процент онлайн для понижения лидера
+  ff-on-by-default: false # Friendly fire включён по умолчанию
+  min-length: 2 # Мин. длина имени клана
+  max-alliances: -1 # Макс. альянсов (-1 = без лимита)
+  min-size-to-set-ally: 3 # Мин. размер для альянса
+  min-to-verify: 1 # Мин. членов для верификации
+  starter-ranks: # Стартовые ранги
+    - recruit:
+        display-name: '&7Recruit'
+        permissions:
+        - stats
+        - kills
+        - mostkilled
+        - rank.list
+    - ambassador:
+        display-name: '&bAmbassador'
+        permissions:
+        - ally.chat
+        - ally.add
+        - ally.remove
+        - rival.add
+        - rival.remove
+        - war.end
+        - war.start
+    - treasurer:
+        display-name: '&6Treasurer'
+        permissions:
+        - bank.balance
+        - bank.deposit
+        - bank.withdraw
+
+# Задачи (автоматические сборы)
+tasks:
+  collect-upkeep:
+    hour: 1
+    minute: 30
+  collect-upkeep-warning:
+    hour: 12
+    minute: 0
+  collect-fee:
+    hour: 1
+    minute: 0
+
+# Страницы (пагинация в командах)
+page:
+  untrusted-color: '8'
+  clan-name-color: b
+  subtitle-color: '7'
+  headings-color: '8'
+  trusted-color: f
+  leader-color: '4'
+  separator: '-'
+  size: 100
+  help-size: 10
+
+# Чат клана
+clanchat:
+  enable: true
+  tag-based-clan-chat: false
+  announcement-color: e
+  format: '&b[%clan%&b] &f<%player%> %rank%: &f%message%'
+  spy-format: '&8[Spy] [&bC&8] <%clean-tag%&8> <%nick-color%*&8%player%>&8 %rank%&8:
+    %message%'
+  rank: '&f[%rank%&f]'
+  leader-color: f
+  trusted-color: f
+  member-color: f
+  listener-priority: LOW
+
+# Запросы (инвайты)
+request:
+  message-color: b
+  ask-frequency-secs: 60
+  max-asks-per-request: 1440
+
+# Доска объявлений (BB)
+bb:
+  prefix: '&8* &e'
+  show-on-login: true
+  size: 6
+  login-size: 6
+
+# Чат союзников
+allychat:
+  enable: true
+  format: '&b[Ally Chat] &4<%clan%&4> <%nick-color%%player%&4> %rank%: &b%message%'
+  spy-format: '&8[Spy] [&cA&8] <%clean-tag%&8> <%nick-color%*&8%player%>&8 %rank%&8:
+    %message%'
+  rank: '&f[%rank%&f]'
+  leader-color: '4'
+  trusted-color: f
+  member-color: '7'
+
+# Discord интеграция
+discordchat:
+  enable: false
+  auto-creation: true
+  discord-format: '%player% » %message%'
+  format: '&b[&9D&b] &b[%clan%&b] &4<%nick-color%%player%&4> %rank%: &b%message%'
+  spy-format: '&8[Spy] [&9D&8] <%clean-tag%&8> <%nick-color%*&8%player%>&8 %rank%&8:
+    %message%'
+  rank: '[%rank%]'
+  leader-role: Leader
+  leader-color: 231, 76, 60, 100
+  leader-id: 0
+  min-linked-players-to-create: 3
+  text:
+    category-format: SC - TextChannels
+    category-ids: []
+    whitelist: []
+    clans-limit: 100
+
+# Очистка неактивных данных
+purge:
+  inactive-player-data-days: -1 # Удалять данные неактивных игроков через N дней
+  inactive-clan-days: -1 # Удалять неактивные кланы за сколько дней (если -1 то не надо)
+  unverified-clan-days: 2 # Удалять непроверенные кланы
+
+# MySQL (если нужно хранить данные в БД)
+mysql:
+  username: ''
+  host: localhost
+  port: 3306
+  enable: false
+  password: ''
+  database: ''
+
+# Permissions (автогруппы и кастомные)
+permissions:
+  auto-group-groupname: false
+  YourClanNameHere:
+  - test.permission
+
+# Производительность
+performance:
+  save-periodically: true # Периодическое сохранение (рекомендуется)
+  save-interval: 10 # Интервал сохранения (минуты)
+  use-threads: true # Использовать потоки
+  use-bungeecord: false # Поддержка BungeeCord
