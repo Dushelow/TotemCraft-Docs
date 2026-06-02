@@ -1,0 +1,337 @@
+{
+  "version": 4,
+  "groups": {
+    "character": {
+      "label": "Характер",
+      "traits": [
+        {"id": "chr_ancient",    "label": "Древний",       "tier": "legendary", "weight": 8},
+        {"id": "chr_proud",      "label": "Гордый",        "tier": "epic",      "weight": 10},
+        {"id": "chr_cunning",    "label": "Хитрый",        "tier": "rare",      "weight": 15},
+        {"id": "chr_calm",       "label": "Спокойный",     "tier": "uncommon",  "weight": 25},
+        {"id": "chr_restless",   "label": "Беспокойный",   "tier": "common",    "weight": 40},
+        {"id": "chr_fearless",   "label": "Бесстрашный",   "tier": "epic",      "weight": 10},
+        {"id": "chr_mysterious", "label": "Загадочный",    "tier": "rare",      "weight": 15},
+        {"id": "chr_savage",     "label": "Дикий",         "tier": "uncommon",  "weight": 25},
+        {"id": "chr_mythic",     "label": "Мифический",    "tier": "mythic",    "weight": 2},
+        {"id": "chr_wise",       "label": "Мудрый",        "tier": "legendary", "weight": 8}
+      ],
+      "time_traits": {
+        "Ночь": [
+          {"id": "chr_mysterious", "label": "Загадочный", "tier": "rare",      "weight": 20},
+          {"id": "chr_cunning",    "label": "Хитрый",     "tier": "rare",      "weight": 15},
+          {"id": "chr_savage",     "label": "Дикий",      "tier": "uncommon",  "weight": 25},
+          {"id": "chr_restless",   "label": "Беспокойный","tier": "common",    "weight": 40}
+        ],
+        "Глубокая ночь": [
+          {"id": "chr_wise",       "label": "Мудрый",     "tier": "legendary", "weight": 12},
+          {"id": "chr_mysterious", "label": "Загадочный", "tier": "rare",      "weight": 18},
+          {"id": "chr_ancient",    "label": "Древний",    "tier": "legendary", "weight": 10},
+          {"id": "chr_mythic",     "label": "Мифический", "tier": "mythic",    "weight": 3}
+        ],
+        "Рассвет": [
+          {"id": "chr_wise",       "label": "Мудрый",     "tier": "legendary", "weight": 12},
+          {"id": "chr_ancient",    "label": "Древний",    "tier": "legendary", "weight": 10},
+          {"id": "chr_proud",      "label": "Гордый",     "tier": "epic",      "weight": 15},
+          {"id": "chr_calm",       "label": "Спокойный",  "tier": "uncommon",  "weight": 25}
+        ]
+      }
+    },
+    "appearance": {
+      "label": "Внешность",
+      "traits": [
+        {"id": "app_silver",     "label": "Серебристый",   "tier": "common",    "weight": 40},
+        {"id": "app_golden",     "label": "Золотистый",    "tier": "legendary", "weight": 8},
+        {"id": "app_dark",       "label": "Тёмный",        "tier": "uncommon",  "weight": 25},
+        {"id": "app_spotted",    "label": "Пятнистый",     "tier": "common",    "weight": 40},
+        {"id": "app_glowing",    "label": "Светящийся",    "tier": "epic",      "weight": 10},
+        {"id": "app_scarred",    "label": "Со шрамами",    "tier": "rare",      "weight": 15},
+        {"id": "app_crystal",    "label": "Кристальный",   "tier": "mythic",    "weight": 2},
+        {"id": "app_ancient",    "label": "Древний окрас", "tier": "legendary", "weight": 8},
+        {"id": "app_pale",       "label": "Бледный",       "tier": "uncommon",  "weight": 25},
+        {"id": "app_rainbow",    "label": "Радужный",      "tier": "epic",      "weight": 10}
+      ],
+      "biome_traits": {
+        "end": [
+          {"id": "app_crystal",  "label": "Кристальный",   "tier": "mythic",    "weight": 5},
+          {"id": "app_dark",     "label": "Тёмный",        "tier": "uncommon",  "weight": 20},
+          {"id": "app_glowing",  "label": "Светящийся",    "tier": "epic",      "weight": 15},
+          {"id": "app_pale",     "label": "Бледный",       "tier": "uncommon",  "weight": 20}
+        ],
+        "deep_dark": [
+          {"id": "app_dark",     "label": "Тёмный",        "tier": "uncommon",  "weight": 30},
+          {"id": "app_pale",     "label": "Бледный",       "tier": "uncommon",  "weight": 25},
+          {"id": "app_crystal",  "label": "Кристальный",   "tier": "mythic",    "weight": 3},
+          {"id": "app_glowing",  "label": "Светящийся",    "tier": "epic",      "weight": 12}
+        ],
+        "frozen": [
+          {"id": "app_pale",     "label": "Бледный",       "tier": "uncommon",  "weight": 35},
+          {"id": "app_silver",   "label": "Серебристый",   "tier": "common",    "weight": 35},
+          {"id": "app_crystal",  "label": "Кристальный",   "tier": "mythic",    "weight": 3},
+          {"id": "app_glowing",  "label": "Светящийся",    "tier": "epic",      "weight": 10}
+        ],
+        "warm_ocean": [
+          {"id": "app_golden",   "label": "Золотистый",    "tier": "legendary", "weight": 15},
+          {"id": "app_rainbow",  "label": "Радужный",      "tier": "epic",      "weight": 18},
+          {"id": "app_glowing",  "label": "Светящийся",    "tier": "epic",      "weight": 12},
+          {"id": "app_spotted",  "label": "Пятнистый",     "tier": "common",    "weight": 30}
+        ],
+        "mushroom": [
+          {"id": "app_crystal",  "label": "Кристальный",   "tier": "mythic",    "weight": 5},
+          {"id": "app_glowing",  "label": "Светящийся",    "tier": "epic",      "weight": 20},
+          {"id": "app_rainbow",  "label": "Радужный",      "tier": "epic",      "weight": 15},
+          {"id": "app_ancient",  "label": "Древний окрас", "tier": "legendary", "weight": 12}
+        ],
+        "badlands": [
+          {"id": "app_ancient",  "label": "Древний окрас", "tier": "legendary", "weight": 18},
+          {"id": "app_scarred",  "label": "Со шрамами",    "tier": "rare",      "weight": 20},
+          {"id": "app_golden",   "label": "Золотистый",    "tier": "legendary", "weight": 12},
+          {"id": "app_dark",     "label": "Тёмный",        "tier": "uncommon",  "weight": 20}
+        ],
+        "eroded_badlands": [
+          {"id": "app_ancient",  "label": "Древний окрас", "tier": "legendary", "weight": 15},
+          {"id": "app_scarred",  "label": "Со шрамами",    "tier": "rare",      "weight": 18},
+          {"id": "app_crystal",  "label": "Кристальный",   "tier": "mythic",    "weight": 4},
+          {"id": "app_dark",     "label": "Тёмный",        "tier": "uncommon",  "weight": 20}
+        ],
+        "cherry": [
+          {"id": "app_rainbow",  "label": "Радужный",      "tier": "epic",      "weight": 18},
+          {"id": "app_glowing",  "label": "Светящийся",    "tier": "epic",      "weight": 15},
+          {"id": "app_pale",     "label": "Бледный",       "tier": "uncommon",  "weight": 25},
+          {"id": "app_spotted",  "label": "Пятнистый",     "tier": "common",    "weight": 30}
+        ]
+      }
+    },
+    "feature": {
+      "label": "Особая примета",
+      "traits": [
+        {"id": "fea_hook",       "label": "Крючок рыбака",      "tier": "rare",      "weight": 15},
+        {"id": "fea_glow",       "label": "Светится в темноте", "tier": "epic",      "weight": 10},
+        {"id": "fea_scar",       "label": "Шрам от акулы",      "tier": "rare",      "weight": 15},
+        {"id": "fea_pearls",     "label": "Жемчужины на теле",  "tier": "legendary", "weight": 8},
+        {"id": "fea_none",       "label": "Без особых примет",  "tier": "common",    "weight": 40},
+        {"id": "fea_mark",       "label": "Тайный знак",        "tier": "mythic",    "weight": 2},
+        {"id": "fea_old",        "label": "Очень старая",       "tier": "uncommon",  "weight": 25},
+        {"id": "fea_gem",        "label": "Вросший самоцвет",   "tier": "legendary", "weight": 8},
+        {"id": "fea_barnacles",  "label": "Покрыта ракушками",  "tier": "uncommon",  "weight": 25},
+        {"id": "fea_void",       "label": "Метка пустоты",      "tier": "epic",      "weight": 10}
+      ],
+      "biome_traits": {
+        "end": [
+          {"id": "fea_mark",      "label": "Тайный знак",        "tier": "mythic",    "weight": 6},
+          {"id": "fea_gem",       "label": "Вросший самоцвет",   "tier": "legendary", "weight": 15},
+          {"id": "fea_void",      "label": "Метка пустоты",      "tier": "epic",      "weight": 20},
+          {"id": "fea_glow",      "label": "Светится в темноте", "tier": "epic",      "weight": 15}
+        ],
+        "mushroom": [
+          {"id": "fea_mark",      "label": "Тайный знак",        "tier": "mythic",    "weight": 6},
+          {"id": "fea_pearls",    "label": "Жемчужины на теле",  "tier": "legendary", "weight": 15},
+          {"id": "fea_glow",      "label": "Светится в темноте", "tier": "epic",      "weight": 18},
+          {"id": "fea_gem",       "label": "Вросший самоцвет",   "tier": "legendary", "weight": 12}
+        ],
+        "deep_dark": [
+          {"id": "fea_void",      "label": "Метка пустоты",      "tier": "epic",      "weight": 25},
+          {"id": "fea_mark",      "label": "Тайный знак",        "tier": "mythic",    "weight": 5},
+          {"id": "fea_glow",      "label": "Светится в темноте", "tier": "epic",      "weight": 20},
+          {"id": "fea_old",       "label": "Очень старая",       "tier": "uncommon",  "weight": 20}
+        ],
+        "eroded_badlands": [
+          {"id": "fea_mark",      "label": "Тайный знак",        "tier": "mythic",    "weight": 4},
+          {"id": "fea_old",       "label": "Очень старая",       "tier": "uncommon",  "weight": 25},
+          {"id": "fea_scar",      "label": "Шрам от акулы",      "tier": "rare",      "weight": 20},
+          {"id": "fea_gem",       "label": "Вросший самоцвет",   "tier": "legendary", "weight": 10}
+        ],
+        "ocean": [
+          {"id": "fea_pearls",    "label": "Жемчужины на теле",  "tier": "legendary", "weight": 12},
+          {"id": "fea_barnacles", "label": "Покрыта ракушками",  "tier": "uncommon",  "weight": 25},
+          {"id": "fea_hook",      "label": "Крючок рыбака",      "tier": "rare",      "weight": 18},
+          {"id": "fea_gem",       "label": "Вросший самоцвет",   "tier": "legendary", "weight": 10}
+        ]
+      },
+      "weather_traits": {
+        "Гроза": [
+          {"id": "fea_void",      "label": "Метка пустоты",      "tier": "epic",      "weight": 20},
+          {"id": "fea_scar",      "label": "Шрам от акулы",      "tier": "rare",      "weight": 20},
+          {"id": "fea_mark",      "label": "Тайный знак",        "tier": "mythic",    "weight": 4},
+          {"id": "fea_glow",      "label": "Светится в темноте", "tier": "epic",      "weight": 15}
+        ]
+      }
+    },
+    "aura": {
+      "label": "Аура",
+      "traits": [
+        {"id": "aur_void",       "label": "Аура пустоты",    "tier": "epic",      "weight": 10},
+        {"id": "aur_ocean",      "label": "Дух океана",      "tier": "rare",      "weight": 15},
+        {"id": "aur_storm",      "label": "Буря",            "tier": "legendary", "weight": 8},
+        {"id": "aur_calm",       "label": "Спокойствие",     "tier": "common",    "weight": 40},
+        {"id": "aur_ancient",    "label": "Древность",       "tier": "legendary", "weight": 8},
+        {"id": "aur_none",       "label": "Нет ауры",        "tier": "common",    "weight": 40},
+        {"id": "aur_mythic",     "label": "Мифическая сила", "tier": "mythic",    "weight": 2},
+        {"id": "aur_dark",       "label": "Тёмная аура",     "tier": "epic",      "weight": 10},
+        {"id": "aur_light",      "label": "Светлая аура",    "tier": "uncommon",  "weight": 25},
+        {"id": "aur_chaos",      "label": "Хаос",            "tier": "rare",      "weight": 15}
+      ],
+      "weather_traits": {
+        "Гроза": [
+          {"id": "aur_storm",    "label": "Буря",            "tier": "legendary", "weight": 20},
+          {"id": "aur_chaos",    "label": "Хаос",            "tier": "rare",      "weight": 20},
+          {"id": "aur_void",     "label": "Аура пустоты",    "tier": "epic",      "weight": 12},
+          {"id": "aur_mythic",   "label": "Мифическая сила", "tier": "mythic",    "weight": 3}
+        ],
+        "Дождь": [
+          {"id": "aur_dark",     "label": "Тёмная аура",     "tier": "epic",      "weight": 18},
+          {"id": "aur_void",     "label": "Аура пустоты",    "tier": "epic",      "weight": 15},
+          {"id": "aur_ocean",    "label": "Дух океана",      "tier": "rare",      "weight": 20},
+          {"id": "aur_calm",     "label": "Спокойствие",     "tier": "common",    "weight": 25}
+        ]
+      },
+      "biome_traits": {
+        "end": [
+          {"id": "aur_void",     "label": "Аура пустоты",    "tier": "epic",      "weight": 25},
+          {"id": "aur_mythic",   "label": "Мифическая сила", "tier": "mythic",    "weight": 5},
+          {"id": "aur_dark",     "label": "Тёмная аура",     "tier": "epic",      "weight": 20},
+          {"id": "aur_chaos",    "label": "Хаос",            "tier": "rare",      "weight": 15}
+        ],
+        "deep_dark": [
+          {"id": "aur_dark",     "label": "Тёмная аура",     "tier": "epic",      "weight": 25},
+          {"id": "aur_void",     "label": "Аура пустоты",    "tier": "epic",      "weight": 20},
+          {"id": "aur_chaos",    "label": "Хаос",            "tier": "rare",      "weight": 15},
+          {"id": "aur_mythic",   "label": "Мифическая сила", "tier": "mythic",    "weight": 3}
+        ],
+        "ocean": [
+          {"id": "aur_ocean",    "label": "Дух океана",      "tier": "rare",      "weight": 30},
+          {"id": "aur_calm",     "label": "Спокойствие",     "tier": "common",    "weight": 25},
+          {"id": "aur_ancient",  "label": "Древность",       "tier": "legendary", "weight": 12},
+          {"id": "aur_light",    "label": "Светлая аура",    "tier": "uncommon",  "weight": 18}
+        ],
+        "mushroom": [
+          {"id": "aur_mythic",   "label": "Мифическая сила", "tier": "mythic",    "weight": 5},
+          {"id": "aur_ancient",  "label": "Древность",       "tier": "legendary", "weight": 15},
+          {"id": "aur_light",    "label": "Светлая аура",    "tier": "uncommon",  "weight": 20},
+          {"id": "aur_chaos",    "label": "Хаос",            "tier": "rare",      "weight": 15}
+        ],
+        "frozen": [
+          {"id": "aur_calm",     "label": "Спокойствие",     "tier": "common",    "weight": 30},
+          {"id": "aur_ancient",  "label": "Древность",       "tier": "legendary", "weight": 12},
+          {"id": "aur_void",     "label": "Аура пустоты",    "tier": "epic",      "weight": 15},
+          {"id": "aur_dark",     "label": "Тёмная аура",     "tier": "epic",      "weight": 12}
+        ]
+      }
+    },
+    "origin": {
+      "label": "Происхождение",
+      "biome_traits": {
+
+        "ocean": [
+          {"id": "ori_deep_sea",    "label": "Из глубин океана",   "tier": "uncommon",  "weight": 25},
+          {"id": "ori_reef",        "label": "Житель рифа",        "tier": "common",    "weight": 40},
+          {"id": "ori_abyss",       "label": "Из бездны",          "tier": "rare",      "weight": 15}
+        ],
+
+        "cold_ocean": [
+          {"id": "ori_frozen",      "label": "Из ледяных вод",     "tier": "uncommon",  "weight": 25},
+          {"id": "ori_iceberg",     "label": "Под айсбергом",      "tier": "rare",      "weight": 15}
+        ],
+
+        "warm_ocean": [
+          {"id": "ori_tropical",    "label": "Тропические воды",   "tier": "uncommon",  "weight": 25},
+          {"id": "ori_coral",       "label": "Коралловый риф",     "tier": "rare",      "weight": 15}
+        ],
+
+        "river": [
+          {"id": "ori_river",       "label": "Горная река",        "tier": "uncommon",  "weight": 25},
+          {"id": "ori_current",     "label": "Быстрое течение",    "tier": "rare",      "weight": 15}
+        ],
+
+        "swamp": [
+          {"id": "ori_swamp",       "label": "Болотные глубины",   "tier": "rare",      "weight": 15},
+          {"id": "ori_murky",       "label": "Мутные воды",        "tier": "uncommon",  "weight": 25}
+        ],
+
+        "mangrove": [
+          {"id": "ori_mangrove",    "label": "Мангровые заросли",  "tier": "rare",      "weight": 15},
+          {"id": "ori_mangrove_deep","label": "Корни мангров",     "tier": "epic",      "weight": 10}
+        ],
+
+        "jungle": [
+          {"id": "ori_jungle",      "label": "Джунглевые воды",    "tier": "rare",      "weight": 15},
+          {"id": "ori_ancient_pool","label": "Древний водоём",     "tier": "epic",      "weight": 10}
+        ],
+
+        "bamboo_jungle": [
+          {"id": "ori_bamboo",      "label": "Бамбуковые заросли", "tier": "epic",      "weight": 10},
+          {"id": "ori_panda_pool",  "label": "Заводь панд",        "tier": "legendary", "weight": 8}
+        ],
+
+        "cherry": [
+          {"id": "ori_cherry",      "label": "Сакуровый сад",      "tier": "epic",      "weight": 10},
+          {"id": "ori_cherry_rare", "label": "Цветение сакуры",    "tier": "legendary", "weight": 8}
+        ],
+
+        "badlands": [
+          {"id": "ori_badlands",    "label": "Красные земли",      "tier": "epic",      "weight": 10},
+          {"id": "ori_mesa",        "label": "Плато меса",         "tier": "legendary", "weight": 8}
+        ],
+
+        "eroded_badlands": [
+          {"id": "ori_eroded",      "label": "Иглы пустоши",       "tier": "legendary", "weight": 8},
+          {"id": "ori_wasteland",   "label": "Выжженная земля",    "tier": "mythic",    "weight": 2}
+        ],
+
+        "frozen": [
+          {"id": "ori_ice",         "label": "Подо льдом",         "tier": "epic",      "weight": 10},
+          {"id": "ori_blizzard",    "label": "Выжила в буране",    "tier": "legendary", "weight": 8}
+        ],
+
+        "deep_dark": [
+          {"id": "ori_deep_dark",   "label": "Из Глубокой тьмы",  "tier": "legendary", "weight": 8},
+          {"id": "ori_sculk",       "label": "Среди скалка",       "tier": "mythic",    "weight": 2}
+        ],
+
+        "mushroom": [
+          {"id": "ori_mushroom",    "label": "Грибной остров",     "tier": "mythic",    "weight": 2}
+        ],
+
+        "end": [
+          {"id": "ori_void",        "label": "Из пустоты Края",    "tier": "mythic",    "weight": 2},
+          {"id": "ori_end_sea",     "label": "Море Края",          "tier": "legendary", "weight": 8}
+        ]
+      },
+
+      "weather_traits": {
+        "Дождь": [
+          {"id": "ori_rain",        "label": "Поймана в дождь",    "tier": "uncommon",  "weight": 25}
+        ],
+        "Гроза": [
+          {"id": "ori_lightning",   "label": "Поймана в грозу",    "tier": "epic",      "weight": 10},
+          {"id": "ori_thunder",     "label": "Под раскат грома",   "tier": "legendary", "weight": 8}
+        ]
+      },
+
+      "time_traits": {
+        "Ночь": [
+          {"id": "ori_night",       "label": "Ночной улов",        "tier": "uncommon",  "weight": 25}
+        ],
+        "Глубокая ночь": [
+          {"id": "ori_midnight",    "label": "В полночь",          "tier": "rare",      "weight": 15}
+        ],
+        "Рассвет": [
+          {"id": "ori_dawn",        "label": "На рассвете",        "tier": "rare",      "weight": 15}
+        ]
+      },
+
+      "default_traits": [
+        {"id": "ori_unknown",     "label": "Неизвестное место",  "tier": "common",    "weight": 40},
+        {"id": "ori_river_plain", "label": "Равнинная река",     "tier": "common",    "weight": 40},
+        {"id": "ori_lake",        "label": "Тихое озеро",        "tier": "uncommon",  "weight": 25}
+      ]
+    }
+  },
+  "tiers": {
+    "common":    {"label": "Обычный",    "color": 9807270,  "symbol": "●", "weight": 40},
+    "uncommon":  {"label": "Необычный",  "color": 5763719,  "symbol": "◆", "weight": 25},
+    "rare":      {"label": "Редкий",     "color": 5614830,  "symbol": "◈", "weight": 15},
+    "epic":      {"label": "Эпический",  "color": 8847616,  "symbol": "◉", "weight": 10},
+    "legendary": {"label": "Легендарный","color": 16766720, "symbol": "⬡", "weight": 8},
+    "mythic":    {"label": "Мифический", "color": 13891582, "symbol": "✦", "weight": 2}
+  }
+}
