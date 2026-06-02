@@ -1,0 +1,388 @@
+# This is an /advanced/ feature of DiscordSRV that allows you to send messages to Discord when a game event happens
+# or when a command is run. You will need a working knowledge of how Bukkit events work and their properties.
+# If you aren't sure about what you're doing here, maybe ask a developer or join our support server @ discordsrv.com/discord
+# Made something you'd like to share? You can do so in our Discord server's #alerts forum (invite above)
+#
+# Refer to the Bukkit API javadoc to find events & properties to use:
+#  https://hub.spigotmc.org/javadocs/bukkit
+# Helpful resources for learning how to use SpEL:
+#  https://docs.spring.io/spring/docs/4.2.x/spring-framework-reference/html/expressions.html
+#  https://dzone.com/articles/learn-spring-expression-language-with-examples
+#
+# You can use the following placeholders:
+#  {tps} - server TPS
+#  {time} - formatted time
+#  {date} - formatted date
+#  {name} - if alert is for a player event, the name of the player
+#  {ping} - if alert is for a player event, the ping of the player
+#  {username} - if alert is for a player event, the username of the player
+#  {displayname} - if alert is for a player event, the display name of the player
+#  {usernamenoescapes} - if alert is for a player event, the username of the player without escaping discord format (for use in inline code & code block markdown)
+#  {displaynamenoescapes} - if alert is for a player event, the display name of the player without escaping discord format (for use in inline code & code block markdown)
+#  {world} - if alert is for a player event, the world the player is in
+#  {embedavatarurl} - if alert is for a player event, the avatar url for the player's head, otherwise, the bot's avatar url
+#  {botavatarurl} - the bot's avatar url
+#  {botname} - the bot's name
+#  %placeholder% - any PlaceholderAPI placeholders, can only use player ones when alert is for a player event
+#
+# You can also use SpEL expressions with ${expression...}, such as...
+#  - Getting a player's IP: ${#player.address.address.hostAddress}
+#  - Getting a player's game mode: ${#player.gameMode.name()}
+#  - Getting a player's linked Discord account ID: ${#discordsrv.accountLinkManager.getDiscordId(#player.uniqueId)}
+#  - Getting the online player count: ${#server.onlinePlayers.size()}
+#  - Getting the status of DiscordSRV's connection to Discord: ${#jda.status.name()}
+#  - Checking if a player is in a specific world: ${#player.world.name == 'world_the_end'}
+#  - Checking if it's day in the world that the player is in: ${#player.world.time > 0 && #player.world.time < 13000}
+#  You can use the following expression placeholders, as seen above:
+#   #plugins.<plugin> - the specified plugin instance, null if doesn't exist
+#   #event - the event that's triggering the alert if this alert is an event alert
+#   #server - the Bukkit API server instance, equivalent to Bukkit#getServer
+#   #discordsrv - the DiscordSRV plugin instance
+#   #player - the player that the event is for, if this is a player event or command
+#   #sender - the command sender, if this is a command alert
+#   #command - the full command, with no leading slash, if this is a command alert
+#   #args - the command arguments, if this is a command alert
+#   #allArgs - the command arguments as one string, if this is a command alert
+#   #channel - the destination channel for this alert
+#   #jda - DiscordSRV's JDA instance that it uses to communicate with Discord
+#
+# Syntax/defaults:
+#  - Trigger: <event name or /command>
+#    Async: true # optional, defaults to true, you should almost never have to change this
+#    Conditions:
+#      - property == < > <= >= value etc
+#    Channel: <discordsrv channel name>
+#    IgnoreCancelled: true # only for event alerts
+#    Content: ""
+#    Webhook:
+#      Enabled: false
+#      AvatarUrl: "{botavatarurl}"
+#      Name: "{botname}"
+#    Embed:
+#      Enabled: true
+#      Color: "#00ff00" # accepts a hex color code (eg. "#ffffff") or a rgb integer (eg. 0)
+#      Author:
+#        ImageUrl: "{embedavatarurl}"
+#        Name: "{username} did... something."
+#        Url: ""
+#      ThumbnailUrl: ""
+#      Title:
+#        Text: ""
+#        Url: ""
+#      Description: ""
+#      Fields: [] # format is "title;value;inline" (eg. "Who joined?;%displayname%;true") or "blank" to add a blank field
+#      ImageUrl: ""
+#      Footer:
+#        Text: ""
+#        IconUrl: ""
+#      Timestamp: false # set to true to use the time the message was sent or use a epoch timestamp for a specific time (https://www.epochconverter.com/)
+#
+Alerts: 
+  # Example config to send messages to the "fish" DiscordSRV channel when a player successfully catches a fish
+  #- Trigger: org.bukkit.event.player.PlayerFishEvent
+  #  Channel: fish
+  #  Conditions:
+  #    - state.name() == 'CAUGHT_FISH'
+  #  Embed:
+  #    Color: "#00ff00"
+  #    Author:
+  #      ImageUrl: "{embedavatarurl}"
+  #      Name: "{name} caught a ${caught.itemStack.type.name()}!"
+
+  # Example config to send Matrix anti-cheat messages
+  #- Trigger: me.rerere.matrix.api.events.PlayerViolationEvent
+  #  Channel: matrix
+  #  Conditions:
+  #    - violations >= 5 # don't send events for players with < 5 violations
+  #  Embed:
+  #    Color: "#ff0000"
+  #    Author:
+  #      ImageUrl: "{embedavatarurl}"
+  #      Name: "{username} failed ${hackType.name().toLowerCase()} check | ${component} | vl:${violations} ping:${player.handle.ping} tps:{tps}"
+
+  # Example config to send /gamemode messages
+  #- Trigger: /gamemode
+  #  Channel: gamemode
+  #  Conditions:
+  #    - '#player.hasPermission("minecraft.command.gamemode") == true'
+  #  Embed:
+  #    Color: "#ff0000"
+  #    Author:
+  #      ImageUrl: "{embedavatarurl}"
+  #      Name: "{username} changed gamemode to ${#args.get(0)}"
+
+  # Example config to send /me commands
+  #- Trigger: /me
+  #  Channel: me
+  #  Conditions:
+  #    - '#player.hasPermission("minecraft.command.me") == true || #player.hasPermission("essentials.me") == true'
+  #  Embed:
+  #    Color: "#00ff00"
+  #    Author:
+  #      ImageUrl: "{embedavatarurl}"
+  #      Name: "* {username} ${#allArgs}"
+
+# ── Первый вход ───────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.player.PlayerJoinEvent
+    Channel: chronicle
+    Conditions:
+      - '#event.player.hasPlayedBefore() == false'
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      Author:
+        ImageUrl: "{embedavatarurl}"
+        Name: "{name} впервые ступает на земли ТотемКрафта!"
+      Footer:
+        Text: "Добро пожаловать!"
+      Timestamp: true
+
+# ── PvP ──────────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.PlayerDeathEvent
+    Channel: chronicle
+    Conditions:
+      - '#event.entity.killer != null'
+    Embed:
+      Enabled: true
+      Color: "#5a0000"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/iron_sword.png"
+      Author:
+        Name: "${#event.entity.name} ${(#event.hashCode() % 5 + 5) % 5 == 0 ? 'пал от руки' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'был повержен' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'встретил свой конец от руки' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'не пережил встречи с' : 'сложил голову под клинком'} ${#event.entity.killer.name}"
+
+  # ── Редкие смерти ────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.PlayerDeathEvent
+    Channel: chronicle
+    Conditions:
+      - '#event.entity.killer == null'
+      - '#event.entity.lastDamageCause != null'
+      - '#event.entity.lastDamageCause.cause.name() matches "(LIGHTNING|MAGIC|POISON|CAMPFIRE|VOID|FLY_INTO_WALL|FREEZE|SONIC_BOOM|WITHER|WORLD_BORDER|THORNS|CRAMMING|FALLING_BLOCK|STARVATION|SUFFOCATION)"'
+    Embed:
+      Enabled: true
+      Color: "#5a0000"
+      Author:
+        Name: "${#event.entity.name} ${
+          #event.entity.lastDamageCause.cause.name() == 'LIGHTNING' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'был избран небесами в качестве громоотвода' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'попал под удар молнии' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'узнал на себе силу молнии' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'поджарился от молнии' : 'получил с неба разряд молнии, хотя не просил') :
+          #event.entity.lastDamageCause.cause.name() == 'MAGIC' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'перепутал зелья и отравился' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'стал жертвой собственной алхимии' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'провёл свой последний алхимический опыт на себе' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'убедился что не все зелья лечат' : 'пал от магии собственного же изготовления') :
+          #event.entity.lastDamageCause.cause.name() == 'POISON' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'тихо и не спеша угас от яда' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'не нашел вовремя противоядие' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'обнаружил что яд действительно убивает' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'стал жертвой зелёной смерти' : 'успел попрощаться - яд не торопился') :
+          #event.entity.lastDamageCause.cause.name() == 'CAMPFIRE' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'присел у костра в последний раз' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'слишком близко познакомился с огнём' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'решил что костёр не такой уж горячий' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'обогрелся - навсегда' : 'неудачно наступил на костёр') :
+          #event.entity.lastDamageCause.cause.name() == 'VOID' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'неудачно шагнул за край мира' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'отправился исследовать бездну' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'решил проверить есть ли дно у пустоты' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'улетел туда откуда не возвращаются' : 'обнаружил что за краем мира ничего нет') :
+          #event.entity.lastDamageCause.cause.name() == 'FLY_INTO_WALL' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'слишком уверенно летел на элитрах - не долетел' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'переоценил манёвренность элитр' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'познал физику на собственном опыте' : (#event.hashCode() % 5 + 5) % 5 == 3 ? '- последний полёт оказался слишком низким' : 'приземлился раньше чем планировал') :
+          #event.entity.lastDamageCause.cause.name() == 'FREEZE' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'стал частью зимнего пейзажа навсегда' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'шагнул в рыхлый снег и остался там навсегда' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'остался зимовать - навсегда' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'превратился в ледяную скульптуру' : '- рыхлый снег принял его в свои объятия') :
+          #event.entity.lastDamageCause.cause.name() == 'SONIC_BOOM' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'посмертно оценил звуковую волну Хранителя' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'был сдут с лица земли Хранителем' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'услышал Хранителя в последний раз' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'не увернулся от Хранителя' : 'не успел убежать от звукового удара Хранителя') :
+          #event.entity.lastDamageCause.cause.name() == 'WITHER' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'иссох заживо' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'медленно растворился во тьме иссушения' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'узнал про эффект иссушения на себе' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'был иссушен до последней капли' : 'угас от иссушения') :
+          #event.entity.lastDamageCause.cause.name() == 'WORLD_BORDER' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'решил проверить где заканчивается мир' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'нашёл границу мира - и она нашла его' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'дошёл до границы мира и не вернулся' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'отправился за границу мира без возврата' : '- граница мира не пропустила его обратно') :
+          #event.entity.lastDamageCause.cause.name() == 'THORNS' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'не рассчитал силы и ударился об чужие шипы' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'ударил по броне с зачарованием Шипы - и пожалел' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'обнаружил что броня противника кусается' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'пал жертвой собственной агрессии' : 'нарвался - в самом прямом смысле') :
+          #event.entity.lastDamageCause.cause.name() == 'CRAMMING' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'был раздавлен толпой' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'оказался не в том месте среди не тех существ' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'упал под толпу' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'был поглощён толпой без остатка' : 'узнал что в толпе не всегда безопасно') :
+          #event.entity.lastDamageCause.cause.name() == 'FALLING_BLOCK' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'был отправлен к праотцам упавшим блоком' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'не посмотрел наверх в нужный момент' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'наковальня нашла его сама' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'стал жертвой гравитации чужого блока' : 'последнее что увидел - тень сверху') :
+          #event.entity.lastDamageCause.cause.name() == 'STARVATION' ? ((#event.hashCode() % 5 + 5) % 5 == 0 ? 'изголодался со скуки' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'пренебрегал едой до самого конца' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'принял голод за незначительный дискомфорт' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'экономил еду до последнего' : 'умер богатым на опыт, но не на еду') :
+          (#event.hashCode() % 5 + 5) % 5 == 0 ? 'был замурован заживо' : (#event.hashCode() % 5 + 5) % 5 == 1 ? 'застрял там откуда не выбраться' : (#event.hashCode() % 5 + 5) % 5 == 2 ? 'обнаружил что дышать сквозь блоки невозможно' : (#event.hashCode() % 5 + 5) % 5 == 3 ? 'оказался внутри блока без шансов на спасение' : '- блоки сомкнулись вокруг него и не разомкнулись'}"
+      Timestamp: true
+
+  # ── Рыбалка: Обычный улов ~64.725% ──────────────────────────────
+  # h % 4000 в [0, 2589) → 2589 значений = 64.725%
+  - Trigger: org.bukkit.event.player.PlayerFishEvent
+    Channel: fish
+    Conditions:
+      - state.name() == 'CAUGHT_FISH'
+      - caught.itemStack.type.name() matches '(COD|SALMON|PUFFERFISH|TROPICAL_FISH)'
+      - (#event.hashCode() % 4000 + 4000) % 4000 < 2589
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/${caught.itemStack.type.name().toLowerCase()}.png"
+      Author:
+        Name: "{name} поймал рыбу"
+      Description: "**${caught.itemStack.type.name() == 'COD' ? 'Треска' : caught.itemStack.type.name() == 'SALMON' ? 'Лосось' : caught.itemStack.type.name() == 'PUFFERFISH' ? 'Иглобрюх' : 'Тропическая рыба'}** • **Вес:** ${(#event.hashCode() % 17 + 3) / 10.0} кг"
+      Footer:
+        Text: "Обычный улов"
+
+  # ── Рыбалка: Хороший улов ~25% ───────────────────────────────────
+  # h % 4000 в [2589, 3589) → 1000 значений = 25.00%
+  - Trigger: org.bukkit.event.player.PlayerFishEvent
+    Channel: fish
+    Conditions:
+      - state.name() == 'CAUGHT_FISH'
+      - caught.itemStack.type.name() matches '(COD|SALMON|PUFFERFISH|TROPICAL_FISH)'
+      - (#event.hashCode() % 4000 + 4000) % 4000 >= 2589
+      - (#event.hashCode() % 4000 + 4000) % 4000 < 3589
+    Embed:
+      Enabled: true
+      Color: "#b2b2b2"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/${caught.itemStack.type.name().toLowerCase()}.png"
+      Author:
+        Name: "{name} поймал рыбу"
+      Description: "**${caught.itemStack.type.name() == 'COD' ? 'Треска' : caught.itemStack.type.name() == 'SALMON' ? 'Лосось' : caught.itemStack.type.name() == 'PUFFERFISH' ? 'Иглобрюх' : 'Тропическая рыба'}** • **Вес:** ${(#event.hashCode() % 25 + 15) / 10.0} кг"
+      Footer:
+        Text: "Хороший улов"
+
+  # ── Рыбалка: Редкий улов ~10% ────────────────────────────────────
+  # h % 4000 в [3589, 3989) → 400 значений = 10.00%
+  - Trigger: org.bukkit.event.player.PlayerFishEvent
+    Channel: fish
+    Conditions:
+      - state.name() == 'CAUGHT_FISH'
+      - caught.itemStack.type.name() matches '(COD|SALMON|PUFFERFISH|TROPICAL_FISH)'
+      - (#event.hashCode() % 4000 + 4000) % 4000 >= 3589
+      - (#event.hashCode() % 4000 + 4000) % 4000 < 3989
+    Embed:
+      Enabled: true
+      Color: "#4b69ff"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/${caught.itemStack.type.name().toLowerCase()}.png"
+      Author:
+        Name: "{name} поймал рыбу"
+      Description: "**${caught.itemStack.type.name() == 'COD' ? 'Треска' : caught.itemStack.type.name() == 'SALMON' ? 'Лосось' : caught.itemStack.type.name() == 'PUFFERFISH' ? 'Иглобрюх' : 'Тропическая рыба'}** • **Вес:** ${(#event.hashCode() % 35 + 35) / 10.0} кг"
+      Footer:
+        Text: "Редкий улов"
+
+  # ── Рыбалка: Легендарный улов ~0.25% ─────────────────────────────
+  # h % 4000 в [3989, 3999) → 10 значений = 0.25%
+  - Trigger: org.bukkit.event.player.PlayerFishEvent
+    Channel: fish
+    Conditions:
+      - state.name() == 'CAUGHT_FISH'
+      - caught.itemStack.type.name() matches '(COD|SALMON|PUFFERFISH|TROPICAL_FISH)'
+      #- (#event.hashCode() % 1000 + 1000) % 1000 >= 10     # 99% шанс
+      - (#event.hashCode() % 4000 + 4000) % 4000 >= 3989
+      - (#event.hashCode() % 4000 + 4000) % 4000 < 3999
+    Embed:
+      Enabled: true
+      Color: "#FFD700"
+      Author:
+        ImageUrl: "{embedavatarurl}"
+        Name: "{name} поймал легендарную рыбу"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/${caught.itemStack.type.name().toLowerCase()}.png"
+      Title:
+        Text: "${caught.itemStack.type.name() == 'COD' ? 'Трофейная треска' : caught.itemStack.type.name() == 'SALMON' ? 'Трофейный лосось' : caught.itemStack.type.name() == 'PUFFERFISH' ? 'Трофейный иглобрюх' : 'Трофейная тропическая рыба'}"
+      Description: "**Вес:** ${(#event.hashCode() % 60 + 60) / 10.0} кг\n**Биом:** ${T(com.google.gson.JsonParser).parseString(T(java.nio.file.Files).readString(T(java.nio.file.Paths).get('plugins/DiscordSRV/assets/ru_ru.json'))).getAsJsonObject().get('biome.minecraft.' + #player.location.block.biome.name().toLowerCase()).getAsString()}\n**Погода:** ${#player.world.hasStorm() ? 'Гроза' : #player.world.isThundering() ? 'Дождь' : 'Ясно'}\n**Время:** ${#player.world.time < 6000 ? 'Утро' : #player.world.time < 12000 ? 'День' : #player.world.time < 18000 ? 'Вечер' : 'Ночь'}"
+      Footer:
+        Text: "⭐ Легендарный улов!"
+      Timestamp: true
+
+  # ── Рыбалка: Мифический улов ~0.025% ─────────────────────────────
+  # h % 4000 == 3999 → 1 значение = 0.025%
+  - Trigger: org.bukkit.event.player.PlayerFishEvent
+    Channel: fish
+    Conditions:
+      - state.name() == 'CAUGHT_FISH'
+      - caught.itemStack.type.name() matches '(COD|SALMON|PUFFERFISH|TROPICAL_FISH)'
+      - (#event.hashCode() % 4000 + 4000) % 4000 >= 3999
+      #- (#event.hashCode() % 1000 + 1000) % 1000 >= 10     # 99% шанс
+    Embed:
+      Enabled: true
+      Color: "#d32ce6"
+      Author:
+        ImageUrl: "{embedavatarurl}"
+        Name: "{name} поймал мифическую рыбу"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/${caught.itemStack.type.name().toLowerCase()}.png"
+      Title:
+        Text: "${caught.itemStack.type.name() == 'COD' ? 'Трофейная треска' : caught.itemStack.type.name() == 'SALMON' ? 'Трофейный лосось' : caught.itemStack.type.name() == 'PUFFERFISH' ? 'Трофейный иглобрюх' : 'Трофейная тропическая рыба'}"
+      Description: "**Вес:** ${(#event.hashCode() % 110 + 110) / 10.0} кг\n**Биом:** ${T(com.google.gson.JsonParser).parseString(T(java.nio.file.Files).readString(T(java.nio.file.Paths).get('plugins/DiscordSRV/assets/ru_ru.json'))).getAsJsonObject().get('biome.minecraft.' + #player.location.block.biome.name().toLowerCase()).getAsString()}\n**Погода:** ${#player.world.hasStorm() ? 'Гроза' : #player.world.isThundering() ? 'Дождь' : 'Ясно'}\n**Время:** ${#player.world.time < 6000 ? 'Утро' : #player.world.time < 12000 ? 'День' : #player.world.time < 18000 ? 'Вечер' : 'Ночь'}"
+      Footer:
+        Text: "⭐ Мифический улов!"
+      Timestamp: true
+
+  # ── Сокровища ─────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.player.PlayerFishEvent
+    Channel: fish
+    Conditions:
+      - state.name() == 'CAUGHT_FISH'
+      - caught.itemStack.type.name() matches '(ENCHANTED_BOOK|HEART_OF_THE_SEA)'
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/${caught.itemStack.type.name().toLowerCase()}.png"
+      Author:
+        Name: "{name} поймал сокровище"
+      Description: "**${caught.itemStack.type.name() == 'ENCHANTED_BOOK' ? 'Зачарованную книгу' : 'Сердце моря'}**"
+
+  # ── Достижения ────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.player.PlayerAdvancementDoneEvent
+    Channel: chronicle
+    Conditions:
+      - '#event.advancement.display != null'
+    Embed:
+      Enabled: true
+      Color: "#FFD700"
+      Author:
+        ImageUrl: "{embedavatarurl}"
+        Name: "{name} свершил подвиг!"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/writable_book.png"
+      Title:
+        Text: "${T(com.google.gson.JsonParser).parseString(T(java.nio.file.Files).readString(T(java.nio.file.Paths).get('plugins/DiscordSRV/assets/ru_ru.json'))).getAsJsonObject().get(#event.advancement.display.title().key()).getAsString()}"
+      Description: "${T(com.google.gson.JsonParser).parseString(T(java.nio.file.Files).readString(T(java.nio.file.Paths).get('plugins/DiscordSRV/assets/ru_ru.json'))).getAsJsonObject().get(#event.advancement.display.description().key()).getAsString()}"
+      Footer:
+        Text: "✦ Достижение разблокировано"
+      Timestamp: true
+
+  # ── Боссы ─────────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.EntityDeathEvent
+    Channel: chronicle
+    Conditions:
+      - entity.type.name() matches '(WITHER|ENDER_DRAGON|WARDEN)'
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "${entity.type.name() == 'WITHER' ? 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/wither_spawn_egg.png' : entity.type.name() == 'ENDER_DRAGON' ? 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/ender_dragon_spawn_egg.png' : 'https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/warden_spawn_egg.png'}"
+      Author:
+        Name: "${entity.killer != null ? entity.killer.name : 'Игрок'} одолел чудовище"
+      Description: "**${entity.type.name() == 'WITHER' ? 'Визера' : entity.type.name() == 'ENDER_DRAGON' ? 'Краевого дракона' : 'Хранителя'}**"
+
+  # ── Тотем ─────────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.EntityResurrectEvent
+    Channel: chronicle
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/totem_of_undying.png"
+      Author:
+        Name: "${entity.name} ловко избежал смерти"
+
+  # ── Зачарование ───────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.enchantment.EnchantItemEvent
+    Channel: chronicle
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/block/enchanting_table_top.png"
+      Author:
+        Name: "${#event.enchanter.name} совершил ритуал и наложил зачарование"
+
+  # ── Элитры ────────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.EntityPickupItemEvent
+    Channel: chronicle
+    Conditions:
+      - entity.type.name() == 'PLAYER'
+      - item.itemStack.type.name() == 'ELYTRA'
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/elytra.png"
+      Author:
+        Name: "${entity.name} отыскал элитры"
+
+  # ── Яйцо дракона ─────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.EntityPickupItemEvent
+    Channel: chronicle
+    Conditions:
+      - entity.type.name() == 'PLAYER'
+      - item.itemStack.type.name() == 'DRAGON_EGG'
+    Embed:
+      Enabled: true
+      Color: "#8847ff"
+      Title:
+        Text: "Реликвия Края"
+      Description: "**${entity.name}** узрел редчайшее из чудес!"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/endermite_spawn_egg.png"
+      Footer:
+        Text: "✦ Драконье яйцо"
+      Timestamp: true
+
+  # ── Приручение ────────────────────────────────────────────────────
+  - Trigger: org.bukkit.event.entity.EntityTameEvent
+    Channel: chronicle
+    Embed:
+      Enabled: true
+      Color: "#2f3136"
+      ThumbnailUrl: "https://raw.githubusercontent.com/InventivetalentDev/minecraft-assets/1.21.11/assets/minecraft/textures/item/bone.png"
+      Author:
+        Name: "${entity.owner.name} приручил ${entity.type.name() == 'WOLF' ? 'волка' : entity.type.name() == 'CAT' ? 'кошку' : entity.type.name() == 'HORSE' ? 'лошадь' : entity.type.name() == 'DONKEY' ? 'осла' : entity.type.name() == 'MULE' ? 'мула' : entity.type.name() == 'PARROT' ? 'попугая' : entity.type.name() == 'SKELETON_HORSE' ? 'скелетную лошадь' : entity.type.name().toLowerCase()}"
