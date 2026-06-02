@@ -83,7 +83,7 @@
 | settings.query-plugins                              | **false**                      | true               | Плагины не видны в query (защита от сканирования). |
 | spawn-limits.* (все 7)                              | уменьшены (см. файл)           | выше               | Сильное снижение лимитов спавна мобов → меньше лагов. |
 | chunk-gc.period-in-ticks                            | **300**                        | 600                | Частая очистка чанков. |
-| ticks-per.* (все 8)                                 | сильно увеличены (см. файл)    | 1                  | Монстры/вода/аксолотли спавнятся намного реже → оптимизация. |
+| ticks-per.* (все 8)                                 | сильно увеличены (см. файл)    | 1                  | Существа спавнятся намного реже → оптимизация. |
 
 ---
 
@@ -121,7 +121,7 @@
 | world-settings.default.thunder-chance                                      | 100000                                            | 100000             | Без изменений.                                                                            |
 | world-settings.default.merge-radius.item                                   | **3.5**                                           | 0.5                | Предметы сливаются на большем расстоянии → меньше сущностей, +TPS.                        |
 | world-settings.default.merge-radius.exp                                    | **4.0**                                           | -1                 | Опыт теперь сливается.                                                                    |
-| world-settings.default.mob-spawn-range                                     | **4**                                             | 8                  | Мобы спавнятся ближе к игроку → меньше нагрузки.                                          |
+| world-settings.default.mob-spawn-range                                     | **6**                                             | 8                  | Мобы спавнятся ближе к игроку (96 блоков) → меньше нагрузки.                              |
 | world-settings.default.item-despawn-rate                                   | 6000                                              | 6000               | Без изменений.                                                                            |
 | world-settings.default.arrow-despawn-rate                                  | **300**                                           | 1200               | Стрелы исчезают быстрее → меньше лагов от ферм.                                           |
 | world-settings.default.trident-despawn-rate                                | **600**                                           | 1200               | Трезубцы исчезают быстрее.                                                                |
@@ -132,16 +132,17 @@
 | world-settings.default.hanging-tick-frequency                              | **250**                                           | 100                | Висячие сущности (картины, таблички) тикают реже.                                         |
 | world-settings.default.unload-frozen-chunks                                | false                                             | false              | Без изменений.                                                                            |
 | world-settings.default.growth.* (все модификаторы)                         | 100                                               | 100                | Без изменений (рост по умолчанию).                                                        |
-| world-settings.default.entity-activation-range.* (все подгруппы)           | сильно уменьшены (animals 12, monsters 28 и т.д.) | выше               | Радиусы активации сильно снижены → огромная оптимизация.                                  |
+| world-settings.default.entity-activation-range.* (все подгруппы)           | частично уменьшены                                | выше               | Радиус активации сущностей. Значения misc стандартные (для спавнеров)
+                    |
 | world-settings.default.entity-activation-range.wake-up-inactive.*          | уменьшены (max-per-tick 2-4, for 60-120)          | выше               | Пробуждение неактивных сущностей ограничено.                                              |
 | world-settings.default.entity-activation-range.tick-inactive-villagers     | **false**                                         | true               | Неактивные жители не тикают.                                                              |
-| world-settings.default.entity-activation-range.ignore-spectators           | **true**                                          | false              | Зрители не влияют на активацию.                                                           |
+| world-settings.default.entity-activation-range.ignore-spectators           | **true**                                          | false              | Игроки в спектаторе не влияют на активацию.                                                           |
 | world-settings.default.entity-tracking-range.*                             | monsters 96, misc 48 и т.д.                       | выше               | Радиусы отслеживания уменьшены.                                                           |
 | world-settings.default.ticks-per.hopper-transfer / hopper-check            | 8                                                 | 1                  | Хопперы тикают реже → +TPS.                                                               |
 | world-settings.default.hopper-amount                                       | 1                                                 | 1                  | Без изменений.                                                                            |
 | world-settings.default.hopper-can-load-chunks                              | false                                             | false              | Хопперы не загружают чанки.                                                               |
 | world-settings.default.dragon-death-sound-radius                           | 0                                                 | 0                  | Без изменений.                                                                            |
-| world-settings.default.seed-* (все 18 сидов структур)                      | **кастомные** (например, seed-village: 72839104)  | ванильные          | Все сиды структур изменены → защита от сид-хаков и предсказуемой генерации.               |
+| world-settings.default.seed-* (все 18 сидов структур)                      | **кастомные** (например, seed-village: 85864150)  | ванильные          | Все сиды структур изменены → защита от сид-хаков и предсказуемой генерации.               |
 | world-settings.default.hunger.* (все параметры)                            | стандартные                                       | стандартные        | Без изменений.                                                                            |
 | world-settings.default.max-tnt-per-tick                                    | **25**                                            | 100                | Максимум TNT за тик уменьшен (защита от лаг-машин).                                       |
 | world-settings.default.max-tick-time.tile / entity                         | 50 / 25                                           | 50 / 25            | Без изменений.                                                                            |
@@ -234,7 +235,7 @@
 | misc.update-pathfinding-on-block-update                                                   | **false**             | true            | Огромный прирост TPS на редстоуне/фермах.                                                                                                  |
 | tick-rates.behavior.villager.validatenearbypoi                                            | **60**                | -1              | Жители проверяют POI реже.                                                                                                                 |
 | tick-rates.grass-spread                                                                   | **4**                 | 1               | Трава растёт медленнее.                                                                                                                    |
-| tick-rates.mob-spawner                                                                    | **4**                 | 1               | Спавнеры тикают реже.                                                                                                                      |
+| tick-rates.mob-spawner                                                                    | **1**                 | 1               | Сейчас дефолтные параметры. Раньше было: 4 - спавнеры тикали реже.                                                                                                                      |
 | unsupported-settings.fix-invulnerable-end-crystal-exploit                                 | true                  | true            | Без изменений.                                                                                                                             |
 
 ---
