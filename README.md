@@ -44,7 +44,7 @@
 
 ## Связанные репозитории
 
-- **[www-totemcraft](https://github.com/Dushelow/TotemCraft-Website)** - исходный код сайта [totemcraft.net](https://totemcraft.net)
+- **[TotemCraft-Website](https://github.com/Dushelow/TotemCraft-Website)** - исходный код сайта [totemcraft.net](https://totemcraft.net)
 
 ## Лицензия
 
