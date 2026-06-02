@@ -2392,7 +2392,7 @@ checks:
           decay: 0.1
       k:
         enabled: true
-        punishable: true
+        punishable: false
         setback: false
         discord-alert-interval: 1
         broadcast-punishment: false
@@ -4023,7 +4023,7 @@ checks:
         max-player-violations: 30
       d:
         enabled: true
-        punishable: true
+        punishable: false
         discord-alert-interval: 1
         broadcast-punishment: false
         max-violations: 1
@@ -4032,7 +4032,7 @@ checks:
         maximum-ping: 100000
         minimum-tps: 19.0
         punishment-commands:
-        - ban %player% AntiCheat
+        - kick %player% AntiCheat
         max-autoclicker-violations: 30
       e:
         enabled: true
