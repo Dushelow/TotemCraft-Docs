@@ -38,7 +38,7 @@
 | `minecraft/plugins-configs/`  | Конфиги установленных плагинов                 |
 | `scripts/`         | Bash-скрипты управления сервером               |
 | `nginx/`           | Конфигурации nginx и reverse proxy             |
-| `bot/`             | Полный код Telegram-бота                       |
+| `bot/`             | Код Telegram и Discord ботов                       |
 
 
 ## Лицензия
