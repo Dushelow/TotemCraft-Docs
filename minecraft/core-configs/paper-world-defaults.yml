@@ -145,28 +145,28 @@ entities:
     despawn-range-shape: ELLIPSOID
     despawn-ranges:
       ambient:
-        hard: 72
-        soft: 30
+        hard: 96
+        soft: 30 # Default: 32
       axolotls:
-        hard: 72
+        hard: 96
         soft: 30
       creature:
-        hard: 72
+        hard: 96
         soft: 30
       misc:
-        hard: 72
-        soft: 30
+        hard: 48
+        soft: 28
       monster:
-        hard: 72
-        soft: 30
+        hard: 96
+        soft: 32
       underground_water_creature:
         hard: 72
         soft: 30
       water_ambient:
-        hard: 72
+        hard: 96
         soft: 30
       water_creature:
-        hard: 72
+        hard: 96
         soft: 30
     despawn-time:
       llama_spit: disabled
@@ -310,7 +310,7 @@ tick-rates:
   container-update: 1
   dry-farmland: 1
   grass-spread: 4
-  mob-spawner: 4
+  mob-spawner: 1 # Default: 1 / Optimized: 4
   sensor:
     villager:
       secondarypoisensor: 80
