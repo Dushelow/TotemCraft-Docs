@@ -1,0 +1,117 @@
+#!/bin/bash
+# =============================================================================
+# toggle-authme.sh - TotemCraft (Template)
+# Включает/выключает регистрацию и вайтлист через AuthMe
+# Использование: ./toggle-authme.sh on|off
+#
+#   on  → регистрация открыта
+#   off → регистрация закрыта (только через Telegram-бот)
+# =============================================================================
+
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+CONFIG="/home/minecraft/server/plugins/AuthMe/config.yml"
+SCREEN_NAME="minecraft"
+LOG="/home/minecraft/server/toggle-authme.log"
+
+# === Discord Webhook (замените на свой) ===
+WEBHOOK_MAIN="https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN"
+WEBHOOK_SECOND=""
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG"
+}
+
+# =============================================================================
+
+if [ "$1" = "on" ]; then
+    REG_STATE="true"
+    KICK_STATE="false"
+    LABEL="ВЫКЛЮЧЕН"
+    EMOJI="🟢"
+    DESCRIPTION="Свободный вход на сервер **разрешен**. Новые игроки могут подключиться и зарегистрироваться."
+elif [ "$1" = "off" ]; then
+    REG_STATE="false"
+    KICK_STATE="true"
+    LABEL="АКТИВИРОВАН"
+    EMOJI="🔴"
+    DESCRIPTION="Свободный вход на сервер **закрыт**. Регистрация только через Telegram-бот."
+else
+    echo "Использование: $0 on|off"
+    exit 1
+fi
+
+log "=== Переключаем регистрацию → Вайтлист $LABEL ==="
+
+# --- 1. Проверка конфига ---
+if [ ! -f "$CONFIG" ]; then
+    log "ОШИБКА: config.yml не найден по пути $CONFIG"
+    exit 1
+fi
+
+# --- 2. Бэкап ---
+cp "$CONFIG" "${CONFIG}.bak"
+log "✅ Создан бэкап: ${CONFIG}.bak"
+
+# --- 3. Обновление конфига через Python ---
+python3 - "$CONFIG" "$REG_STATE" "$KICK_STATE" <<'PYEOF'
+import sys, re
+
+config_path = sys.argv[1]
+reg_want    = sys.argv[2]
+kick_want   = sys.argv[3]
+
+with open(config_path, 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# Поиск нужных строк
+reg_line_idx = None
+kick_line_idx = None
+
+for i, line in enumerate(lines):
+    if re.match(r'^\s*registration:', line):
+        for j in range(i, min(i+30, len(lines))):
+            if re.match(r'^\s*enabled\s*:', lines[j]):
+                reg_line_idx = j
+                break
+    if re.match(r'^\s*kickNonRegistered:', line):
+        kick_line_idx = i
+
+if reg_line_idx is None or kick_line_idx is None:
+    print("ERROR: Не удалось найти нужные параметры", file=sys.stderr)
+    sys.exit(2)
+
+# Обновляем значения
+changed = False
+
+if re.search(r'enabled\s*:\s*(true|false)', lines[reg_line_idx]).group(1) != reg_want:
+    lines[reg_line_idx] = re.sub(r'(enabled\s*:\s*)(?:true|false)', r'\1' + reg_want, lines[reg_line_idx])
+    changed = True
+
+if re.search(r'kickNonRegistered\s*:\s*(true|false)', lines[kick_line_idx]).group(1) != kick_want:
+    lines[kick_line_idx] = re.sub(r'(kickNonRegistered\s*:\s*)(?:true|false)', r'\1' + kick_want, lines[kick_line_idx])
+    changed = True
+
+if changed:
+    with open(config_path, 'w', encoding='utf-8') as f:
+        f.writelines(lines)
+    print("OK")
+else:
+    print("ALREADY_OK")
+PYEOF
+
+# --- 4. Проверка изменений ---
+log "✅ config.yml обновлён (вайтлист $LABEL)"
+
+# --- 5. Перезагрузка AuthMe ---
+if screen -list | grep -q "$SCREEN_NAME"; then
+    screen -S "$SCREEN_NAME" -p 0 -X stuff "authme reload\r"
+    log "✅ Команда 'authme reload' отправлена в screen"
+else
+    log "ПРЕДУПРЕЖДЕНИЕ: screen-сессия '$SCREEN_NAME' не найдена"
+fi
+
+# --- 6. Discord уведомление (опционально) ---
+# ... (можно оставить закомментированным или с плейсхолдером)
+
+log "=== Готово. Вайтлист: $LABEL ==="
