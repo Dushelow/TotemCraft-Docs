@@ -2,7 +2,7 @@ import hashlib
 import json
 import os
 
-RU_RU_PATH = "/home/minecraft/server/plugins/DiscordSRV/assets/ru_ru.json"
+RU_RU_PATH = "/minecraft/server/plugins/DiscordSRV/assets/ru_ru.json"
 
 def translate_biome(biome_raw: str) -> str:
     try:
