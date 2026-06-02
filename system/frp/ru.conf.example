@@ -1,0 +1,78 @@
+server {
+    listen 80 default_server;
+    listen 443 ssl default_server http2;
+    server_name _;
+
+    ssl_certificate /etc/letsencrypt/live/ru.website.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ru.website.net/privkey.pem;
+    return 444;
+}
+
+# HTTP → HTTPS редирект
+server {
+    listen 80;
+    server_name ru.website.net ru.wiki.website.net;
+    return 301 https://$host$request_uri;
+}
+
+# ru.website.net - основной сайт
+server {
+    listen 443 ssl http2;
+    server_name ru.website.net;
+
+    ssl_certificate /etc/letsencrypt/live/ru.website.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ru.website.net/privkey.pem;
+
+    location / {
+        # Проксирование на Shared VPS, где расположен сайт
+        proxy_pass https://YOUR_WEBSITE_IP;
+
+        proxy_set_header Host website.net;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+
+        proxy_ssl_server_name on;
+        proxy_ssl_name website.net;
+        proxy_ssl_verify off;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 90s;
+    }
+}
+
+# ru.wiki.website.net - вики
+server {
+    listen 443 ssl http2;
+    server_name ru.wiki.website.net;
+
+    ssl_certificate /etc/letsencrypt/live/ru.website.net/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/ru.website.net/privkey.pem;
+
+    location / {
+        # Проксирование на Shared VPS, где расположена вики
+        proxy_pass https://YOUR_WEBSITE_IP;
+
+        proxy_set_header Host wiki.website.net;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_ssl_server_name on;
+        proxy_ssl_name website.net;
+        proxy_ssl_verify off;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+    }
+}
