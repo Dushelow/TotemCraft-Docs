@@ -28,6 +28,7 @@
 
 - **[Деплой сервера с нуля](/docs/deployment/Deployment%20on%20Hetzner%20VPS.md)**
 - **[Общая документация проекта](/docs/General%20Documentation.md)**
+- **[Многоуровневая оптимизация](/docs/optimized%20server%20configuration/)**
 
 ## Структура репозитория
 
