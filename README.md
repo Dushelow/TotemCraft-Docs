@@ -34,8 +34,8 @@
 | Папка              | Содержимое                                      |
 |--------------------|-------------------------------------------------|
 | `docs/`            | Полная техническая документация                |
-| `server/configs/`  | Конфиги ядра Minecraft (paper, purpur и т.д.) |
-| `server/plugins/`  | Конфиги установленных плагинов                 |
+| `minecraft/core-configs/`  | Конфиги ядра Minecraft (paper, purpur и т.д.) |
+| `minecraft/plugins-configs/`  | Конфиги установленных плагинов                 |
 | `scripts/`         | Bash-скрипты управления сервером               |
 | `nginx/`           | Конфигурации nginx и reverse proxy             |
 | `bot/`             | Полный код Telegram-бота                       |
