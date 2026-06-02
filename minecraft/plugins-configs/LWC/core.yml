@@ -1,0 +1,348 @@
+core:
+    locale: ru
+    flushInterval: 10
+    cacheSize: 10000
+    precache: -1
+    showNotices: true
+    showMyNotices: false
+    opIsLWCAdmin: true
+    disableHistory: true
+    factionCheck: false
+    groupPrefix: group.
+    updateNotifier: false
+optional:
+    onlyProtectWhenOwnerIsOnline: false
+    onlyProtectWhenOwnerIsOffline: false
+    exemptBlocks: []
+    optOut: false
+    blacklistedBlocks:
+    - '166'
+    - hopper
+    blacklistedPlayers:
+    - player
+    useProtectionLimits: true
+    useActionBar: false
+    alternativeHopperProtection: false
+    useFormattedInfo: true
+database:
+    adapter: sqlite
+    path: plugins/LWC/lwc.db
+    host: localhost
+    database: lwc
+    username: ''
+    password: ''
+    prefix: lwc_
+    ping_interval: 300
+    useSSL: false
+    allowPublicKeyRetrieval: false
+protections:
+    denyRedstone: false
+    denyHoppers: true
+    autoRegister: false
+    ignoreBlockDestruction: false
+    ignoreLeftClick: false
+    ignoreRightClick: false
+    ignoreExplosions: false
+    allowEntityBreakDoor: false
+    allowEntityInteract: false
+    quiet: false
+    readonly-modify: false
+    readonly-remove: false
+    blocks:
+        chest:
+            enabled: true
+            autoRegister: donation
+        trapped_chest:
+            enabled: true
+            autoRegister: donation
+        furnace:
+            enabled: true
+        blast_furnace:
+            enabled: true
+        smoker:
+            enabled: true
+        dispenser:
+            enabled: true
+        dropper:
+            enabled: true
+        barrel:
+            enabled: true
+            autoRegister: donation
+        beacon:
+            enabled: true
+        waxed_copper_chest:
+            enabled: true
+            autoRegister: donation
+        waxed_exposed_copper_chest:
+            enabled: true
+            autoRegister: donation
+        waxed_weathered_copper_chest:
+            enabled: true
+            autoRegister: donation
+        waxed_oxidized_copper_chest:
+            enabled: true
+            autoRegister: donation
+        composter:
+            enabled: false
+            autoRegister: private
+        lectern:
+            enabled: false
+            autoRegister: private
+        shulker_box:
+            enabled: false
+            autoRegister: private
+        white_shulker_box:
+            enabled: false
+            autoRegister: private
+        orange_shulker_box:
+            enabled: false
+            autoRegister: private
+        magenta_shulker_box:
+            enabled: false
+            autoRegister: private
+        light_blue_shulker_box:
+            enabled: false
+            autoRegister: private
+        yellow_shulker_box:
+            enabled: false
+            autoRegister: private
+        lime_shulker_box:
+            enabled: false
+            autoRegister: private
+        pink_shulker_box:
+            enabled: false
+            autoRegister: private
+        gray_shulker_box:
+            enabled: false
+            autoRegister: private
+        light_gray_shulker_box:
+            enabled: false
+            autoRegister: private
+        cyan_shulker_box:
+            enabled: false
+            autoRegister: private
+        purple_shulker_box:
+            enabled: false
+            autoRegister: private
+        blue_shulker_box:
+            enabled: false
+            autoRegister: private
+        brown_shulker_box:
+            enabled: false
+            autoRegister: private
+        green_shulker_box:
+            enabled: false
+            autoRegister: private
+        red_shulker_box:
+            enabled: false
+            autoRegister: private
+        black_shulker_box:
+            enabled: false
+            autoRegister: private
+        sign:
+            enabled: false
+        oak_hanging_sign:
+            enabled: false
+        spruce_hanging_sign:
+            enabled: false
+        birch_hanging_sign:
+            enabled: false
+        jungle_hanging_sign:
+            enabled: false
+        acacia_hanging_sign:
+            enabled: false
+        dark_oak_hanging_sign:
+            enabled: false
+        mangrove_hanging_sign:
+            enabled: false
+        crimson_hanging_sign:
+            enabled: false
+        warped_hanging_sign:
+            enabled: false
+        bamboo_hanging_sign:
+            enabled: false
+        cherry_hanging_sign:
+            enabled: false
+        pale_oak_hanging_sign:
+            enabled: false
+        iron_door:
+            enabled: false
+        oak_door:
+            enabled: false
+        spruce_door:
+            enabled: false
+        birch_door:
+            enabled: false
+        jungle_door:
+            enabled: false
+        acacia_door:
+            enabled: false
+        dark_oak_door:
+            enabled: false
+        mangrove_door:
+            enabled: false
+        crimson_door:
+            enabled: false
+        warped_door:
+            enabled: false
+        bamboo_door:
+            enabled: false
+        cherry_door:
+            enabled: false
+        pale_oak_door:
+            enabled: false
+        copper_door:
+            enabled: false
+        exposed_copper_door:
+            enabled: false
+        oxidized_copper_door:
+            enabled: false
+        weathered_copper_door:
+            enabled: false
+        waxed_copper_door:
+            enabled: false
+        waxed_exposed_copper_door:
+            enabled: false
+        waxed_oxidized_copper_door:
+            enabled: false
+        waxed_weathered_copper_door:
+            enabled: false
+        iron_trapdoor:
+            enabled: false
+        oak_trapdoor:
+            enabled: false
+        spruce_trapdoor:
+            enabled: false
+        birch_trapdoor:
+            enabled: false
+        jungle_trapdoor:
+            enabled: false
+        acacia_trapdoor:
+            enabled: false
+        dark_oak_trapdoor:
+            enabled: false
+        mangrove_trapdoor:
+            enabled: false
+        crimson_trapdoor:
+            enabled: false
+        warped_trapdoor:
+            enabled: false
+        bamboo_trapdoor:
+            enabled: false
+        cherry_trapdoor:
+            enabled: false
+        pale_oak_trapdoor:
+            enabled: false
+        copper_trapdoor:
+            enabled: false
+        exposed_copper_trapdoor:
+            enabled: false
+        oxidized_copper_trapdoor:
+            enabled: false
+        weathered_copper_trapdoor:
+            enabled: false
+        waxed_copper_trapdoor:
+            enabled: false
+        waxed_exposed_copper_trapdoor:
+            enabled: false
+        waxed_oxidized_copper_trapdoor:
+            enabled: false
+        waxed_weathered_copper_trapdoor:
+            enabled: false
+        oak_fence_gate:
+            enabled: false
+        spruce_fence_gate:
+            enabled: false
+        birch_fence_gate:
+            enabled: false
+        jungle_fence_gate:
+            enabled: false
+        acacia_fence_gate:
+            enabled: false
+        dark_oak_fence_gate:
+            enabled: false
+        mangrove_fence_gate:
+            enabled: false
+        crimson_fence_gate:
+            enabled: false
+        warped_fence_gate:
+            enabled: false
+        bamboo_fence_gate:
+            enabled: false
+        cherry_fence_gate:
+            enabled: false
+        pale_oak_fence_gate:
+            enabled: false
+        white_banner:
+            enabled: false
+        orange_banner:
+            enabled: false
+        magenta_banner:
+            enabled: false
+        light_blue_banner:
+            enabled: false
+        yellow_banner:
+            enabled: false
+        lime_banner:
+            enabled: false
+        pink_banner:
+            enabled: false
+        gray_banner:
+            enabled: false
+        light_gray_banner:
+            enabled: false
+        cyan_banner:
+            enabled: false
+        purple_banner:
+            enabled: false
+        blue_banner:
+            enabled: false
+        brown_banner:
+            enabled: false
+        green_banner:
+            enabled: false
+        red_banner:
+            enabled: false
+        black_banner:
+            enabled: false
+        white_wall_banner:
+            enabled: false
+        orange_wall_banner:
+            enabled: false
+        magenta_wall_banner:
+            enabled: false
+        light_blue_wall_banner:
+            enabled: false
+        yellow_wall_banner:
+            enabled: false
+        lime_wall_banner:
+            enabled: false
+        pink_wall_banner:
+            enabled: false
+        gray_wall_banner:
+            enabled: false
+        light_gray_wall_banner:
+            enabled: false
+        cyan_wall_banner:
+            enabled: false
+        purple_wall_banner:
+            enabled: false
+        blue_wall_banner:
+            enabled: false
+        brown_wall_banner:
+            enabled: false
+        green_wall_banner:
+            enabled: false
+        red_wall_banner:
+            enabled: false
+        black_wall_banner:
+            enabled: false
+        copper_chest:
+            enabled: true
+            autoRegister: donation
+modes:
+    droptransfer:
+        enabled: true
+        crossWorld: false
+    persist:
+        enabled: true
