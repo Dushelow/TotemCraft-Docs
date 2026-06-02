@@ -77,12 +77,12 @@ ___
 | `auto-clear.interval-seconds` | `600` | `300` | Чистка каждые 10 минут вместо 5 |
 | `auto-clear.clear-items` | `false` | `true` | Не удалять дропы (предметы) |
 | `auto-clear.clear-entities` | `true` | `false` | Удалять почти всех мобов |
-| `auto-clear.excluded-entities` | **Большой список** (22 сущности) | Короткий список (5) | Защищает важных мобов (овцы, коровы, жители, големы и т.д.) |
+| `auto-clear.excluded-entities` | **Большой список** (24 сущности) | Короткий список (5) | Защищает важных мобов (овцы, коровы, жители, големы и т.д.) |
 | `death-item-protection.enabled` | `false` | `true` | Не защищать предметы после смерти игрока |
 | `optimizations.redstone.enabled` | `false` | `true` | Отключает оптимизацию редстоуна |
 | `optimizations.tnt-no-drops` | `false` | `true` | При TNT взрывах будут дропаться блоки |
-| `optimizations.mob-spawn-limiter.hostile-limit-per-4-chunks` | `40` | `30` | Больше враждебных мобов разрешено |
-| `optimizations.mob-spawn-limiter.passive-limit-per-4-chunks` | `40` | `20` | Больше пассивных мобов разрешено |
+| `optimizations.mob-spawn-limiter.hostile-limit-per-4-chunks` | `60` | `30` | Больше враждебных мобов разрешено |
+| `optimizations.mob-spawn-limiter.passive-limit-per-4-chunks` | `60` | `20` | Больше пассивных мобов разрешено |
 | `optimizations.hopper-optimization.enabled` | `false` | `true` | Отключает оптимизацию хопперов |
 | `optimizations.farm-limiter.enabled` | `false` | `true` | Фермы растут без ограничений |
 | `optimizations.ai-optimization.excluded-entities` | **Очень большой список** | Короткий (4) | Не деспаунить важных мобов далеко от игроков (все фермерские, питомцы, ездовые и т.д.) |
