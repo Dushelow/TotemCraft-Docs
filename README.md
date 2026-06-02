@@ -36,9 +36,10 @@
 | `docs/`            | Полная техническая документация                |
 | `minecraft/core-configs/`  | Конфиги ядра Minecraft (paper, purpur и т.д.) |
 | `minecraft/plugins-configs/`  | Конфиги установленных плагинов                 |
-| `scripts/`         | Bash-скрипты управления сервером               |
-| `nginx/`           | Конфигурации nginx и reverse proxy             |
-| `bot/`             | Код Telegram и Discord ботов                       |
+| `minecraft/custom-plugins/`  | Кастомные плагины сервера                 |
+| `system/scripts/`         | Bash-скрипты управления сервером               |
+| `system/network/`           | Конфигурации nginx и reverse proxy             |
+| `bots/`             | Код Telegram и Discord ботов                       |
 
 
 ## Лицензия
