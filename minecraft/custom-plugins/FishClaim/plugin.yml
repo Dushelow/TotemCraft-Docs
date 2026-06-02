@@ -1,0 +1,102 @@
+name: FishClaim
+version: 1.2.0
+main: net.totemcraft.fishclaim.FishClaimPlugin
+api-version: '1.21'
+description: Fish NFT system for TotemCraft
+authors: [TotemCraft]
+
+commands:
+  claim:
+    description: Заклеймить мифическую рыбу
+    usage: /claim <ID>
+    permission: fishclaim.use
+  fclaim:
+    description: Alias для /claim
+    usage: /fclaim <ID>
+    permission: fishclaim.use
+
+  fishtop:
+    description: Топ рыбаков
+    usage: /fishtop
+    permission: fishclaim.use
+  ftop:
+    description: Alias для /fishtop
+    usage: /ftop
+    permission: fishclaim.use
+
+  fishcheck:
+    description: Карточка рыбы
+    usage: /fishcheck [ID]
+    permission: fishclaim.use
+  fcheck:
+    description: Alias для /fishcheck
+    usage: /fcheck [ID]
+    permission: fishclaim.use
+  fc:
+    description: Alias для /fishcheck
+    usage: /fc [ID]
+    permission: fishclaim.use
+
+  fishtransfer:
+    description: Передать рыбу другому игроку
+    usage: /fishtransfer <ник> [ID]
+    permission: fishclaim.use
+  ftransfer:
+    description: Alias для /fishtransfer
+    usage: /ftransfer <ник> [ID]
+    permission: fishclaim.use
+  ft:
+    description: Alias для /fishtransfer
+    usage: /ft <ник> [ID]
+    permission: fishclaim.use
+
+  ftconfirm:
+    description: Внутренняя команда подтверждения передачи
+    usage: /ftconfirm <ID> <ник>
+    permission: fishclaim.use
+  ftcancel:
+    description: Отмена передачи
+    usage: /ftcancel
+    permission: fishclaim.use
+
+  ftaccept:
+    description: Принять входящее предложение о передаче
+    usage: /ftaccept [ID]
+    permission: fishclaim.use
+  ftdecline:
+    description: Отклонить входящее предложение о передаче
+    usage: /ftdecline [ID]
+    permission: fishclaim.use
+
+  fconvert:
+    description: Конвертировать трофей в ведро и обратно
+    usage: /fconvert
+    permission: fishclaim.use
+
+  fwhere:
+    description: Где находится рыба
+    usage: /fwhere <ID>
+    permission: fishclaim.use
+
+  fishstats:
+    description: Статистика рыбака
+    usage: /fishstats [ник]
+    permission: fishclaim.use
+  fstats:
+    description: Alias для /fishstats
+    usage: /fstats [ник]
+    permission: fishclaim.use
+
+  fishelp:
+    description: Справка по системе Fish NFT
+    usage: /fishelp
+    permission: fishclaim.use
+  fhelp:
+    description: Alias для /fishelp
+    usage: /fhelp
+    permission: fishclaim.use
+
+permissions:
+  fishclaim.use:
+    description: Использование команд рыбалки
+    default: true
