@@ -171,8 +171,8 @@ optimizations:
   # Limits the number of hostile and passive mobs per 4 chunks.
   mob-spawn-limiter:
     enabled: true
-    hostile-limit-per-4-chunks: 40
-    passive-limit-per-4-chunks: 40
+    hostile-limit-per-4-chunks: 60
+    passive-limit-per-4-chunks: 60
     # --- Per-World Overrides ---
     # Override the global limits for specific worlds.
     # Use -1 to inherit the global default. World names are case-sensitive.
@@ -213,6 +213,7 @@ optimizations:
       - GOAT
       - RABBIT
       # === Ездовые и транспортные животные ===
+      - HAPPY_GHAST
       - HORSE
       - DONKEY
       - MULE
@@ -226,6 +227,7 @@ optimizations:
       - PARROT
       - FOX
       # === Нейтральные и редкие пассивные ===
+      - ARMADILLO
       - PANDA
       - POLAR_BEAR
       - ALLAY
