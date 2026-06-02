@@ -2,7 +2,7 @@ import aiosqlite
 import json
 from datetime import datetime, timedelta
 
-DB_PATH = "/home/fishbot/fish.db"
+DB_PATH = "/fishbot/fish.db"
 
 # Обычные уловы всегда дают очки в статистику.
 # Легендарные/мифические: 0 очков в catches — их очки идут через fish-таблицу (с привязкой к владельцу).
