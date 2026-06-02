@@ -1,0 +1,42 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name website.net www.website.net ru.website.net ru.wiki.website.net;
+
+    # HTTP → HTTPS редирект
+    # return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+
+    server_name website.net www.website.net ru.website.net ru.wiki.website.net;
+
+    root /var/www/website;
+    index index.php index.html index.htm;
+
+    # Пути к сертификатам - заменить на свои
+    ssl_certificate /etc/nginx/ssl/website.pem;
+    ssl_certificate_key /etc/nginx/ssl/website.key;
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+
+    location / {
+        try_files $uri $uri/ $uri.php$is_args$args;
+    }
+
+    # PHP обработка (для сайта на PHP)
+    location ~ \.php$ {
+        include snippets/fastcgi-php.conf;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+        include fastcgi_params;
+    }
+
+    # Защита от просмотра .ht* файлов
+    location ~ /\.ht {
+        deny all;
+    }
+}
