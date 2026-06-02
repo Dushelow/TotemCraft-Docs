@@ -1,0 +1,25 @@
+[common]
+serverAddr = "YOUR_RU_PROXY_IP"      # IP российского прокси-сервера
+serverPort = 1234
+token = "YOUR_FRP_TOKEN_HERE"        # Токен авторизации
+
+[[proxies]]
+name = "minecraft-java"
+type = "tcp"
+localIP = "127.0.0.1"
+localPort = 25565
+remotePort = 25565
+
+[[proxies]]
+name = "geyser-bedrock"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = 19132
+remotePort = 19132
+
+[[proxies]]
+name = "plasmovoice"
+type = "udp"
+localIP = "127.0.0.1"
+localPort = 25565
+remotePort = 25565
