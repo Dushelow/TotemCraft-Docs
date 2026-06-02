@@ -16,8 +16,8 @@ from card import build_card, FISH_NAMES, find_trait_by_id
 
 app = Flask(__name__)
 
-ACCOUNTS_PATH = Path("/home/minecraft/server/plugins/DiscordSRV/accounts.aof")
-USERCACHE_PATH = Path("/home/minecraft/server/usercache.json")
+ACCOUNTS_PATH = Path("/minecraft/server/plugins/DiscordSRV/accounts.aof")
+USERCACHE_PATH = Path("/minecraft/server/usercache.json")
 
 
 def run_async(coro):
