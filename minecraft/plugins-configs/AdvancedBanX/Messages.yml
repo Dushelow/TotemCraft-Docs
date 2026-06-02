@@ -1,0 +1,304 @@
+# AdvancedBan v3 - Coded by Leoko, Update & Maintained by 2vY (hlpdev)
+# MiniMessage Formatting[](https://docs.advntr.dev/minimessage/format.html) are available in all strings
+# Legacy (&/§) formatting is not supported and will cause errors
+
+General:
+  Prefix: "<bold><red>AdvancedBanX</red> <dark_gray>»</dark_gray></bold>"
+  NoPerms: "<red>У тебя нет прав на эту команду!</red>"
+  LayoutNotFound: "<red>Не найден шаблон сообщения с именем %NAME%</red>"
+  # This will be the replacement for the %DURATION% variable
+  TimeLayoutD: "%D% дн. %H% ч. %M% мин. и %S% сек."
+  TimeLayoutH: "%H% ч. %M% мин. и %S% сек."
+  TimeLayoutM: "%M% мин. и %S% сек."
+  TimeLayoutS: "%S% сек."
+  FailedFetch: "<red>Не удалось получить UUID игрока %NAME%! Подробности в консоли.</red>"
+
+Ban:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/ban (-s) [Ник] [Причина/@Шаблон]</italic></gray>"
+  Done: "<italic><red>%NAME%</red></italic> <gray>успешно забанен!</gray>"
+  AlreadyDone: "<italic><red>%NAME%</red></italic> <gray>уже забанен!</gray>"
+  Exempt: "<gray>Ты не можешь забанить <red><italic>%NAME%</italic></red></gray>"
+  Layout:
+    - 'TotemCraft <gray>Забанен навсегда</gray>'
+    - ''
+    - ''
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - ''
+    - '<dark_gray>Разбан можно запросить в Discord или Telegram сервера</dark_gray>'
+    - "<yellow>Ссылки на нашем сайте: <dark_gray>»</dark_gray></yellow> <red><underlined>totemcraft.net</underlined></red>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>был забанен игроком</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+  UndoNotification: "<yellow><italic>%OPERATOR%</italic></yellow> <gray>разбанил</gray> <red><italic>%NAME%</italic></red>"
+
+Ipban:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/banip (-s) [Ник/IP] [Причина/@Шаблон]</italic></gray>"
+  Layout:
+    - 'TotemCraft <gray>Забанен навсегда</gray>'
+    - ''
+    - ''
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - ''
+    - '<dark_gray>Разбан можно запросить в Discord или Telegram сервера</dark_gray>'
+    - "<yellow>Ссылки на нашем сайте: <dark_gray>»</dark_gray></yellow> <red><underlined>totemcraft.net</underlined></red>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил бан по IP от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+  IpNotCashed: "<red>У игрока <italic>%NAME%</italic> нет сохранённого IP!</red>"
+
+Tempban:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/tempban (-s) [Ник] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Причина/@Шаблон]</italic></gray>"
+  MaxDuration: "<red>Ты не можешь банить дольше, чем %MAX% секунд</red>"
+  Layout:
+    - 'TotemCraft <gray>Временный бан</gray>'
+    - ''
+    - ''
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - "<red>Длительность <dark_gray>»</dark_gray></red> <gray>%DURATION%</gray>"
+    - ''
+    - '<dark_gray>Разбан можно запросить в Discord или Telegram сервера</dark_gray>'
+    - "<yellow>Ссылки на нашем сайте: <dark_gray>»</dark_gray></yellow> <red><underlined>totemcraft.net</underlined></red>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил временный бан от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+    - "<gray><italic>Бан длится: <yellow>%DURATION%</yellow></italic></gray>"
+
+Tempipban:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/tempipban (-s) [Ник/IP] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Причина/@Шаблон]</italic></gray>"
+  MaxDuration: "<red>Ты не можешь банить по IP дольше, чем %MAX% секунд</red>"
+  Layout:
+    - 'TotemCraft <gray>Временный бан</gray>'
+    - ''
+    - ''
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - "<red>Длительность <dark_gray>»</dark_gray></red> <gray>%DURATION%</gray>"
+    - ''
+    - '<dark_gray>Разбан можно запросить в Discord или Telegram сервера</dark_gray>'
+    - "<yellow>Ссылки на нашем сайте: <dark_gray>»</dark_gray></yellow> <red><underlined>totemcraft.net</underlined></red>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил временный бан по IP от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+    - "<gray><italic>Бан длится: <yellow>%DURATION%</yellow></italic></gray>"
+
+Mute:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/mute (-s) [Ник] [Причина/@Шаблон]</italic></gray>"
+  Done: "<red><italic>%NAME%</italic></red> <gray>успешно замьючен!</gray>"
+  AlreadyDone: "<red><italic>%NAME%</italic></red> <gray>уже замьючен!</gray>"
+  Exempt: "<gray>Ты не можешь замьютить <red><italic>%NAME%</italic></red></gray>"
+  Layout:
+    - 'TotemCraft <gray>Ты замьючен навсегда</gray>'
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил мьют от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+  UndoNotification: "<yellow><italic>%OPERATOR%</italic></yellow> <gray>снял мьют с</gray> <red><bold>%NAME%</bold></red>"
+
+Tempmute:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/tempmute (-s) [Ник] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Причина/@Шаблон]</italic></gray>"
+  MaxDuration: "<red>Ты не можешь мьютить дольше, чем %MAX% секунд</red>"
+  Layout:
+    - 'TotemCraft <gray>Ты замьючен на %DURATION%</gray>'
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил временный мьют от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+    - "<italic><gray>Мьют длится: <yellow>%DURATION%</yellow></gray></italic>"
+
+Warn:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/warn (-s) [Ник] [Причина/@Шаблон]</italic></gray>"
+  Done: "<red><italic>%NAME%</italic></red> <gray>успешно получил предупреждение!</gray>"
+  Exempt: "<gray>Ты не можешь выдать предупреждение <red><italic>%NAME%</italic></red></gray>"
+  Layout:
+    - 'TotemCraft <red>Тебе выдано предупреждение</red>'
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - '<gray>У тебя теперь <red><italic>%COUNT%</italic></red> предупреждение(я/й)!</gray>'
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил предупреждение от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+
+Note:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/note (-s) [Ник] [Заметка]</italic></gray>"
+  Done: "<red><italic>%NAME%</italic></red> <gray>успешно добавлена заметка!</gray>"
+  Exempt: "<gray>Ты не можешь добавить заметку <red><italic>%NAME%</italic></red></gray>"
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил заметку от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Заметка: <italic>%REASON%</italic></gray>"
+
+Tempwarn:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/tempwarn (-s) [Ник] [Xmo/Xd/Xh/Xm/Xs/#TimeLayout] [Причина/@Шаблон]</italic></gray>"
+  MaxDuration: "<red>Ты не можешь выдавать временное предупреждение дольше %MAX% секунд</red>"
+  Layout:
+    - 'TotemCraft <red>Тебе выдано временное предупреждение</red>'
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - "<red>Истекает через <dark_gray>»</dark_gray></red> <yellow>%DURATION%</yellow>"
+    - '<gray>У тебя теперь <red><italic>%COUNT%</italic></red> предупреждение(я/й)!</gray>'
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>получил временное предупреждение от</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+    - "<gray>Предупреждение истечёт через <italic>%DURATION%</italic></gray>"
+
+Kick:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/kick (-s) [Ник] [Причина/@Шаблон]</italic></gray>"
+  Done: "<red><italic>%NAME%</italic></red> <gray>успешно кикнут!</gray>"
+  NotOnline: "<red><italic>%NAME%</italic></red> <gray>не в сети!</gray>"
+  Exempt: "<gray>Ты не можешь кикнуть <red><italic>%NAME%</italic></red></gray>"
+  Layout:
+    - 'TotemCraft <gray>Тебя кикнули с сервера</gray>'
+    - ''
+    - "<red>Причина <dark_gray>»</dark_gray></red> <gray>%REASON%</gray>"
+    - ''
+  Notification:
+    - "<red><italic>%NAME%</italic></red> <gray>был кикнут игроком</gray> <yellow><italic>%OPERATOR%</italic></yellow>"
+    - "<gray>Причина: <italic>%REASON%</italic></gray>"
+
+UnBan:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/unban [Ник/IP]</italic></gray>"
+  NotPunished: "<red><italic>%NAME%</italic> не забанен!</red>"
+  Done: "<green><italic>%NAME%</italic></green> <gray>успешно разбанен!</gray>"
+  Notification: "<yellow><italic>%OPERATOR%</italic></yellow> <gray>разбанил</gray> <red><italic>%NAME%</italic></red>"
+
+UnMute:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/unmute [Ник]</italic></gray>"
+  NotPunished: "<red><italic>%NAME%</italic> не замьючен!</red>"
+  Done: "<green><italic>%NAME%</italic></green> <gray>успешно размьючен!</gray>"
+  Notification: "<yellow><italic>%OPERATOR%</italic></yellow> <gray>снял мьют с</gray> <red><italic>%NAME%</italic></red>"
+
+UnWarn:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/unwarn [ID] или /unwarn clear [Ник]</italic></gray>"
+  NotFound: "<red>Предупреждение #%ID% не найдено</red>"
+  Done: "<gray>Предупреждение <green><italic>#%ID%</italic></green> успешно удалено!</gray>"
+  Notification: "<yellow><italic>%OPERATOR%</italic></yellow> <gray>удалил предупреждение у</gray> <red><italic>%NAME%</italic></red>"
+  Clear:
+    Empty: "<red><italic>%NAME%</italic></red> <gray>не имеет предупреждений!</gray>"
+    Done: "<gray>Очищено <green><italic>%COUNT%</italic></green> предупреждений</gray>"
+
+UnNote:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/unnote [ID] или /unnote clear [Ник]</italic></gray>"
+  NotFound: "<red>Заметка #%ID% не найдена</red>"
+  Done: "<gray>Заметка <green><italic>#%ID%</italic></green> успешно удалена!</gray>"
+  Notification: "<yellow><italic>%OPERATOR%</italic></yellow> <gray>удалил заметку у</gray> <red><italic>%NAME%</italic></red>"
+  Clear:
+    Empty: "<red><italic>%NAME%</italic></red> <gray>не имеет заметок!</gray>"
+    Done: "<gray>Очищено <green><italic>%COUNT%</italic></green> заметок</gray>"
+
+UnPunish:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/unpunish [ID]</italic></gray>"
+  NotFound: "<red>Наказание #%ID% не найдено</red>"
+  Done: "<gray>Наказание <green><italic>#%ID%</italic></green> успешно удалено!</gray>"
+
+Banlist:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/banlist (Страница)</italic></gray>"
+  OutOfIndex: "<red>Страницы %PAGE% не существует!</red>"
+  NoEntries: "<red><italic>Список банов пуст</italic></red>"
+  Header:
+    - "TotemCraft <gray>Список банов:</gray>"
+    - "<red><italic>Игрок/IP</italic></red> <dark_gray>|</dark_gray> <yellow><italic>Длительность</italic></yellow> <dark_gray>|</dark_gray> <gray><italic>Кем</italic></gray>"
+    - "<red><italic>Тип</italic></red> <dark_gray>></dark_gray> <gray><italic>Причина</italic></gray>"
+    - ""
+  Entry:
+    - "<dark_gray>[<yellow>%DATE%</yellow>]</dark_gray>"
+    - "<red>%NAME%</red> <dark_gray>|</dark_gray> <yellow>%DURATION%</yellow> <dark_gray>|</dark_gray> <gray>%OPERATOR%</gray>"
+    - "<red>%TYPE%</red> <dark_gray>|</dark_gray> <gray><italic>%REASON%</italic></gray>"
+    - ""
+  Footer: "<gray>Страница <yellow><italic>%CURRENT_PAGE%</italic></yellow> из <yellow><italic>%TOTAL_PAGES%</italic></yellow> <dark_gray>|</dark_gray> Банов: <yellow><italic>%COUNT%</italic></yellow></gray>"
+  PageFooter: "<gray>Используй <yellow><italic>/banlist %NEXT_PAGE%</italic></yellow> для следующей страницы</gray>"
+
+History:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/history [Ник/IP] (Страница)</italic></gray>"
+  OutOfIndex: "<red>Страницы %PAGE% не существует!</red>"
+  NoEntries: "<red><italic>История для %NAME% не найдена</italic></red>"
+  Header:
+    - "TotemCraft <gray>История %NAME%:</gray>"
+    - "<red><italic>Игрок</italic></red> <dark_gray>|</dark_gray> <yellow><italic>Длительность</italic></yellow> <dark_gray>|</dark_gray> <yellow><italic>Кем</italic></yellow>"
+    - "<red><italic>Тип</italic></red> <dark_gray>></dark_gray> <gray><italic>Причина</italic></gray>"
+    - ""
+  Entry:
+    - "<dark_gray>[<yellow>%DATE%</yellow>]</dark_gray>"
+    - "<red>%NAME%</red> <dark_gray>|</dark_gray> <yellow>%DURATION%</yellow> <dark_gray>|</dark_gray> <gray>%OPERATOR%</gray>"
+    - "<red>%TYPE%</red> <dark_gray>|</dark_gray> <gray><italic>%REASON%</italic></gray>"
+    - ""
+  Footer: "<gray>Страница <yellow><italic>%CURRENT_PAGE%</italic></yellow> из <yellow><italic>%TOTAL_PAGES%</italic></yellow> <dark_gray>|</dark_gray> Всего записей: <yellow><italic>%COUNT%</italic></yellow></gray>"
+  PageFooter: "<gray>Используй <yellow><italic>/history %NAME% %NEXT_PAGE%</italic></yellow> для следующей страницы</gray>"
+
+Warns:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/warns [Ник] (Страница) или /warns (Страница)</italic></gray>"
+  OutOfIndex: "<red>Страницы %PAGE% не существует!</red>"
+  NoEntries: "<red><italic>У %NAME% пока нет предупреждений</italic></red>"
+  Header:
+    - "TotemCraft <gray>Предупреждения %NAME%:</gray>"
+    - "<red><italic>Игрок</italic></red> <dark_gray>|</dark_gray> <yellow><italic>Длительность</italic></yellow> <dark_gray>|</dark_gray> <yellow><italic>Кем</italic></yellow>"
+    - "<red><italic>#ID</italic></red> <dark_gray>></dark_gray> <gray><italic>Причина</italic></gray>"
+    - ""
+  Entry:
+    - "<dark_gray>[<yellow>%DATE%</yellow>]</dark_gray>"
+    - "<red>%NAME%</red> <dark_gray>|</dark_gray> <yellow>%DURATION%</yellow> <dark_gray>|</dark_gray> <gray>%OPERATOR%</gray>"
+    - "<red><bold>#%ID%</bold></red> <dark_gray>></dark_gray> <gray><italic>%REASON%</italic></gray>"
+    - ""
+  Footer: "<gray>Страница <yellow><italic>%CURRENT_PAGE%</italic></yellow> из <yellow><italic>%TOTAL_PAGES%</italic></yellow> <dark_gray>|</dark_gray> Активных предупреждений: <yellow><italic>%COUNT%</italic></yellow></gray>"
+  PageFooter: "<gray>Используй <yellow><italic>/warns %NAME% %NEXT_PAGE%</italic></yellow> для следующей страницы</gray>"
+
+WarnsOwn:
+  OutOfIndex: "<red>Страницы %PAGE% не существует!</red>"
+  NoEntries: "<red><italic>У тебя пока нет предупреждений</italic></red>"
+  Header:
+    - "TotemCraft <gray>Твои предупреждения:</gray>"
+    - "<yellow><italic>Длительность</italic></yellow> <dark_gray>|</dark_gray> <gray><italic>Кем выдано</italic></gray>"
+    - "<red><italic>#ID</italic></red> <dark_gray>></dark_gray> <gray><italic>Причина</italic></gray>"
+    - ""
+  Entry:
+    - "<dark_gray>[<yellow>%DATE%</yellow>]</dark_gray>"
+    - "<red>%NAME%</red> <dark_gray>|</dark_gray> <yellow>%DURATION%</yellow> <dark_gray>|</dark_gray> <gray>%OPERATOR%</gray>"
+    - "<red><bold>#%ID%</bold></red> <dark_gray>></dark_gray> <gray><italic>%REASON%</italic></gray>"
+    - ""
+  Footer: "<gray>Страница <yellow><italic>%CURRENT_PAGE%</italic></yellow> из <yellow><italic>%TOTAL_PAGES%</italic></yellow> <dark_gray>|</dark_gray> Активных предупреждений: <yellow><italic>%COUNT%</italic></yellow></gray>"
+  PageFooter: "<gray>Используй <yellow><italic>/warns %NEXT_PAGE%</italic></yellow> для следующей страницы</gray>"
+
+Notes:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/notes [Ник] (Страница) или /notes (Страница)</italic></gray>"
+  OutOfIndex: "<red>Страницы %PAGE% не существует!</red>"
+  NoEntries: "<red><italic>У %NAME% пока нет заметок</italic></red>"
+  Header:
+    - ""
+    - "TotemCraft <gray>Заметки %NAME%:</gray>"
+    - ""
+  Entry:
+    - "<gray>%DATE% <dark_gray>|</dark_gray> От <italic>%OPERATOR%</italic> (<red>#%ID%</red>)</gray>"
+    - "<dark_gray>></dark_gray> <yellow>%REASON%</yellow>"
+    - ""
+  Footer: "<gray>Страница <yellow><italic>%CURRENT_PAGE%</italic></yellow> из <yellow><italic>%TOTAL_PAGES%</italic></yellow> <dark_gray>|</dark_gray> Заметок: <yellow><italic>%COUNT%</italic></yellow></gray>"
+  PageFooter: "<gray>Используй <yellow><italic>/notes %NAME% %NEXT_PAGE%</italic></yellow> для следующей страницы</gray>"
+
+NotesOwn:
+  OutOfIndex: "<red>Страницы %PAGE% не существует!</red>"
+  NoEntries: "<red><italic>У тебя пока нет заметок</italic></red>"
+  Header:
+    - ""
+    - "TotemCraft <gray>Твои заметки:</gray>"
+    - ""
+  Entry:
+    - "<gray>%DATE% <dark_gray>|</dark_gray> От <italic>%OPERATOR%</italic> (<red>#%ID%</red>)</gray>"
+    - "<dark_gray>></dark_gray> <yellow>%REASON%</yellow>"
+    - ""
+  Footer: "<gray>Страница <yellow><italic>%CURRENT_PAGE%</italic></yellow> из <yellow><italic>%TOTAL_PAGES%</italic></yellow> <dark_gray>|</dark_gray> Заметок: <yellow><italic>%COUNT%</italic></yellow></gray>"
+  PageFooter: "<gray>Используй <yellow><italic>/notes %NEXT_PAGE%</italic></yellow> для следующей страницы</gray>"
+
+ChangeReason:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/change-reason [ID или ban/mute НИК] [Новая причина]</italic></gray>"
+  Done: "<gray>Причина наказания <green><italic>#%ID%</italic></green> успешно изменена!</gray>"
+  NotFound: "<red>Не удалось найти указанное наказание</red>"
+
+Check:
+  Usage: "<red>Использование</red> <dark_gray>»</dark_gray> <gray><italic>/check [Ник]</italic></gray>"
+  Header: "<gray>Проверка игрока <yellow><italic>%NAME%</italic></yellow> <dark_gray>(%CACHED%)</dark_gray></gray>"
+  UUID: "<red>UUID</red> <dark_gray>»</dark_gray> <gray>%UUID% <dark_gray>(%CACHED%)</dark_gray></gray>"
+  IP: "<red>IP</red> <dark_gray>»</dark_gray> <gray>%IP% <dark_gray>(%CACHED%)</dark_gray></gray>"
+  Geo: "<red>Страна</red> <dark_gray>»</dark_gray> <gray>%LOCATION%</gray>"
+  Mute: "<red>Мьют</red> <dark_gray>»</dark_gray> <gray>%DURATION%</gray>"
+  MuteReason: "  <red>Причина</red> <dark_gray>»</dark_gray> <gray>%REASON%</gray>"
+  Ban: "<red>Бан</red> <dark_gray>»</dark_gray> <gray>%DURATION%</gray>"
+  BanReason: "  <red>Причина</red> <dark_gray>»</dark_gray> <gray>%REASON%</gray>"
+  Warn: "<red>Предупреждения</red> <dark_gray>»</dark_gray> <gray>%COUNT%</gray>"
+  Note: "<red>Заметки</red> <dark_gray>»</dark_gray> <gray>%COUNT%</gray>"
+  NotFound: "<red>Игрок %NAME% не найден</red>"
+  Cached: "<green><italic>в кэше</italic></green>"
+  NotCached: "<red><italic>не в кэше</italic></red>"
