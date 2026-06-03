@@ -72,7 +72,8 @@ LOG="/home/minecraft/backup.log"
 DATE=$(date +%Y-%m-%d)
 MONTHLY_DATE=$(date +%Y-%m)
 
-RSYNC_BASE_OPTS=(-aAX --delete --stats --ignore-errors -e "ssh -p ${BACKUP_PORT}")
+RSYNC_BASE_OPTS=(-aAX --delete --stats --ignore-errors \
+  -e "ssh -p ${BACKUP_PORT} -o ServerAliveInterval=60 -o ServerAliveCountMax=3")
 
 RSYNC_SOURCES=(
   "$SERVER_DIR/2025"
@@ -279,5 +280,9 @@ su - minecraft -c "/home/minecraft/backup.sh"
 **"No screen session found"** — скрипт запущен не от того пользователя. Screen-сессия сервера принадлежит `minecraft`, поэтому скрипт всегда должен выполняться от него. Проверить: `ps aux | grep screen`.
 
 **rsync код 23** — часть файлов заблокирована JVM во время бэкапа. Это нормально, скрипт это учитывает и не считает ошибкой.
+
+**rsync код 255** — SSH-соединение оборвалось во время передачи. Характерно для Hetzner Storage Box: при долгом молчании (первый полный бэкап ~22 ГБ) сервер закрывает соединение по таймауту. Решение — `ServerAliveInterval=60` в SSH-опциях rsync, уже включено в скрипт.
+
+**rsync код 20 (SIGINT/SIGTERM)** — бэкап был прерван вручную (Ctrl+C) или внешним сигналом. Не ошибка скрипта, просто неполный бэкап. Незавершённая папка на Storage Box останется — можно удалить вручную или она перезапишется при следующем запуске.
 
 **Storage Box не принимает обычные команды по SSH** — Storage Box использует ограниченный shell. `echo`, `ls` и другие стандартные команды там не работают напрямую. Это нормально; rsync и `install-ssh-key` работают корректно.
