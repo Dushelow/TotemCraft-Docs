@@ -1,14 +1,14 @@
 #!/bin/bash
-# Скрипт бэкапов TotemCraft
+# Скрипт инкрементальных бэкапов TotemCraft
 # Ежедневные бэкапы, ежемесячный снапшот 1-го числа.
 
 set -uo pipefail
 
 # Конфигурация
 SERVER_DIR="/home/minecraft/server"
-BACKUP_HOST="u570805@u570805.your-storagebox.de"
+BACKUP_HOST="uXXXXXX@uXXXXXX.your-storagebox.de"
 BACKUP_PORT=23
-BACKUP_DIR="totemcraft-backups"
+BACKUP_DIR="minecraft-backups"
 LOG="/home/minecraft/backup.log"
 
 DATE=$(date +%Y-%m-%d)
