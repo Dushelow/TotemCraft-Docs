@@ -40,11 +40,7 @@ public class FishConvertCommand implements CommandExecutor {
     }
 
     private String extractFishId(ItemMeta meta) {
-        if (meta == null || !meta.hasLore()) return null;
-        List<String> lore = meta.getLore();
-        if (lore == null || lore.isEmpty()) return null;
-        String first = ChatColor.stripColor(lore.get(0)).trim();
-        return first.matches("[A-Z]{2,3}-[A-Z0-9]{6}") ? first : null;
+        return FishCatchListener.extractFishIdFromMeta(meta);
     }
 
     private boolean callApi(String jsonBody, Player player) {
