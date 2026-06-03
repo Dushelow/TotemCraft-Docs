@@ -1,6 +1,6 @@
 #!/bin/bash
 # Скрипт бэкапов TotemCraft
-# Ежедневные бэкапы хранятся до 3-х дней, ежемесячный снапшот создается 1-го числа.
+# Ежедневные бэкапы, ежемесячный снапшот 1-го числа.
 
 set -uo pipefail
 
@@ -49,7 +49,7 @@ save_on() {
 
 # Нужен флаг — trap выставляется до save-off,
 # чтобы не включить save-on если мы его ещё не выключали
-_SAVE_OFF_DONE=false
+SAVE_OFF_DONE=false
 
 on_exit() {
   local exit_code=$?
@@ -95,7 +95,7 @@ fi
 # Временно отключаем автосохранение
 log "Отключаем автосохранение (save-off / save-all flush)..."
 save_off
-_SAVE_OFF_DONE=true
+SAVE_OFF_DONE=true
 
 # Ежедневный бэкап
 log "Создаём daily-${DATE}..."
@@ -128,7 +128,7 @@ fi
 # Включаем автосохранение обратно
 log "Включаем автосохранение..."
 save_on
-_SAVE_OFF_DONE=false
+SAVE_OFF_DONE=false
 
 # Удаляем старые daily, оставляем 3 последних
 log "Удаляем старые daily-бэкапы (оставляем 3)..."
