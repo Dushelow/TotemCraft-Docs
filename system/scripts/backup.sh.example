@@ -14,7 +14,8 @@ LOG="/home/minecraft/backup.log"
 DATE=$(date +%Y-%m-%d)
 MONTHLY_DATE=$(date +%Y-%m)
 
-RSYNC_BASE_OPTS=(-aAX --delete --stats --ignore-errors -e "ssh -p ${BACKUP_PORT}")
+RSYNC_BASE_OPTS=(-aAX --delete --stats --ignore-errors \
+  -e "ssh -p ${BACKUP_PORT} -o ServerAliveInterval=60 -o ServerAliveCountMax=3")
 
 RSYNC_SOURCES=(
   "$SERVER_DIR/2025"
