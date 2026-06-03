@@ -1,4 +1,4 @@
-# Бэкапы Minecraft-сервера TotemCraft на Hetzner Storage Box (1 ТБ)
+# Бэкапы сервера на Hetzner Storage Box (1 ТБ)
 
 ## 1. Схема бэкапа
 
@@ -34,13 +34,13 @@ su - minecraft
 ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
 
 # Отправь публичный ключ на Storage Box (введи пароль от бокса один раз)
-cat ~/.ssh/id_ed25519.pub | ssh -p 23 u570805@u570805.your-storagebox.de install-ssh-key
+cat ~/.ssh/id_ed25519.pub | ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de install-ssh-key
 ```
 
 Проверка — Storage Box использует ограниченный shell, поэтому вместо `echo OK` просто проверяем что подключение проходит без пароля:
 
 ```bash
-ssh -p 23 u570805@u570805.your-storagebox.de
+ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de
 # Должно подключиться без запроса пароля. Выйти: exit
 ```
 
@@ -56,7 +56,7 @@ nano /home/minecraft/backup.sh
 
 ```bash
 #!/bin/bash
-# Скрипт инкрементальных бэкапов TotemCraft
+# Скрипт бэкапов
 # Ежедневные бэкапы с hardlink-дедупликацией, ежемесячный снапшот 1-го числа.
 # Зависимости: rsync, ssh, screen (сессия называется "minecraft")
 
@@ -64,9 +64,9 @@ set -uo pipefail
 
 # Конфигурация
 SERVER_DIR="/home/minecraft/server"
-BACKUP_HOST="u570805@u570805.your-storagebox.de"
+BACKUP_HOST="uXXXXXX@uXXXXXX.your-storagebox.de"
 BACKUP_PORT=23
-BACKUP_DIR="totemcraft-backups"
+BACKUP_DIR="minecraft-backups"
 LOG="/home/minecraft/backup.log"
 
 DATE=$(date +%Y-%m-%d)
@@ -242,7 +242,7 @@ mkdir -p /home/minecraft/restore-test
 
 rsync -aAXv --info=progress2 \
   -e "ssh -p 23" \
-  u570805@u570805.your-storagebox.de:totemcraft-backups/daily-2026-05-14/ \
+  uXXXXXX@uXXXXXX.your-storagebox.de:minecraft-backups/daily-2026-05-14/ \
   /home/minecraft/restore-test/
 ```
 
@@ -254,7 +254,7 @@ rsync -aAXv --info=progress2 \
 
 ```bash
 # Размер всех бэкапов
-ssh -p 23 u570805@u570805.your-storagebox.de "du -sh totemcraft-backups/*"
+ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de "du -sh minecraft-backups/*"
 
 # Последние строки лога
 tail -n 50 /home/minecraft/backup.log
