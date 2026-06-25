@@ -52,7 +52,10 @@ cd /home
 
 ```bash
 screen -S tar-minecraft
-tar -cf - minecraft/ | pv -s $(du -sb minecraft/ | awk '{print $1}') | pigz -p 8 > minecraft_backup_$(date +%Y-%m-%d).tar.gz
+
+SIZE=$(du -sb minecraft/ 2>/dev/null | awk '{print $1}')
+tar -cf - minecraft/ | pv -f -p -t -e -r -b -s $SIZE | pigz -p 8 > minecraft_backup_$(date +%Y-%m-%d).tar.gz
+
 # Ctrl+A → D
 ```
 
@@ -60,7 +63,10 @@ tar -cf - minecraft/ | pv -s $(du -sb minecraft/ | awk '{print $1}') | pigz -p 8
 
 ```bash
 screen -S tar-totembot
-tar -cf - totembot/ | pv -s $(du -sb totembot/ | awk '{print $1}') | pigz -p 8 > totembot_backup_$(date +%Y-%m-%d).tar.gz
+
+SIZE=$(du -sb totembot/ 2>/dev/null | awk '{print $1}')
+tar -cf - totembot/ | pv -f -p -t -e -r -b -s $SIZE | pigz -p 8 > totembot_backup_$(date +%Y-%m-%d).tar.gz
+
 # Ctrl+A → D
 ```
 
@@ -68,6 +74,7 @@ tar -cf - totembot/ | pv -s $(du -sb totembot/ | awk '{print $1}') | pigz -p 8 >
 
 ```bash
 screen -S tar-system
+
 tar -cf - \
   /etc/systemd/system/minecraft.service \
   /etc/sysctl.d/99-minecraft.conf \
@@ -76,7 +83,8 @@ tar -cf - \
   /home/minecraft/backup.sh \
   /home/minecraft/server/start.sh \
   /home/minecraft/*.sh 2>/dev/null | \
-  pigz -p 8 > system_configs_backup_$(date +%Y-%m-%d).tar.gz
+  pv -f -p -t -e -r -b | pigz -p 8 > system_configs_backup_$(date +%Y-%m-%d).tar.gz
+  
 # Ctrl+A → D
 ```
 
