@@ -126,8 +126,8 @@ world-settings:
       display: 128
       other: 64
     ticks-per:
-      hopper-transfer: 8
-      hopper-check: 8
+      hopper-transfer: 3 # default: 1 - на сервере установленно 3 чтобы чуть реже тикало и таким образом снизить нагрузку
+      hopper-check: 3 # default: 1
     hopper-amount: 1
     hopper-can-load-chunks: false
     dragon-death-sound-radius: 0
