@@ -126,7 +126,12 @@ public class ClaimCommand implements CommandExecutor {
                 // (если Discord привязан), а рыбу могла перехватить воронка до инвентаря.
                 // Тогда выдаём трофей владельцу без повторного клейма в боте.
                 // Выпущенную (status=released) не выдаём: она живёт в мире или в ведре.
-                boolean reissue = alreadyClaimed && canReissue(plugin, fishId, playerName);
+                FishWhere where = fetchWhere(plugin, fishId);
+                boolean reissue = alreadyClaimed && where != null && "claimed".equals(where.status())
+                    && !where.loreApplied() && where.ownedBy(playerName);
+                // Предмет с этим ID уже есть в игре (например, у прошлого владельца после
+                // передачи). Клеймим без создания второго предмета — иначе копия трофея.
+                boolean itemElsewhere = !alreadyClaimed && where != null && where.loreApplied();
                 if (alreadyClaimed && !reissue) {
                     plugin.getServer().getScheduler().runTask(plugin, () ->
                         player.sendMessage("§cЭта рыба уже заклеймлена.")
@@ -152,6 +157,10 @@ public class ClaimCommand implements CommandExecutor {
                 // Проверяем место в инвентаре ДО клейма
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     Material material = FISH_MATERIALS.get(finalFishType);
+                    if (itemElsewhere && !hasTrophyInInventory(player, fishId)) {
+                        doClaimWithoutItem(player, fishId, playerName);
+                        return;
+                    }
                     if (material == null) {
                         doClaimOnly(player, fishId, playerName, finalFishType, finalFishTier,
                             finalFishWeight, finalCaughtBy, finalCaughtAt, finalBiome, finalRarityScore);
@@ -223,6 +232,53 @@ public class ClaimCommand implements CommandExecutor {
         });
 
         return true;
+    }
+
+    private static boolean hasTrophyInInventory(Player player, String fishId) {
+        for (ItemStack item : player.getInventory().getContents())
+            if (item != null && fishId.equals(FishCatchListener.extractFishIdFromItem(item))) return true;
+        return false;
+    }
+
+    /** Клейм в боте без выдачи предмета: предмет уже существует у кого-то в игре. */
+    private void doClaimWithoutItem(Player player, String fishId, String playerName) {
+        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                String jsonBody = "{\"fish_id\":\"" + fishId + "\",\"player\":\"" + playerName + "\"}";
+                URL claimUrl = new URL(plugin.getFishBotUrl() + "/claim");
+                HttpURLConnection claimConn = (HttpURLConnection) claimUrl.openConnection();
+                claimConn.setRequestMethod("POST");
+                claimConn.setRequestProperty("Content-Type", "application/json");
+                claimConn.setConnectTimeout(5000);
+                claimConn.setReadTimeout(5000);
+                claimConn.setDoOutput(true);
+                try (OutputStream os = claimConn.getOutputStream()) {
+                    os.write(jsonBody.getBytes(StandardCharsets.UTF_8));
+                }
+                int code = claimConn.getResponseCode();
+                Scanner sc = new Scanner(code == 200 ? claimConn.getInputStream() : claimConn.getErrorStream(),
+                    StandardCharsets.UTF_8);
+                String resp = sc.useDelimiter("\\A").next();
+                sc.close();
+                plugin.getServer().getScheduler().runTask(plugin, () -> {
+                    if (code == 200) {
+                        player.sendMessage("§a✔ Трофей §f" + fishId + " §aзаклеймлен на тебя.");
+                        player.sendMessage("§7Сам предмет у прошлого владельца: попроси передать его тебе.");
+                    } else if (code == 403 && resp.contains("no_discord_link")) {
+                        player.sendMessage("§cНет привязки Discord. Напиши §f/discord link §cв чате.");
+                    } else if (code == 403) {
+                        player.sendMessage("§cЭта рыба не твоя.");
+                    } else {
+                        player.sendMessage("§cОшибка: " + resp);
+                    }
+                });
+            } catch (Exception e) {
+                plugin.getServer().getScheduler().runTask(plugin, () ->
+                    player.sendMessage("§cНе удалось связаться с ботом. Попробуй позже.")
+                );
+                plugin.getLogger().warning("Ошибка claim без предмета: " + e.getMessage());
+            }
+        });
     }
 
     private void doClaimOnly(Player player, String fishId, String playerName,
@@ -396,32 +452,36 @@ public class ClaimCommand implements CommandExecutor {
             + "). Трофей у игрока ЕСТЬ: /claim может выдать копию. Выставить lore_applied=1 вручную.");
     }
 
-    /**
-     * Можно ли выдать уже заклеймленный трофей: он числится за этим игроком,
-     * не выпущен в мир и предмет с lore в игре не создавался (lore_applied=0).
-     * Вызывать не из main thread — делает HTTP-запрос.
-     */
-    static boolean canReissue(FishClaimPlugin plugin, String fishId, String playerName) {
+    /** Ответ /fwhere. null из fetchWhere — бот не ответил или рыбы нет. */
+    record FishWhere(String status, String owner, boolean loreApplied) {
+        boolean ownedBy(String player) { return owner != null && owner.equalsIgnoreCase(player); }
+    }
+
+    /** Вызывать не из main thread — делает HTTP-запрос. */
+    static FishWhere fetchWhere(FishClaimPlugin plugin, String fishId) {
         try {
             java.net.URL url = new java.net.URL(plugin.getFishBotUrl() + "/fwhere/" + fishId);
             java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
             conn.setRequestMethod("GET");
             conn.setConnectTimeout(3000);
             conn.setReadTimeout(3000);
-            if (conn.getResponseCode() != 200) return false;
+            if (conn.getResponseCode() != 200) return null;
             Scanner sc = new Scanner(conn.getInputStream(), StandardCharsets.UTF_8);
             String body = sc.useDelimiter("\\A").next();
             sc.close();
             String compact = body.replaceAll("\\s", "");
-            if (!compact.contains("\"status\":\"claimed\"")) return false;
-            if (!compact.contains("\"lore_applied\":0")) return false;
-            java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("\"current_owner\":\"([^\"]*)\"").matcher(compact);
-            return m.find() && m.group(1).equalsIgnoreCase(playerName);
+            return new FishWhere(jsonStr(compact, "status"), jsonStr(compact, "current_owner"),
+                compact.contains("\"lore_applied\":1"));
         } catch (Exception e) {
             plugin.getLogger().warning("[FishClaim] Ошибка /fwhere для " + fishId + ": " + e.getMessage());
-            return false;
+            return null;
         }
+    }
+
+    private static String jsonStr(String json, String key) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+            .compile("\"" + key + "\":\"([^\"]*)\"").matcher(json);
+        return m.find() ? m.group(1) : null;
     }
 
     static List<String> buildLore(String fishId, String caughtBy, String fishWeight,

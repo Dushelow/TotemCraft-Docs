@@ -266,8 +266,11 @@ async def transfer_fish(fish_id: str, from_owner: str, to_owner: str):
         # Карточка в Discord будет показывать "Не заклеймлена" пока новый владелец
         # не выполнит /claim — это корректное поведение.
         # Очки от трофея не учитываются за не-заклеймленную рыбу (leaderboard уже это проверяет).
+        # lore_applied НЕ сбрасываем: передача меняет только владельца, сам предмет
+        # остаётся у отправителя, пока тот не отдаст его руками. Сброс давал копию:
+        # /claim получателя делал трофей из обычной рыбы при живом оригинале.
         await db.execute(
-            "UPDATE fish SET current_owner = ?, discord_id = NULL, claimed = 0, claimed_at = NULL, lore_applied = 0 WHERE fish_id = ?",
+            "UPDATE fish SET current_owner = ?, discord_id = NULL, claimed = 0, claimed_at = NULL WHERE fish_id = ?",
             (to_owner, fish_id)
         )
         await db.execute("""

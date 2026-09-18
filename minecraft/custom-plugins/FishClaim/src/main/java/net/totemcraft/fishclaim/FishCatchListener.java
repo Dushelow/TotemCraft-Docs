@@ -170,7 +170,7 @@ public class FishCatchListener implements Listener {
                     callRestoreApi(fishId, player.getName(), player);
                     LookupResult result = new LookupResult(fishId, tier, 0);
                     // Предмет восстановлен из entity — выставляем lore_applied=1.
-                    // Без этого isLoreAlreadyApplied() не заблокирует повторное применение
+                    // Без этого проверка lore_applied в scheduleLookupsAsync не заблокирует повторное применение
                     // если игрок сразу поймает ещё одну рыбу того же вида удочкой.
                     // Только если предмет реально создан: иначе /claim не сможет его выдать.
                     if (applyLoreToInventory(player, player.getName(), typeName, result)) {
@@ -251,13 +251,22 @@ public class FishCatchListener implements Listener {
             plugin.getLogger().info("[FishClaim] Найден трофей: " + result.fishId
                 + " tier=" + result.tier + " player=" + playerName);
 
-            // Главная защита от дублирования: проверяем флаг lore_applied в БД.
-            // Если флаг = 1 — предмет уже существует в игре (в инвентаре, сундуке,
-            // или выброшен в мир). Повторно применять lore к другому предмету нельзя.
-            // Флаг сбрасывается только при release (→ ведро) и при transfer.
-            if (isLoreAlreadyApplied(result.fishId)) {
-                plugin.getLogger().info("[FishClaim] lore_applied=1 для " + result.fishId
-                    + " — пропускаем повторное применение lore для " + playerName);
+            // Главная защита от дублирования: lore накладывается, только если предмета
+            // с этим ID в игре нет и трофей по-прежнему наш и не выпущен.
+            // lore_applied=1 — предмет уже существует (инвентарь, сундук, выброшен).
+            // released — рыба живёт в мире или в ведре: lore_applied при выпуске сброшен,
+            //   и без этой проверки новая рыба того же вида становилась копией трофея.
+            // чужой владелец — трофей успели передать, предмет остался у нас.
+            // Бот не ответил — не накладываем: трофей можно получить потом через /claim.
+            ClaimCommand.FishWhere where = ClaimCommand.fetchWhere(plugin, result.fishId);
+            String skipReason = where == null ? "бот не ответил на /fwhere"
+                : where.loreApplied() ? "lore_applied=1"
+                : "released".equals(where.status()) ? "рыба выпущена в мир"
+                : !where.ownedBy(playerName) ? "владелец " + where.owner()
+                : null;
+            if (skipReason != null) {
+                plugin.getLogger().info("[FishClaim] " + result.fishId + ": " + skipReason
+                    + " — lore не накладываем для " + playerName);
                 return;
             }
 
@@ -359,29 +368,6 @@ public class FishCatchListener implements Listener {
      */
     private void notifyLoreApplied(String fishId, String playerName) {
         ClaimCommand.notifyLoreApplied(plugin, fishId, playerName);
-    }
-
-    /**
-     * Проверяет флаг lore_applied через /fwhere.
-     * Возвращает true если lore уже применён — предмет существует в игре,
-     * повторно накладывать lore нельзя.
-     */
-    private boolean isLoreAlreadyApplied(String fishId) {
-        try {
-            URL url = new URL(plugin.getFishBotUrl() + "/fwhere/" + fishId);
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("GET");
-            conn.setConnectTimeout(3000);
-            conn.setReadTimeout(3000);
-            if (conn.getResponseCode() != 200) return false;
-            Scanner sc = new Scanner(conn.getInputStream(), StandardCharsets.UTF_8);
-            String body = sc.useDelimiter("\\A").next();
-            sc.close();
-            // lore_applied=1 возвращается в /fwhere ответе
-            return body.contains("\"lore_applied\":1");
-        } catch (Exception e) {
-            return false;
-        }
     }
 
     private String fetchFishStatus(String fishId) {
