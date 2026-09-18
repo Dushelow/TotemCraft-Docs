@@ -122,7 +122,12 @@ public class ClaimCommand implements CommandExecutor {
                         alreadyClaimed = true;
                 }
 
-                if (alreadyClaimed) {
+                // Заклеймлена, но трофея в игре нет: FishBot клеймит сам при поимке
+                // (если Discord привязан), а рыбу могла перехватить воронка до инвентаря.
+                // Тогда выдаём трофей владельцу без повторного клейма в боте.
+                // Выпущенную (status=released) не выдаём: она живёт в мире или в ведре.
+                boolean reissue = alreadyClaimed && canReissue(plugin, fishId, playerName);
+                if (alreadyClaimed && !reissue) {
                     plugin.getServer().getScheduler().runTask(plugin, () ->
                         player.sendMessage("§cЭта рыба уже заклеймлена.")
                     );
@@ -193,6 +198,18 @@ public class ClaimCommand implements CommandExecutor {
                         }
                     }
 
+                    if (reissue) {
+                        plugin.getLogger().info("[FishClaim] Повторная выдача " + fishId + " → " + playerName
+                            + " (заклеймлена, lore_applied=0)");
+                        if (giveTrophy(player, fishId, finalFishType, finalFishTier, finalFishWeight,
+                                finalCaughtBy, finalCaughtAt, finalBiome, finalRarityScore)) {
+                            plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
+                                notifyLoreApplied(plugin, fishId, player.getName())
+                            );
+                        }
+                        return;
+                    }
+
                     doClaimOnly(player, fishId, playerName, finalFishType, finalFishTier,
                         finalFishWeight, finalCaughtBy, finalCaughtAt, finalBiome, finalRarityScore);
                 });
@@ -251,12 +268,14 @@ public class ClaimCommand implements CommandExecutor {
                 }
 
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
-                    giveTrophy(player, fishId, fishType, fishTier, fishWeight,
-                        caughtBy, caughtAt, biome, rarityScore);
                     // Выставляем lore_applied=1 — предмет создан, дублирование заблокировано.
-                    plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
-                        notifyLoreApplied(plugin, fishId, player.getName())
-                    );
+                    // Только если создан: иначе обещанный «/claim позже» упрётся в lore_applied=1.
+                    if (giveTrophy(player, fishId, fishType, fishTier, fishWeight,
+                            caughtBy, caughtAt, biome, rarityScore)) {
+                        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
+                            notifyLoreApplied(plugin, fishId, player.getName())
+                        );
+                    }
                 });
 
             } catch (Exception e) {
@@ -268,13 +287,14 @@ public class ClaimCommand implements CommandExecutor {
         });
     }
 
-    static void giveTrophy(Player player, String fishId, String fishType, String fishTier,
+    /** @return true, если трофей с этим ID теперь есть у игрока (создан, выброшен рядом или уже был). */
+    static boolean giveTrophy(Player player, String fishId, String fishType, String fishTier,
                             String fishWeight, String caughtBy, String caughtAt,
                             String biome, int rarityScore) {
         Material material = FISH_MATERIALS.get(fishType);
         if (material == null) {
             player.sendMessage("§a✔ Рыба заклеймлена в Discord!");
-            return;
+            return false;
         }
 
         // ── Защита от дубликатов ─────────────────────────────────────────────
@@ -287,7 +307,7 @@ public class ClaimCommand implements CommandExecutor {
                 String tierLabelDup = isMythicDup ? "§d§lМифический трофей" : "§6§lЛегендарный трофей";
                 player.sendMessage("§a✔ " + tierLabelDup + " §aзаклеймлен!");
                 player.sendMessage("§7ID: §f" + fishId + "  §8│  §7/fc §8для карточки");
-                return;
+                return true;
             }
         }
         ItemStack fishItem = null;
@@ -307,7 +327,7 @@ public class ClaimCommand implements CommandExecutor {
         if (fishItem == null) {
             player.sendMessage("§a✔ Рыба заклеймлена в Discord!");
             player.sendMessage("§7Трофей не создан: рыба не найдена в инвентаре.");
-            return;
+            return false;
         }
 
         // Проверяем место под трофей
@@ -318,7 +338,7 @@ public class ClaimCommand implements CommandExecutor {
         if (freeSlots < 1 && fishItem.getAmount() <= 1) {
             player.sendMessage("§cНедостаточно места в инвентаре для трофея. Освободи 1 ячейку.");
             player.sendMessage("§7Рыба заклеймлена в Discord, трофей можно получить позже через /claim " + fishId);
-            return;
+            return false;
         }
 
         double weight = 0;
@@ -345,25 +365,62 @@ public class ClaimCommand implements CommandExecutor {
         String tierLabel = isMythic ? "§d§lМифический трофей" : "§6§lЛегендарный трофей";
         player.sendMessage("§a✔ " + tierLabel + " §aзаклеймлен!");
         player.sendMessage("§7ID: §f" + fishId + "  §8│  §7/fc §8для карточки");
+        return true;
     }
 
+    // Повторяем до 3 раз: если бот не узнал о выдаче, lore_applied останется 0,
+    // и /claim сочтёт трофей невыданным — это единственный путь к копии предмета.
     static void notifyLoreApplied(FishClaimPlugin plugin, String fishId, String playerName) {
+        String json = "{\"fish_id\":\"" + fishId + "\",\"player\":\"" + playerName + "\"}";
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                java.net.URL url = new java.net.URL(plugin.getFishBotUrl() + "/set_lore_applied");
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setConnectTimeout(3000);
+                conn.setReadTimeout(3000);
+                conn.setDoOutput(true);
+                conn.getOutputStream().write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                int code = conn.getResponseCode();
+                if (code == 200) return;
+                plugin.getLogger().warning("[FishClaim] set_lore_applied вернул " + code + " для " + fishId
+                    + " (попытка " + attempt + "/3)");
+            } catch (Exception e) {
+                plugin.getLogger().warning("[FishClaim] Ошибка set_lore_applied для " + fishId
+                    + " (попытка " + attempt + "/3): " + e.getMessage());
+            }
+            try { Thread.sleep(2000L); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+        }
+        plugin.getLogger().severe("[FishClaim] Бот так и не получил lore_applied для " + fishId + " (" + playerName
+            + "). Трофей у игрока ЕСТЬ: /claim может выдать копию. Выставить lore_applied=1 вручную.");
+    }
+
+    /**
+     * Можно ли выдать уже заклеймленный трофей: он числится за этим игроком,
+     * не выпущен в мир и предмет с lore в игре не создавался (lore_applied=0).
+     * Вызывать не из main thread — делает HTTP-запрос.
+     */
+    static boolean canReissue(FishClaimPlugin plugin, String fishId, String playerName) {
         try {
-            String json = "{\"fish_id\":\"" + fishId + "\",\"player\":\"" + playerName + "\"}";
-            java.net.URL url = new java.net.URL(plugin.getFishBotUrl() + "/set_lore_applied");
+            java.net.URL url = new java.net.URL(plugin.getFishBotUrl() + "/fwhere/" + fishId);
             java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
+            conn.setRequestMethod("GET");
             conn.setConnectTimeout(3000);
             conn.setReadTimeout(3000);
-            conn.setDoOutput(true);
-            conn.getOutputStream().write(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            int code = conn.getResponseCode();
-            if (code != 200) {
-                plugin.getLogger().warning("[FishClaim] set_lore_applied вернул " + code + " для " + fishId);
-            }
+            if (conn.getResponseCode() != 200) return false;
+            Scanner sc = new Scanner(conn.getInputStream(), StandardCharsets.UTF_8);
+            String body = sc.useDelimiter("\\A").next();
+            sc.close();
+            String compact = body.replaceAll("\\s", "");
+            if (!compact.contains("\"status\":\"claimed\"")) return false;
+            if (!compact.contains("\"lore_applied\":0")) return false;
+            java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\"current_owner\":\"([^\"]*)\"").matcher(compact);
+            return m.find() && m.group(1).equalsIgnoreCase(playerName);
         } catch (Exception e) {
-            plugin.getLogger().warning("[FishClaim] Ошибка set_lore_applied (claim) для " + fishId + ": " + e.getMessage());
+            plugin.getLogger().warning("[FishClaim] Ошибка /fwhere для " + fishId + ": " + e.getMessage());
+            return false;
         }
     }
 

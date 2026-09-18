@@ -169,13 +169,15 @@ public class FishCatchListener implements Listener {
                 plugin.getServer().getScheduler().runTask(plugin, () -> {
                     callRestoreApi(fishId, player.getName(), player);
                     LookupResult result = new LookupResult(fishId, tier, 0);
-                    applyLoreToInventory(player, player.getName(), typeName, result);
                     // Предмет восстановлен из entity — выставляем lore_applied=1.
                     // Без этого isLoreAlreadyApplied() не заблокирует повторное применение
                     // если игрок сразу поймает ещё одну рыбу того же вида удочкой.
-                    plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
-                        notifyLoreApplied(fishId, player.getName())
-                    );
+                    // Только если предмет реально создан: иначе /claim не сможет его выдать.
+                    if (applyLoreToInventory(player, player.getName(), typeName, result)) {
+                        plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
+                            notifyLoreApplied(fishId, player.getName())
+                        );
+                    }
                 });
             });
             return;
@@ -274,13 +276,18 @@ public class FishCatchListener implements Listener {
                 // Lore применяется ВСЕГДА — иначе чистая рыба остаётся в инвентаре
                 // и при следующем улове applyLoreToInventory может применить к ней
                 // lore нового трофея, создав дубликат с тем же fish_id.
-                applyLoreToInventory(p, playerName, fishType, result);
+                boolean loreApplied = applyLoreToInventory(p, playerName, fishType, result);
 
                 // Сообщаем боту что lore применён — выставляет lore_applied=1 в БД.
+                // Только если предмет реально создан. Рыбу могла перехватить воронка
+                // (AFK-ферма с вагонеткой) — тогда трофея в игре нет, и lore_applied=1
+                // навсегда блокировал выдачу через /claim.
                 // Делаем асинхронно чтобы не блокировать main thread.
-                plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
-                    notifyLoreApplied(result.fishId, playerName)
-                );
+                if (loreApplied) {
+                    plugin.getServer().getScheduler().runTaskAsynchronously(plugin, () ->
+                        notifyLoreApplied(result.fishId, playerName)
+                    );
+                }
 
                 if (!hasDiscord) {
                     boolean isMythic = "mythic".equals(result.tier);
@@ -351,23 +358,7 @@ public class FishCatchListener implements Listener {
      * к другому предмету будет заблокировано даже если рыба была выброшена из инвентаря.
      */
     private void notifyLoreApplied(String fishId, String playerName) {
-        try {
-            String json = "{\"fish_id\":\"" + fishId + "\",\"player\":\"" + playerName + "\"}";
-            URL url = new URL(plugin.getFishBotUrl() + "/set_lore_applied");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setConnectTimeout(3000);
-            conn.setReadTimeout(3000);
-            conn.setDoOutput(true);
-            conn.getOutputStream().write(json.getBytes(StandardCharsets.UTF_8));
-            int code = conn.getResponseCode();
-            if (code != 200) {
-                plugin.getLogger().warning("[FishClaim] set_lore_applied вернул " + code + " для " + fishId);
-            }
-        } catch (Exception e) {
-            plugin.getLogger().warning("[FishClaim] Ошибка set_lore_applied для " + fishId + ": " + e.getMessage());
-        }
+        ClaimCommand.notifyLoreApplied(plugin, fishId, playerName);
     }
 
     /**
@@ -460,10 +451,11 @@ public class FishCatchListener implements Listener {
         }
     }
 
-    private void applyLoreToInventory(Player p, String playerName, String fishType, LookupResult result) {
+    /** @return true, если трофей с lore создан (в инвентаре или выброшен рядом). */
+    private boolean applyLoreToInventory(Player p, String playerName, String fishType, LookupResult result) {
         org.bukkit.Material mat;
         try { mat = org.bukkit.Material.valueOf(fishType); }
-        catch (Exception e) { return; }
+        catch (Exception e) { return false; }
 
         for (int i = 0; i < p.getInventory().getSize(); i++) {
             ItemStack item = p.getInventory().getItem(i);
@@ -486,7 +478,7 @@ public class FishCatchListener implements Listener {
                     if (s == null) free++;
                 if (free < 1) {
                     p.sendMessage("§cНет места в инвентаре. Используй §f/claim " + result.fishId);
-                    return;
+                    return false;
                 }
             }
 
@@ -514,11 +506,14 @@ public class FishCatchListener implements Listener {
             p.sendMessage("  §7Вес: §f" + result.weight + " кг  §8·  §f/fc §7открыть карточку");
             p.sendMessage("§8§m                                        ");
             plugin.getLogger().info("[FishClaim] Lore применён: " + result.fishId + " → " + playerName);
-            return;
+            return true;
         }
 
         p.sendMessage("§7Трофей зарегистрирован [" + result.fishId + "] но рыба не найдена в инвентаре.");
         p.sendMessage("§7Используй §f/claim " + result.fishId + " §7чтобы получить трофей.");
+        plugin.getLogger().info("[FishClaim] Рыба " + result.fishId + " не найдена в инвентаре "
+            + playerName + " — трофей не создан, lore_applied не выставлен");
+        return false;
     }
 
     // ── public helpers ────────────────────────────────────────────
