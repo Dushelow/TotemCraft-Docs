@@ -62,6 +62,8 @@ auto-clear:
     - MINECART_CHEST
     - MINECART_FURNACE
     - ARMOR_STAND
+    - BEE
+    - SNOW_GOLEM
   # Item list used by Auto-Clear. Excluded when use-exclude-lists is true, included when false.
   excluded-items:
     - DIAMOND_SWORD
@@ -171,8 +173,8 @@ optimizations:
   # Limits the number of hostile and passive mobs per 4 chunks.
   mob-spawn-limiter:
     enabled: true
-    hostile-limit-per-4-chunks: 60
-    passive-limit-per-4-chunks: 60
+    hostile-limit-per-4-chunks: 600
+    passive-limit-per-4-chunks: 600
     # --- Per-World Overrides ---
     # Override the global limits for specific worlds.
     # Use -1 to inherit the global default. World names are case-sensitive.
@@ -212,6 +214,7 @@ optimizations:
       - PIG
       - GOAT
       - RABBIT
+      - BEE
       # === Ездовые и транспортные животные ===
       - HAPPY_GHAST
       - HORSE
@@ -309,10 +312,11 @@ optimizations:
       - BAT
 
   # Detects and throttles fast redstone clocks to stop lag machines.
+  # ВЫКЛЮЧЕНО 18.09.2026: заморозка подменяет сигнал старым значением, поршни застревают выдвинутыми навсегда (стенд).
   fast-clock-detector:
-    enabled: true
+    enabled: false
     # Number of redstone activations per second per chunk before the chunk is blocked.
-    threshold-per-second: 200
+    threshold-per-second: 500
     # How long (in seconds) the redstone current in the chunk will be blocked.
     block-duration-seconds: 30
     # Notifies players nearby with the 'clearlag.warnings.receive' permission.
