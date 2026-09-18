@@ -33,7 +33,7 @@
 Fish NFT - система трофейных рыб для Minecraft-сервера TotemCraft. При поимке легендарной или мифической рыбы генерируется уникальный трофей с набором атрибутов, который:
 
 - сохраняется в SQLite-базе на сервере;
-- публикует карточку в Discord-канал `#chronicle`;
+- публикует карточку в Discord-канал `#fish`;
 - привязывается к Discord-аккаунту игрока (клейм);
 - может быть передан другому игроку;
 - может быть выпущен живым в мир (ведро с рыбой) и пойман обратно;
@@ -48,7 +48,7 @@ Fish NFT - система трофейных рыб для Minecraft-серве�
 ```
 Minecraft Server (Purpur 1.21)
 │
-├── DiscordSRV           ← слушает PlayerFishEvent, постит embed в #chronicle
+├── DiscordSRV           ← слушает PlayerFishEvent, постит embed в #fish
 │
 └── FishClaim (Java)     ← слушает те же события, управляет предметами
         │
@@ -63,12 +63,12 @@ Minecraft Server (Purpur 1.21)
 
 ```
 PlayerFishEvent
-    ├── DiscordSRV → embed в #chronicle
+    ├── DiscordSRV → embed в #fish
     └── FishCatchListener
             ├── scheduleLookupsAsync → GET /fish_lookup_latest  (ждёт записи в БД)
             └── applyLoreToInventory → POST /set_lore_applied
 
-Discord #chronicle (новый embed)
+Discord #fish (новый embed)
     └── bot.on_message → process_catch → process_trophy_catch
             ├── generate_fish_card()   (генератор атрибутов)
             ├── save_fish()            (запись в БД)
@@ -83,34 +83,32 @@ Discord #chronicle (новый embed)
 ## 3. Файловая структура
 
 ```
-/home/fishbot/
+/home/fishbot/                  # код бота лежит прямо здесь, без вложенной папки
 ├── .env                        # токены и ID (не в репозитории)
 ├── fish.db                     # SQLite база
-│
-└── fishbot/                    # Python-проект
-    ├── bot.py                  # точка входа, discord.py Bot
-    ├── api.py                  # Flask REST API
-    ├── database.py             # все запросы к БД
-    ├── generator.py            # генерация атрибутов и fish_id
-    ├── parser.py               # парсинг embed-сообщений DiscordSRV
-    ├── card.py                 # построение Discord embed-карточек
-    ├── transfer_view.py        # Discord UI для подтверждения передачи
-    │
-    ├── commands/
-    │   ├── claim.py
-    │   ├── fishcheck.py
-    │   ├── fishhistory.py
-    │   ├── fishstats.py
-    │   ├── fishtop.py
-    │   └── fishtransfer.py
-    │
-    └── data/
-        ├── traits.json         # атрибуты, пулы, веса
-        └── combos.json         # комбо-бонусы
+├── venv/                       # виртуальное окружение Python
+├── bot.py                      # точка входа, discord.py Bot
+├── api.py                      # Flask REST API
+├── database.py                 # все запросы к БД
+├── generator.py                # генерация атрибутов и fish_id
+├── parser.py                   # парсинг embed-сообщений DiscordSRV
+├── card.py                     # построение Discord embed-карточек
+├── transfer_view.py            # Discord UI для подтверждения передачи
+├── commands/
+│   ├── claim.py
+│   ├── fishcheck.py
+│   ├── fishhistory.py
+│   ├── fishstats.py
+│   ├── fishtop.py
+│   └── fishtransfer.py
+└── data/
+    ├── traits.json             # атрибуты, пулы, веса
+    └── combos.json             # комбо-бонусы
 
-/home/minecraft/server/plugins/FishClaim/
-├── FishClaim.jar
-└── config.yml                  # fishbot-url
+/home/minecraft/server/plugins/
+├── fishclaim-<версия>.jar      # имя файла = версия из pom.xml и plugin.yml
+└── FishClaim/
+    └── config.yml              # fishbot-url
 
 /home/minecraft/server/plugins/DiscordSRV/
 ├── alerts.yml                  # правила публикации событий в Discord
@@ -127,8 +125,8 @@ Discord #chronicle (новый embed)
 
 ```env
 BOT_TOKEN=<Discord bot token>
-CHRONICLE_CHANNEL_ID=<ID канала #chronicle>
-FISH_CHANNEL_ID=<ID канала рыбалки (не используется активно)>
+CHRONICLE_CHANNEL_ID=<ID канала #chronicle: анонсы передач и /claim из Discord>
+FISH_CHANNEL_ID=<ID канала #fish: уловы от DiscordSRV и карточки трофеев>
 GUILD_ID=<ID сервера Discord>
 ```
 
@@ -151,8 +149,18 @@ python-dotenv
 
 ### Запуск бота
 
+Бот работает как служба systemd `fishbot` из `/home/fishbot` с окружением `venv`.
+После правки кода бота:
+
 ```bash
-cd /home/fishbot/fishbot
+systemctl restart fishbot
+```
+
+Ручной запуск для отладки (службу перед этим остановить):
+
+```bash
+cd /home/fishbot
+source venv/bin/activate
 python3 bot.py
 ```
 
@@ -186,7 +194,7 @@ python3 bot.py
 | `discord_id` | TEXT | Discord ID текущего владельца (NULL если не заклеймлена) |
 | `claimed` | INTEGER | `0` / `1` |
 | `claimed_at` | DATETIME | Дата клейма |
-| `discord_message_id` | TEXT | ID сообщения-карточки в #chronicle |
+| `discord_message_id` | TEXT | ID сообщения-карточки в #fish |
 | `raw_embed` | TEXT | Сырой dict embed от DiscordSRV (для отладки) |
 | `is_released` | INTEGER | `0` / `1` - выпущена ли в мир (ведро) |
 | `lore_applied` | INTEGER | `0` / `1` - наложен ли lore на предмет в игре |
@@ -271,8 +279,8 @@ fish_score   -- SUM(rarity_score + combo_bonus) из fish WHERE claimed = 1
 
 | Атрибут | Тип | Назначение |
 |---|---|---|
-| `chronicle_channel_id` | int | ID канала #chronicle |
-| `fish_channel_id` | int | ID канала рыбалки |
+| `chronicle_channel_id` | int | ID канала #chronicle (анонсы передач, /claim из Discord) |
+| `fish_channel_id` | int | ID канала #fish (уловы, карточки трофеев) |
 | `guild_id` | int | ID Discord-сервера |
 | `_recent_catches` | dict | Дедупликация: `"игрок:тип" → (timestamp, tier)` |
 | `DEDUP_WINDOW` | float | Окно дедупликации = 5.0 сек |
@@ -285,7 +293,7 @@ fish_score   -- SUM(rarity_score + combo_bonus) из fish WHERE claimed = 1
 5. Запускает Flask API в фоновом потоке
 6. Запускает `_expire_loop`
 
-**`on_message()`** - слушает сообщения в `#chronicle`:
+**`on_message()`** - слушает сообщения в `#chronicle` и `#fish` (уловы DiscordSRV шлёт в `#fish`, см. `alerts.yml`):
 - Если автор - бот и это embed улова (`is_any_catch`) → `process_catch()`
 
 **`process_catch()`:**
@@ -299,7 +307,7 @@ fish_score   -- SUM(rarity_score + combo_bonus) из fish WHERE claimed = 1
 2. Ищет Discord-аккаунт: `get_discord_id_by_nick()`
 3. `save_fish()`
 4. Если Discord привязан - авто-клейм: `claim_fish()`
-5. Постит embed в #chronicle: `channel.send(embed, view)`
+5. Постит embed в #fish: `channel.send(embed, view)`
 6. `update_message_id()` - сохраняет ID поста
 
 #### Дедупликация
@@ -338,7 +346,7 @@ Purpur иногда стреляет 2+ `PlayerFishEvent CAUGHT_FISH` на од�
 
 ### `card.py` - построение embed-карточек
 
-**`build_card(fish_data, transfers)`** - короткая карточка для #chronicle:
+**`build_card(fish_data, transfers)`** - короткая карточка для #fish:
 - Если не заклеймлена: подсказка с `/claim <id>` или `/discord link`
 - Если заклеймлена: показывает только ID
 - Кнопка `FishDetailsView` (если заклеймлена)
@@ -701,7 +709,7 @@ SHA256(f"{caught_by}:{fish_type}:{weight}:{caught_at}")
 
 ## 9. DiscordSRV и alerts.yml
 
-DiscordSRV слушает игровые события и публикует embed-сообщения в канал `#chronicle` (alias `chronicle` в конфиге DiscordSRV).
+DiscordSRV слушает игровые события и публикует embed-сообщения. Уловы идут в канал `fish`, прочие события (достижения и т.п.) в `chronicle`: канал задаёт поле `Channel` каждого правила в `alerts.yml`.
 
 ### Тиры рыбалки
 
@@ -871,7 +879,7 @@ total         = rarity_score + combo_bonus
 ```
 1. ПОИМКА
    PlayerFishEvent (Purpur)
-   ├── DiscordSRV → embed #chronicle (тир, вес, биом, погода, время)
+   ├── DiscordSRV → embed #fish (тир, вес, биом, погода, время)
    └── FishCatchListener → scheduleLookupsAsync (ждёт /fish_lookup_latest)
 
 2. РЕГИСТРАЦИЯ (бот)
@@ -879,7 +887,7 @@ total         = rarity_score + combo_bonus
    ├── generate_fish_card()          → атрибуты + rarity_score + combo
    ├── save_fish()                   → fish.db, claimed=0, lore_applied=0
    ├── claim_fish() [если Discord привязан] → claimed=1, discord_id=...
-   └── channel.send(embed+view)      → карточка в #chronicle
+   └── channel.send(embed+view)      → карточка в #fish
 
 3. LORE (плагин)
    fish_lookup_latest вернул fish_id
@@ -901,7 +909,7 @@ total         = rarity_score + combo_bonus
    
    При принятии:
    ├── transfer_fish() → current_owner=to, claimed=0, discord_id=NULL, lore_applied=0
-   ├── Обновление карточки #chronicle
+   ├── Обновление карточки #fish
    └── Анонс передачи в #chronicle
 
 6. ВЫПУСК В МИР (опционально)

@@ -118,10 +118,11 @@ class FishBot(commands.Bot):
             print(f"[FishBot] Ошибка expire loop: {e}")
 
     async def on_message(self, message: discord.Message):
-        if message.author.bot and message.channel.id == CHRONICLE_CHANNEL_ID:
-            if is_any_catch(message):
-                await asyncio.sleep(0.5)
-                await self.process_catch(message)
+        if message.author.bot:
+            if message.channel.id in (self.chronicle_channel_id, self.fish_channel_id):
+                if is_any_catch(message):
+                    await asyncio.sleep(0.5)
+                    await self.process_catch(message)
         await self.process_commands(message)
 
     async def process_catch(self, message: discord.Message):
@@ -209,7 +210,7 @@ class FishBot(commands.Bot):
         else:
             print(f"[FishBot] Discord не привязан у {parsed['caught_by']}, клейм пропущен")
 
-        channel = self.get_channel(CHRONICLE_CHANNEL_ID)
+        channel = self.get_channel(self.fish_channel_id)
         embed   = build_card(fish_data, transfers=[])
         view    = None
         if fish_data.get("claimed"):
