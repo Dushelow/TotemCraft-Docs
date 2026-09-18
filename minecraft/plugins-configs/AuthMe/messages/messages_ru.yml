@@ -1,40 +1,39 @@
 # Registration
 registration:
-    disabled: 'Временно активирован вайтлист! Для доступа на сервер &bпришлите ваш ник в наш Телеграм бот - &e@TotemCraft_playbot'
-    name_taken: '&cИгрок с таким никнеймом уже зарегистрирован.'
+    reg_only: '[RU] Для доступа на сервер%nl% &bпришлите ваш ник в наш Телеграм бот: &e@TotemCraft_playbot%nl%%nl%%nl%%nl%&r[UA] Для доступу на сервер%nl% &bнадішліть ваш нік у наш Телеграм бот: &e@TotemCraft_playbot%nl%%nl%%nl%%nl%&r[EN] To access the server,%nl% &bsend your nickname to our Telegram bot: &e@TotemCraft_playbot'
     register_request: '&3Регистрация: /reg <пароль> <повтор пароля>'
-    command_usage: '&cИспользование: /reg <пароль> <повтор пароля>'
-    reg_only: 'Для доступа на сервер &bпришлите ваш ник в наш Телеграм бот - &e@TotemCraft_playbot' # Свои параметры
+    command_usage: '&c[RU] Использование: /reg <пароль> <повтор пароля>%nl%%nl%&c[EN] Usage: /reg <password> <ConfirmPassword>'
     success: '&2Вы успешно зарегистрировались!'
+    disabled: 'Временно активирован вайтлист! Для доступа на сервер &bпришлите ваш ник в наш Телеграм чат - &e@TotemCraftNet &rили в &bДискорд: &ehttps://discord.gg/MWeUjNWJG3'
+    name_taken: '&cИгрок с таким никнеймом уже зарегистрирован.'
     kicked_admin_registered: 'Администратор зарегистрировал вас. Авторизуйтесь снова.'
 # Password errors on registration
 password:
     match_error: '&cПароли не совпадают.'
     name_in_password: '&cНельзя использовать свой никнейм в качестве пароля.'
     unsafe_password: '&cТакой пароль небезопасен.'
-    pwned_password: '&cВыбранный вами пароль небезопасен. Он уже был использован %pwned_count раз! Пожалуйста, используйте надежный пароль...'
     forbidden_characters: '&4Пароль содержит запрещённые символы. Разрешённые: %valid_chars'
     wrong_length: '&cПароль слишком длинный/короткий.'
 # Login
 login:
+    login_request: '&3Авторизация: /login <Пароль>'
     command_usage: '&cИспользование: /login <пароль>'
     wrong_password: '&cНеправильный пароль!'
     success: '&2Вы успешно вошли!'
-    login_request: '&3Авторизация: /login <Пароль>'
     timeout_error: '&4Время авторизации истекло.'
 # Errors
 error:
     denied_command: '&cНеобходимо авторизоваться для использования этой команды!'
     denied_chat: '&cНеобходимо авторизоваться, чтобы писать в чат!'
-    unregistered_user: '&cИгрок с таким именем не зарегистрирован.'
     not_logged_in: '&cВы ещё не вошли!'
+    logged_in: '&cВы уже авторизированы!'
     no_permission: '&4Недостаточно прав.'
     unexpected_error: '&cПроизошла ошибка. Свяжитесь с администратором.'
-    max_registration: '&cПревышено максимальное количество регистраций на сервере! (%reg_count/%max_acc %reg_names)'
-    logged_in: '&cВы уже авторизированы!'
-    kick_for_vip: '&3VIP-игрок зашёл на переполненный сервер.'
+    unregistered_user: '&cИгрок с таким именем не зарегистрирован.'
     kick_unresolved_hostname: '&cПроизошла ошибка: неразрешенное имя узла игрока!'
+    kick_for_vip: '&3VIP-игрок зашёл на переполненный сервер.'
     tempban_max_logins: '&cВы временно заблокированы из-за большого количества неудачных попыток авторизоваться.'
+    max_registration: '&cПревышено максимальное количество регистраций на сервере! (%reg_count/%max_acc %reg_names)'
 # AntiBot
 antibot:
     kick_antibot: 'Сработала защита против ботов! Необходимо подождать перед следующим входом на сервер.'
@@ -42,17 +41,17 @@ antibot:
     auto_disabled: '&2[AuthMe] AntiBot-режим отключился спустя %m мин.'
 # Unregister
 unregister:
-    success: '&cУчётная запись успешно удалена!'
     command_usage: '&cИспользование: /unregister <пароль>'
+    success: '&cУчётная запись успешно удалена!'
 # Other messages
 misc:
-    account_not_activated: '&cВаша уч. запись ещё не активирована. Проверьте электронную почту!'
-    password_changed: '&2Ваш пароль изменён!'
     logout: '&2Вы успешно вышли.'
-    reload: '&6Конфигурация и база данных перезагружены.'
+    account_not_activated: '&cВаша уч. запись ещё не активирована. Проверьте электронную почту!'
     usage_change_password: '&cИспользование: /changepassword <пароль> <новый пароль>'
+    password_changed: '&2Ваш пароль изменён!'
     accounts_owned_self: 'У вас %count уч. записей:'
     accounts_owned_other: 'У игрока %name %count уч. записей:'
+    reload: '&6Конфигурация и база данных перезагружены.'
 # Session messages
 session:
     valid_session: '&2Вы автоматически авторизовались!'
@@ -61,33 +60,38 @@ session:
 on_join_validation:
     same_ip_online: 'Игрок с данным IP-адресом уже играет на сервере!'
     same_nick_online: '&4Игрок с данным никнеймом уже играет на сервере!'
+    not_owner_error: 'Вы не являетесь владельцем данной уч. записи. Выберите себе другой никнейм!'
     name_length: '&4Ваш никнейм слишком длинный/короткий.'
     characters_in_name: '&4Ваш никнейм содержит запрещённые символы. Разрешённые: %valid_chars'
-    kick_full_server: '&4Сервер полон. Попробуйте зайти позже!'
-    country_banned: '&4Internal Exception: net.minecraft.network.RuntimeNetworkFault.'
-    not_owner_error: 'Вы не являетесь владельцем данной уч. записи. Выберите себе другой никнейм!'
     invalid_name_case: 'Неверный никнейм! Зайдите под никнеймом %valid, а не %invalid.'
+    country_banned: '&4Internal Exception: net.minecraft.network.RuntimeNetworkFault.'
+    kick_full_server: '&4Сервер полон. Попробуйте зайти позже!'
     quick_command: 'Вы вводили команды слишком часто! Пожалуйста, переподключитесь и вводите команды медленнее.'
 # Email
 email:
     add_email_request: '&3Добавьте электронную почту: /email add <эл. почта> <повтор эл. почты>'
     usage_email_add: '&cИспользование: /email add <эл. почта> <повтор эл. почты>'
-    usage_email_change: '&cИспользование: /email change <эл. почта> <новая эл. почта>'
-    new_email_invalid: '&cНедействительная новая электронная почта!'
-    old_email_invalid: '&cНедействительная старая электронная почта!'
-    invalid: '&cНедействительный адрес электронной почты!'
     added: '&2Электронная почта успешно добавлена!'
     add_not_allowed: '&cДобавление электронной почты не было разрешено.'
     request_confirmation: '&cПодтвердите свою электронную почту!'
+    usage_email_change: '&cИспользование: /email change <эл. почта> <новая эл. почта>'
     changed: '&2Адрес электронной почты изменён!'
     change_not_allowed: '&cИзменение электронной почты не было разрешено.'
     email_show: '&2Текущий адрес электронной почты — &f%email'
     no_email_for_account: '&2К вашей уч. записи не привязана электронная почта.'
+    invalid: '&cНедействительный адрес электронной почты!'
+    new_email_invalid: '&cНедействительная новая электронная почта!'
+    old_email_invalid: '&cНедействительная старая электронная почта!'
     already_used: '&4Эта электронная почта уже используется.'
     incomplete_settings: 'Ошибка: не все необходимые параметры установлены для отправки электронной почты. Свяжитесь с администратором.'
     send_failure: 'Письмо не может быть отправлено. Свяжитесь в администратором.'
-    change_password_expired: 'Больше нельзя сменить свой пароль, используя эту команду.'
     email_cooldown_error: '&cПисьмо было отправлено недавно. Подождите %time, прежде чем отправить новое.'
+    confirm_code_sent: '&3Код подтверждения отправлен на &f%email&3. Используйте &f/email confirm <code>&3 для подтверждения.'
+    usage_email_confirm: '&cИспользование: /email confirm <code>'
+    confirm_wrong_code: '&cНеверный код подтверждения. Попробуйте ещё раз.'
+    confirm_code_expired: '&cОжидающее подтверждение email не найдено. Начните процесс заново.'
+    confirm_success: '&2Адрес электронной почты подтверждён и сохранён в аккаунте!'
+    change_password_expired: 'Больше нельзя сменить свой пароль, используя эту команду.'
 # Password recovery by email
 recovery:
     forgot_password_hint: '&Забыли пароль? Используйте «/email recovery <эл. почта>».'
@@ -137,14 +141,91 @@ two_factor:
     not_enabled_error: 'Двухфакторная аутентификация не включена для вашего аккаунта. Введите /2fa add'
     removed_success: 'Двухфакторная аутентификация успешно удалена с вашего аккаунта!'
     invalid_code: 'Неверный код!'
-# 3rd party features: Bedrock Auto Login
-bedrock_auto_login:
-    success: '&aВы автоматически авторизовались потому что вы играете с Bedrock!'
-# 3rd party features: Login Location Fix
-login_location_fix:
-    fix_portal: '&aВы застряли в портале во время авторизации.'
-    fix_underground: '&aВы застряли под землей во время авторизации.'
-    cannot_fix_underground: '&aВы застряли под землей во время авторизации, но мы не можем это исправить.'
-# 3rd party features: Double Login Fix
-double_login_fix:
-    fix_message: '&cВы были отключены из-за двойного входа.'
+# Dialog UI
+dialog:
+    login:
+        title: '&6Вход'
+        body: '&7Пожалуйста, введите ваш пароль для продолжения.'
+        password: '&fПароль'
+        button: '&aВойти'
+        recovery_email: '&fРезервная почта (необязательно)'
+        recovery_button: '&eЗабыли пароль?'
+        canceled: '&cYou have canceled the login.'
+    register:
+        title: '&6Регистрация'
+        body: '&7Создайте аккаунт, чтобы начать играть на этом сервере.'
+        password: '&fПароль'
+        confirm_password: '&fПодтвердите пароль'
+        email: '&fЭлектронная почта'
+        confirm_email: '&fПодтвердите электронную почту'
+        button: '&aЗарегистрироваться'
+        canceled: '&cYou have canceled the registration.'
+    two_factor:
+        title: '&6Двухфакторная аутентификация'
+        body: '&7Откройте приложение для аутентификации и введите 6-значный код.'
+        code: '&fКод 2FA'
+        button: '&aПроверить'
+    recovery:
+        title: '&6Восстановление пароля'
+        body: '&7Введите зарегистрированный адрес электронной почты, и вам будет отправлен код сброса.'
+        email: '&fАдрес электронной почты'
+        button: '&aОтправить письмо для восстановления'
+    button:
+        cancel: '&cОтмена'
+# Command validation messages
+command:
+    player_only: '&cЭта команда только для игроков.'
+    player_only_alternative: '&cТолько для игроков! Используйте %alternative вместо этого.'
+    failed_to_parse: '&4Не удалось разобрать команду AuthMe!'
+    unknown: '&4Неизвестная команда!'
+    incorrect_arguments: '&4Неверные аргументы команды!'
+    did_you_mean: '&eВы имели в виду &6%cmd&e?'
+    see_help: '&eИспользуйте команду &6/%cmd&e для просмотра справки.'
+    detailed_help: '&6Подробная справка: &f/%cmd'
+# Admin command messages
+admin:
+    antibot:
+        status: '&2Статус AntiBot: %status'
+        override_enabled: '&2Ручное управление AntiBot: включено!'
+        override_disabled: '&2Ручное управление AntiBot: отключено!'
+        invalid_mode: '&cНеверный режим AntiBot!'
+    force_login:
+        player_offline: '&cИгрок должен быть в сети!'
+        forbidden: '&cВы не можете принудительно войти за игрока %name!'
+        success: '&2Принудительный вход для %name выполнен!'
+    accounts:
+        ip_not_found: '&cЭтот IP-адрес не существует в базе данных.'
+        single_account: '&2%name — игрок с одним аккаунтом.'
+        no_last_ip: '&cПоследний IP-адрес игрока неизвестен.'
+    email_show: '&2Почта %name: %email'
+    reload:
+        db_type_change: '&eПримечание: нельзя изменить тип базы данных во время /authme reload.'
+        error: '&cПроизошла ошибка при перезагрузке AuthMe.'
+    spawn:
+        set_success: '&2Новая точка спавна успешно определена.'
+        set_fail: '&cSetSpawn не удался, попробуйте ещё раз.'
+        first_set_success: '&2Новая первая точка спавна успешно определена.'
+        first_set_fail: '&cSetFirstSpawn не удался, попробуйте ещё раз.'
+        not_defined: '&cСпавн не удался, попробуйте определить точку спавна.'
+        first_not_defined: '&cПервый спавн не удался, попробуйте определить первую точку спавна.'
+# Premium mode
+premium:
+    feature_disabled: '&cРежим Premium не включён на этом сервере.'
+    account_not_found: '&cПремиум-аккаунт Minecraft для вашего имени пользователя не найден.'
+    already_enabled: '&eРежим Premium уже включён для вашего аккаунта.'
+    enable_success: '&2Режим Premium включён! Вам больше не нужно проходить аутентификацию при входе.'
+    not_enabled: '&eРежим Premium не включён для вашего аккаунта.'
+    disable_success: '&2Режим Premium отключён. Вам снова потребуется аутентификация.'
+    error: '&cПри проверке вашего Premium-статуса произошла ошибка. Повторите попытку позже.'
+    pending_kick: '&eЗапрошена Premium-верификация. Пожалуйста, переподключитесь для подтверждения владения вашим аккаунтом Mojang.'
+    pending_fail: '&cPremium-верификация не удалась. Пожалуйста, войдите с помощью пароля.'
+    admin:
+        not_registered: '&c%name не зарегистрирован.'
+        already_enabled: '&eРежим Premium уже включён для %name.'
+        account_not_found: '&cАккаунт Mojang для %name не найден.'
+        enable_success: '&2Режим Premium включён для %name.'
+        not_enabled: '&eРежим Premium не включён для %name.'
+        disable_success: '&2Режим Premium отключён для %name.'
+        impostor_kicked: '&eИгрок, подключённый как %name, имел несовпадающий UUID и был исключён с сервера.'
+        kick_reason: '&cНастройки Premium вашего аккаунта были изменены администратором. Пожалуйста, переподключитесь.'
+        pending: '&ePremium-верификация ожидает подтверждения для %name. Необходимо переподключиться для подтверждения владения аккаунтом Mojang.'

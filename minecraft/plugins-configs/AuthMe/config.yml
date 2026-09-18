@@ -1,25 +1,15 @@
 DataSource:
     # What type of database do you want to use?
-    # Valid values: H2, SQLITE, MARIADB, MYSQL, POSTGRESQL
+    # Valid values: SQLITE, MARIADB, MYSQL, POSTGRESQL
     backend: SQLITE
     # Enable the database caching system, should be disabled on bungeecord environments
     # or when a website integration is being used.
     caching: true
-    # Should we try to use VirtualThreads(Java 21+) for database cache loader?
-    useVirtualThreadsCache: false
     # Database host address
     mySQLHost: 127.0.0.1
     # Database port
     mySQLPort: '3306'
-    # Replacement of Mysql's useSsl (for MariaDB only).
-    # - disable: No SSL
-    # - trust: Trust blindly (no validation)
-    # - verify_ca:  Encryption, certificates validation, BUT no hostname verification
-    # - verify_full: Encryption, certificate validation and hostname validation
-    # Read more: https://bit.ly/mariadb-sslmode
-    MariaDbSslMode: disabled
     # Connect to MySQL database over SSL
-    # If you're using MariaDB, use sslMode instead
     mySQLUseSSL: true
     # Verification of server's certificate.
     # We would not recommend to set this option to false.
@@ -27,12 +17,11 @@ DataSource:
     mySQLCheckServerCertificate: true
     # Authorize client to retrieve RSA server public key.
     # Advanced option, ignore if you don't know what it means.
-    # If you are using MariaDB, use MariaDbSslMode instead.
     mySQLAllowPublicKeyRetrieval: true
     # Username to connect to the MySQL database
     mySQLUsername: authme
     # Password to connect to the MySQL database
-    mySQLPassword: '12345'
+    mySQLPassword: ''
     # Database Name, use with converters or as SQLITE database name
     mySQLDatabase: authme
     # Table of the database
@@ -77,6 +66,9 @@ DataSource:
     mySQLlastlocPitch: pitch
     # Column for storing players uuids (optional)
     mySQLPlayerUUID: ''
+    # Column for storing the Mojang UUID of premium players
+    # (null if premium mode is off for this player)
+    mySQLColumnPremiumUUID: premiumUUID
     # Overrides the size of the DB Connection Pool, default = 10
     poolSize: 10
     # The maximum lifetime of a connection in the pool, default = 1800 seconds
@@ -107,49 +99,6 @@ ExternalBoardOptions:
     XFActivatedGroupId: 2
     # Wordpress prefix defined during WordPress installation
     wordpressTablePrefix: wp_
-3rdPartyFeature:
-    compatibility:
-        # Should we execute /help command when unregistered players press Shift+F?
-        # This keeps compatibility with some menu plugins
-        # If you are using TrMenu, don't enable this because TrMenu already implemented this.
-        menuPlugins: false
-    features:
-        i18nMessages:
-            # Send i18n messages to player based on their client settings, this option will override `settings.messagesLanguage`
-            # (Requires ProtocolLib)
-            # This will not affect language of AuthMe help command.
-            enabled: false
-            # Redirect locale code to certain AuthMe language code as you want
-            # Minecraft locale list: https://minecraft.wiki/w/Language
-            # AuthMe language code: https://github.com/HaHaWTH/AuthMeReReloaded/blob/master/docs/translations.md
-            # For example, if you want to show Russian messages to player using language Tatar(tt_ru),
-            # and show Chinese Simplified messages to player using language Classical Chinese(lzh), then:
-            # locale-code-redirect:
-            # - 'tt_ru:ru'
-            # - 'lzh:zhcn'
-            locale-code-redirect: 
-            - tt_ru:ru
-            - lzh:zhcn
-        # Should we let Bedrock players login automatically?
-        # (Requires hookFloodgate to be true & floodgate loaded)
-        # (**THIS IS SAFE DO NOT WORRY**)
-        bedrockAutoLogin: false
-        purgeData:
-            # Should we purge data on non-registered players quit?
-            purgeOnQuit: false
-            # Which world's player data should be deleted?(Enter the world *FOLDER* name where your players first logged in)
-            purgeWorldFolderName: world
-    fixes:
-        # Enable the new feature to prevent ghost players?
-        antiGhostPlayer: false
-        # (MC1.13- only)
-        # Should we fix the shulker crash bug with advanced method?
-        advancedShulkerFix: false
-        loginLocationFix:
-            # Should we fix the location when players logged in the portal?
-            fixPortalStuck: false
-            # Should we fix the location when players logged underground?
-            fixGroundStuck: false
 settings:
     sessions:
         # Do you want to enable the session feature?
@@ -164,16 +113,25 @@ settings:
         timeout: 5
     # Message language, available languages:
     # https://github.com/AuthMe/AuthMeReloaded/blob/master/docs/translations.md
-    # Example: zhcn, en
     messagesLanguage: ru
+    # When enabled, messages are sent to each player in their client language,
+    # falling back to messagesLanguage if their locale is unavailable.
+    # Disable this if you want all players to receive messages in the same language.
+    perPlayerLocale: true
     # Forces authme to hook into Vault instead of a specific permission handler system.
     forceVaultHook: false
     # Log level: INFO, FINE, DEBUG. Use INFO for general messages,
     # FINE for some additional detailed ones (like password failed),
     # and DEBUG for debugging
     logLevel: FINE
-    # By default we schedule async tasks when talking to the database. If you want
-    # typical communication with the database to happen synchronously, set this to false
+    # Whether to run authentication work (password hashing, database queries) on async threads.
+    # When true (strongly recommended), all CPU-intensive and I/O-bound operations — including
+    # password hashing and database access — are offloaded from the main server thread, keeping
+    # the server responsive during login and registration.
+    # Setting this to false forces all of that work onto the main thread, which will cause
+    # noticeable lag spikes on every login or registration attempt, especially with slow
+    # algorithms (Argon2, BCrypt) or a remote database. Only set this to false if you have
+    # a specific technical reason — it is not recommended under any normal circumstances.
     useAsyncTasks: true
     # The name of the server, used in some placeholders.
     serverName: TotemCraft
@@ -216,7 +174,7 @@ settings:
             # WorldNames where we need to force the spawn location
             # Case-sensitive!
             worlds: 
-            - 2025
+            - '2025'
             - 2025_nether
             - 2025_the_end
         # This option will save the quit location of the players.
@@ -262,22 +220,28 @@ settings:
         teleportUnAuthedToSpawn: true
         # Can unregistered players walk around?
         allowMovement: false
-        # After how many seconds should players who fail to login or register
-        # be kicked? Set to 0 to disable.
-        timeout: 180
+        # After how many seconds should players who fail to login be kicked?
+        # Set to 0 to disable.
+        loginTimeout: 180
+        # After how many seconds should players who fail to register be kicked?
+        # Set to 0 to disable.
+        registerTimeout: 180
         # Regex pattern of allowed characters in the player name.
-        allowedNicknameCharacters: '[a-zA-Z0-9_]*'
+        allowedNicknameCharacters: '[a-zA-Z0-9_.]*'
         # How far can unregistered players walk?
         # Set to 0 for unlimited radius
         allowedMovementRadius: 0
-        # Should we protect the player inventory before logging in? Requires ProtocolLib.
+        # Should we protect the player inventory before logging in? Requires PacketEvents.
         ProtectInventoryBeforeLogIn: true
-        # Should we deny the tabcomplete feature before logging in? Requires ProtocolLib.
+        # Should we deny the tabcomplete feature before logging in? Requires PacketEvents.
         DenyTabCompleteBeforeLogin: false
         # Should we display all other accounts from a player when he joins?
         # permission: /authme.admin.accounts
         displayOtherAccounts: false
-        # Spawn priority; values: authme, essentials, cmi, multiverse, default
+        # Spawn priority; values: authme, essentials, cmi, multiverse, default, server
+        # Use "server" to apply the world's spawnRadius gamerule (players land at a random position
+        # within the configured radius around the world spawn).
+        # Use "default" for the exact world spawn.
         spawnPriority: authme,essentials,cmi,multiverse,default
         # Maximum Login authorized by IP
         maxLoginPerIp: 5
@@ -289,8 +253,6 @@ settings:
         # characters, which is what we recommend. See also http://asciitable.com
         # You can test your regex with https://regex101.com
         allowedPasswordCharacters: '[!-~]*'
-        # Regex syntax for allowed chars in email.
-        allowedEmailCharacters: ^([a-zA-Z0-9_.+-]+)@([a-zA-Z0-9-]+)\.([a-zA-Z]{2,})$
     GameMode:
         # Force survival gamemode when player joins?
         ForceSurvivalMode: false
@@ -311,25 +273,24 @@ settings:
         # - 'myCustomInventory1'
         # - 'myCustomInventory2'
         UnrestrictedInventories: []
-        # Should we check unrestricted inventories strictly? (Original behavior)
-        StrictUnrestrictedInventoriesCheck: true
     security:
         # Minimum length of password
         minPasswordLength: 6
         # Maximum length of password
         passwordMaxLength: 26
         # Possible values: SHA256, BCRYPT, BCRYPT2Y, PBKDF2, SALTEDSHA512,
-        # MYBB, IPB3, PHPBB, PHPFUSION, SMF, XENFORO, XAUTH, JOOMLA, WBB3, WBB4, MD5VB,
-        # PBKDF2DJANGO, WORDPRESS, ROYALAUTH, ARGON2, NOCRYPT, CUSTOM (for developers only). See full list at
+        # MYBB, IPB3, PHPBB, PHPFUSION, SMF, XENFORO, JOOMLA, WBB3, WBB4, MD5VB,
+        # PBKDF2DJANGO, WORDPRESS, ROYALAUTH, ARGON2, CUSTOM (for developers only). See full list at
         # https://github.com/AuthMe/AuthMeReloaded/blob/master/docs/hash_algorithms.md
         # If you use ARGON2, check that you have the argon2 c library on your system
-        passwordHash: SHA256
+        passwordHash: BCRYPT
         # If a password check fails, AuthMe will also try to check with the following hash methods.
         # Use this setting when you change from one hash method to another.
         # AuthMe will update the password to the new hash. Example:
         # legacyHashes:
         # - 'SHA1'
-        legacyHashes: []
+        legacyHashes: 
+        - SHA256
         # Salt length for the SALTED2MD5 MD5(MD5(password)+salt)
         doubleMD5SaltLength: 8
         # Number of rounds to use if passwordHash is set to PBKDF2. Default is 10000
@@ -341,6 +302,7 @@ settings:
         # - 'password'
         # - 'help'
         unsafePasswords: 
+        - help
         - '12345678'
         - password
         - qwertyui
@@ -368,24 +330,57 @@ settings:
         # EMAIL = password is generated and sent to the email provided by the user.
         # More info at https://github.com/AuthMe/AuthMeReloaded/wiki/Registration
         type: PASSWORD
-        # Second argument the /register command should take: 
-        # NONE = no 2nd argument
+        # Second argument the /register command should take: NONE = no 2nd argument
         # CONFIRMATION = must repeat first argument (pass or email)
         # EMAIL_OPTIONAL = for password register: 2nd argument can be empty or have email address
         # EMAIL_MANDATORY = for password register: 2nd argument MUST be an email address
         secondArg: CONFIRMATION
-        email:
-            # Should we unregister the player when he didn't verify the email?
-            # This only works if you enabled email registration.
-            unregisterOnEmailVerificationFailure: false
-            # How many minutes should we wait before unregister the player
-            # when he didn't verify the email?
-            unregisterAfterMinutes: 10
         # Do we force kick a player after a successful registration?
         # Do not use with login feature below
         forceKickAfterRegister: false
         # Does AuthMe need to enforce a /login after a successful registration?
         forceLoginAfterRegister: false
+        dialog:
+            # Show a 'Forgot Password?' button in the post-join login dialog.
+            # When clicked, executes /email recover using the email entered in the recovery field.
+            # Requires an email provider to be configured to be useful.
+            showForgotPasswordButton: true
+            # Show a short description body in login, register, and two-factor dialogs.
+            # The body text helps players understand what the dialog is asking them to do.
+            showBody: true
+            preJoin:
+                # Show the login/register dialog during the Paper/Folia pre-join phase.
+                # Independent from postJoin.enable; you may enable either or both options.
+                # On non-Paper/Folia platforms this option has no effect.
+                enable: true
+                # Show a cancel button in Paper/Folia pre-join dialogs.
+                # If disabled, players must submit the dialog or disconnect instead.
+                showCancelButton: true
+                # Allow closing Paper/Folia pre-join dialogs with Escape.
+                # If disabled, the dialog stays open until it is submitted,
+                # cancelled, or the timeout disconnects the player.
+                allowCloseWithEscape: false
+                # Kick players who cancel the Paper/Folia pre-join register dialog.
+                # When false, cancelling lets the player join and shows a post-join register dialog instead.
+                registerCancelKicks: false
+                # Kick players who cancel the Paper/Folia pre-join login dialog.
+                # When false, cancelling lets the player join in limbo to use /email recover.
+                loginCancelKicks: true
+            postJoin:
+                # Show a graphical dialog UI for post-join login/register instead of chat messages.
+                # Requires Minecraft 1.21.6+ on Spigot, or 1.21.11+ on Paper.
+                # On older server versions, this option is automatically ignored.
+                enable: true
+    # Enable to display the welcome message (welcome.txt) after a login
+    # You can use colors in this welcome.txt + some replaced strings:
+    # {PLAYER}: player name, {ONLINE}: display number of online players,
+    # {MAXPLAYERS}: display server slots, {IP}: player ip, {LOGINS}: number of players logged,
+    # {WORLD}: player current world, {SERVER}: server name
+    # {VERSION}: get current bukkit version, {COUNTRY}: player country
+    useWelcomeMessage: true
+    # Broadcast the welcome message to the server or only to the player?
+    # set true for server or false for player
+    broadcastWelcomeMessage: false
     # Should we delay the join message and display it once the player has logged in?
     delayJoinMessage: false
     # The custom join message that will be sent after a successful login,
@@ -406,6 +401,15 @@ settings:
     # Do we need to prevent people to login with another case?
     # If Xephi is registered, then Xephi can login, but not XEPHI/xephi/XePhI
     preventOtherCase: true
+    # Enable premium mode: players with an official Minecraft account
+    # can skip password authentication.
+    # Verification method is chosen automatically:
+    #   - online-mode=true: Bukkit already has the Mojang UUID; no PacketEvents needed.
+    #   - offline-mode + proxy: set Hooks.bungeecord=true; UUID is forwarded by proxy.
+    #   - offline-mode, no proxy: PacketEvents required for cryptographic verification.
+    #     Without PacketEvents, premium auto-login is disabled (fail closed).
+    # Players must use /premium to opt in.
+    enablePremium: false
 GroupOptions:
     # Enables switching a player to defined permission groups before they log in.
     # See below for a detailed explanation.
@@ -427,9 +431,15 @@ GroupOptions:
 Email:
     # Email SMTP server host
     mailSMTP: smtp.163.com
-    # Email SMTP server port
+    # Email SMTP server port. The port determines the encryption mode:
+    #   25  -> plain SMTP; optional STARTTLS via 'useTls' (see below)
+    #   465 -> implicit SSL/TLS (SMTPS); 'useTls' is ignored
+    #   587 -> STARTTLS required (submission); 'useTls' is ignored
+    #   other -> STARTTLS required; 'useTls' is ignored
     mailPort: 465
-    # Only affects port 25: enable TLS/STARTTLS?
+    # Only applies to port 25: enable STARTTLS on the plain SMTP connection?
+    # Has no effect when using port 465 (SSL) or 587 (STARTTLS), which enforce
+    # their own encryption and cannot be overridden by this setting.
     useTls: true
     # Email account which sends the mails
     mailAccount: ''
@@ -449,34 +459,34 @@ Email:
     recallPlayers: false
     # Delay in minute for the recall scheduler
     delayRecall: 5
+    # Blacklist these domains for emails
+    emailBlacklisted: 
+    - 10minutemail.com
+    # Whitelist ONLY these domains for emails
+    emailWhitelisted: []
     # Send the new password drawn in an image?
     generateImage: false
     # The OAuth2 token
     emailOauth2Token: ''
-    # Email notifications when the server shuts down
-    shutDownEmail: false
-    # Email notification address when the server is shut down
-    shutDownEmailAddress: your@mail.com
+    # Verify the SSL/TLS server certificate hostname?
+    # Only applies when an SSL/TLS connection is active (port 465, port 587,
+    # port 25 with useTls=true, or any other port).
+    # Set to false only if your SMTP server uses a self-signed certificate.
+    # Note: if you previously used port 465, this check was not enforced;
+    # set to false to restore the old behavior with a self-signed certificate.
+    sslCheckServerIdentity: true
 Hooks:
     # Do we need to hook with multiverse for spawn checking?
     multiverse: true
-    # Do we need to hook with PlaceholderAPI for AuthMe placeholders?
-    placeholderapi: true
     # Do we need to hook with BungeeCord?
     bungeecord: false
-    # Do we need to hook with Velocity?
-    velocity: false
-    # How many ticks should we wait before sending login info to proxy?
-    # Change this to higher if your player has high ping.
-    # See: https://www.spigotmc.org/wiki/bukkit-bungee-plugin-messaging-channel/
-    proxySendDelay: 10
-    # Hook into floodgate.
-    # This must be true if you want to use other bedrock features.
-    floodgate: true
-    # Allow bedrock players join without check isValidName?
-    ignoreBedrockNameCheck: true
     # Send player to this BungeeCord server after register/login
     sendPlayerTo: ''
+    # Shared secret used to verify perform.login messages from the AuthMe proxy plugin.
+    # Must match the proxySharedSecret value in your AuthMe Velocity or Bungee proxy config.
+    # All backend servers must have the same value set here.
+    # Leaving this empty disables auto-login: all perform.login messages will be rejected.
+    proxySharedSecret: ''
     # Do we need to disable Essentials SocialSpy on join?
     disableSocialSpy: false
     # Do we need to force /motd Essentials command on join?
@@ -486,12 +496,21 @@ Protection:
     enableProtection: true
     # Apply the protection also to registered usernames
     enableProtectionRegistered: false
+    geoIpDatabase:
+        # Enable GeoIp database
+        enabled: true
+        # The MaxMind clientId used to download the GeoIp database,
+        # get one at https://www.maxmind.com/en/accounts/current/license-key
+        # The EssentialsX project has a very useful tutorial on how to generate
+        # the license key: https://github.com/EssentialsX/Wiki/blob/master/GeoIP.md
+        clientId: ''
+        # The MaxMind licenseKey used to download the GeoIp database.
+        licenseKey: ''
     # Countries allowed to join the server and register. For country codes, see
     # https://dev.maxmind.com/geoip/legacy/codes/iso3166/
     # Use "LOCALHOST" for local addresses.
     # PLEASE USE QUOTES!
     countries: []
-    #- LOCALHOST
     # Countries not allowed to join the server and register
     # PLEASE USE QUOTES!
     countriesBlacklist: 
@@ -499,8 +518,6 @@ Protection:
     - CN
     - BD
     - KR
-    #- A1 # Anonymous Proxy (анонимные прокси и многие VPN)
-    #- A2 # Satellite Provider (спутниковый интернет, очень редко)
     # Do we need to enable automatic antibot system?
     enableAntiBot: true
     # The interval in seconds
@@ -541,20 +558,9 @@ Security:
     console:
         # Copy AuthMe log output in a separate file as well?
         logConsole: true
-    account:
-        haveIBeenPwned:
-            # Query haveibeenpwned.com with a hashed version of the password.
-            # This is used to check whether it is safe.
-            check: false
-            # If the password is used more than this number of times, it is considered unsafe.
-            limit: 2
-        emailVerification:
-            # Require email verification when changing password if email feature enabled.
-            # Original behavior is true
-            required: true
     captcha:
         # Enable captcha when a player uses wrong password too many times
-        useCaptcha: true
+        useCaptcha: false
         # Max allowed tries before a captcha is required
         maxLoginTry: 8
         # Captcha length
@@ -600,13 +606,6 @@ Security:
         enableEmailMasking: false
         # Minutes after which a verification code will expire
         verificationCodeExpiration: 10
-Plugin:
-    updates:
-        # Check for updates on enabled from GitHub?
-        checkForUpdates: false
-    banners:
-        # Should we show the AuthMe banner on startup?
-        showBanners: true
 # Before a user logs in, various properties are temporarily removed from the player,
 # such as OP status, ability to fly, and walk/fly speed.
 # Once the user is logged in, we add back the properties we previously saved.
@@ -644,6 +643,9 @@ limbo:
     # Restore walk speed: RESTORE, DEFAULT, MAX_RESTORE, RESTORE_NO_ZERO.
     # See above for a description of the values.
     restoreWalkSpeed: RESTORE_NO_ZERO
+    # If true, AuthMe recreates tracked ender pearls after login when the original entity
+    # cannot be found anymore. Disable this if you only want to restore still-existing pearls.
+    recreateEnderPearls: true
 BackupSystem:
     # General configuration for backups: if false, no backups are possible
     ActivateBackup: false
@@ -653,20 +655,3 @@ BackupSystem:
     OnServerStop: true
     # Windows only: MySQL installation path
     MysqlWindowsPath: C:\Program Files\MySQL\MySQL Server 5.1\
-# Converter settings: see https://github.com/AuthMe/AuthMeReloaded/wiki/Converters
-Converter:
-    CrazyLogin:
-        # CrazyLogin database file name
-        fileName: accounts.db
-    loginSecurity:
-        # LoginSecurity: convert from SQLite; if false we use MySQL
-        useSqlite: true
-        mySql:
-            # LoginSecurity MySQL: database host
-            host: ''
-            # LoginSecurity MySQL: database name
-            database: ''
-            # LoginSecurity MySQL: database user
-            user: ''
-            # LoginSecurity MySQL: password for database user
-            password: ''
