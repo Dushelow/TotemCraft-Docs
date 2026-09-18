@@ -6,8 +6,12 @@ debug: false
 #OP-protection: Player can only be op'ed if they are in the "allowed-operators" list
 op-protection: true
 allowed-operators:
-  - Admin
+  - Dushelow
+  - Steve
   - Console
+  - __nether__
+  - 2025_nether
+  - Valghard
 #If you try to Op someone who isn't in the list
 op-message: "&cThe Player isn't a listed operator!"
 #Players who are operators and are not in the list can't connect and will be deop'ed.
@@ -114,7 +118,6 @@ groups:
       - "!/sel"
       - "!/toggleplace"
       - "!autorestart"
-      - "!chopper"
       - "!climits"
       - "!cmagnet"
       - "!cnolock"

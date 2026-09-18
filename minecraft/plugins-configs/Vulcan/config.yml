@@ -727,7 +727,7 @@ checks:
           rotate-every: 2
       i:
         enabled: true
-        punishable: true
+        punishable: false
         discord-alert-interval: 1
         broadcast-punishment: false
         max-violations: 10
@@ -736,7 +736,7 @@ checks:
         maximum-ping: 100000
         minimum-tps: -1
         punishment-commands:
-        - ban %player% AntiCheat
+        - kick %player% AntiCheat
         buffer:
           max: 7
           multiple: 0.5
@@ -1931,14 +1931,14 @@ checks:
         maximum-ping: 100000
         minimum-tps: 19.0
         punishment-commands:
-        - ban %player% AntiCheat
+        - kick %player% AntiCheat
         buffer:
           max: 3
           multiple: 0.25
           decay: 0.25
       b:
         enabled: true
-        punishable: true
+        punishable: false
         setback: false
         min-vl-to-setback: 1
         discord-alert-interval: 1
@@ -1949,7 +1949,7 @@ checks:
         maximum-ping: 100000
         minimum-tps: 19.0
         punishment-commands:
-        - ban %player% AntiCheat
+        - kick %player% AntiCheat
         buffer:
           max: 3
           multiple: 0.25
@@ -2003,7 +2003,7 @@ checks:
         maximum-ping: 100000
         minimum-tps: 19.0
         punishment-commands:
-        - ban %player% AntiCheat
+        - kick %player% AntiCheat
         buffer:
           max: 1
           multiple: 0.5
@@ -2341,7 +2341,7 @@ checks:
           decay: 0.125
       f:
         enabled: true
-        punishable: true
+        punishable: false
         setback: false
         discord-alert-interval: 1
         broadcast-punishment: false
@@ -3855,7 +3855,7 @@ checks:
         maximum-ping: 100000
         minimum-tps: 19.0
         punishment-commands:
-        - ban %player% AntiCheat
+        - kick %player% AntiCheat
         buffer:
           max: 1
           multiple: 0.5

@@ -26,7 +26,7 @@ LockdownOnError: true
 # This will be the default reason to be displayed if none is given
 # !! You may use MiniMessage formatting (https://docs.advntr.dev/minimessage/format.html)
 # !! Legacy (&/§) formatting is not supported and will cause errors
-DefaultReason: "Причина не указана."
+DefaultReason: "No reason provided."
 
 # Change this if your server has a different time that your users.
 # e.g.: ServerTime: 16:43 | Your Time: 13:43 | TimeDiff has to be set to -3

@@ -28,11 +28,11 @@ settings:
   item-list: []
   show-debug-info: false # Показывать отладочную информацию в консоли
   enable-auto-groups: false # Автоматически создавать группы в permissions-плагинах
-  chat-compatibility-mode: false # Режим совместимости с чат-плагинами (EssentialsChat и т.п.)
+  chat-compatibility-mode: true # Режим совместимости с чат-плагинами (EssentialsChat и т.п.)
   rival-limit-percent: 50 # Процент лимита соперников (для баланса войн)
   use-colorcode-from-prefix-for-name: false # Использовать цвет тега для имени игрока в чате
   accept-other-alphabets-letters-on-tag: false # Разрешить другие алфавиты (кириллицу) в теге
-  display-chat-tags: false # Показывать теги клана в чате
+  display-chat-tags: true # Показывать теги клана в чате
   global-friendly-fire: true # Глобальный friendly fire (урон по союзникам/членам клана)
   unrivable-clans: # Кланы, с которыми нельзя объявлять соперничество
     - admin
