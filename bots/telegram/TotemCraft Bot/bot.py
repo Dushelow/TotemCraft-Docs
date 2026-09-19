@@ -1,6 +1,7 @@
 import telebot
 from telebot import types
-import json, csv, os, re, time, requests, traceback, threading, schedule, pytz, socket, struct, html as _html
+import json, csv, os, re, time, requests, traceback, threading, schedule, pytz, socket, struct, sqlite3, html as _html
+from contextlib import closing
 from datetime import datetime, date, timezone, timedelta
 from collections import defaultdict, deque
 
@@ -507,6 +508,206 @@ def check_duplicate_tg_id(tg_id):
                 return True
     return False
 
+def previous_nicks(tg_id):
+    """Ники, с которыми этот TG ID подавал заявки раньше (из истории заявок)."""
+    nicks = []
+    for row in read_approved_csv():
+        if len(row) >= 4 and row[2] == str(tg_id) and row[3] and row[3] not in nicks:
+            nicks.append(row[3])
+    return nicks
+
+# ---------- Проверка блокировок на сервере (только чтение файлов) ----------
+MC_SERVER_DIR = os.environ.get('MC_SERVER_DIR', '/home/minecraft/server')
+ABX_DATA_DIR  = os.path.join(MC_SERVER_DIR, 'plugins', 'AdvancedBanX', 'data')
+AUTHME_DB     = os.path.join(MC_SERVER_DIR, 'plugins', 'AuthMe', 'authme.db')
+
+PUNISHMENT_NAMES = {
+    'BAN': 'бан', 'TEMP_BAN': 'временный бан',
+    'IP_BAN': 'бан по IP', 'TEMP_IP_BAN': 'временный бан по IP',
+    'MUTE': 'мут', 'TEMP_MUTE': 'временный мут',
+    'WARNING': 'предупреждение', 'TEMP_WARNING': 'временное предупреждение',
+    'KICK': 'кик', 'NOTE': 'заметка',
+}
+BAN_TYPES = {'BAN', 'TEMP_BAN', 'IP_BAN', 'TEMP_IP_BAN'}
+IP_TYPES = {'IP_BAN', 'TEMP_IP_BAN'}
+
+_SQL_ROW = re.compile(r'^(?:/\*C\d+\*/)?INSERT INTO (PUNISHMENTS|PUNISHMENTHISTORY) VALUES\((.*)\)\s*$')
+_SQL_DEL = re.compile(r'^(?:/\*C\d+\*/)?DELETE FROM (PUNISHMENTS|PUNISHMENTHISTORY) WHERE ID=(\d+)\s*$')
+_abx_cache = {'key': None, 'data': None}
+
+def _parse_sql_values(s):
+    """Разбирает список значений из строки INSERT базы HSQLDB: числа, NULL и строки в кавычках."""
+    vals, i = [], 0
+    while i < len(s):
+        if s[i] == "'":
+            j, buf = i + 1, []
+            while True:
+                if s[j] == "'":
+                    if j + 1 < len(s) and s[j + 1] == "'":
+                        buf.append("'"); j += 2; continue
+                    break
+                buf.append(s[j]); j += 1
+            vals.append(re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), ''.join(buf)))
+            i = j + 1
+        else:
+            j = s.find(',', i)
+            j = len(s) if j == -1 else j
+            tok = s[i:j].strip()
+            vals.append(None if tok == 'NULL' else int(tok) if re.fullmatch(r'-?\d+', tok) else tok)
+            i = j
+        if i < len(s) and s[i] == ',':
+            i += 1
+    return vals
+
+def read_advancedban():
+    """Читает базу AdvancedBanX (файлы storage.script и storage.log). Возвращает (активные, история)."""
+    files = [os.path.join(ABX_DATA_DIR, 'storage.script'), os.path.join(ABX_DATA_DIR, 'storage.log')]
+    key = tuple((os.path.getmtime(p), os.path.getsize(p)) if os.path.exists(p) else None for p in files)
+    if key[0] is None:
+        raise FileNotFoundError(f"нет файла {files[0]}")
+    if _abx_cache['key'] == key:
+        return _abx_cache['data']
+    tables = {'PUNISHMENTS': {}, 'PUNISHMENTHISTORY': {}}
+    for path in files:
+        if not os.path.exists(path):
+            continue
+        with open(path, 'r', encoding='utf-8', errors='replace') as f:
+            for line in f:
+                m = _SQL_ROW.match(line)
+                if m:
+                    v = _parse_sql_values(m.group(2))
+                    if len(v) >= 8:
+                        tables[m.group(1)][v[0]] = {'name': v[1] or '', 'uuid': v[2] or '', 'reason': v[3] or '',
+                                                    'operator': v[4] or '', 'type': v[5] or '', 'start': v[6], 'end': v[7]}
+                    continue
+                m = _SQL_DEL.match(line)
+                if m:
+                    tables[m.group(1)].pop(int(m.group(2)), None)
+    data = (list(tables['PUNISHMENTS'].values()), list(tables['PUNISHMENTHISTORY'].values()))
+    _abx_cache.update(key=key, data=data)
+    return data
+
+def authme_ips(nicks):
+    """IP (последний и при регистрации) для ников из базы AuthMe."""
+    if not nicks:
+        return set()
+    q = f"SELECT ip, regip FROM authme WHERE LOWER(username) IN ({','.join('?' * len(nicks))})"
+    try:
+        with closing(sqlite3.connect('file:' + AUTHME_DB + '?mode=ro', uri=True, timeout=5)) as db:
+            rows = db.execute(q, [n.lower() for n in nicks]).fetchall()
+    except sqlite3.OperationalError:
+        # Бот не может писать в папку AuthMe: читаем файл как есть, без блокировок
+        with closing(sqlite3.connect('file:' + AUTHME_DB + '?immutable=1', uri=True, timeout=5)) as db:
+            rows = db.execute(q, [n.lower() for n in nicks]).fetchall()
+    return {ip for row in rows for ip in row if ip and ip not in ('127.0.0.1', '0.0.0.0')}
+
+def _fmt_ms(ms):
+    return datetime.fromtimestamp(ms / 1000, MOSCOW_TZ).strftime('%d.%m.%Y %H:%M')
+
+def _fmt_vanilla_date(s):
+    try:
+        return datetime.strptime(s, '%Y-%m-%d %H:%M:%S %z').astimezone(MOSCOW_TZ).strftime('%d.%m.%Y %H:%M')
+    except Exception:
+        return s
+
+def _vanilla_active(expires):
+    if not expires or expires == 'forever':
+        return True
+    try:
+        return datetime.strptime(expires, '%Y-%m-%d %H:%M:%S %z') > datetime.now(timezone.utc)
+    except Exception:
+        return True
+
+def find_punishments(nicks):
+    """Ищет наказания игрока во всех местах. Возвращает (строки для админа, ошибки чтения).
+    Каждый источник проверяется отдельно: сбой одного не мешает остальным."""
+    lower = {n.lower() for n in nicks if n}
+    items, lines, errors = {}, [], []
+
+    def add(icon, who, kind, until, reason, operator, start, source):
+        # AdvancedBanX копирует баны в ванильный список: одинаковые записи склеиваем
+        key = (who.lower(), reason, start)
+        if key in items:
+            if source not in items[key]['sources']:
+                items[key]['sources'].append(source)
+        else:
+            items[key] = dict(icon=icon, who=who, kind=kind, until=until, reason=reason,
+                              operator=operator, start=start, sources=[source])
+
+    ips = set()
+    try:
+        ips = authme_ips(sorted(lower))
+    except Exception as e:
+        log_error(e)
+        errors.append(f"базу AuthMe (IP игрока): {e}")
+
+    past = defaultdict(int)
+    try:
+        active, history = read_advancedban()
+        now_ms = time.time() * 1000
+        active_ids = set()
+        for p in active:
+            by_ip = p['type'] in IP_TYPES and (p['name'] in ips or p['uuid'] in ips)
+            if not (by_ip or p['name'].lower() in lower or p['uuid'].lower() in lower):
+                continue
+            if isinstance(p['end'], int) and p['end'] != -1 and p['end'] < now_ms:
+                continue  # срок уже вышел, плагин просто ещё не убрал запись
+            active_ids.add((p['name'], p['start']))
+            until = "навсегда" if p['end'] in (-1, None) else f"до {_fmt_ms(p['end'])}"
+            icon = '🚫' if p['type'] in BAN_TYPES else ('🔇' if 'MUTE' in p['type'] else '⚠️')
+            add(icon, f"IP {p['name']}" if by_ip else p['name'], PUNISHMENT_NAMES.get(p['type'], p['type']),
+                until, p['reason'], p['operator'], _fmt_ms(p['start']), 'AdvancedBanX')
+        for p in history:
+            if (p['name'], p['start']) in active_ids or p['type'] in ('NOTE', 'KICK'):
+                continue
+            if p['name'].lower() in lower or p['uuid'].lower() in lower or (p['type'] in IP_TYPES and p['name'] in ips):
+                past[PUNISHMENT_NAMES.get(p['type'], p['type'])] += 1
+    except Exception as e:
+        log_error(e)
+        errors.append(f"AdvancedBanX: {e}")
+
+    for fname, field in (('banned-players.json', 'name'), ('banned-ips.json', 'ip')):
+        try:
+            with open(os.path.join(MC_SERVER_DIR, fname), 'r', encoding='utf-8') as f:
+                entries = json.load(f)
+            for b in entries:
+                value = str(b.get(field, ''))
+                by_ip = value in ips
+                if not (by_ip or value.lower() in lower) or not _vanilla_active(b.get('expires')):
+                    continue
+                until = "навсегда" if b.get('expires') in (None, 'forever') else f"до {_fmt_vanilla_date(b['expires'])}"
+                add('🚫', f"IP {value}" if by_ip else value, 'бан по IP' if by_ip else 'бан', until,
+                    b.get('reason', ''), b.get('source', ''), _fmt_vanilla_date(b.get('created', '')), fname)
+        except Exception as e:
+            log_error(e)
+            errors.append(f"{fname}: {e}")
+
+    for it in items.values():
+        lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])} ({it['until']})\n"
+                     f"    причина: {escape_html(it['reason'])}\n"
+                     f"    выдал: {escape_html(it['operator'])}, {it['start']} [{', '.join(it['sources'])}]")
+    if past:
+        lines.append("🕘 Раньше (сейчас сняты или истекли): " + ", ".join(f"{k}: {v}" for k, v in past.items()))
+    return lines, errors
+
+def ban_report(tg_id, nick):
+    """Блок для карточки заявки: наказания по нику заявки и по прошлым никам этого TG ID. Пусто, если ничего нет."""
+    try:
+        nicks = [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()]
+        found, errors = find_punishments(nicks)
+    except Exception as e:
+        log_error(e)
+        return f"\n\n⚠️ Не удалось проверить блокировки: {escape_html(e)}"
+    text = ""
+    if found:
+        checked = ", ".join(f"<code>{escape_html(n)}</code>" for n in nicks)
+        if len(found) > 12:
+            found = found[:12] + [f"…и ещё {len(found) - 12}"]
+        text += f"\n\n🚨 <b>Блокировки</b> (проверены ники: {checked}):\n" + "\n".join(found)
+    for err in errors:
+        text += f"\n⚠️ Не удалось проверить {escape_html(err)}"
+    return text
+
 def check_rate_limit(user_id):
     if user_id == ADMIN_ID:
         return True
@@ -786,8 +987,13 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
         if comment:
             text += f"\n💬 Комментарий: {comment}"
         text += f"\n📅 {date_str}"
-        if check_duplicate_tg_id(user_id):
-            text += f"\n\n⚠️ <b>Внимание:</b> данный TG ID (<code>{user_id}</code>) уже подавал заявку ранее!"
+        old_nicks = previous_nicks(user_id)
+        if old_nicks:
+            listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
+            text += f"\n\n⚠️ <b>Внимание:</b> данный TG ID (<code>{user_id}</code>) уже подавал заявку ранее! Ники: {listed}"
+        text += ban_report(user_id, app.get('nick', ''))
+        if len(text) > TG_MAX_LEN:
+            text = text[:TG_MAX_LEN - 1] + '…'
         markup = types.InlineKeyboardMarkup(row_width=3)
         # Навигация
         nav = []
@@ -2041,9 +2247,11 @@ def callback_handler(call):
             admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявки", callback_data="admin_menu_applications"))
             admin_msg = (
                 f"📩 <b>Новая заявка!</b>\n"
+                f"Ник: <code>{escape_html(state['nick'])}</code>\n"
                 f"В очереди: <b>{len(pending)}</b>"
                 f"{dup_warning}"
-            )
+                f"{ban_report(uid, state['nick'])}"
+            )[:TG_MAX_LEN]
             notify_admin(admin_msg, parse_mode='HTML', reply_markup=admin_markup)
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''))
             safe_send(uid,
