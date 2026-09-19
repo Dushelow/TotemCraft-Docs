@@ -208,4 +208,11 @@ submit(V, 'NoAdminCheck')
 check(t == 'Спасибо за подписку!' and not bot.pending[str(V)].get('subscribed'),
       "проверить подписку нельзя: игрок получает «спасибо», ускорения нет, бот не падает")
 
+print("
+=== 11. Инструкция и статус на месте, с кнопкой назад ===")
+for data in ('admin_help', 'admin_status'):
+    (t, _), log = ctx.press(ADMIN, data, mid=900)
+    check(edited(log) and not sent_to(log, ADMIN) and '🔙 Управление' in buttons(log, ADMIN),
+          f"{data}: открывается на месте, есть «🔙 Управление»")
+
 fakes.finish()

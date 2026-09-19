@@ -522,44 +522,35 @@ def collect_tg_facts(user):
     return facts
 
 def dossier(tg_id, nick, viewer=None, app=None, compact=False):
-    """Досье игрока и предупреждения. Возвращает (текст для карточки, список (уровень, текст)).
-    Каждый источник проверяется отдельно: сбой одного не мешает остальным."""
+    """Досье игрока и проверки. Проверки — те же, по которым решает автопринятие (autoaccept.decide),
+    поэтому досье и автомат никогда не расходятся. Возвращает (текст для карточки, список (уровень, текст)).
+    Каждый источник читается отдельно: сбой одного не мешает остальным."""
     tg_id = int(tg_id)
-    lines, flags = [], []
+    lines = []
 
     # Telegram
+    facts_tg = (app or {}).get('tg') or {}
     try:
         line = f"📱 Telegram {tgage.describe(tg_id, _frontier()['anchors'])}"
-        facts = (app or {}).get('tg') or {}
-        if facts:
+        if facts_tg:
             marks = []
-            if 'photo' in facts:
-                marks.append("фото " + ("✅" if facts['photo'] else "❌"))
-            marks.append("username " + ("✅" if facts.get('username') else "❌"))
-            marks.append("Premium " + ("✅" if facts.get('premium') else "❌"))
-            if facts.get('lang'):
-                marks.append(f"язык {escape_html(facts['lang'])}")
+            if 'photo' in facts_tg:
+                marks.append("фото " + ("✅" if facts_tg['photo'] else "❌"))
+            marks.append("username " + ("✅" if facts_tg.get('username') else "❌"))
+            marks.append("Premium " + ("✅" if facts_tg.get('premium') else "❌"))
+            if facts_tg.get('lang'):
+                marks.append(f"язык {escape_html(facts_tg['lang'])}")
             line += "\n    " + " · ".join(marks)
         lines.append(line)
-        since = is_very_new(tg_id)
-        if since:
-            bare = facts and not facts.get('username') and facts.get('photo') is False
-            flags.append(('🟡', f"Совсем новый аккаунт Telegram: новее всех, кто подавал заявки до {fmt_time(since, viewer, '%d.%m.%Y')}"
-                                + (", без фото и username" if bare else "")))
     except Exception as e:
         log_error(e)
         lines.append(f"📱 Telegram: не удалось оценить ({escape_html(e)})")
 
     # История в боте
     try:
-        rows = storage.query("SELECT status, COUNT(*) FROM applications WHERE tg_id=? GROUP BY status", (tg_id,))
-        counts = dict(rows)
-        if counts.get('Отклонено'):
-            n = counts['Отклонено']
-            times = "раза" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "раз"
-            flags.append(('🟡', f"Раньше отклоняли: {n} {times}"))
-        if tg_id in blocked_users:
-            flags.append(('🔴', "Заблокирован в боте"))
+        counts = dict(storage.query("SELECT status, COUNT(*) FROM applications WHERE tg_id=? GROUP BY status", (tg_id,)))
+        if counts:
+            lines.append(f"🗂 Заявки раньше: ✅ {counts.get('Одобрено', 0)} · ❌ {counts.get('Отклонено', 0)}")
     except Exception as e:
         log_error(e)
 
@@ -573,34 +564,37 @@ def dossier(tg_id, nick, viewer=None, app=None, compact=False):
                 geo = mmdb.country(AUTHME_GEOIP, ip or regip)
             except Exception as e:
                 log_error(e)
-            where = f", {_flag_country(geo[0])} {escape_html(geo[1])}" if geo else ""
-            lines.append(f"🎮 Сервер: <code>{escape_html(username)}</code> рег. {fmt_time(_authme_time(regdate), viewer, '%d.%m.%Y')}, "
+            where = f" · {_flag_country(geo[0])} {escape_html(geo[1])}" if geo else ""
+            lines.append(f"🎮 <code>{escape_html(username)}</code>: рег. {fmt_time(_authme_time(regdate), viewer, '%d.%m.%Y')}, "
                          f"вход {fmt_time(_authme_time(lastlogin), viewer, '%d.%m.%Y')}{where}")
             ips.update(x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0'))
         if not compact and ips:
             others = [n for n in bans.authme_accounts_on_ips(sorted(ips)) if n.lower() not in {x.lower() for x in nicks}]
             if others:
-                found, _, _ = bans.find(others)
-                banned = sorted({it['who'] for it in found if it['icon'] == '🚫' and not it['who'].startswith('IP ')})
                 lines.append("👥 С того же IP: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in others[:10])
                              + (f" и ещё {len(others) - 10}" if len(others) > 10 else ""))
-                if banned:
-                    flags.append(('🔴', "С того же IP есть аккаунты в бане: " + ", ".join(escape_html(n) for n in banned[:5])))
     except Exception as e:
         log_error(e)
         lines.append(f"🎮 Сервер: не удалось прочитать AuthMe ({escape_html(e)})")
+    if not ips and not any(l.startswith('🎮') for l in lines):
+        lines.append("🎮 На сервере ещё не был")
 
-    # Действующие баны на своих никах и по IP (подробности — в блоке «Блокировки»)
+    # Проверки: те же, что у автомата
+    flags = []
     try:
-        found, _, _ = bans.find(nicks)
-        if any(it['icon'] == '🚫' for it in found):
-            flags.append(('🔴', "Действующий бан на сервере (подробности ниже)"))
+        base = dict(app) if app else {'nick': nick}
+        facts = auto_facts(tg_id, base)
+        if not app:
+            facts['approved_before'] = []  # в профиле это его собственный аккаунт, а не твинк
+        v = autoaccept.decide(facts)
+        flags = [('🔴', r) for r in v['stop']] + [('🟡', r) for r in v['minor']]
     except Exception as e:
         log_error(e)
-
-    flags.sort(key=lambda f: f[0] != '🔴')
-    check_line = "\n".join(f"{lvl} {txt}" for lvl, txt in flags) if flags else "✅ Проверки пройдены"
-    text = "\n\n🧾 <b>Досье</b>\n" + "\n".join(lines) + "\n" + check_line
+        flags = [('🔴', f"не удалось проверить: {e}")]
+    checks = "\n".join(f"{lvl} {escape_html(txt)}" for lvl, txt in flags) if flags else "✅ Всё чисто"
+    text = "\n\n🧾 <b>Досье</b>\n" + "\n".join(lines) + "\n\n🔍 <b>Проверки</b>\n" + checks
+    if app and app.get('auto'):
+        text += "\n\n" + auto_line(app, viewer)
     return text, flags
 
 def check_raid(uid):
@@ -1067,10 +1061,8 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
         if old_nicks:
             listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
             text += f"\n\n⚠️ <b>Внимание:</b> данный TG ID (<code>{user_id}</code>) уже подавал заявку ранее! Ники: {listed}"
-        line = auto_line(app, chat_id)
-        if line:
-            text += "\n\n" + line
-        text += dossier(user_id, app.get('nick', ''), chat_id, app=app)[0]
+        schedule_auto(user_id, app, keep_due=True)  # свежая перепроверка при открытии карточки
+        text += dossier(user_id, app.get('nick', ''), chat_id, app=pending.get(str(user_id), app))[0]
         text += ban_report(user_id, app.get('nick', ''), chat_id)
         if len(text) > TG_MAX_LEN:
             text = text[:TG_MAX_LEN - 1] + '…'
@@ -1637,10 +1629,14 @@ def admin_help_text(uid):
     parts.append("📋 <b>Заявки</b>\n"
                  "Нажмите «Одобрить» или «Отклонить», затем напишите комментарий или нажмите «Пропустить». "
                  "Пока вы пишете, заявка закреплена за вами, коллеги её не возьмут. Решение видят все.")
-    parts.append("🧾 <b>Досье и значки</b>\n"
-                 "Возраст аккаунта Telegram (примерно, ±3 месяца), аккаунт на сервере, страна, другие аккаунты с того же IP.\n"
-                 "🔴 серьёзно: бан, твинк в бане\n🟡 обратить внимание: раньше отклоняли, совсем новый аккаунт\n"
-                 "✅ проверки пройдены: ничего не нашлось")
+    parts.append("🧾 <b>Досье и проверки</b>\n"
+                 "Возраст аккаунта Telegram (примерно, ±3 месяца), фото, username, прошлые заявки, аккаунт на сервере, "
+                 "страна, другие аккаунты с того же IP.\n"
+                 "Проверки те же, по которым решает автопринятие:\n"
+                 "🔴 стоп: бан или мут когда-либо, твинк, блок в боте, брань и символика, раньше отклоняли, "
+                 "Telegram моложе 2 месяцев, писал в поддержку, пока ждёт\n"
+                 "🟡 мелочь: нет аватарки, нет username, Telegram моложе года, есть комментарий, 6+ цифр в нике\n"
+                 "✅ всё чисто")
     parts.append("🤖 <b>Автопринятие</b>\n"
                  "В заявке видно, примет ли её бот сам и когда: 🟢 через час, 🟡 через 12 ч, 🟠 через сутки и больше, "
                  "✋ только вручную. Принять или отклонить раньше можно как обычно.")
@@ -2106,19 +2102,17 @@ def auto_line(app, viewer=None, html=True):
     a = (app or {}).get('auto')
     if not a:
         return ""
-    esc = escape_html if html else (lambda x: x)
     b = (lambda x: f"<b>{x}</b>") if html else (lambda x: x)
     if not html:  # для Discord одной строкой
         if a['manual']:
             return "✋ только вручную: " + "; ".join(a['stop'])
         return f"{a['icon']} через {a['delay']} · " + (", ".join(a['minor']) or "мелочей нет")
     if a['manual']:
-        return f"✋ {b('Только вручную')}\n" + "\n".join(f"   • {esc(r)}" for r in a['stop'])
+        return f"✋ {b('Автопринятия не будет: только вручную')}"
     when = fmt_time(a['due'], viewer, '%H:%M' if fmt_time(a['due'], viewer, '%d.%m') == fmt_time(timeutil.now_iso(), viewer, '%d.%m') else '%d.%m %H:%M')
     head = f"{a['icon']} {b('Автопринятие через ' + a['delay'])} · в {when}"
-    details = ", ".join(a['minor']) if a['minor'] else "мелочей нет"
-    if (app or {}).get('subscribed'):
-        details += " · подписан на группу"
+    # мелочи уже перечислены в «Проверках» над вердиктом, здесь только подписка
+    details = "\n   ⚡ подписан на группу" if (app or {}).get('subscribed') else ""
     note = ""
     if not auto_enabled():
         note = "\n   ⏸ <i>автопринятие выключено в настройках</i>"
@@ -2126,7 +2120,7 @@ def auto_line(app, viewer=None, html=True):
         note = "\n   🛡 <i>ждёт окончания рейд-режима</i>"
     elif a.get('limit_wait'):
         note = f"\n   ⏳ <i>ждёт лимита, продолжит примерно в {fmt_time(auto_limit_free_at(), viewer, '%H:%M')}</i>"
-    return f"{head}\n   {esc(details)}{note}"
+    return f"{head}{details}{note}"
 
 def auto_counts():
     now = timeutil.now_utc()
@@ -3000,7 +2994,6 @@ def callback_handler(call):
                 + (f"🧪 Тестовая: {escape_html(staff_name(uid))} в режиме игрока\n" if test_by else "")
                 + f"👤 <code>{escape_html(state['nick'])}</code>"
                 f"{dup_warning}"
-                f"\n\n{auto_line(new_app)}"
                 f"{info}"
                 f"{bans}"
             )[:TG_MAX_LEN]
@@ -3008,7 +3001,7 @@ def callback_handler(call):
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),
                                     old_nicks=old_nicks, bans_found=bans.count('\n🚫') + bans.count('\n🔇'),
                                     test_by=staff_name(uid) if test_by else None,
-                                    risks=[re.sub(r'<[^>]+>', '', t) for lvl, t in flags if lvl == '🔴'],
+                                    risks=[],
                                     verdict=auto_line(new_app, html=False))
             check_raid(uid)
             safe_send(uid,
@@ -3454,10 +3447,15 @@ def callback_handler(call):
             except OSError:
                 pass
         return
-    if data == "admin_status":
-        ok(); safe_send(uid, status_text(uid)); return
-    if data == "admin_help":
-        ok(); safe_send(uid, admin_help_text(uid), parse_mode='HTML'); return
+    if data in ("admin_status", "admin_help"):
+        back = types.InlineKeyboardMarkup().row(
+            types.InlineKeyboardButton("🔙 Управление", callback_data="admin_menu_controls"),
+            types.InlineKeyboardButton("🏠 Меню", callback_data="admin_back"))
+        if data == "admin_status":
+            edit_message_safe(uid, msg.message_id, "📊 <b>Статус</b>\n\n" + escape_html(status_text(uid)), parse_mode='HTML', reply_markup=back)
+        else:
+            edit_message_safe(uid, msg.message_id, admin_help_text(uid), parse_mode='HTML', reply_markup=back)
+        ok(); return
     if data in ("admin_pause", "admin_resume"):
         set_paused(uid, data == "admin_pause")
         ok("Регистрация приостановлена." if data == "admin_pause" else "Регистрация возобновлена.")

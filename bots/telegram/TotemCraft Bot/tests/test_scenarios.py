@@ -163,15 +163,15 @@ text, flags = bot.dossier(P1, 'CrystalDisk', OWNER)
 check(any(l == '🔴' and 'бан' in t for l, t in flags), "досье игрока с баном на прошлом нике: 🔴")
 check(any('отклоняли' in t for _, t in flags), "досье: раньше отклоняли")
 check(not any('новый' in t for _, t in flags), "старый аккаунт не помечен новым")
-text, flags = bot.dossier(8000000001, 'CleanNick', OWNER)
-check(any('новый' in t for _, t in flags), "аккаунт новее всех прошлых заявителей: 🟡")
+text, flags = bot.dossier(9_900_000_000, 'CleanNick', OWNER)
+check(any(l == '🔴' and '2 месяцев' in t for l, t in flags), "Telegram моложе 2 месяцев: 🔴, как у автомата")
 text, flags = bot.dossier(1, 'oldtwink', OWNER)
-check('🎮 Сервер: <code>oldtwink</code>' in text, "досье показывает аккаунт AuthMe")
+check('🎮 <code>oldtwink</code>: рег.' in text, "досье показывает аккаунт AuthMe")
 saved = storage.query("SELECT id, decided_at FROM applications")
 storage.execute("UPDATE applications SET decided_at='2026-01-01T00:00:00+00:00'")  # все заявки «давние»
 bot._frontier_cache['at'] = 0
 text, flags = bot.dossier(1, 'CleanPlayer', OWNER)
-check(flags == [] and '✅ Проверки пройдены' in text, "у чистого старого аккаунта: «Проверки пройдены»")
+check(flags == [] and '✅ Всё чисто' in text, "у чистого старого аккаунта: «Всё чисто»")
 n_before = len([1 for u, j in ctx.webhook_log if j and 'Рейд-режим включён' in str(j)])
 for k in range(5):
     fresh = 9_600_000_000 + k
