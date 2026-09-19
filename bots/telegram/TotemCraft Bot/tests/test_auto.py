@@ -53,7 +53,7 @@ bot.user_states[P] = {'step': 'rules', 'nick': 'CleanNick', 'password': 'Str0ngP
 app = bot.pending[str(P)]
 check(app['auto']['icon'] == '🟢' and not app['auto']['manual'], f"вердикт: 🟢 ({app['auto']})")
 note = sent_to(log, OWNER)[0]
-check('Автопринятие' in note and 'выключено' in note, "в уведомлении вердикт и пометка «автопринятие выключено»")
+check('Автопринятие через 1 ч' in note and 'выкл.' in note and '✅ Одобрить' in buttons(log, OWNER), "короткое уведомление: вердикт, «выкл.», кнопки решения")
 pm = " ".join(sent_to(log, P))
 check('Автопринят' not in pm and 'мелоч' not in pm, "игрок критериев и сроков не видит")
 check('подпишитесь на нашу группу' in pm and '✅ Я подписался' in buttons(log, P), "игроку предложили подписаться на группу")
@@ -220,12 +220,14 @@ for tg, nick in ((W1, 'TwinAfterBan'), (W2, 'HonestNew')):
 check({'TwinAfterBan', 'HonestNew'} <= set(bot.first_login_watch.keys()), "принятые игроки поставлены на слежку за первым входом")
 ctx.tg_log.clear()
 bot.first_login_job()
-check(len(bot.first_login_watch) >= 2 and not sent_to(ctx.tg_log, OWNER), "пока не зашли: ничего не шлёт, слежка остаётся")
+check(len(bot.first_login_watch) >= 2 and not sent_to(ctx.tg_log, OWNER), "сутки не прошли: ничего не проверяет")
 # зашли: один с IP забаненного oldtwink (10.9.9.9), другой с чистого IP
 authme.execute("INSERT INTO authme (id, username, realname, password, ip, lastlogin, regip, regdate) VALUES "
                "(10,'twinafterban','TwinAfterBan','h','10.9.9.9',1789000000000,'',1789000000000),"
                "(11,'honestnew','HonestNew','h','77.88.8.8',1789000000000,'',1789000000000)")
 authme.commit()
+for n, w in bot.first_login_watch.items():  # прошли сутки
+    bot.first_login_watch[n] = dict(w, check_at=(tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds'))
 bot.first_login_job()
 alerts = [x for x in sent_to(ctx.tg_log, OWNER) if 'Возможный твинк' in x]
 check(len(alerts) == 1 and 'TwinAfterBan' in alerts[0] and '10.9.9.9' in alerts[0], "зашёл с IP забаненного: владельцу «Возможный твинк»")
@@ -234,10 +236,30 @@ check('TwinAfterBan' not in bot.first_login_watch and 'HonestNew' not in bot.fir
 ctx.tg_log.clear()
 bot.first_login_job()
 check(not [x for x in sent_to(ctx.tg_log, OWNER) if 'Возможный твинк' in x], "повторно не шлёт")
-bot.first_login_watch['GhostNick'] = {'tg': 1, 'until': (tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds')}
+bot.first_login_watch['GhostNick'] = {'tg': 1, 'check_at': (tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds')}
+ctx.tg_log.clear()
 bot.first_login_job()
-check('GhostNick' not in bot.first_login_watch, "не зашёл за 48 часов: снят со слежки")
+check('GhostNick' not in bot.first_login_watch and not sent_to(ctx.tg_log, OWNER), "не заходил за сутки: просто снят, без сообщений")
 check(storage.query("SELECT COUNT(*) FROM audit WHERE action='twin_suspect'")[0][0] == 1, "в журнале запись о возможном твинке")
+
+print("\n=== 13. Короткое уведомление: подробнее, кратко, решение прямо из него ===")
+X = 6_500_000_001
+bot.user_states[X] = {'step': 'rules', 'nick': 'ShortCard', 'password': 'Str0ngPass1', 'comment': 'Привет'}
+(t, _), log = ctx.press(X, 'rules_agree')
+note = [p for m, p in log if m == 'sendMessage' and str(p.get('chat_id')) == str(ADMIN)][0]
+check(len(fakes.strip_tags(note['text']).splitlines()) <= 6 and 'Досье' not in note['text'], "уведомление короткое, без досье")
+check({'✅ Одобрить', '❌ Отклонить', '🧾 Подробнее'} <= set(buttons(log, ADMIN)), "в уведомлении сразу «Одобрить», «Отклонить», «Подробнее»")
+mid = ctx.messages and max(k[1] for k in ctx.messages if k[0] == ADMIN)
+(t, _), log = ctx.press(ADMIN, f'appv_{X}_d', text='📩 Новая заявка', mid=mid)
+check(any('Досье' in x and 'Проверки' in x for _, x in edited(log)) and '🔙 Кратко' in buttons(log), "«Подробнее»: досье на месте, кнопка «Кратко»")
+(t, _), log = ctx.press(ADMIN, f'appv_{X}_s', text='🧾 Подробно', mid=mid)
+check(any('Досье' not in x for _, x in edited(log)) and '🧾 Подробнее' in buttons(log), "«Кратко»: вернулась короткая карточка")
+ctx.press(ADMIN, f'approve_{X}', text='📩 Заявка', mid=mid)
+log = ctx.say(ADMIN, '-')
+closed = [x for c, x in edited(log) if c == ADMIN and 'Заявка закрыта' in x]
+check(closed and len(fakes.strip_tags(closed[0]).splitlines()) <= 2, f"закрытая заявка в две строки: {closed[:1]}")
+others = [x for c, x in edited(log) if c == OWNER and 'Заявка закрыта' in x]
+check(others and len(fakes.strip_tags(others[0]).splitlines()) <= 2, "у владельца уведомление тоже свернулось в две строки")
 
 print("\n=== 11. Инструкция и статус на месте, с кнопкой назад ===")
 for data in ('admin_help', 'admin_status'):

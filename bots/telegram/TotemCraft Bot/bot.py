@@ -790,7 +790,7 @@ ACTION_NAMES = {
     'raid_on': '🛡 включил рейд-режим', 'raid_off': '🛡 выключил рейд-режим',
     'raid_auto_on': '🛡 включил автовключение рейд-режима', 'raid_auto_off': '🛡 выключил автовключение рейд-режима',
     'word_added': '📖 добавил слово в словарь', 'word_removed': '📖 убрал слово из словаря',
-    'twin_suspect': '🔴 возможный твинк после первого входа',
+    'twin_suspect': '🔴 возможный твинк: IP связан с баном',
 }
 
 def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None):
@@ -852,8 +852,9 @@ def flush_admin_notifications(aid):
         for text, markup, kind, ref in items:
             _deliver(aid, text, markup, kind, ref)
 
-def close_notices(kind, ref, footer):
-    """Дописывает итог к уведомлению у всех админов и убирает кнопки, чтобы дело не взяли дважды."""
+def close_notices(kind, ref, footer, title=None, skip=None):
+    """Дописывает итог к уведомлению у всех админов и убирает кнопки, чтобы дело не взяли дважды.
+    title — заменить текст уведомления коротким заголовком; skip — (chat_id, message_id), уже исправленное."""
     try:
         rows = db_exec("SELECT chat_id, message_id, text FROM notices WHERE kind=? AND ref=?", (kind, str(ref)), fetch=True)
         db_exec("DELETE FROM notices WHERE kind=? AND ref=?", (kind, str(ref)))
@@ -863,9 +864,12 @@ def close_notices(kind, ref, footer):
     now = timeutil.now_iso()
     def edit_all():
         for chat_id, message_id, text in rows:
+            if skip and (chat_id, message_id) == tuple(skip):
+                continue
             line = footer.replace('{t}', fmt_time(now, chat_id, '%H:%M'))
+            body = f"{title}\n{line}" if title else f"{text}\n\n{line}"
             try:
-                bot.edit_message_text(f"{text}\n\n{line}"[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
+                bot.edit_message_text(body[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
             except Exception:
                 pass
     run_in_background(edit_all)
@@ -1018,79 +1022,115 @@ def cancel_keyboard(label="❌ Отменить заявку"):
     return markup
 
 # ---------- Интерфейсные разделы ----------
-def show_pending_applications(chat_id, page=0, edit_message=None):
-    """Показывает текущие заявки постранично — одно сообщение с листанием."""
+def auto_short(app, viewer=None):
+    """Вердикт автомата одной строкой для короткой карточки."""
+    a = (app or {}).get('auto')
+    if not a:
+        return ""
+    if a['manual']:
+        more = f" (+{len(a['stop']) - 1})" if len(a['stop']) > 1 else ""
+        first = re.sub(r'\s*\([^)]*\)$', '', a['stop'][0])  # подробности в скобках — в «Подробнее»
+        return f"✋ Вручную: {escape_html(first)}{more}"
+    when = fmt_time(a['due'], viewer, '%H:%M' if fmt_time(a['due'], viewer, '%d.%m') == fmt_time(timeutil.now_iso(), viewer, '%d.%m') else '%d.%m %H:%M')
+    note = ""
+    if not auto_enabled():
+        note = " · выкл."
+    elif raid_active():
+        note = " · рейд"
+    elif a.get('limit_wait'):
+        note = " · ждёт лимита"
+    return f"{a['icon']} Автопринятие через {a['delay']} · в {when}{note}"
+
+def app_compact(user_id, app, viewer=None, title="Заявка"):
+    """Короткая карточка заявки: ник, комментарий, одно предупреждение, вердикт."""
+    nick = app.get('nick', '?')
+    username = app.get('username', '')
+    who = f"👤 <code>{escape_html(nick)}</code>"
+    if username and not username.startswith('id'):
+        who += f" · @{escape_html(username)}"
+    lines = [f"📩 <b>{title}</b>", who]
+    if app.get('test_by'):
+        lines.append(f"🧪 Тестовая: {escape_html(staff_name(app['test_by']))} в режиме игрока")
+    claimer = app_claims.get(str(user_id))
+    if claimer and claimer != viewer:
+        lines.append(f"⏳ Сейчас рассматривает: {escape_html(staff_name(claimer))}")
+    if app.get('comment'):
+        c = app['comment']
+        lines.append("💬 " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
+    old = [n for n in previous_nicks(user_id) if n.lower() != nick.lower()]
+    if old:
+        lines.append("⚠️ Уже подавал: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old[:5]))
+    short = auto_short(app, viewer)
+    if short:
+        lines.append(short)
+    return "\n".join(lines)
+
+def app_details(user_id, app, viewer=None):
+    """Подробная карточка: всё о человеке, досье, проверки, баны."""
+    nick = app.get('nick', '?')
+    username = app.get('username', '')
+    lines = [f"🧾 <b>Подробно</b> · <code>{escape_html(nick)}</code>",
+             f"🧑 {escape_html(app.get('tg_name') or '—')}"
+             + (f" · @{escape_html(username)}" if username and not username.startswith('id') else "")
+             + f" · ID <code>{user_id}</code>",
+             f"📅 Подана {fmt_time(app.get('date'), viewer)}"]
+    if app.get('comment'):
+        lines.append(f"💬 {escape_html(app['comment'])}")
+    old = [n for n in previous_nicks(user_id) if n.lower() != nick.lower()]
+    if old:
+        lines.append("⚠️ Этот Telegram уже подавал заявки: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old))
+    text = "\n".join(lines) + dossier(user_id, nick, viewer, app=app)[0] + ban_report(user_id, nick, viewer)
+    return text if len(text) <= TG_MAX_LEN else text[:TG_MAX_LEN - 1] + '…'
+
+def app_decision_buttons(user_id):
+    B = types.InlineKeyboardButton
+    return [B("✅ Одобрить", callback_data=f"approve_{user_id}"), B("❌ Отклонить", callback_data=f"reject_{user_id}")]
+
+def show_pending_applications(chat_id, page=0, edit_message=None, detailed=False):
+    """Очередь заявок: одна карточка с листанием. Коротко по умолчанию, «Подробнее» — досье и проверки."""
+    B = types.InlineKeyboardButton
     if not pending:
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_back"))
+        markup = types.InlineKeyboardMarkup().add(B("🔙 Назад", callback_data="admin_back"))
         if edit_message:
             edit_message_safe(chat_id, edit_message.message_id, "⏳ Нет заявок в ожидании.", reply_markup=markup)
         else:
             safe_send(chat_id, "⏳ Нет заявок в ожидании.", reply_markup=markup)
         return
-    # Сортируем: сначала старые (в порядке очереди)
     sorted_apps = sorted(pending.items(), key=lambda x: x[1].get('date', ''))
     total = len(sorted_apps)
     page = max(0, min(page, total - 1))  # коллега мог закрыть заявку, пока листали
     app_id, app = sorted_apps[page]
+    user_id = app.get('user_id', app_id)
     try:
-        nick = escape_html(app.get('nick', '?'))
-        comment = escape_html(app.get('comment', ''))
-        user_id = app.get('user_id', app_id)
-        username = app.get('username', '')
-        tg_name = escape_html(app.get('tg_name', ''))
-        date_str = fmt_time(app.get('date'), chat_id)
-        display_name = f"@{escape_html(username)}" if username and not username.startswith('id') else f"ID {user_id}"
-        hidden_pw = '●' * len(app.get('password', ''))
-        text = f"📩 <b>Заявка {page + 1} из {total}</b>\n"
-        if app.get('test_by'):
-            text += f"🧪 <b>Тестовая</b> (режим игрока, {escape_html(staff_name(app['test_by']))}): на сервере не регистрируется\n"
-        claimer = app_claims.get(str(user_id))
-        if claimer and claimer != chat_id:
-            text += f"⏳ <b>Сейчас рассматривает: {escape_html(staff_name(claimer))}</b>\n"
-        text += (
-            f"👤 Ник: <code>{nick}</code>\n"
-            f"🔑 Пароль: <code>{hidden_pw}</code>\n"
-            f"🧑 Имя TG: {tg_name if tg_name else '—'}\n"
-            f"🆔 ID TG: <code>{user_id}</code>\n"
-            f"📛 Username: {display_name}"
-        )
-        if comment:
-            text += f"\n💬 Комментарий: {comment}"
-        text += f"\n📅 {date_str}"
-        old_nicks = previous_nicks(user_id)
-        if old_nicks:
-            listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
-            text += f"\n\n⚠️ <b>Внимание:</b> данный TG ID (<code>{user_id}</code>) уже подавал заявку ранее! Ники: {listed}"
         schedule_auto(user_id, app, keep_due=True)  # свежая перепроверка при открытии карточки
-        text += dossier(user_id, app.get('nick', ''), chat_id, app=pending.get(str(user_id), app))[0]
-        text += ban_report(user_id, app.get('nick', ''), chat_id)
-        if len(text) > TG_MAX_LEN:
-            text = text[:TG_MAX_LEN - 1] + '…'
-        markup = types.InlineKeyboardMarkup(row_width=3)
-        # Навигация
-        nav = []
-        if page > 0:
-            nav.append(types.InlineKeyboardButton("◀️", callback_data=f"pending_page_{page - 1}"))
-        nav.append(types.InlineKeyboardButton(f"{page + 1}/{total}", callback_data="noop"))
-        if page < total - 1:
-            nav.append(types.InlineKeyboardButton("▶️", callback_data=f"pending_page_{page + 1}"))
-        if nav:
-            markup.add(*nav)
-        markup.add(
-            types.InlineKeyboardButton("✅ Одобрить", callback_data=f"approve_{user_id}"),
-            types.InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{user_id}"),
-        )
-        extra = []
+        app = pending.get(str(user_id), app)
+        if detailed:
+            text = f"📋 Заявка {page + 1} из {total}\n\n" + app_details(user_id, app, chat_id)
+        else:
+            text = app_compact(user_id, app, chat_id, title=f"Заявка {page + 1} из {total}")
+        markup = types.InlineKeyboardMarkup()
+        if total > 1:
+            nav = []
+            if page > 0:
+                nav.append(B("◀️", callback_data=f"pending_page_{page - 1}"))
+            nav.append(B(f"{page + 1}/{total}", callback_data="noop"))
+            if page < total - 1:
+                nav.append(B("▶️", callback_data=f"pending_page_{page + 1}"))
+            markup.row(*nav)
+        markup.row(*app_decision_buttons(user_id))
+        row = [B("🔙 Кратко", callback_data=f"pending_page_{page}") if detailed
+               else B("🧾 Подробнее", callback_data=f"pending_page_{page}_d")]
         if can(chat_id, 'messages'):
-            extra.append(types.InlineKeyboardButton("💬 Написать", callback_data=f"reply_{user_id}"))
+            row.append(B("💬 Написать", callback_data=f"reply_{user_id}"))
+        markup.row(*row)
+        row = []
         if can(chat_id, 'block'):
-            extra.append(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{user_id}"))
-        if extra:
-            markup.row(*extra)
+            row.append(B("🚫 Заблокировать", callback_data=f"block_{user_id}"))
         if can(chat_id, 'journal'):
-            markup.row(types.InlineKeyboardButton("📒 Журнал по игроку", callback_data=f"jr_p_{user_id}_0"))
-        markup.row(types.InlineKeyboardButton("🔙 Главное меню", callback_data="admin_back"))
+            row.append(B("📒 Журнал", callback_data=f"jr_p_{user_id}_0"))
+        if row:
+            markup.row(*row)
+        markup.row(B("🏠 Меню", callback_data="admin_back"))
         if edit_message:
             edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
         else:
@@ -1599,7 +1639,7 @@ def end_dialog(admin_id=None, player_id=None, user_initiated=False, quiet_admin=
 # Какое право нужно для кнопки: первый подходящий префикс (порядок важен: approved_ раньше approve_)
 CALLBACK_PERMS = [
     ('approved_page_', 'stats'), ('rejected_page_', 'stats'),
-    ('approve_', 'apps'), ('reject_', 'apps'), ('admin_menu_applications', 'apps'), ('pending_', 'apps'),
+    ('approve_', 'apps'), ('reject_', 'apps'), ('admin_menu_applications', 'apps'), ('pending_', 'apps'), ('appv_', 'apps'),
     ('admin_menu_messages', 'messages'), ('msg_', 'messages'), ('user_profile_', 'messages'),
     ('admin_close_ticket_', 'messages'), ('reply_', 'messages'), ('hist_', 'messages'),
     ('admin_menu_stats', 'stats'), ('back_to_stats', 'stats'), ('show_approved', 'stats'),
@@ -2266,34 +2306,30 @@ def show_words(chat_id, edit_message=None):
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
 # ---------- Проверка после первого входа ----------
-WATCH_HOURS = 48  # сколько следить за первым входом после принятия
-first_login_watch = storage.PersistentDict('watch')  # ник -> {'tg': ID, 'until': UTC ISO}
+WATCH_HOURS = 24  # через сколько после принятия один раз проверить вход
+first_login_watch = storage.PersistentDict('watch')  # ник -> {'tg': ID, 'check_at': UTC ISO}
 
 def watch_first_login(nick, tg_id):
-    """Принятый игрок: 48 часов ждём его первого входа, чтобы один раз сверить IP с забаненными."""
+    """Принятый игрок: через сутки один раз смотрим, заходил ли он, и если да — сверяем IP с забаненными."""
     first_login_watch[nick] = {'tg': int(tg_id),
-                               'until': (timeutil.now_utc() + timedelta(hours=WATCH_HOURS)).isoformat(timespec='seconds')}
+                               'check_at': (timeutil.now_utc() + timedelta(hours=WATCH_HOURS)).isoformat(timespec='seconds')}
 
 def first_login_job():
-    """Раз в 5 минут, и только если есть за кем следить: кто из недавно принятых впервые зашёл.
-    Зашедшего проверяем один раз и снимаем со слежки, не зашедших снимаем через 48 часов."""
-    if not len(first_login_watch):
+    """Раз в час: у кого из принятых прошли сутки — одна проверка и сразу снятие из списка.
+    Если подошедших нет, в базу AuthMe не ходим."""
+    now = timeutil.now_utc()
+    due = [n for n, w in first_login_watch.items() if timeutil.parse(w.get('check_at') or w.get('until')) <= now]
+    if not due:
         return
     try:
-        now = timeutil.now_utc()
-        for nick, w in first_login_watch.items():
-            if timeutil.parse(w['until']) <= now:
-                first_login_watch.pop(nick, None)
-        nicks = first_login_watch.keys()
-        if not nicks:
-            return
-        for username, ip, regip, _, _ in bans.authme_accounts(nicks):
-            ips = sorted({x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0')})
-            if not ips:
-                continue  # ещё не заходил
-            key = next((n for n in nicks if n.lower() == username.lower()), username)
-            w = first_login_watch.pop(key, None) or {}
-            check_twin_after_login(key, w.get('tg'), ips)
+        seen = {}
+        for username, ip, regip, _, _ in bans.authme_accounts(due):
+            seen[username.lower()] = sorted({x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0')})
+        for nick in due:
+            w = first_login_watch.pop(nick, None) or {}
+            ips = seen.get(nick.lower())
+            if ips:  # заходил — сверяем; не заходил за сутки — просто снимаем
+                check_twin_after_login(nick, w.get('tg'), ips)
     except Exception as e:
         log_error(e)
 
@@ -2306,7 +2342,7 @@ def check_twin_after_login(nick, tg_id, ips):
     if not hits:
         return
     audit(None, 'twin_suspect', tg_id, nick, "; ".join(hits)[:500])
-    text = (f"🔴 <b>Возможный твинк</b>: <code>{escape_html(nick)}</code> впервые зашёл на сервер с IP, связанного с баном:\n"
+    text = (f"🔴 <b>Возможный твинк</b>: <code>{escape_html(nick)}</code> заходил на сервер с IP, связанного с баном:\n"
             + "\n".join(f"   • {escape_html(h)}" for h in hits[:5])
             + "\n\n<i>Один IP бывает у родственников и соседей, решение за вами.</i>")
     markup = types.InlineKeyboardMarkup()
@@ -2523,7 +2559,8 @@ def handle_all_messages(m):
             audit(uid, 'app_cancelled', uid, nick_cancelled)
             # Сбрасываем таймер чтобы игрок мог подать заново немедленно
             last_application.pop(str(uid), None)
-            close_notices('app', uid, "↩️ <b>Игрок отозвал заявку</b> [{t}]")
+            close_notices('app', uid, "↩️ Игрок отозвал заявку [{t}]",
+                          title=f"📁 Заявка закрыта · <code>{escape_html(nick_cancelled)}</code>")
             # Если админ как раз пишет решение по этой заявке — прерываем
             claimer = app_claims.pop(str(uid), None)
             if claimer is not None and admin_states.get(claimer, {}).get('user_id') == str(uid):
@@ -3044,22 +3081,11 @@ def callback_handler(call):
                 last_application[str(uid)] = timeutil.now_iso()
             audit(uid, 'app_submitted', uid, state['nick'], state.get('comment', ''))
             old_nicks = previous_nicks(uid)
-            dup_warning = ""
-            if old_nicks:
-                listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
-                dup_warning = f"\n⚠️ <b>Внимание:</b> данный TG ID уже подавал заявку ранее! Ники: {listed}"
             bans = ban_report(uid, state['nick'])
-            info, flags = dossier(uid, state['nick'], app=new_app, compact=True)
             admin_markup = types.InlineKeyboardMarkup()
-            admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявку", callback_data=f"pending_goto_{uid}"))
-            admin_msg = (
-                f"📩 <b>Новая заявка</b> · в очереди {len(pending)}\n"
-                + (f"🧪 Тестовая: {escape_html(staff_name(uid))} в режиме игрока\n" if test_by else "")
-                + f"👤 <code>{escape_html(state['nick'])}</code>"
-                f"{dup_warning}"
-                f"{info}"
-                f"{bans}"
-            )[:TG_MAX_LEN]
+            admin_markup.row(*app_decision_buttons(uid))
+            admin_markup.row(types.InlineKeyboardButton("🧾 Подробнее", callback_data=f"appv_{uid}_d"))
+            admin_msg = app_compact(uid, pending.get(app_id, new_app), None, title=f"Новая заявка · в очереди {len(pending)}")
             notify_staff('apps', admin_msg, reply_markup=admin_markup, kind='app', ref=uid)
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),
                                     old_nicks=old_nicks, bans_found=bans.count('\n🚫') + bans.count('\n🔇'),
@@ -3261,7 +3287,23 @@ def callback_handler(call):
     if data == "admin_menu_applications":
         ok(); show_pending_applications(uid, page=0, edit_message=msg); return
     if data.startswith('pending_page_'):
-        ok(); show_pending_applications(uid, page=int(data.split('_')[2]), edit_message=msg); return
+        parts = data.split('_')  # pending_page_<N>[_d]
+        ok(); show_pending_applications(uid, page=int(parts[2]), edit_message=msg, detailed=len(parts) > 3); return
+    if data.startswith('appv_'):
+        _, target, mode = data.split('_')  # appv_<TG ID>_d — подробно, _s — кратко
+        app = pending.get(target)
+        if not app:
+            ok("Заявка уже рассмотрена или отозвана.", alert=True)
+            return
+        markup = types.InlineKeyboardMarkup()
+        markup.row(*app_decision_buttons(target))
+        if mode == 'd':
+            markup.row(types.InlineKeyboardButton("🔙 Кратко", callback_data=f"appv_{target}_s"))
+            text = app_details(int(target), app, uid)
+        else:
+            markup.row(types.InlineKeyboardButton("🧾 Подробнее", callback_data=f"appv_{target}_d"))
+            text = app_compact(int(target), app, uid, title=f"Заявка · в очереди {len(pending)}")
+        ok(); edit_message_safe(uid, msg.message_id, text, parse_mode='HTML', reply_markup=markup); return
     if data.startswith('pending_goto_'):
         # Прыгнуть на конкретную заявку по TG ID (из уведомления или поиска)
         target_id = data.split('_')[2]
@@ -3728,31 +3770,25 @@ def process_admin_decision(action, user_id_str, comment, state):
     # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
     action_label = "ОДОБРЕНО" if action == 'approve' else "ОТКЛОНЕНО"
-    decided_at = fmt_time(timeutil.now_iso(), actor)
-    decision_suffix = f"\n\n{action_icon} <b>{action_label}</b> [{decided_at}] · {escape_html(decider)}"
+    decided_at = fmt_time(timeutil.now_iso(), actor, '%d.%m %H:%M')
+    closed_title = f"📁 Заявка закрыта · <code>{escape_html(app['nick'])}</code>"
+    extra = ""
     if comment:
-        decision_suffix += f"\n💬 Комментарий: {escape_html(comment)}"
+        extra += f"\n💬 {escape_html(comment)}"
     if test_by:
-        decision_suffix += "\n🧪 Тестовая заявка: на сервере не регистрировалась"
-    if state.get('app_msg_message_id'):
+        extra += "\n🧪 тестовая, на сервере не регистрировалась"
+    own = (state.get('app_msg_chat_id', actor), state.get('app_msg_message_id'))
+    if own[1]:
         try:
             bot.edit_message_text(
-                chat_id=state.get('app_msg_chat_id', actor),
-                message_id=state['app_msg_message_id'],
-                text=f"📁 <b>Заявка закрыта</b>\n"
-                     f"👤 Ник: <code>{escape_html(app['nick'])}</code>\n"
-                     f"🧑 {escape_html(app.get('tg_name', '—'))}\n"
-                     f"🆔 <code>{app['user_id']}</code>\n"
-                     f"📛 @{escape_html(app.get('username',''))} \n"
-                     f"📅 {fmt_time(app.get('date'), actor)}"
-                     f"{decision_suffix}",
-                parse_mode='HTML',
-                reply_markup=None
-            )
+                chat_id=own[0], message_id=own[1],
+                text=f"{closed_title}\n{action_icon} <b>{action_label}</b> {decided_at} · {escape_html(decider)}{extra}",
+                parse_mode='HTML', reply_markup=None)
         except Exception:
             pass
-    # У коллег уведомление о заявке помечается решённым
-    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{{t}}] · {escape_html(decider)}")
+    # У коллег уведомление о заявке тоже сворачивается в две строки
+    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{{t}}] · {escape_html(decider)}{extra}",
+                  title=closed_title, skip=own)
 
     if state.get('prompt_msg_id') and actor is not None:
         try:
@@ -3866,7 +3902,7 @@ def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
     schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
     schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима
-    schedule.every(5).minutes.do(first_login_job)  # твинк после первого входа (только пока есть за кем следить)
+    schedule.every().hour.do(first_login_job)  # через сутки после принятия: один раз сверить IP с забаненными
     while True:
         schedule.run_pending()
         time.sleep(60)

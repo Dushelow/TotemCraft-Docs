@@ -61,7 +61,7 @@ bot.user_states[P1] = {'step': 'rules', 'nick': 'CrystalDisk', 'password': 'bana
 got = {c for c in (OWNER, ADMIN, HELPER) if sent_to(log, c)}
 check(got == {OWNER, ADMIN, HELPER}, f"уведомление о заявке у всех троих: {sorted(got)}")
 note = sent_to(log, OWNER)[0]
-check('jojo111' in note and 'Блокировки' in note and 'Cheats' in note, "в уведомлении прошлый ник и его бан")
+check('Уже подавал' in note and 'jojo111' in note and '✋ Вручную' in note, "в коротком уведомлении прошлый ник и «вручную»")
 check(bot.pending[str(P1)]['date'].endswith('+00:00'), "дата заявки в базе в UTC")
 press(ADMIN, f'approve_{P1}', text='📩 Заявка 1 из 1', mid=77)
 (t, alert), _ = press(HELPER, f'approve_{P1}')
