@@ -128,7 +128,7 @@ def post_discord(payload):
 def send_console_command(command):
     """Дублирует строку в канал консоли Discord. Команды отсюда сервер не выполняет."""
     if CONSOLE_WEBHOOK_URL:
-        run_in_background(_post_webhook, CONSOLE_WEBHOOK_URL, {"content": command})
+        run_in_background(_post_webhook, CONSOLE_WEBHOOK_URL, {"content": md_escape(command)})
 
 # Пароли одобренных игроков, которых не удалось зарегистрировать: ник -> пароль (только в памяти)
 failed_registrations = {}
@@ -172,6 +172,12 @@ def register_on_server(nick, password, decided_by=None, player_id=None):
                      only=sorted({a for a in (decided_by, ADMIN_ID) if a in staff}))
 
 # ---------- Discord ----------
+_MD_SPECIAL = re.compile(r'([\\\*_~`|>])')
+
+def md_escape(text):
+    """Для Discord вне `code`: экранирует разметку, иначе _ник_ станет курсивом, а *ник* жирным."""
+    return _MD_SPECIAL.sub(r'\\\1', str(text))
+
 def discord_escape(text):
     """Для Discord: НЕ экранируем подчёркивания и другие символы в embed-полях — они отображаются как есть."""
     return str(text)
@@ -180,9 +186,9 @@ def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=N
                             verdict=""):
     if not DISCORD_WEBHOOK_URL: return
     hidden_pw = '*' * len(password) if password else 'не указан'
-    username = f"@{user.username}" if user.username else "—"
+    username = md_escape(f"@{user.username}") if user.username else "—"
     desc = (
-        f"**TG Имя:** {discord_escape(user.first_name or '')} {discord_escape(user.last_name or '')}\n"
+        f"**TG Имя:** {md_escape(user.first_name or '')} {md_escape(user.last_name or '')}\n"
         f"**TG Username:** {username}\n"
         f"**TG ID:** {tg_id}\n"
         f"**Игровой ник:** `{discord_escape(nick)}`\n"
@@ -194,11 +200,11 @@ def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=N
     if bans_found:
         desc += f"\n**⚠️ Блокировки:** найдено {bans_found}, подробности в Telegram"
     if test_by:
-        desc += f"\n**🧪 Тестовая заявка** (режим игрока, {discord_escape(test_by)})"
+        desc += f"\n**🧪 Тестовая заявка** (режим игрока, {md_escape(test_by)})"
     for risk in risks or []:
-        desc += f"\n**🔴 Риск:** {discord_escape(risk)}"
+        desc += f"\n**🔴 Риск:** {md_escape(risk)}"
     if verdict:
-        desc += f"\n**Автомат:** {discord_escape(verdict)}"
+        desc += f"\n**Автомат:** {md_escape(verdict)}"
     embed = {"title": "📩 Новая заявка", "description": desc, "color": 0xFFFF00,
              "timestamp": timeutil.now_iso()}
     try:
@@ -212,9 +218,9 @@ def discord_decision_notify(nick, status, admin_comment="", decided_by=""):
     status_text = 'Одобрена' if status == 'Одобрено' else 'Отклонена'
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**Статус:** {status_text}"
     if decided_by:
-        desc += f"\n**Рассмотрел:** {discord_escape(decided_by)}"
+        desc += f"\n**Рассмотрел:** {md_escape(decided_by)}"
     if admin_comment:
-        desc += f"\n**Комментарий админа:** {discord_escape(admin_comment)}"
+        desc += f"\n**Комментарий админа:** {md_escape(admin_comment)}"
     embed = {"title": f"📋 Заявка {status_text.lower()}", "description": desc, "color": color,
              "timestamp": timeutil.now_iso()}
     try:
@@ -224,9 +230,9 @@ def discord_decision_notify(nick, status, admin_comment="", decided_by=""):
 
 def discord_player_message(user, tg_id, nick, message_text):
     if not DISCORD_WEBHOOK_URL: return
-    username = f"@{user.username}" if user.username else "—"
+    username = md_escape(f"@{user.username}") if user.username else "—"
     desc = (
-        f"**TG Имя:** {discord_escape(user.first_name or '')} {discord_escape(user.last_name or '')}\n"
+        f"**TG Имя:** {md_escape(user.first_name or '')} {md_escape(user.last_name or '')}\n"
         f"**TG Username:** {username}\n"
         f"**TG ID:** {tg_id}\n"
         f"**Игровой ник:** `{discord_escape(nick)}`\n\n"
@@ -241,9 +247,9 @@ def discord_player_message(user, tg_id, nick, message_text):
 
 def discord_guest_message(user, tg_id):
     if not DISCORD_WEBHOOK_URL: return
-    username = f"@{user.username}" if user.username else "—"
+    username = md_escape(f"@{user.username}") if user.username else "—"
     desc = (
-        f"**TG Имя:** {discord_escape(user.first_name or '')} {discord_escape(user.last_name or '')}\n"
+        f"**TG Имя:** {md_escape(user.first_name or '')} {md_escape(user.last_name or '')}\n"
         f"**TG Username:** {username}\n"
         f"**TG ID:** {tg_id}\n\n"
         f"*Администратор – перейдите в Telegram для просмотра сообщения.*"
@@ -257,12 +263,12 @@ def discord_guest_message(user, tg_id):
 
 def discord_player_blocked(nick, tg_id, username, reason="", blocked_by=""):
     if not DISCORD_WEBHOOK_URL: return
-    uname = f"@{username}" if username else "—"
+    uname = md_escape(f"@{username}") if username else "—"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}"
     if blocked_by:
-        desc += f"\n**Заблокировал:** {discord_escape(blocked_by)}"
+        desc += f"\n**Заблокировал:** {md_escape(blocked_by)}"
     if reason:
-        desc += f"\n**Причина:** {discord_escape(reason)}"
+        desc += f"\n**Причина:** {md_escape(reason)}"
     embed = {"title": "🚫 Игрок заблокирован", "description": desc, "color": 0xff4400,
              "timestamp": timeutil.now_iso()}
     try:
@@ -272,10 +278,10 @@ def discord_player_blocked(nick, tg_id, username, reason="", blocked_by=""):
 
 def discord_dialog_opened(nick, tg_id, username, admin_name=""):
     if not DISCORD_WEBHOOK_URL: return
-    uname = f"@{username}" if username else "—"
+    uname = md_escape(f"@{username}") if username else "—"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}"
     if admin_name:
-        desc += f"\n**Администратор:** {discord_escape(admin_name)}"
+        desc += f"\n**Администратор:** {md_escape(admin_name)}"
     embed = {"title": "💬 Диалог открыт администратором", "description": desc, "color": 0x00aaff,
              "timestamp": timeutil.now_iso()}
     try:
@@ -285,10 +291,10 @@ def discord_dialog_opened(nick, tg_id, username, admin_name=""):
 
 def discord_dialog_closed(nick, tg_id, username, by_user=False, admin_name=""):
     if not DISCORD_WEBHOOK_URL: return
-    uname = f"@{username}" if username else "—"
+    uname = md_escape(f"@{username}") if username else "—"
     who = "игроком" if by_user else "администратором"
     if admin_name:
-        who += f" ({discord_escape(admin_name)})"
+        who += f" ({md_escape(admin_name)})"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}\n**Закрыт:** {who}"
     embed = {"title": "🔇 Диалог (тикет) закрыт", "description": desc, "color": 0x888888,
              "timestamp": timeutil.now_iso()}
@@ -299,9 +305,9 @@ def discord_dialog_closed(nick, tg_id, username, by_user=False, admin_name=""):
 
 def discord_application_cancelled(nick, tg_id, username, tg_name=""):
     if not DISCORD_WEBHOOK_URL: return
-    uname = f"@{username}" if username and not username.startswith('id') else "—"
+    uname = md_escape(f"@{username}") if username and not username.startswith('id') else "—"
     desc = (
-        f"**TG Имя:** {discord_escape(tg_name) if tg_name else '—'}\n"
+        f"**TG Имя:** {md_escape(tg_name) if tg_name else '—'}\n"
         f"**TG Username:** {uname}\n"
         f"**TG ID:** {tg_id}\n"
         f"**Игровой ник:** `{discord_escape(nick)}`"
@@ -315,8 +321,8 @@ def discord_application_cancelled(nick, tg_id, username, tg_name=""):
 
 def discord_staff_change(title, name, tg_id, role_text, by_name):
     if not DISCORD_WEBHOOK_URL: return
-    desc = (f"**Кто:** {discord_escape(name)}\n**TG ID:** {tg_id}\n"
-            f"**Роль:** {role_text}\n**Изменил:** {discord_escape(by_name)}")
+    desc = (f"**Кто:** {md_escape(name)}\n**TG ID:** {tg_id}\n"
+            f"**Роль:** {role_text}\n**Изменил:** {md_escape(by_name)}")
     embed = {"title": title, "description": desc, "color": 0x9b59b6,
              "timestamp": timeutil.now_iso()}
     post_discord({"embeds": [embed]})

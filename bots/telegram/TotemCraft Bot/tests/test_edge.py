@@ -247,6 +247,11 @@ log = say(OWNER, '/status'); log = say(OWNER, '/status'); log = say(OWNER, '/sta
 check(any('Регистрация' in t for t in sent_to(log, OWNER)), "на команду ограничитель не действует")
 bot.RATE_LIMIT = 10 ** 6
 
+print("\n=== 10б. Разметка Discord ===")
+check(bot.md_escape('_Tt_') == '\\_Tt\\_', "ник _Tt_ в Discord не станет курсивом")
+check(bot.md_escape('a*b~c`d|e>f') == 'a\\*b\\~c\\`d\\|e\\>f', "звёздочки и прочая разметка тоже экранируются")
+check(bot.md_escape('Nick123') == 'Nick123', "ник без разметки не меняется")
+
 print("\n=== 11. Ошибки Telegram за весь прогон ===")
 counts = collections.Counter(d[:70] for m, d in ctx.tg_errors)
 for d, n in counts.most_common():

@@ -77,7 +77,8 @@ check(ctx.rcon_log[n_rcon:] == ['authme register CrystalDisk bananas12345', 'aut
       "регистрация через RCON: ник и .ник для Bedrock")
 check(any('.CrystalDisk' in x and 'Bedrock' in x for x in pm), "игроку подсказка про ник с Bedrock")
 console = [j['content'] for u, j in ctx.webhook_log if u.endswith('console')]
-check('authme register CrystalDisk ********' in console and 'authme register .CrystalDisk ********' in console
+stars = chr(92) + '*'
+check(f'authme register CrystalDisk {stars * 8}' in console and f'authme register .CrystalDisk {stars * 8}' in console
       and not any('bananas' in c for c in console),
       "в консоль Discord ушла команда со звёздочками")
 row = db("SELECT nick, status, admin_comment, decided_by_name, decided_at FROM applications ORDER BY id DESC LIMIT 1")[0]
