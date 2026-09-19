@@ -2168,10 +2168,10 @@ def auto_line(app, viewer=None, html=True):
     if not a:
         return ""
     b = (lambda x: f"<b>{x}</b>") if html else (lambda x: x)
-    if not html:  # для Discord одной строкой
+    if not html:  # для Discord: итог, под ним причины списком
         if a['manual']:
-            return "✋ только вручную: " + "; ".join(a['stop'])
-        return f"{a['icon']} через {a['delay']} · " + (", ".join(a['minor']) or "мелочей нет")
+            return "\n".join(["только вручную"] + [f"• {r}" for r in a['stop']])
+        return "\n".join([f"примет сам через {a['delay']}"] + [f"• {r}" for r in a['minor']])
     if a['manual']:
         return f"✋ {b('Автопринятия не будет: только вручную')}"
     when = fmt_time(a['due'], viewer, '%H:%M' if fmt_time(a['due'], viewer, '%d.%m') == fmt_time(timeutil.now_iso(), viewer, '%d.%m') else '%d.%m %H:%M')
@@ -2233,8 +2233,8 @@ def auto_job():
                 continue
             verdict = schedule_auto(int(key), app, keep_due=True)  # перепроверка: вдруг появился бан и т.п.
             if verdict['manual']:
-                notify_staff('apps', f"✋ Автомат не принял <code>{escape_html(app.get('nick', ''))}</code>: "
-                                     f"{escape_html('; '.join(verdict['stop']))}. Решите вручную.",
+                notify_staff('apps', f"✋ Автомат не принял <code>{escape_html(app.get('nick', ''))}</code>, решите вручную:\n"
+                                     + "\n".join(f"• {escape_html(r)}" for r in verdict['stop']),
                              reply_markup=types.InlineKeyboardMarkup().add(
                                  types.InlineKeyboardButton("📋 Открыть заявку", callback_data=f"pending_goto_{key}")))
                 continue
@@ -2705,11 +2705,23 @@ def handle_all_messages(m):
         state = user_states[uid]
         step = state.get('step')
         if step == 'support_nick':
-            state['support_nick'] = text
-            state['step'] = 'support_text'
-            safe_send(uid, "Опишите вашу проблему или вопрос:", reply_markup=cancel_keyboard("❌ Отменить"))
-            return
-        elif step == 'support_text':
+            typed = text.strip()
+            if config.BEDROCK_PREFIX and typed.startswith(config.BEDROCK_PREFIX):
+                typed = typed[len(config.BEDROCK_PREFIX):]
+            if not validate_nick_authme(typed)[0]:
+                # игрок сразу написал проблему вместо ника: текст сохраняем, ник спрашиваем отдельно
+                state['support_draft'] = f"{state['support_draft']}\n{text}" if state.get('support_draft') else text
+                safe_send(uid, "Сообщение сохранил. Теперь напишите только игровой ник: латинские буквы, цифры и _, "
+                               "например <code>Steve_2010</code>.", parse_mode='HTML',
+                          reply_markup=cancel_keyboard("❌ Отменить"))
+                return
+            state['support_nick'] = text.strip()
+            if not state.get('support_draft'):
+                state['step'] = 'support_text'
+                safe_send(uid, "Опишите вашу проблему или вопрос:", reply_markup=cancel_keyboard("❌ Отменить"))
+                return
+            step, text = 'support_text', state['support_draft']
+        if step == 'support_text':
             nick = state.get('support_nick', '')
             text_msg = text
             add_to_history(uid, f"Игровой ник: {nick}\nСообщение: {text_msg}", from_user=True)

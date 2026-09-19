@@ -251,6 +251,21 @@ print("\n=== 10б. Разметка Discord ===")
 check(bot.md_escape('_Tt_') == '\\_Tt\\_', "ник _Tt_ в Discord не станет курсивом")
 check(bot.md_escape('a*b~c`d|e>f') == 'a\\*b\\~c\\`d\\|e\\>f', "звёздочки и прочая разметка тоже экранируются")
 check(bot.md_escape('Nick123') == 'Nick123', "ник без разметки не меняется")
+v = bot.auto_line({'auto': {'manual': True, 'stop': ['твинк: был аккаунт (A_1)', 'раньше отклоняли (1)'], 'minor': []}}, html=False)
+check(v == 'только вручную\n• твинк: был аккаунт (A_1)\n• раньше отклоняли (1)', f"вердикт в Discord: итог и причины списком, без эмодзи ({v!r})")
+
+print("\n=== 10в. Обращение: игрок написал текст вместо ника ===")
+SUP = 9101
+bot.user_states[SUP] = {'step': 'support_nick'}
+n = len(ctx.webhook_log)
+log = say(SUP, 'Здравствуйте может я что-то не так ввела свой ник но я не могу зайти')
+check(any('только игровой ник' in x for x in sent_to(log, SUP)) and not ctx.webhook_log[n:], "текст сохранён, бот спросил ник, в Discord пока ничего")
+log = say(SUP, 'Olivye_9656')
+check(any('обращение отправлено' in x for x in sent_to(log, SUP)), "после ника обращение ушло без повторного вопроса")
+d = [j['embeds'][0]['description'] for u, j in ctx.webhook_log[n:] if j and 'embeds' in j]
+check(d and '`Olivye_9656`' in d[-1] and 'Здравствуйте' not in d[-1], "в Discord в поле ника только ник")
+t = bot.active_tickets.get(str(SUP)) or {}
+check('Здравствуйте' in str(t) or bot.storage.message_count(SUP) >= 1, "текст обращения дошёл до админов")
 
 print("\n=== 11. Ошибки Telegram за весь прогон ===")
 counts = collections.Counter(d[:70] for m, d in ctx.tg_errors)
