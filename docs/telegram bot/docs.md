@@ -10,7 +10,7 @@
 - Полная история заявок в CSV.
 - Система тикетов и диалогов «админ ↔ игрок».
 - Уведомления в Discord о новых заявках, решениях, обращениях, блокировках.
-- Автоматическая регистрация аккаунта на сервере через webhook‑команду `authme register`.
+- Автоматическая регистрация аккаунта на сервере через RCON‑команду `authme register` (пароль не попадает в Discord).
 - Административная панель с инлайн‑кнопками (просмотр заявок, ответы, статистика, управление).
 - Ежедневное напоминание о нерассмотренных заявках.
 
@@ -40,7 +40,10 @@
 BOT_TOKEN=ваш_токен_бота
 ADMIN_ID=123456789               # числовой ID администратора
 DISCORD_WEBHOOK_URL=https://...  # URL вебхука Discord для уведомлений
-CONSOLE_WEBHOOK_URL=https://...  # URL для отправки команд на сервер Minecraft (например, вебхук, выполняющий команды через Rcon или HTTP API)
+CONSOLE_WEBHOOK_URL=https://...  # вебхук канала консоли Discord: туда дублируется команда регистрации с паролем звёздочками
+RCON_PASSWORD=...                # пароль RCON из server.properties (rcon.password)
+RCON_HOST=127.0.0.1              # необязательно, по умолчанию 127.0.0.1
+RCON_PORT=25575                  # необязательно, по умолчанию 25575
 ```
 
 **Рекомендация:** для production использовать `EnvironmentFile` в systemd.
@@ -90,7 +93,7 @@ WantedBy=multi-user.target
 | Файл                          | Содержание                                                                 |
 |-------------------------------|----------------------------------------------------------------------------|
 | `pending.json`                | Активные заявки `{user_id: {nick, password, comment, tg_name, username, date}}` |
-| `approved_applications.csv`   | История заявок (столбцы: Дата, TG_Username, TG_ID, Minecraft_Ник, Пароль, Статус, Комментарий_игрока, Комментарий_админа) |
+| `approved_applications.csv`   | История заявок (столбцы: Дата, TG_Username, TG_ID, Minecraft_Ник, Пароль, Статус, Комментарий_игрока, Комментарий_админа). В столбце «Пароль» всегда `***`: при запуске бот заменяет звёздочками и старые пароли |
 | `last_application.json`       | `{user_id: ISO_timestamp}` - для 24‑часового ограничения повторной подачи |
 | `blocked_users.json`          | Список `user_id` заблокированных пользователей                             |
 | `chat_history.json`           | `{user_id: [ {from, text, time}, ... ]}` - до 20 сообщений на пользователя |
@@ -154,10 +157,15 @@ def validate_password_authme(password: str, nick: str = None) -> tuple[bool, str
 ### 5.3 Отправка команд на сервер Minecraft
 
 ```python
+def rcon_command(command: str) -> str
+def register_on_server(nick: str, password: str) -> None
 def send_console_command(command: str) -> None
 ```
-Отправляет HTTP POST на `CONSOLE_WEBHOOK_URL` с JSON `{"content": command}`.  
-Ожидается, что вебхук на стороне сервера выполнит команду в консоли (например, через Rcon или напрямую через API панели управления).
+`rcon_command` выполняет команду в консоли сервера по RCON (`RCON_HOST`, `RCON_PORT`, `RCON_PASSWORD`).  
+`register_on_server` регистрирует аккаунт командой `authme register` через RCON и дублирует в канал консоли Discord строку `authme register <ник> ********`. Если сервер недоступен, админ получает сообщение с кнопкой «🔁 Повторить регистрацию» (пароль для повтора хранится только в памяти до перезапуска бота).  
+`send_console_command` только пишет строку в канал консоли Discord через `CONSOLE_WEBHOOK_URL`. DiscordSRV не выполняет сообщения вебхуков, поэтому команду через него отдать нельзя.
+
+Медленные вызовы (вебхуки Discord, картинка и сообщение игроку о решении, RCON) идут в фоне через `run_in_background`, чтобы кнопки отвечали сразу.
 
 ### 5.4 Интеграция с Discord
 
@@ -201,9 +209,9 @@ RATE_COOLDOWN = 10      # секунд блокировки после прев�
 - Админ открывает панель → «📋 Заявки» → постраничный просмотр.
 - Для каждой заявки доступны кнопки: **✅ Одобрить**, **❌ Отклонить**, **🚫 Заблокировать**, **💬 Ответить**.
 - При одобрении/отклонении:
-  - Если действие = `approve` – сразу отправляется `authme register <nick> <password>` через `send_console_command`.
   - Админу предлагается ввести комментарий (или пропустить). Комментарий сохраняется в CSV.
-  - Заявка удаляется из `pending`, добавляется в `approved_applications.csv` со статусом.
+  - Заявка удаляется из `pending`, добавляется в `approved_applications.csv` со статусом (пароль `***`).
+  - Если действие = `approve` – аккаунт регистрируется через `register_on_server` (RCON). «Отмена» при вводе комментария регистрацию не запускает.
   - Пользователь получает уведомление (при одобрении – пароль и IP сервера).
   - Отправляется embed в Discord.
 
@@ -270,7 +278,9 @@ RATE_COOLDOWN = 10      # секунд блокировки после прев�
 
 ### 8.3 Управление тикетами
 
-- Админ может закрыть тикет из профиля пользователя (кнопка **«🔒 Закрыть тикет»**).
+- В профиле пользователя видны последние 5 сообщений, историю открывать не нужно.
+- Кнопка **«🔒 Закрыть без ответа»** (в профиле и в уведомлении) закрывает тикет и убирает обращение из «Не отвеченных». Игроку приходит «Ваш тикет #N закрыт администратором».
+- При нажатии «💬 Ответить» бот показывает последнее сообщение игрока.
 - При закрытии тикета, если диалог активен, он также завершается.
 - История сообщений не удаляется, но тикет перестаёт существовать в `tickets.json`.
 
@@ -295,11 +305,11 @@ schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
 При одобрении заявки вызывается:
 
 ```python
-send_console_command(f"authme register {app['nick']} {app['password']}")
+register_on_server(app['nick'], app['password'])
 ```
 
-Вебхук `CONSOLE_WEBHOOK_URL` должен принимать POST‑запросы с JSON `{"content": "команда"}` и выполнять её в консоли Minecraft‑сервера.  
-**Пример реализации на стороне сервера** (например, через простой HTTP‑сервер, который отправляет команду в Rcon или через панель Pterodactyl).
+Команда уходит по RCON на `127.0.0.1:25575`. На сервере Minecraft в `server.properties`: `enable-rcon=true`, `rcon.password=<тот же пароль, что RCON_PASSWORD>`, `broadcast-rcon-to-ops=false`. Порт 25575 наружу не открывать (UFW его не пропускает, пока нет `ufw allow 25575`).  
+AuthMe пишет в журнал `[AuthMe] Rcon registered <ник>`, пароль в журнал и в Discord не попадает. Ответ RCON на регистрацию пустой: AuthMe регистрирует асинхронно.
 
 ---
 
@@ -378,7 +388,7 @@ schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
 ### `approved_applications.csv`
 ```csv
 Дата,TG_Username,TG_ID,Minecraft_Ник,Пароль,Статус,Комментарий_игрока,Комментарий_админа
-2026-06-01T03:33:24.518455,mikeplayerrr,8445118286,notdreamm,MyPassword615,Одобрено,,
+2026-06-01T03:33:24.518455,mikeplayerrr,8445118286,notdreamm,***,Одобрено,,
 ```
 
 ### `.env` пример
@@ -386,5 +396,6 @@ schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
 BOT_TOKEN=123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11
 ADMIN_ID=123456789
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-CONSOLE_WEBHOOK_URL=http://localhost:8080/command
+CONSOLE_WEBHOOK_URL=https://discord.com/api/webhooks/...
+RCON_PASSWORD=длинный_случайный_пароль
 ```

@@ -1,6 +1,6 @@
 import telebot
 from telebot import types
-import json, csv, os, re, time, requests, traceback, threading, schedule, pytz, html as _html
+import json, csv, os, re, time, requests, traceback, threading, schedule, pytz, socket, struct, html as _html
 from datetime import datetime, date, timezone, timedelta
 from collections import defaultdict, deque
 
@@ -21,6 +21,10 @@ TOKEN              = _require_env('BOT_TOKEN')
 ADMIN_ID           = int(_require_env('ADMIN_ID'))
 DISCORD_WEBHOOK_URL = _require_env('DISCORD_WEBHOOK_URL')
 CONSOLE_WEBHOOK_URL = _require_env('CONSOLE_WEBHOOK_URL')
+# RCON сервера Minecraft: регистрация идёт напрямую, без пароля в Discord
+RCON_HOST     = os.environ.get('RCON_HOST', '127.0.0.1')
+RCON_PORT     = int(os.environ.get('RCON_PORT', '25575'))
+RCON_PASSWORD = os.environ.get('RCON_PASSWORD', '')
 MOSCOW_TZ = pytz.timezone('Europe/Moscow')
 
 bot = telebot.TeleBot(TOKEN)
@@ -85,6 +89,26 @@ if not os.path.exists(APPROVED_CSV):
     with open(APPROVED_CSV, 'w', newline='', encoding='utf-8-sig') as f:
         csv.writer(f).writerow(['Дата', 'TG_Username', 'TG_ID', 'Minecraft_Ник', 'Пароль', 'Статус', 'Комментарий_игрока', 'Комментарий_админа'])
 
+HIDDEN_PASSWORD = '***'
+
+def scrub_csv_passwords():
+    """Заменяет пароли в истории заявок на звёздочки. Пароль нужен только серверу, хранить его незачем."""
+    with open(APPROVED_CSV, 'r', newline='', encoding='utf-8-sig') as f:
+        rows = list(csv.reader(f))
+    changed = False
+    for row in rows[1:]:
+        if len(row) > 4 and row[4] not in ('', HIDDEN_PASSWORD):
+            row[4] = HIDDEN_PASSWORD
+            changed = True
+    if not changed:
+        return
+    tmp = APPROVED_CSV + '.tmp'
+    with open(tmp, 'w', newline='', encoding='utf-8-sig') as f:
+        csv.writer(f).writerows(rows)
+    os.replace(tmp, APPROVED_CSV)
+
+scrub_csv_passwords()
+
 def log_error(e):
     with open(ERROR_LOG, 'a', encoding='utf-8') as f:
         f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
@@ -144,13 +168,77 @@ def edit_message_safe(chat_id, message_id, text, parse_mode=None, reply_markup=N
         log_error(e)
         safe_send(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
 
-def send_console_command(command):
-    if not CONSOLE_WEBHOOK_URL:
-        return
+def run_in_background(func, *args, **kwargs):
+    """Запускает медленную работу (Discord, картинки, RCON) отдельно, чтобы кнопки не ждали её."""
+    def runner():
+        try:
+            func(*args, **kwargs)
+        except Exception as e:
+            log_error(e)
+    threading.Thread(target=runner, daemon=True).start()
+
+def _post_webhook(url, payload):
     try:
-        requests.post(CONSOLE_WEBHOOK_URL, json={"content": command}, timeout=10)
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
         log_error(e)
+
+def post_discord(payload):
+    if DISCORD_WEBHOOK_URL:
+        run_in_background(_post_webhook, DISCORD_WEBHOOK_URL, payload)
+
+def send_console_command(command):
+    """Дублирует строку в канал консоли Discord. Команды отсюда сервер не выполняет."""
+    if CONSOLE_WEBHOOK_URL:
+        run_in_background(_post_webhook, CONSOLE_WEBHOOK_URL, {"content": command})
+
+def _recv_exact(sock, size):
+    data = b''
+    while len(data) < size:
+        chunk = sock.recv(size - len(data))
+        if not chunk:
+            raise ConnectionError("RCON: соединение закрыто")
+        data += chunk
+    return data
+
+def rcon_command(command):
+    """Выполняет команду в консоли сервера через RCON и возвращает ответ сервера."""
+    if not RCON_PASSWORD:
+        raise RuntimeError("RCON_PASSWORD не задан в .env")
+    with socket.create_connection((RCON_HOST, RCON_PORT), timeout=5) as sock:
+        def send(req_id, ptype, body):
+            packet = struct.pack('<ii', req_id, ptype) + body.encode('utf-8') + b'\x00\x00'
+            sock.sendall(struct.pack('<i', len(packet)) + packet)
+        def recv():
+            length = struct.unpack('<i', _recv_exact(sock, 4))[0]
+            packet = _recv_exact(sock, length)
+            return struct.unpack('<i', packet[:4])[0], packet[8:-2].decode('utf-8', 'replace')
+        send(1, 3, RCON_PASSWORD)
+        if recv()[0] == -1:
+            raise RuntimeError("RCON: неверный пароль")
+        send(2, 2, command)
+        return re.sub(r'§.', '', recv()[1]).strip()
+
+# Пароли одобренных игроков, которых не удалось зарегистрировать: ник -> пароль (только в памяти)
+failed_registrations = {}
+
+def register_on_server(nick, password):
+    """Регистрирует аккаунт в AuthMe через RCON. В Discord уходит команда со звёздочками."""
+    send_console_command(f"authme register {nick} {'*' * 8}")
+    try:
+        answer = rcon_command(f"authme register {nick} {password}")
+        failed_registrations.pop(nick, None)
+        if answer:
+            send_console_command(f"Ответ сервера: {answer}")
+    except Exception as e:
+        log_error(e)
+        failed_registrations[nick] = password
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("🔁 Повторить регистрацию", callback_data=f"retry_reg_{nick}"))
+        safe_send(ADMIN_ID,
+                  f"⚠️ Не удалось зарегистрировать <code>{escape_html(nick)}</code> на сервере: {escape_html(e)}\n\n"
+                  f"Когда сервер будет доступен, нажмите кнопку. После перезапуска бота кнопка не сработает.",
+                  parse_mode='HTML', reply_markup=markup)
 
 # ---------- Discord ----------
 def discord_escape(text):
@@ -172,7 +260,7 @@ def discord_new_application(user, tg_id, nick, password, comment=""):
     embed = {"title": "📩 Новая заявка", "description": desc, "color": 0xFFFF00,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -186,7 +274,7 @@ def discord_decision_notify(nick, status, admin_comment=""):
     embed = {"title": f"📋 Заявка {status_text.lower()}", "description": desc, "color": color,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -203,7 +291,7 @@ def discord_player_message(user, tg_id, nick, message_text):
     embed = {"title": "📬 Обращение игрока", "description": desc, "color": 0x808080,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -219,7 +307,7 @@ def discord_guest_message(user, tg_id):
     embed = {"title": "📬 Обращение гостя", "description": desc, "color": 0x808080,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -232,7 +320,7 @@ def discord_player_blocked(nick, tg_id, username, reason=""):
     embed = {"title": "🚫 Игрок заблокирован", "description": desc, "color": 0xff4400,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -243,7 +331,7 @@ def discord_dialog_opened(nick, tg_id, username):
     embed = {"title": "💬 Диалог открыт администратором", "description": desc, "color": 0x00aaff,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -255,7 +343,7 @@ def discord_dialog_closed(nick, tg_id, username, by_user=False):
     embed = {"title": "🔇 Диалог (тикет) закрыт", "description": desc, "color": 0x888888,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -271,7 +359,7 @@ def discord_application_cancelled(nick, tg_id, username, tg_name=""):
     embed = {"title": "↩️ Игрок отменил заявку", "description": desc, "color": 0xff8800,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -283,7 +371,7 @@ def discord_daily_reminder():
     embed = {"title": "⏳ Незакрытые заявки", "description": desc, "color": 0xffaa00,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json={"embeds": [embed]}, timeout=10)
+        post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
@@ -802,10 +890,45 @@ def show_application_history(chat_id, page=0, edit_message=None):
         else:
             safe_send(chat_id, "📂 История заявок пуста.", reply_markup=markup)
         return
+    # Список по PROFILES_PER_PAGE, новые сверху; кнопка ника открывает карточку
     total = len(all_rows)
-    per_page = 1
-    row = all_rows[page]  # [Дата, TG_Username, TG_ID, MC_Ник, Пароль, Статус, Комм_игрока, Комм_админа]
-    num = page + 1
+    pages = (total + PROFILES_PER_PAGE - 1) // PROFILES_PER_PAGE
+    page = max(0, min(page, pages - 1))
+    first = total - 1 - page * PROFILES_PER_PAGE
+    indexes = range(first, max(first - PROFILES_PER_PAGE, -1), -1)
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    for i in indexes:
+        row = all_rows[i]
+        icon = '✅' if len(row) > 5 and row[5] == 'Одобрено' else ('❌' if len(row) > 5 and row[5] == 'Отклонено' else '⏳')
+        nick = row[3] if len(row) > 3 else '—'
+        markup.add(types.InlineKeyboardButton(f"{icon} {nick} · {row[0][:10]}", callback_data=f"apphistory_view_{i}"))
+    nav = []
+    if page > 0:
+        nav.append(types.InlineKeyboardButton("◀️", callback_data=f"apphistory_page_{page - 1}"))
+    nav.append(types.InlineKeyboardButton(f"{page + 1}/{pages}", callback_data="noop"))
+    if page < pages - 1:
+        nav.append(types.InlineKeyboardButton("▶️", callback_data=f"apphistory_page_{page + 1}"))
+    markup.add(*nav)
+    markup.add(types.InlineKeyboardButton("🔍 Поиск по нику", callback_data="admin_search"))
+    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_stats"))
+    text = f"👥 <b>Профили пользователей</b>\nВсего заявок: {total}, новые сверху. Страница {page + 1} из {pages}."
+    if edit_message:
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
+    else:
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
+
+PROFILES_PER_PAGE = 10
+
+def show_application_card(chat_id, index, edit_message=None):
+    """Карточка одной заявки из истории. index — номер строки в CSV."""
+    all_rows = read_approved_csv()
+    if not all_rows:
+        show_application_history(chat_id, edit_message=edit_message)
+        return
+    total = len(all_rows)
+    index = max(0, min(index, total - 1))
+    row = all_rows[index]  # [Дата, TG_Username, TG_ID, MC_Ник, Пароль, Статус, Комм_игрока, Комм_админа]
+    num = total - index  # номер в списке «новые сверху»
     date_s = row[0][:19].replace('T', ' ') if len(row) > 0 else '—'
     tg_uname = row[1] if len(row) > 1 else '—'
     tg_id = row[2] if len(row) > 2 else '—'
@@ -829,14 +952,15 @@ def show_application_history(chat_id, page=0, edit_message=None):
         text += f"\n👑 Комментарий админа: {escape_html(admin_comment)}"
     markup = types.InlineKeyboardMarkup(row_width=3)
     nav = []
-    if page > 0:
-        nav.append(types.InlineKeyboardButton("◀️", callback_data=f"apphistory_page_{page - 1}"))
+    if index < total - 1:
+        nav.append(types.InlineKeyboardButton("◀️", callback_data=f"apphistory_view_{index + 1}"))
     nav.append(types.InlineKeyboardButton(f"{num}/{total}", callback_data="noop"))
-    if page < total - 1:
-        nav.append(types.InlineKeyboardButton("▶️", callback_data=f"apphistory_page_{page + 1}"))
-    if nav:
-        markup.add(*nav)
-    markup.add(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_stats"))
+    if index > 0:
+        nav.append(types.InlineKeyboardButton("▶️", callback_data=f"apphistory_view_{index - 1}"))
+    markup.add(*nav)
+    if str(tg_id).isdigit():
+        markup.add(types.InlineKeyboardButton("👤 Профиль и сообщения", callback_data=f"user_profile_{tg_id}"))
+    markup.add(types.InlineKeyboardButton("🔙 К списку", callback_data=f"apphistory_page_{(total - 1 - index) // PROFILES_PER_PAGE}"))
     if edit_message:
         edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
     else:
@@ -1056,12 +1180,20 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
     if is_blocked:
         lines.append("🚫 <b>Заблокирован</b>")
 
+    # Последние сообщения прямо в профиле, чтобы не открывать историю отдельно
+    if msgs:
+        lines.append("\n<b>Последние сообщения:</b>")
+        for x in msgs[-5:]:
+            who = '👤' if x['from'] == 'user' else '👑'
+            text = x['text'] if len(x['text']) <= 500 else x['text'][:500] + '…'
+            lines.append(f"{who} <i>{x['time'][5:16]}</i>\n{escape_html(text)}")
+
     profile_text = "\n".join(lines)
 
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(types.InlineKeyboardButton("💬 Ответить на тикет", callback_data=f"reply_{uid}"))
-    if ticket:
-        markup.add(types.InlineKeyboardButton("🔒 Закрыть тикет без диалога", callback_data=f"admin_close_ticket_{uid}"))
+    if ticket or str(uid) in unread_messages:
+        markup.add(types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"))
     markup.add(types.InlineKeyboardButton("📜 История сообщений", callback_data=f"hist_{uid}"))
     if is_blocked:
         markup.add(types.InlineKeyboardButton("🔓 Разблокировать", callback_data=f"unblock_{uid}"))
@@ -1070,6 +1202,8 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
     markup.add(types.InlineKeyboardButton("🔙 Назад к сообщениям", callback_data="admin_menu_messages"))
     markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="admin_back"))
 
+    if len(profile_text) > TG_MAX_LEN:
+        profile_text = profile_text[:TG_MAX_LEN - 1] + '…'
     edit_message_safe(admin_chat_id, origin_msg.message_id, profile_text, parse_mode='HTML', reply_markup=markup)
 
 def show_blocked_users(chat_id, edit_message=None):
@@ -1802,7 +1936,8 @@ def callback_handler(call):
 
     # --- Комментарий админа ---
     if data == "skip_admin_comment" and uid == ADMIN_ID and ADMIN_ID in admin_states:
-        state = admin_states[ADMIN_ID]
+        bot.answer_callback_query(call.id, "Пропущено")
+        state = admin_states.pop(ADMIN_ID)
         if state.get('action') in ('approve', 'reject'):
             # Удаляем сообщение с просьбой ввести комментарий (текущее сообщение с кнопками Пропустить/Отмена)
             try:
@@ -1811,16 +1946,13 @@ def callback_handler(call):
                 pass
             state['prompt_msg_id'] = None  # уже удалили выше
             process_admin_decision(state['action'], state['user_id'], '', state)
-            del admin_states[ADMIN_ID]
         elif state.get('action') == 'block':
             try:
                 bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
             except Exception:
                 pass
             process_block(state['user_id'], '', msg)
-            del admin_states[ADMIN_ID]
         flush_admin_notifications()
-        bot.answer_callback_query(call.id, "Пропущено")
         return
     if data == "cancel_admin_comment" and uid == ADMIN_ID:
         if ADMIN_ID in admin_states:
@@ -2119,6 +2251,10 @@ def callback_handler(call):
         show_application_history(ADMIN_ID, page=page, edit_message=msg)
         bot.answer_callback_query(call.id)
         return
+    if data.startswith('apphistory_view_'):
+        show_application_card(ADMIN_ID, int(data.split('_')[2]), edit_message=msg)
+        bot.answer_callback_query(call.id)
+        return
     if data == "admin_search":
         admin_states[ADMIN_ID] = {'action': 'search'}
         bot.answer_callback_query(call.id)
@@ -2229,6 +2365,9 @@ def callback_handler(call):
     elif data.startswith('admin_close_ticket_'):
         target = int(data.split('_')[3])
         ticket = get_ticket(target)
+        was_unread = str(target) in unread_messages
+        clear_unread(target)  # закрытое обращение уходит из «Не отвеченных»
+        from_notification = bool(msg.text and msg.text.startswith("📬 Новое сообщение"))
         if ticket:
             close_ticket(target)
             label = enrich_user_label(target)
@@ -2247,10 +2386,19 @@ def callback_handler(call):
                 except Exception:
                     pass
             bot.answer_callback_query(call.id, f"Тикет #{ticket['id']} закрыт.")
-            show_user_profile(ADMIN_ID, target, msg)
+        elif was_unread:
+            bot.answer_callback_query(call.id, "Отмечено как прочитанное.")
         else:
             bot.answer_callback_query(call.id, "Тикет уже закрыт.")
-            show_user_profile(ADMIN_ID, target, msg)
+        if from_notification:
+            # Уведомление остаётся в чате с пометкой, без кнопок
+            try:
+                bot.edit_message_text(msg.html_text + "\n\n🔒 <b>Закрыто без ответа</b>", ADMIN_ID, msg.message_id,
+                                      parse_mode='HTML', reply_markup=None)
+            except Exception:
+                pass
+        else:
+            show_messages_menu(msg, edit_message=msg)
     elif data.startswith('reply_'):
         try:
             target = int(data.split('_')[1])
@@ -2261,7 +2409,11 @@ def callback_handler(call):
                          types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"),
                          types.InlineKeyboardButton("✅ Разблокировать", callback_data=f"unblock_{target}"))
             label = enrich_user_label(target)
-            safe_send(ADMIN_ID, f"📨 Диалог с <b>{escape_html(label)}</b> активирован.\nТеперь все ваши сообщения будут пересылаться этому пользователю.",
+            last_user_msg = next((x for x in reversed(chat_history.get(str(target), [])) if x['from'] == 'user'), None)
+            quote = ""
+            if last_user_msg:
+                quote = f"\n\n<b>Последнее сообщение игрока</b> ({last_user_msg['time'][5:16]}):\n{escape_html(last_user_msg['text'][:1500])}"
+            safe_send(ADMIN_ID, f"📨 Диалог с <b>{escape_html(label)}</b> активирован.\nТеперь все ваши сообщения будут пересылаться этому пользователю.{quote}",
                       parse_mode='HTML', reply_markup=i_markup)
             send_admin_menu(ADMIN_ID)
             # Discord уведомление об открытии диалога
@@ -2339,11 +2491,7 @@ def callback_handler(call):
             safe_send(ADMIN_ID, f"\u26a0\ufe0f У вас открыт диалог с пользователем {enrich_user_label(admin_reply_to)}.\n\n"
                                 f"Сначала завершите его кнопкой «\u274c Завершить диалог», затем обработайте заявку.")
             return
-        # Если одобряем — сразу отправляем authme register через webhook, не дожидаясь комментария
-        if action == 'approve':
-            app = pending.get(target_id)
-            if app:
-                send_console_command(f"authme register {app['nick']} {app['password']}")
+        bot.answer_callback_query(call.id)
         admin_states[ADMIN_ID] = {
             'action': action,
             'user_id': target_id,
@@ -2359,7 +2507,18 @@ def callback_handler(call):
                   parse_mode='HTML', reply_markup=markup)
         if prompt_msg:
             admin_states[ADMIN_ID]['prompt_msg_id'] = prompt_msg.message_id
-        bot.answer_callback_query(call.id)
+    elif data.startswith('retry_reg_'):
+        nick = data[len('retry_reg_'):]
+        password = failed_registrations.get(nick)
+        if not password:
+            bot.answer_callback_query(call.id, "Пароля нет: бот перезапускался. Попросите игрока подать заявку заново.", show_alert=True)
+            return
+        bot.answer_callback_query(call.id, "Повторяю регистрацию...")
+        try:
+            bot.edit_message_reply_markup(ADMIN_ID, msg.message_id, reply_markup=None)
+        except Exception:
+            pass
+        run_in_background(register_on_server, nick, password)
     else:
         bot.answer_callback_query(call.id)
 
@@ -2376,13 +2535,15 @@ def process_admin_decision(action, user_id_str, comment, state):
             app['username'],
             app['user_id'],
             app['nick'],
-            app['password'],
+            HIDDEN_PASSWORD,
             status,
             app.get('comment', ''),
             comment
         ])
     del pending[user_id_str]
     save_json(PENDING_FILE, pending)
+    if action == 'approve':
+        run_in_background(register_on_server, app['nick'], app['password'])
 
     # Редактируем карточку заявки — оставляем её в чате с пометкой решения
     action_icon = "✅" if action == 'approve' else "❌"
@@ -2427,6 +2588,12 @@ def process_admin_decision(action, user_id_str, comment, state):
         except Exception:
             pass
 
+    run_in_background(notify_player_decision, action, user_id_str, app, comment)
+    discord_decision_notify(app['nick'], status, comment)
+    # Возврат в панель администратора
+    send_admin_menu(ADMIN_ID)
+
+def notify_player_decision(action, user_id_str, app, comment):
     try:
         if action == 'approve':
             msg = (
@@ -2457,10 +2624,6 @@ def process_admin_decision(action, user_id_str, comment, state):
             safe_send_long(int(user_id_str), msg, reply_markup=main_keyboard(is_admin=False, user_id=int(user_id_str)))
     except Exception as e:
         log_error(e)
-
-    discord_decision_notify(app['nick'], status, comment)
-    # Возврат в панель администратора
-    send_admin_menu(ADMIN_ID)
 
 # ---------- Блокировка ----------
 def process_block(user_id_str, reason, original_msg):
