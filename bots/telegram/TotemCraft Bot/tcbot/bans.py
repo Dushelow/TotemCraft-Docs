@@ -104,6 +104,21 @@ def authme_accounts(nicks):
             return db.execute(q, args).fetchall()
 
 
+def authme_accounts_on_ips(ips, limit=20):
+    """Ники аккаунтов AuthMe, заходивших или зарегистрированных с этих IP."""
+    ips = [ip for ip in ips if ip]
+    if not ips:
+        return []
+    marks = ','.join('?' * len(ips))
+    q = f"SELECT username FROM authme WHERE ip IN ({marks}) OR regip IN ({marks}) LIMIT {int(limit)}"
+    try:
+        with closing(sqlite3.connect('file:' + AUTHME_DB + '?mode=ro', uri=True, timeout=5)) as db:
+            return [r[0] for r in db.execute(q, ips + ips).fetchall()]
+    except sqlite3.OperationalError:
+        with closing(sqlite3.connect('file:' + AUTHME_DB + '?immutable=1', uri=True, timeout=5)) as db:
+            return [r[0] for r in db.execute(q, ips + ips).fetchall()]
+
+
 def authme_ips(nicks):
     """IP (последний и при регистрации) для ников из базы AuthMe."""
     return {ip for row in authme_accounts(nicks) for ip in row[1:3] if ip and ip not in ('127.0.0.1', '0.0.0.0')}

@@ -1,14 +1,14 @@
 import telebot
 from telebot import types
 import os, re, time, requests, threading, schedule, html as _html
-from datetime import timedelta
+from datetime import date, timedelta
 from collections import defaultdict
 
 from tcbot import config, storage, timeutil
 from tcbot.config import TOKEN, ADMIN_ID, DISCORD_WEBHOOK_URL, CONSOLE_WEBHOOK_URL
 from tcbot.logs import log_error
 from tcbot.rcon import rcon_command
-from tcbot import bans
+from tcbot import bans, mmdb, tgage
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -154,7 +154,7 @@ def discord_escape(text):
     """Для Discord: НЕ экранируем подчёркивания и другие символы в embed-полях — они отображаются как есть."""
     return str(text)
 
-def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=None, bans_found=0, test_by=None):
+def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=None, bans_found=0, test_by=None, risks=None):
     if not DISCORD_WEBHOOK_URL: return
     hidden_pw = '*' * len(password) if password else 'не указан'
     username = f"@{user.username}" if user.username else "—"
@@ -172,6 +172,8 @@ def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=N
         desc += f"\n**⚠️ Блокировки:** найдено {bans_found}, подробности в Telegram"
     if test_by:
         desc += f"\n**🧪 Тестовая заявка** (режим игрока, {discord_escape(test_by)})"
+    for risk in risks or []:
+        desc += f"\n**🔴 Риск:** {discord_escape(risk)}"
     embed = {"title": "📩 Новая заявка", "description": desc, "color": 0xFFFF00,
              "timestamp": timeutil.now_iso()}
     try:
@@ -458,6 +460,157 @@ def ban_report(tg_id, nick, viewer=None):
         text += f"\n⚠️ Не удалось проверить {escape_html(err)}"
     return text
 
+
+# ---------- Досье игрока и проверки ----------
+AUTHME_GEOIP = os.path.join(config.MC_SERVER_DIR, 'plugins', 'AuthMe', 'GeoLite2-Country.mmdb')
+VERY_NEW_DAYS = 30        # «совсем новый» аккаунт Telegram: новее всех, кто подавал заявки 30+ дней назад
+RAID_WINDOW_MIN = 60      # набег: столько-то заявок от совсем новых аккаунтов за час
+RAID_COUNT = 5
+_frontier_cache = {'at': 0.0, 'anchors': [], 'border': None}
+
+def _frontier():
+    """Граница по истории заявок (обновляется раз в час):
+    anchors — месяцы, когда подавал заявку самый свежий ID (для оценки возраста новых аккаунтов);
+    border — (самый свежий ID среди заявок старше VERY_NEW_DAYS дней, дата)."""
+    if time.time() - _frontier_cache['at'] < 3600:
+        return _frontier_cache
+    anchors, running = [], max(i for i, _ in tgage.ANCHORS)
+    for month, max_id in storage.query(
+            "SELECT substr(decided_at,1,7), MAX(tg_id) FROM applications WHERE tg_id IS NOT NULL "
+            "AND decided_at IS NOT NULL GROUP BY 1 ORDER BY 1"):
+        if max_id and max_id > running:  # только новые максимумы, иначе оценка «помолодеет» зря
+            running = max_id
+            anchors.append((max_id, date(int(month[:4]), int(month[5:7]), 1)))
+    cutoff = (timeutil.now_utc() - timedelta(days=VERY_NEW_DAYS)).isoformat(timespec='seconds')
+    row = storage.query("SELECT MAX(tg_id) FROM applications WHERE decided_at < ?", (cutoff,))
+    _frontier_cache.update(at=time.time(), anchors=anchors, border=(row[0][0], cutoff) if row and row[0][0] else None)
+    return _frontier_cache
+
+def is_very_new(tg_id):
+    """Аккаунт новее всех, кто подавал заявки больше VERY_NEW_DAYS дней назад. Возвращает дату-границу или None."""
+    border = _frontier()['border']
+    return border[1] if border and int(tg_id) > border[0] else None
+
+def _flag_country(iso):
+    return ''.join(chr(0x1F1E6 + ord(ch) - ord('A')) for ch in iso.upper()) if iso and len(iso) == 2 else ''
+
+def _authme_time(value):
+    """Время из AuthMe (миллисекунды или строка) -> UTC ISO."""
+    try:
+        if isinstance(value, (int, float)) or str(value).isdigit():
+            v = int(value)
+            return timeutil.from_ms(v if v > 10 ** 11 else v * 1000).isoformat(timespec='seconds')
+        return timeutil.parse(value).isoformat(timespec='seconds') if value else None
+    except Exception:
+        return None
+
+def collect_tg_facts(user):
+    """Что Telegram отдаёт о человеке: снимается при подаче заявки и хранится в ней."""
+    facts = {'premium': bool(getattr(user, 'is_premium', False)), 'lang': user.language_code or '',
+             'username': bool(user.username)}
+    try:
+        facts['photo'] = bot.get_user_profile_photos(user.id, limit=1).total_count > 0
+    except Exception as e:
+        log_error(e)
+    return facts
+
+def dossier(tg_id, nick, viewer=None, app=None, compact=False):
+    """Досье игрока и предупреждения. Возвращает (текст для карточки, список (уровень, текст)).
+    Каждый источник проверяется отдельно: сбой одного не мешает остальным."""
+    tg_id = int(tg_id)
+    lines, flags = [], []
+
+    # Telegram
+    try:
+        parts = [f"аккаунт {tgage.describe(tg_id, _frontier()['anchors'])}"]
+        facts = (app or {}).get('tg') or {}
+        if facts:
+            parts.append("Premium" if facts.get('premium') else "без Premium")
+            if 'photo' in facts:
+                parts.append("есть фото" if facts['photo'] else "нет фото")
+            parts.append("есть username" if facts.get('username') else "нет username")
+            if facts.get('lang'):
+                parts.append(f"язык {facts['lang']}")
+        lines.append("📱 Telegram: " + ", ".join(parts))
+        since = is_very_new(tg_id)
+        if since:
+            bare = facts and not facts.get('username') and facts.get('photo') is False
+            flags.append(('🟡', f"Совсем новый аккаунт Telegram: новее всех, кто подавал заявки до {fmt_time(since, viewer, '%d.%m.%Y')}"
+                                + (", без фото и username" if bare else "")))
+    except Exception as e:
+        log_error(e)
+        lines.append(f"📱 Telegram: не удалось оценить ({escape_html(e)})")
+
+    # История в боте
+    try:
+        rows = storage.query("SELECT status, COUNT(*) FROM applications WHERE tg_id=? GROUP BY status", (tg_id,))
+        counts = dict(rows)
+        if counts.get('Отклонено'):
+            flags.append(('🟡', f"Раньше отклоняли: {counts['Отклонено']} раз(а)"))
+        if tg_id in blocked_users:
+            flags.append(('🔴', "Заблокирован в боте"))
+    except Exception as e:
+        log_error(e)
+
+    # Сервер: аккаунты AuthMe, страна по IP, другие аккаунты с того же IP
+    nicks = [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()]
+    ips = set()
+    try:
+        for username, ip, regip, regdate, lastlogin in bans.authme_accounts(nicks):
+            geo = None
+            try:
+                geo = mmdb.country(AUTHME_GEOIP, ip or regip)
+            except Exception as e:
+                log_error(e)
+            where = f", {_flag_country(geo[0])} {escape_html(geo[1])}" if geo else ""
+            lines.append(f"🎮 Сервер: <code>{escape_html(username)}</code> рег. {fmt_time(_authme_time(regdate), viewer, '%d.%m.%Y')}, "
+                         f"вход {fmt_time(_authme_time(lastlogin), viewer, '%d.%m.%Y')}{where}")
+            ips.update(x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0'))
+        if not compact and ips:
+            others = [n for n in bans.authme_accounts_on_ips(sorted(ips)) if n.lower() not in {x.lower() for x in nicks}]
+            if others:
+                found, _, _ = bans.find(others)
+                banned = sorted({it['who'] for it in found if it['icon'] == '🚫' and not it['who'].startswith('IP ')})
+                lines.append("👥 С того же IP: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in others[:10])
+                             + (f" и ещё {len(others) - 10}" if len(others) > 10 else ""))
+                if banned:
+                    flags.append(('🔴', "С того же IP есть аккаунты в бане: " + ", ".join(escape_html(n) for n in banned[:5])))
+    except Exception as e:
+        log_error(e)
+        lines.append(f"🎮 Сервер: не удалось прочитать AuthMe ({escape_html(e)})")
+
+    # Действующие баны на своих никах и по IP (подробности — в блоке «Блокировки»)
+    try:
+        found, _, _ = bans.find(nicks)
+        if any(it['icon'] == '🚫' for it in found):
+            flags.append(('🔴', "Действующий бан на сервере (подробности ниже)"))
+    except Exception as e:
+        log_error(e)
+
+    flags.sort(key=lambda f: f[0] != '🔴')
+    check_line = "\n".join(f"{lvl} {txt}" for lvl, txt in flags) if flags else "✅ Проверки пройдены"
+    text = "\n\n🧾 <b>Досье</b>\n" + "\n".join(lines) + "\n" + check_line
+    return text, flags
+
+def check_raid(uid):
+    """Много заявок от совсем новых аккаунтов за час — одно предупреждение команде (не чаще раза в 3 часа)."""
+    try:
+        if not is_very_new(uid):
+            return
+        since = (timeutil.now_utc() - timedelta(minutes=RAID_WINDOW_MIN)).isoformat(timespec='seconds')
+        ids = [r[0] for r in storage.query("SELECT DISTINCT target_id FROM audit WHERE action='app_submitted' AND ts >= ?", (since,))]
+        fresh = [i for i in ids if i and is_very_new(i)]
+        last = storage.setting('raid_alert_at')
+        if len(fresh) >= RAID_COUNT and (not last or timeutil.now_utc() - timeutil.parse(last) > timedelta(hours=3)):
+            storage.set_setting('raid_alert_at', timeutil.now_iso())
+            text = (f"🔴 <b>Похоже на набег</b>: за последний час {len(fresh)} заявок от совсем новых аккаунтов Telegram.\n"
+                    f"Проверьте очередь заявок внимательнее. Можно приостановить регистрацию в «Управлении».")
+            notify_staff('apps', text)
+            post_discord({"embeds": [{"title": "🔴 Похоже на набег", "color": 0xff0000,
+                                      "description": f"За час {len(fresh)} заявок от совсем новых аккаунтов Telegram.",
+                                      "timestamp": timeutil.now_iso()}]})
+    except Exception as e:
+        log_error(e)
 
 def check_rate_limit(user_id):
     if user_id in staff:
@@ -879,7 +1032,8 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
         if old_nicks:
             listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
             text += f"\n\n⚠️ <b>Внимание:</b> данный TG ID (<code>{user_id}</code>) уже подавал заявку ранее! Ники: {listed}"
-        text += ban_report(user_id, app.get('nick', ''))
+        text += dossier(user_id, app.get('nick', ''), chat_id, app=app)[0]
+        text += ban_report(user_id, app.get('nick', ''), chat_id)
         if len(text) > TG_MAX_LEN:
             text = text[:TG_MAX_LEN - 1] + '…'
         markup = types.InlineKeyboardMarkup(row_width=3)
@@ -1309,7 +1463,7 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
             text = x['text'] if len(x['text']) <= 300 else x['text'][:300] + '…'
             lines.append(f"{who} <i>{fmt_time(x['time'], admin_chat_id, '%d.%m %H:%M')}</i>\n{escape_html(text)}")
 
-    profile_text = "\n".join(lines) + ban_report(uid, nick)
+    profile_text = "\n".join(lines) + dossier(uid, nick, admin_chat_id)[0] + ban_report(uid, nick, admin_chat_id)
 
     B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup(row_width=2)
@@ -2423,7 +2577,8 @@ def callback_handler(call):
                 'nick': state['nick'],
                 'password': state['password'],
                 'comment': state.get('comment', ''),
-                'date': timeutil.now_iso()
+                'date': timeutil.now_iso(),
+                'tg': collect_tg_facts(call.from_user),
             }
             if test_by:
                 new_app['test_by'] = test_by  # заявка из режима игрока: на сервере не регистрируется
@@ -2437,6 +2592,7 @@ def callback_handler(call):
                 listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
                 dup_warning = f"\n⚠️ <b>Внимание:</b> данный TG ID уже подавал заявку ранее! Ники: {listed}"
             bans = ban_report(uid, state['nick'])
+            info, flags = dossier(uid, state['nick'], app=new_app, compact=True)
             admin_markup = types.InlineKeyboardMarkup()
             admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявку", callback_data=f"pending_goto_{uid}"))
             admin_msg = (
@@ -2445,12 +2601,15 @@ def callback_handler(call):
                 + f"Ник: <code>{escape_html(state['nick'])}</code>\n"
                 f"В очереди: <b>{len(pending)}</b>"
                 f"{dup_warning}"
+                f"{info}"
                 f"{bans}"
             )[:TG_MAX_LEN]
             notify_staff('apps', admin_msg, reply_markup=admin_markup, kind='app', ref=uid)
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),
                                     old_nicks=old_nicks, bans_found=bans.count('\n🚫') + bans.count('\n🔇'),
-                                    test_by=staff_name(uid) if test_by else None)
+                                    test_by=staff_name(uid) if test_by else None,
+                                    risks=[re.sub(r'<[^>]+>', '', t) for lvl, t in flags if lvl == '🔴'])
+            check_raid(uid)
             safe_send(uid,
                 "✅ <b>Ваша заявка принята и отправлена на рассмотрение.</b>\n\n"
                 "📋 Заявки рассматриваются в порядке очереди. Срок рассмотрения - <b>как правило, до 24 часов</b>.\n\n"

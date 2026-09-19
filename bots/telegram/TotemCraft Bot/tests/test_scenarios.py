@@ -154,6 +154,40 @@ r = bot.ban_report(1, 'jojo111', OWNER)
 bot.bans.ABX_DATA_DIR = os.path.join(MC, 'plugins', 'AdvancedBanX', 'data')
 check('Не удалось проверить AdvancedBanX' in r, "нет файлов AdvancedBanX: бот пишет об этом и не падает")
 
+print("\n=== 7а. Досье и проверки ===")
+from datetime import date
+tgage = bot.tgage
+check(tgage.describe(7815237229, today=date(2026, 9, 19)).startswith("≈ май 2025"), "возраст аккаунта по ID: май 2025")
+check("3 лет" in tgage.age_text(date(2023, 9, 1), today=date(2026, 9, 19)), "«около 3 лет», падеж правильный")
+text, flags = bot.dossier(P1, 'CrystalDisk', OWNER)
+check(any(l == '🔴' and 'бан' in t for l, t in flags), "досье игрока с баном на прошлом нике: 🔴")
+check(any('отклоняли' in t for _, t in flags), "досье: раньше отклоняли")
+check(not any('новый' in t for _, t in flags), "старый аккаунт не помечен новым")
+text, flags = bot.dossier(8000000001, 'CleanNick', OWNER)
+check(any('новый' in t for _, t in flags), "аккаунт новее всех прошлых заявителей: 🟡")
+text, flags = bot.dossier(1, 'oldtwink', OWNER)
+check('🎮 Сервер: <code>oldtwink</code>' in text, "досье показывает аккаунт AuthMe")
+saved = storage.query("SELECT id, decided_at FROM applications")
+storage.execute("UPDATE applications SET decided_at='2026-01-01T00:00:00+00:00'")  # все заявки «давние»
+bot._frontier_cache['at'] = 0
+text, flags = bot.dossier(1, 'CleanPlayer', OWNER)
+check(flags == [] and '✅ Проверки пройдены' in text, "у чистого старого аккаунта: «Проверки пройдены»")
+n_before = len([1 for u, j in ctx.webhook_log if j and 'набег' in str(j)])
+for k in range(5):
+    fresh = 9_600_000_000 + k
+    bot.user_states[fresh] = {'step': 'rules', 'nick': f'Raid{k}', 'password': 'qwerty12345', 'comment': ''}
+    press(fresh, 'rules_agree')
+raids = [1 for u, j in ctx.webhook_log if j and 'набег' in str(j)]
+check(len(raids) - n_before == 1, f"5 заявок от совсем новых аккаунтов за час: одно предупреждение о набеге ({len(raids) - n_before})")
+bot.user_states[9_600_000_010] = {'step': 'rules', 'nick': 'Raid10', 'password': 'qwerty12345', 'comment': ''}
+press(9_600_000_010, 'rules_agree')
+check(len([1 for u, j in ctx.webhook_log if j and 'набег' in str(j)]) - n_before == 1, "повторно в течение 3 часов не шумит")
+for k in list(range(5)) + [10]:
+    bot.pending.pop(str(9_600_000_000 + k), None)
+for app_id, decided_at in saved:
+    storage.execute("UPDATE applications SET decided_at=? WHERE id=?", (decided_at, app_id))
+bot._frontier_cache['at'] = 0
+
 print("\n=== 8. Статистика, выгрузка, таймер 24 часа, копия базы ===")
 (t, _), log = press(OWNER, 'admin_menu_stats')
 check('Одобрено: 1 (сегодня: 1)' in edited(log)[-1][1], "статистика считает «сегодня» по поясу админа")
