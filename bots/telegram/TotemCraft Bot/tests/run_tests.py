@@ -7,7 +7,7 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-TESTS = ['test_migration.py', 'test_scenarios.py']
+TESTS = ['test_migration.py', 'test_scenarios.py', 'test_edge.py', 'test_load.py']
 
 failed = []
 with tempfile.TemporaryDirectory() as tmp:

@@ -33,6 +33,46 @@ class Ctx:
     pass
 
 
+# Разметка HTML, которую принимает Telegram
+_TG_TAGS = {'b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'span', 'tg-spoiler', 'a', 'code', 'pre',
+            'blockquote', 'tg-emoji'}
+_TAG = __import__('re').compile(r'<(/?)([a-zA-Z-]+)(\s[^<>]*)?>')
+_ENTITY = __import__('re').compile(r'&(lt|gt|amp|quot|#\d+|#x[0-9a-fA-F]+);')
+
+
+def html_problem(text):
+    """Ошибка разметки, на которую настоящий Telegram ответит «can't parse entities», или None."""
+    stack, i = [], 0
+    while i < len(text):
+        ch = text[i]
+        if ch == '<':
+            m = _TAG.match(text, i)
+            if not m or m.group(2).lower() not in _TG_TAGS:
+                return f"Unsupported start tag or stray '<' at byte offset {i}"
+            name = m.group(2).lower()
+            if m.group(1):
+                if not stack or stack[-1] != name:
+                    return f"Unmatched end tag </{name}>"
+                stack.pop()
+            else:
+                stack.append(name)
+            i = m.end()
+            continue
+        if ch == '&':
+            m = _ENTITY.match(text, i)
+            if not m:
+                return f"Stray '&' at byte offset {i}"
+            i = m.end()
+            continue
+        i += 1
+    return f"Can't find end tag for <{stack[-1]}>" if stack else None
+
+
+def strip_tags(text):
+    import html
+    return html.unescape(_TAG.sub('', text))
+
+
 def _rcon_server(port, log):
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -76,6 +116,15 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
     from telebot import apihelper, types
     ctx.types = types
 
+    ctx.blocked_chats = set()   # игроки, заблокировавшие бота: Telegram отвечает 403
+    ctx.tg_errors = []          # ошибки, которые вернул бы настоящий Telegram
+    ctx.messages = {}           # (chat_id, message_id) -> (text, markup) — чтобы ловить «message is not modified»
+
+    def fail(method_name, code, description):
+        from telebot.apihelper import ApiTelegramException
+        ctx.tg_errors.append((method_name, description))
+        raise ApiTelegramException(method_name, None, {'error_code': code, 'description': description})
+
     def fake_request(token, method_name, method='get', params=None, files=None, **kw):
         params = params or {}
         ctx.tg_log.append((method_name, params))
@@ -85,9 +134,35 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
         if method_name == 'getChat':
             cid = int(params['chat_id'])
             return {'id': cid, 'type': 'private', 'first_name': ctx.names.get(cid, 'Имя'), 'username': f"u{cid}"}
+        if method_name == 'getUserProfilePhotos':
+            return {'total_count': 1, 'photos': []}
+        chat = params.get('chat_id')
+        if chat is not None and int(chat) in ctx.blocked_chats and method_name.startswith('send'):
+            fail(method_name, 403, 'Forbidden: bot was blocked by the user')
+        if method_name in ('sendMessage', 'editMessageText'):
+            text = params.get('text', '')
+            markup = params.get('reply_markup')
+            if not str(text).strip():
+                fail(method_name, 400, 'Bad Request: text must be non-empty')
+            problem = html_problem(text) if params.get('parse_mode') == 'HTML' else None
+            if problem:
+                fail(method_name, 400, f"Bad Request: can't parse entities: {problem}")
+            plain = strip_tags(text) if params.get('parse_mode') == 'HTML' else text
+            if len(plain) > 4096:
+                fail(method_name, 400, 'Bad Request: message is too long')
+            if method_name == 'editMessageText':
+                if markup and 'inline_keyboard' not in str(markup):
+                    fail(method_name, 400, 'Bad Request: inline keyboard expected')
+                key = (int(chat), int(params['message_id']))
+                if ctx.messages.get(key) == (text, markup):
+                    fail(method_name, 400, 'Bad Request: message is not modified')
+                ctx.messages[key] = (text, markup)
         if method_name in ('sendMessage', 'sendPhoto', 'editMessageText', 'sendDocument'):
             msg_id[0] += 1
-            return {'message_id': int(params.get('message_id', msg_id[0])), 'date': 0,
+            mid = int(params.get('message_id', msg_id[0]))
+            if method_name == 'sendMessage':
+                ctx.messages[(int(chat), mid)] = (params.get('text', ''), params.get('reply_markup'))
+            return {'message_id': mid, 'date': 0,
                     'chat': {'id': int(params['chat_id']), 'type': 'private'}, 'text': params.get('text', '')}
         return True
 
@@ -117,16 +192,26 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
             'from': {'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X'), 'username': f'u{who}'},
             'text': text})
         ctx.tg_log.clear()
-        if text.startswith('/'):
-            name = text[1:].split()[0]
-            handler = {'start': bot.start_cmd, 'id': bot.id_cmd, 'admin': bot.admin_cmd,
-                       'status': bot.status_cmd, 'history': bot.history_cmd}[name]
-            handler(m)
+        commands = {'start': 'start_cmd', 'id': 'id_cmd', 'admin': 'admin_cmd', 'status': 'status_cmd',
+                    'history': 'history_cmd', 'block': 'block_user', 'unblock': 'unblock_user',
+                    'pause': 'pause_reg', 'resume': 'resume_reg', 'stopreply': 'stopreply_cmd'}
+        name = text[1:].split()[0] if text.startswith('/') else None
+        if name in commands:
+            getattr(bot, commands[name])(m)
         else:
             bot.handle_all_messages(m)
         return list(ctx.tg_log)
 
-    ctx.press, ctx.say = press, say
+    def photo(who, caption=''):
+        m = types.Message.de_json({
+            'message_id': 90, 'date': 0, 'chat': {'id': who, 'type': 'private'},
+            'from': {'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X')},
+            'photo': [{'file_id': 'ph1', 'file_unique_id': 'u1', 'width': 10, 'height': 10}], 'caption': caption})
+        ctx.tg_log.clear()
+        bot.handle_photo(m)
+        return list(ctx.tg_log)
+
+    ctx.press, ctx.say, ctx.photo = press, say, photo
     return ctx
 
 

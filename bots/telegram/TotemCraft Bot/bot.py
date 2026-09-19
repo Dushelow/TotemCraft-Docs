@@ -6,7 +6,7 @@ from collections import defaultdict
 
 from tcbot import config, storage, timeutil
 from tcbot.config import TOKEN, ADMIN_ID, DISCORD_WEBHOOK_URL, CONSOLE_WEBHOOK_URL
-from tcbot.logs import log_error
+from tcbot.logs import log_error, log_warning
 from tcbot.rcon import rcon_command
 from tcbot import bans, mmdb, tgage
 
@@ -78,7 +78,11 @@ def safe_send_long(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     # Разбиваем по абзацам, чтобы не резать посередине строки
     parts = []
     current = ""
+    lines = []
     for line in text.split('\n'):
+        # строку длиннее лимита (сообщение без переносов) режем на куски
+        lines += [line[i:i + TG_MAX_LEN] for i in range(0, len(line), TG_MAX_LEN)] or ['']
+    for line in lines:
         if len(current) + len(line) + 1 > TG_MAX_LEN:
             if current:
                 parts.append(current)
@@ -437,7 +441,7 @@ def ban_report(tg_id, nick, viewer=None):
     """Блок для карточки заявки: наказания по нику заявки и по прошлым никам этого TG ID. Пусто, если ничего нет.
     Время показывается в поясе того, кто смотрит (viewer)."""
     try:
-        nicks = [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()]
+        nicks = [n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n]
         found, past, errors = bans.find(nicks)
     except Exception as e:
         log_error(e)
@@ -546,14 +550,16 @@ def dossier(tg_id, nick, viewer=None, app=None, compact=False):
         rows = storage.query("SELECT status, COUNT(*) FROM applications WHERE tg_id=? GROUP BY status", (tg_id,))
         counts = dict(rows)
         if counts.get('Отклонено'):
-            flags.append(('🟡', f"Раньше отклоняли: {counts['Отклонено']} раз(а)"))
+            n = counts['Отклонено']
+            times = "раза" if n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14) else "раз"
+            flags.append(('🟡', f"Раньше отклоняли: {n} {times}"))
         if tg_id in blocked_users:
             flags.append(('🔴', "Заблокирован в боте"))
     except Exception as e:
         log_error(e)
 
     # Сервер: аккаунты AuthMe, страна по IP, другие аккаунты с того же IP
-    nicks = [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()]
+    nicks = [n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n]
     ips = set()
     try:
         for username, ip, regip, regdate, lastlogin in bans.authme_accounts(nicks):
@@ -669,14 +675,37 @@ def notify_new_ticket(user, text_msg, tid, nick=''):
     audit(uid, 'ticket_opened', uid, nick, text_msg)
     notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=uid)
 
+def player_nick(uid):
+    """Самый свежий известный ник игрока: заявка в очереди, история заявок, тикет. Пусто, если не знаем."""
+    app = pending.get(str(uid))
+    if app and app.get('nick'):
+        return app['nick']
+    try:
+        row = storage.query("SELECT nick FROM applications WHERE tg_id=? AND nick<>'' ORDER BY id DESC LIMIT 1", (int(uid),))
+        if row:
+            return row[0][0]
+    except (TypeError, ValueError):
+        return ''
+    ticket = active_tickets.get(str(uid)) or {}
+    return ticket.get('nick') or ''
+
+def player_username(uid):
+    app = pending.get(str(uid))
+    name = (app or {}).get('username') or ''
+    if not name:
+        try:
+            row = storage.query("SELECT tg_username FROM applications WHERE tg_id=? ORDER BY id DESC LIMIT 1", (int(uid),))
+            name = row[0][0] if row else ''
+        except (TypeError, ValueError):
+            name = ''
+    return '' if not name or name.startswith('id') else name
+
 def get_user_label(uid):
-    for app in pending.values():
-        if str(app.get('user_id')) == str(uid):
-            nick = app.get('nick', '')
-            username = app.get('username', '')
-            if username and not username.startswith('id'): return f"@{username} ({nick})"
-            return f"Ник {nick}"
-    return f"ID {uid}"
+    """Короткая подпись игрока для кнопок и списков: «Ник (@username)»."""
+    nick, username = player_nick(uid), player_username(uid)
+    if nick and username:
+        return f"{nick} (@{username})"
+    return nick or (f"@{username}" if username else f"ID {uid}")
 
 def enrich_user_label(uid):
     try:
@@ -687,23 +716,9 @@ def enrich_user_label(uid):
     except:
         first = last = username = ""
     name = (first + " " + last).strip()
-    nick = ""
-    for app in pending.values():
-        if str(app.get('user_id')) == str(uid):
-            nick = app.get('nick', '')
-            break
-    parts = []
-    if name:
-        parts.append(name)
-    if username:
-        parts.append(f"@{username}")
-    else:
-        parts.append("— (tg)")
-    if nick:
-        parts.append(f"[{nick}]")
-    else:
-        parts.append("[—]")
-    return " ".join(parts)
+    nick = player_nick(uid)
+    parts = [p for p in (name, f"@{username}" if username else '', f"[{nick}]" if nick else '') if p]
+    return " ".join(parts) or f"ID {uid}"
 
 def add_to_history(user_id, text, from_user=True, by=None):
     """Сообщение в переписку. by — кто из команды написал (игрок этого не видит)."""
@@ -1541,10 +1556,10 @@ def end_dialog(admin_id=None, player_id=None, user_initiated=False, quiet_admin=
     label = enrich_user_label(target)
     close_ticket(target)
     if user_initiated:
-        audit(target, 'ticket_closed_by_player', target, get_user_label(target), f"диалог вёл {staff_name(admin_id)}")
+        audit(target, 'ticket_closed_by_player', target, player_nick(target), f"диалог вёл {staff_name(admin_id)}")
         safe_send(admin_id, f"🔔 Пользователь {label} завершил диалог (тикет закрыт).")
     else:
-        audit(admin_id, 'dialog_closed', target, get_user_label(target))
+        audit(admin_id, 'dialog_closed', target, player_nick(target))
         if not quiet_admin:
             safe_send(admin_id, f"🔇 Диалог с {label} завершён.")
     try:
@@ -1592,6 +1607,9 @@ def admin_help_text(uid):
     lines.append("• <b>Заявки:</b> «Одобрить» или «Отклонить», затем комментарий или «Пропустить». "
                  "Пока вы пишете комментарий, заявка закреплена за вами, коллеги её не возьмут.")
     lines.append("• Решение видят все: у коллег уведомление о заявке помечается «Одобрено: имя».")
+    lines.append("• <b>Досье</b> в карточке заявки: возраст аккаунта Telegram (примерно, ±3 месяца), аккаунт на сервере, страна, "
+                 "другие аккаунты с того же IP. 🔴 — серьёзно (бан, твинк в бане), 🟡 — обратить внимание "
+                 "(раньше отклоняли, совсем новый аккаунт), «✅ Проверки пройдены» — ничего не нашлось.")
     if can(uid, 'messages'):
         lines.append("• <b>Сообщения:</b> «Ответить» открывает диалог. Игрок видит «Администрация», ваше имя ему не показывается. "
                      "«Закрыть без ответа» убирает обращение из непрочитанных.")
@@ -1933,6 +1951,31 @@ def show_handbook_chapter(chat_id, chapter_key, edit_message=None):
         safe_send(chat_id, chapter['text'], parse_mode='HTML', reply_markup=markup)
 
 
+# ---------- Страховка обработчиков ----------
+def guarded(handler):
+    """Ошибка в обработчике не должна оставлять кнопку «крутиться» и теряться молча:
+    нажавший получает понятный ответ, ошибка — в журнал."""
+    def wrapper(obj):
+        try:
+            return handler(obj)
+        except Exception as e:
+            is_call = hasattr(obj, 'data') and hasattr(obj, 'message')
+            if is_call and isinstance(e, (ValueError, IndexError)):
+                # Испорченные данные кнопки (старая кнопка или изменённый клиент): не ошибка бота
+                log_warning(f"некорректная кнопка {obj.data!r} от {obj.from_user.id}: {e}")
+            else:
+                log_error(e)
+            try:
+                if is_call:
+                    bot.answer_callback_query(obj.id, "Кнопка устарела. Откройте меню заново: /start", show_alert=True)
+                else:
+                    safe_send(obj.chat.id, "⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start.")
+            except Exception:
+                pass
+    wrapper.__name__ = handler.__name__
+    wrapper.__doc__ = handler.__doc__
+    return wrapper
+
 # ---------- Команды ----------
 def set_paused(actor, value):
     global registration_paused
@@ -1942,34 +1985,39 @@ def set_paused(actor, value):
 
 def do_unblock(actor, tid):
     blocked_users.discard(tid)
-    audit(actor, 'unblocked', tid, get_user_label(tid))
+    audit(actor, 'unblocked', tid, player_nick(tid))
     safe_send(tid, "✅ Вы были разблокированы администратором. Можете снова пользоваться ботом.",
               reply_markup=main_keyboard(is_admin=False, user_id=tid))
 
 @bot.message_handler(commands=['id'])
+@guarded
 def id_cmd(m):
     # Нужен, чтобы будущий админ узнал свой ID и передал владельцу
     safe_send(m.chat.id, f"Ваш Telegram ID: <code>{m.chat.id}</code>", parse_mode='HTML')
 
 @bot.message_handler(commands=['admin'])
+@guarded
 def admin_cmd(m):
     if m.chat.id in staff:
         player_view.discard(m.chat.id)
         send_admin_menu(m.chat.id)
 
 @bot.message_handler(commands=['pause'])
+@guarded
 def pause_reg(m):
     if not can(m.chat.id, 'controls'): return
     set_paused(m.chat.id, True)
     safe_send(m.chat.id, "⏸️ Регистрация приостановлена.")
 
 @bot.message_handler(commands=['resume'])
+@guarded
 def resume_reg(m):
     if not can(m.chat.id, 'controls'): return
     set_paused(m.chat.id, False)
     safe_send(m.chat.id, "▶️ Регистрация возобновлена.")
 
 @bot.message_handler(commands=['block'])
+@guarded
 def block_user(m):
     if not can(m.chat.id, 'block'): return
     parts = m.text.strip().split()
@@ -1988,6 +2036,7 @@ def block_user(m):
     process_block(str(tid), reason, m, actor=m.chat.id)
 
 @bot.message_handler(commands=['unblock'])
+@guarded
 def unblock_user(m):
     if not can(m.chat.id, 'block'): return
     try:
@@ -2008,11 +2057,13 @@ def status_text(aid):
     return "\n".join(lines)
 
 @bot.message_handler(commands=['status'])
+@guarded
 def status_cmd(m):
     if not is_staff(m.chat.id): return
     safe_send(m.chat.id, status_text(m.chat.id))
 
 @bot.message_handler(commands=['history'])
+@guarded
 def history_cmd(m):
     if not can(m.chat.id, 'messages'): return
     try:
@@ -2027,12 +2078,14 @@ def history_cmd(m):
     safe_send_long(m.chat.id, txt)
 
 @bot.message_handler(commands=['stopreply'])
+@guarded
 def stopreply_cmd(m):
     if not is_staff(m.chat.id): return
     end_dialog(admin_id=m.chat.id)
 
 # ---------- Старт ----------
 @bot.message_handler(commands=['start'])
+@guarded
 def start_cmd(m):
     if not check_rate_limit(m.chat.id): return
     if m.chat.id in blocked_users:
@@ -2047,6 +2100,7 @@ def start_cmd(m):
 
 # ---------- Основной обработчик текста ----------
 @bot.message_handler(content_types=['text'])
+@guarded
 def handle_all_messages(m):
     if not check_rate_limit(m.chat.id): return
     uid, text = m.chat.id, m.text.strip()
@@ -2180,7 +2234,7 @@ def handle_all_messages(m):
         if sent:
             add_to_history(target, text, from_user=False, by=uid)
             clear_unread(target)
-            audit(uid, 'msg_to_player', target, get_user_label(target), text)
+            audit(uid, 'msg_to_player', target, player_nick(target), text)
         else:
             safe_send(uid, "❌ Сообщение не доставлено: возможно, игрок заблокировал бота.")
         return
@@ -2303,7 +2357,8 @@ def handle_all_messages(m):
     if talker:
         label = enrich_user_label(uid)
         add_to_history(uid, text, from_user=True)
-        notify_staff(None, f"👤 {escape_html(label)}:\n{escape_html(text)}", only=[talker])
+        shown = text if len(text) <= 3500 else text[:3500] + '…'  # запас под подпись, лимит Telegram 4096
+        notify_staff(None, f"👤 {escape_html(label)}:\n{escape_html(shown)}", only=[talker])
         return
 
     # Если у пользователя открытый тикет — не создаём новый, просим ждать
@@ -2318,6 +2373,7 @@ def handle_all_messages(m):
 
 # ---------- Фото ----------
 @bot.message_handler(content_types=['photo'])
+@guarded
 def handle_photo(m):
     if not check_rate_limit(m.chat.id): return
     uid = m.chat.id
@@ -2333,7 +2389,7 @@ def handle_photo(m):
                            caption="📨 Фото от администрации" + (f"\n{caption}" if caption else ""))
             add_to_history(target, f"[фото от админа]{': ' + caption if caption else ''}", from_user=False, by=uid)
             clear_unread(target)
-            audit(uid, 'msg_to_player', target, get_user_label(target), f"[фото] {caption}")
+            audit(uid, 'msg_to_player', target, player_nick(target), f"[фото] {caption}")
         except Exception as e:
             log_error(e)
             safe_send(uid, f"❌ Ошибка отправки фото: {e}")
@@ -2400,8 +2456,12 @@ def handle_application(m):
 
 def show_confirmation(uid, state):
     try:
-        bot.send_message(uid, " ", reply_markup=types.ReplyKeyboardRemove())
-    except: pass
+        # Убрать нижние кнопки «Пропустить / Отменить»: пустое сообщение Telegram не принимает,
+        # поэтому отправляем короткое и сразу удаляем
+        rm = bot.send_message(uid, "📋", reply_markup=types.ReplyKeyboardRemove())
+        bot.delete_message(uid, rm.message_id)
+    except Exception as e:
+        log_error(e)
     nick = escape_html(state['nick'])
     password = escape_html(state['password'])
     comment = escape_html(state.get('comment', ''))
@@ -2416,6 +2476,7 @@ def show_confirmation(uid, state):
 
 # ---------- Callback-обработчик ----------
 @bot.callback_query_handler(func=lambda call: True)
+@guarded
 def callback_handler(call):
     if not check_rate_limit(call.from_user.id):
         bot.answer_callback_query(call.id); return
@@ -2658,7 +2719,7 @@ def callback_handler(call):
             if dialog_admin(uid):
                 end_dialog(player_id=uid, user_initiated=True)
             else:
-                audit(uid, 'ticket_closed_by_player', uid, get_user_label(uid))
+                audit(uid, 'ticket_closed_by_player', uid, player_nick(uid))
                 close_notices('ticket', uid, "🔒 <b>Игрок сам закрыл обращение</b>")
                 notify_staff('messages', f"🔔 Пользователь {escape_html(label)} закрыл тикет #{ticket['id']}.")
             try:
@@ -2896,7 +2957,7 @@ def callback_handler(call):
         else:
             ok("Тикет уже закрыт.")
         if ticket or was_unread:
-            audit(uid, 'ticket_closed', target, get_user_label(target), f"тикет #{ticket['id']}" if ticket else "")
+            audit(uid, 'ticket_closed', target, player_nick(target), f"тикет #{ticket['id']}" if ticket else "")
         close_notices('ticket', target, f"🔒 <b>Закрыто без ответа</b> · {escape_html(staff_name(uid))}")
         if not from_notification:
             show_messages_menu(msg, edit_message=msg)
@@ -2915,7 +2976,7 @@ def callback_handler(call):
             end_dialog(admin_id=uid, quiet_admin=True)  # у админа один диалог за раз
         dialogs[uid] = target
         clear_unread(target)
-        audit(uid, 'dialog_opened', target, get_user_label(target))
+        audit(uid, 'dialog_opened', target, player_nick(target))
         close_notices('ticket', target, f"💬 <b>Отвечает:</b> {escape_html(staff_name(uid))}")
         i_markup = types.InlineKeyboardMarkup()
         i_markup.row(types.InlineKeyboardButton("❌ Завершить", callback_data="end_dialog"),
@@ -2938,7 +2999,7 @@ def callback_handler(call):
         except Exception:
             pass
         safe_send(target, "📨 Администратор начал с вами диалог.", reply_markup=main_keyboard(is_admin=False, user_id=target))
-        ok(f"Диалог с {target}")
+        ok("Диалог открыт")
         return
     if data.startswith('hist_'):
         target = int(data.split('_')[1])
@@ -3261,7 +3322,7 @@ def process_block(user_id_str, reason, original_msg, actor=ADMIN_ID):
         safe_send(actor, "Это член команды. Сначала снимите доступ в разделе «Команда».")
         return
     blocked_users.add(uid)
-    audit(actor, 'blocked', uid, get_user_label(uid), reason)
+    audit(actor, 'blocked', uid, player_nick(uid), reason)
 
     # Завершаем диалог, если кто-то из команды его вёл
     talker = dialog_admin(uid)
