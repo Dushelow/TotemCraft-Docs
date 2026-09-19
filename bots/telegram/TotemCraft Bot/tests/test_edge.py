@@ -131,7 +131,8 @@ check('SecondNick' in bot.failed_registrations, "пароль для повто�
 bot.rcon_command = rcon_mod.rcon_command
 n = len(ctx.rcon_log)
 (t, _), log = press(ADMIN, 'retry_reg_SecondNick')
-check(ctx.rcon_log[n:] == ['authme register SecondNick Str0ngPass2'] and 'SecondNick' not in bot.failed_registrations,
+check(ctx.rcon_log[n:] == ['authme register SecondNick Str0ngPass2', 'authme register .SecondNick Str0ngPass2']
+      and 'SecondNick' not in bot.failed_registrations,
       "повтор регистрации сработал, пароль из памяти стёрт")
 (t, alert), _ = press(OWNER, 'retry_reg_SecondNick')
 check(alert, "повторное нажатие «Повторить» отвечает понятно")

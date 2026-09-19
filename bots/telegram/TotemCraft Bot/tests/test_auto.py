@@ -85,7 +85,8 @@ ctx.tg_log.clear()
 bot.auto_job()
 log = list(ctx.tg_log)
 check(str(P) not in bot.pending, "заявка принята автоматически")
-check(ctx.rcon_log[n_rcon:] == ['authme register CleanNick Str0ngPass1'], "регистрация на сервере")
+check(ctx.rcon_log[n_rcon:] == ['authme register CleanNick Str0ngPass1', 'authme register .CleanNick Str0ngPass1'],
+      "регистрация на сервере: ник и Bedrock-вариант .ник")
 check(any('одобрена' in x for x in sent_to(log, P)), "игрок получил обычное одобрение")
 check(any('🤖 автоматически' in x for _, x in edited(log)), "у команды уведомление: «ОДОБРЕНО · 🤖 автоматически»")
 row = storage.query("SELECT decided_by, decided_by_name FROM applications WHERE tg_id=?", (P,))[0]

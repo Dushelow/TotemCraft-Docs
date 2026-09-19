@@ -73,9 +73,12 @@ check(any(c == OWNER and 'ОДОБРЕНО' in x and 'Вася' in x for c, x in
 check(any(c == ADMIN and 'Заявка закрыта' in x for c, x in ed), "у Васи карточка «Заявка закрыта»")
 pm = sent_to(log, P1)
 check(any('одобрена' in x for x in pm) and not any('Вася' in x for x in pm), "игрок получил одобрение без имени админа")
-check(ctx.rcon_log[n_rcon:] == ['authme register CrystalDisk bananas12345'], "регистрация через RCON")
+check(ctx.rcon_log[n_rcon:] == ['authme register CrystalDisk bananas12345', 'authme register .CrystalDisk bananas12345'],
+      "регистрация через RCON: ник и .ник для Bedrock")
+check(any('.CrystalDisk' in x and 'Bedrock' in x for x in pm), "игроку подсказка про ник с Bedrock")
 console = [j['content'] for u, j in ctx.webhook_log if u.endswith('console')]
-check('authme register CrystalDisk ********' in console and not any('bananas' in c for c in console),
+check('authme register CrystalDisk ********' in console and 'authme register .CrystalDisk ********' in console
+      and not any('bananas' in c for c in console),
       "в консоль Discord ушла команда со звёздочками")
 row = db("SELECT nick, status, admin_comment, decided_by_name, decided_at FROM applications ORDER BY id DESC LIMIT 1")[0]
 check(row[:3] == ('CrystalDisk', 'Одобрено', 'добро пожаловать') and row[3].startswith('Вася') and row[4].endswith('+00:00'),
@@ -187,6 +190,14 @@ for k in list(range(5)) + [10]:
 for app_id, decided_at in saved:
     storage.execute("UPDATE applications SET decided_at=? WHERE id=?", (decided_at, app_id))
 bot._frontier_cache['at'] = 0
+
+print("\n=== 7б. Bedrock ===")
+check(bot.bedrock_name('Abcdefghijklmnop') == '.Abcdefghijklmno', "16-значный ник: Bedrock-вариант обрезан до 16 знаков, как у Floodgate")
+check(bot.name_variants(['Steve', '.Alex']) == ['Steve', '.Steve', '.Alex'], "варианты ников: .ник добавляется, к .нику второй раз нет")
+with open(os.path.join(MC, 'banned-players.json'), 'w', encoding='utf-8') as f:
+    f.write('[{"name": ".BedrockBad", "created": "2026-04-01 12:00:00 +0300", "source": "Steve", '
+            '"expires": "forever", "reason": "гриф с телефона"}]')
+check('гриф с телефона' in bot.ban_report(1, 'BedrockBad', OWNER), "бан на .ник учитывается для ника")
 
 print("\n=== 8. Статистика, выгрузка, таймер 24 часа, копия базы ===")
 (t, _), log = press(OWNER, 'admin_menu_stats')

@@ -133,13 +133,31 @@ def send_console_command(command):
 # Пароли одобренных игроков, которых не удалось зарегистрировать: ник -> пароль (только в памяти)
 failed_registrations = {}
 
+def bedrock_name(nick):
+    """Ник Bedrock-игрока на сервере: Floodgate ставит префикс «.» и обрезает имя до 16 знаков."""
+    return (config.BEDROCK_PREFIX + nick)[:16] if config.BEDROCK_PREFIX else ''
+
+def name_variants(nicks):
+    """Ники вместе с Bedrock-вариантами (.ник): бан на .ник — это бан того же человека."""
+    out = []
+    for n in nicks:
+        is_bedrock = bool(config.BEDROCK_PREFIX) and n.startswith(config.BEDROCK_PREFIX)
+        for v in (n, bedrock_name(n) if n and not is_bedrock else ''):
+            if v and v.lower() not in {x.lower() for x in out}:
+                out.append(v)
+    return out
+
 def register_on_server(nick, password, decided_by=None, player_id=None):
-    """Регистрирует аккаунт в AuthMe через RCON. В Discord уходит команда со звёздочками."""
-    send_console_command(f"authme register {nick} {'*' * 8}")
+    """Регистрирует в AuthMe через RCON ник и его Bedrock-вариант (.ник) с тем же паролем,
+    чтобы игрок мог зайти и с Java, и с телефона или консоли. В Discord уходят команды со звёздочками."""
+    names = [nick] + ([bedrock_name(nick)] if bedrock_name(nick) else [])
+    for name in names:
+        send_console_command(f"authme register {name} {'*' * 8}")
     try:
-        answer = rcon_command(f"authme register {nick} {password}")
+        answers = [rcon_command(f"authme register {name} {password}") for name in names]
         failed_registrations.pop(nick, None)
-        audit(None, 'registered', player_id, nick, answer)
+        answer = "; ".join(a for a in answers if a)
+        audit(None, 'registered', player_id, nick, f"{', '.join(names)}" + (f": {answer}" if answer else ""))
         if answer:
             send_console_command(f"Ответ сервера: {answer}")
     except Exception as e:
@@ -445,7 +463,7 @@ def ban_report(tg_id, nick, viewer=None):
     Время показывается в поясе того, кто смотрит (viewer)."""
     try:
         nicks = [n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n]
-        found, past, errors = bans.find(nicks)
+        found, past, errors = bans.find(name_variants(nicks))
     except Exception as e:
         log_error(e)
         return f"\n\n⚠️ Не удалось проверить блокировки: {escape_html(e)}"
@@ -555,7 +573,7 @@ def dossier(tg_id, nick, viewer=None, app=None, compact=False):
         log_error(e)
 
     # Сервер: аккаунты AuthMe, страна по IP, другие аккаунты с того же IP
-    nicks = [n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n]
+    nicks = name_variants([n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n])
     ips = set()
     try:
         for username, ip, regip, regdate, lastlogin in bans.authme_accounts(nicks):
@@ -2084,7 +2102,7 @@ def auto_facts(uid, app):
     """Факты о заявке для правил автопринятия."""
     uid = int(uid)
     nick = app.get('nick', '')
-    nicks = [n for n in [nick] + [n for n in previous_nicks(uid) if n.lower() != nick.lower()] if n]
+    nicks = name_variants([n for n in [nick] + [n for n in previous_nicks(uid) if n.lower() != nick.lower()] if n])
     f = {'nick': nick, 'comment': app.get('comment', ''), 'blocked': uid in blocked_users,
          'asked_support': bool(app.get('asked')), 'subscribed': bool(app.get('subscribed'))}
     tg = app.get('tg') or {}
@@ -2323,11 +2341,11 @@ def first_login_job():
         return
     try:
         seen = {}
-        for username, ip, regip, _, _ in bans.authme_accounts(due):
+        for username, ip, regip, _, _ in bans.authme_accounts(name_variants(due)):
             seen[username.lower()] = sorted({x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0')})
         for nick in due:
             w = first_login_watch.pop(nick, None) or {}
-            ips = seen.get(nick.lower())
+            ips = sorted(set(seen.get(nick.lower(), [])) | set(seen.get(bedrock_name(nick).lower(), [])))
             if ips:  # заходил — сверяем; не заходил за сутки — просто снимаем
                 check_twin_after_login(nick, w.get('tg'), ips)
     except Exception as e:
@@ -2335,10 +2353,11 @@ def first_login_job():
 
 def check_twin_after_login(nick, tg_id, ips):
     """Сверка IP только что зашедшего игрока: бан по этому IP или забаненный аккаунт с того же IP."""
-    others = [n for n in bans.authme_accounts_on_ips(ips) if n.lower() != nick.lower()]
-    found, _, _ = bans.find([nick] + others)
+    own = {v.lower() for v in name_variants([nick])}
+    others = [n for n in bans.authme_accounts_on_ips(ips) if n.lower() not in own]
+    found, _, _ = bans.find(name_variants([nick]) + others)
     hits = sorted({f"{it['who']} ({it['kind']}: {it['reason']})" for it in found
-                   if 'бан' in it['kind'] and (it['who'].startswith('IP ') or it['who'].lower() != nick.lower())})
+                   if 'бан' in it['kind'] and (it['who'].startswith('IP ') or it['who'].lower() not in own)})
     if not hits:
         return
     audit(None, 'twin_suspect', tg_id, nick, "; ".join(hits)[:500])
@@ -3806,7 +3825,10 @@ def notify_player_decision(action, user_id_str, app, comment):
             msg = (
                 f"🎉 Ваша заявка одобрена!\n\n"
                 f"Ник: <code>{escape_html(app['nick'])}</code>\n"
-                f"Пароль: <code>{escape_html(app['password'])}</code>\n\n"
+                f"Пароль: <code>{escape_html(app['password'])}</code>\n"
+                + (f"📱 С телефона или консоли (Bedrock) ваш ник: <code>{escape_html(bedrock_name(app['nick']))}</code>, пароль тот же\n"
+                   if bedrock_name(app['nick']) else "")
+                + "\n"
                 f"IP для всех: <code>play.totemcraft.net</code>\n"
                 f"IP для России: <code>ru.totemcraft.net</code>\n\n"
                 f"Ждём вас на сервере!\n\n"

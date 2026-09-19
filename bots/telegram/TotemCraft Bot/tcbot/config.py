@@ -25,6 +25,9 @@ RCON_HOST = os.environ.get('RCON_HOST', '127.0.0.1')
 RCON_PORT = int(os.environ.get('RCON_PORT', '25575'))
 RCON_PASSWORD = os.environ.get('RCON_PASSWORD', '')
 
+# Префикс Bedrock-игроков в Floodgate (username-prefix): бот регистрирует и «.ник»; пусто — не регистрировать
+BEDROCK_PREFIX = os.environ.get('BEDROCK_PREFIX', '.')
+
 # Папка сервера Minecraft: бот только читает оттуда баны и базу AuthMe
 MC_SERVER_DIR = os.environ.get('MC_SERVER_DIR', '/home/minecraft/server')
 
