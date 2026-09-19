@@ -748,6 +748,37 @@ def enrich_user_label(uid):
     parts = [p for p in (name, f"@{username}" if username else '', f"[{nick}]" if nick else '') if p]
     return " ".join(parts) or f"ID {uid}"
 
+def dialog_intro(viewer, target):
+    """Экран открытого диалога: с кем, все неотвеченные сообщения игрока, пометка о чужом нике."""
+    msgs = storage.get_messages(target, 30)
+    tail = []
+    for x in reversed(msgs):  # сообщения игрока после последнего ответа команды
+        if x['from'] != 'user':
+            break
+        tail.insert(0, x)
+    try:
+        chat = bot.get_chat(target)
+        name = " ".join(p for p in (chat.first_name, chat.last_name) if p)
+    except Exception:
+        name = ""
+    lines = [f"💬 <b>Вы отвечаете:</b> {escape_html(get_user_label(target))}" + (f" · {escape_html(name)}" if name else ""),
+             "Пишите сюда, игрок увидит подпись «Администрация»."]
+    row = storage.query("SELECT nick FROM applications WHERE tg_id=? AND nick<>'' ORDER BY id DESC LIMIT 1", (int(target),))
+    app_nick = row[0][0] if row else ''
+    said = ((active_tickets.get(str(target)) or {}).get('nick') or '').strip()
+    bare = said[len(config.BEDROCK_PREFIX):] if config.BEDROCK_PREFIX and said.startswith(config.BEDROCK_PREFIX) else said
+    if app_nick and bare and validate_nick_authme(bare)[0] and bare.lower() != app_nick.lower():
+        lines.append(f"⚠️ Указал другой ник: <code>{escape_html(said)}</code>, в заявке <code>{escape_html(app_nick)}</code>")
+    if tail:
+        lines.append(f"\n<b>Сообщения игрока ({len(tail)}):</b>" if len(tail) > 1 else "\n<b>Сообщение игрока:</b>")
+        budget = 3000
+        for x in tail[-10:]:
+            text = x['text'].replace("Игровой ник: ", "Ник: ", 1).replace("\nСообщение: ", "\nПроблема: ", 1)
+            text = escape_html(text[:budget])
+            budget = max(0, budget - len(text))
+            lines.append(f"<i>{fmt_time(x['time'], viewer, '%d.%m %H:%M')}</i>\n{text}")
+    return "\n".join(lines)
+
 def add_to_history(user_id, text, from_user=True, by=None):
     """Сообщение в переписку. by — кто из команды написал (игрок этого не видит)."""
     storage.add_message(user_id, 'user' if from_user else 'admin', text,
@@ -2724,7 +2755,7 @@ def handle_all_messages(m):
         if step == 'support_text':
             nick = state.get('support_nick', '')
             text_msg = text
-            add_to_history(uid, f"Игровой ник: {nick}\nСообщение: {text_msg}", from_user=True)
+            add_to_history(uid, f"Ник: {nick}\nПроблема: {text_msg}", from_user=True)
             add_unread(uid)
             tid = open_ticket(uid, message_text=text_msg, nick=nick)
             notify_new_ticket(m.from_user, text_msg, tid, nick=nick)
@@ -3481,19 +3512,12 @@ def callback_handler(call):
         audit(uid, 'dialog_opened', target, player_nick(target))
         close_notices('ticket', target, f"💬 <b>Отвечает:</b> {escape_html(staff_name(uid))}")
         i_markup = types.InlineKeyboardMarkup()
-        i_markup.row(types.InlineKeyboardButton("❌ Завершить", callback_data="end_dialog"),
+        i_markup.row(types.InlineKeyboardButton("✅ Ответил, закрыть", callback_data="end_dialog"),
                      types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{target}"))
         if can(uid, 'block'):
             i_markup.row(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"))
-        label = enrich_user_label(target)
-        last_user_msg = next((x for x in reversed(storage.get_messages(target, 20)) if x['from'] == 'user'), None)
-        quote = ""
-        if last_user_msg:
-            quote = f"\n\n<b>Последнее сообщение игрока</b> ({fmt_time(last_user_msg['time'], uid, '%d.%m %H:%M')}):\n{escape_html(last_user_msg['text'][:1500])}"
-        safe_send(uid, f"📨 Диалог с <b>{escape_html(label)}</b> активирован.\n"
-                       f"Всё, что вы напишете, уйдёт игроку от имени «Администрация».{quote}",
-                  parse_mode='HTML', reply_markup=i_markup)
-        send_admin_menu(uid)
+        i_markup.row(types.InlineKeyboardButton("🏠 Меню", callback_data="admin_back"))
+        safe_send(uid, dialog_intro(uid, target), parse_mode='HTML', reply_markup=i_markup)
         try:
             tchat = bot.get_chat(target)
             t_nick = next((a.get('nick', '') for a in pending.values() if str(a.get('user_id')) == str(target)), "")

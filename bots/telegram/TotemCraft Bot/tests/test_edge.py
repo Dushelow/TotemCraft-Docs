@@ -267,6 +267,24 @@ check(d and '`Olivye_9656`' in d[-1] and 'Здравствуйте' not in d[-1]
 t = bot.active_tickets.get(str(SUP)) or {}
 check('Здравствуйте' in str(t) or bot.storage.message_count(SUP) >= 1, "текст обращения дошёл до админов")
 
+print("\n=== 10г. Экран диалога ===")
+bot.storage.add_application({'user_id': SUP, 'nick': 'SakuraVirus6310', 'date': '2026-09-19T10:00:00+00:00'},
+                            'Одобрено', '', OWNER, 'Владелец')
+bot.add_to_history(SUP, 'и ещё пишет что неверный пароль')
+(t, _), log = press(ADMIN, f'reply_{SUP}')
+msgs = sent_to(log, ADMIN)
+check(len(msgs) == 1 and 'Панель администратора' not in msgs[0], f"одно сообщение, панель заново не присылается ({len(msgs)})")
+intro = msgs[0] if msgs else ''
+check('Вы отвечаете' in intro and 'SakuraVirus6310' in intro, "заголовок «Вы отвечаете: ник»")
+check('Сообщения игрока (2)' in intro and 'Проблема:' in intro and 'неверный пароль' in intro, "все неотвеченные сообщения, ник и проблема раздельно")
+check('Указал другой ник' in intro and 'Olivye_9656' in intro, "пометка: в обращении не тот ник, что в заявке")
+b = buttons(log, ADMIN)
+check('✅ Ответил, закрыть' in b and '🏠 Меню' in b and not any('Завершить' in x for x in b), f"кнопки понятные, завершение одно ({b})")
+log = say(ADMIN, 'проверьте ник')
+(t, _), log = press(ADMIN, f'reply_{SUP}')
+check('Сообщени' not in (sent_to(log, ADMIN) or [''])[0], "после ответа админа старые сообщения не повторяются")
+press(ADMIN, 'end_dialog')
+
 print("\n=== 11. Ошибки Telegram за весь прогон ===")
 counts = collections.Counter(d[:70] for m, d in ctx.tg_errors)
 for d, n in counts.most_common():
