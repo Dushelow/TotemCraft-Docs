@@ -172,16 +172,16 @@ storage.execute("UPDATE applications SET decided_at='2026-01-01T00:00:00+00:00'"
 bot._frontier_cache['at'] = 0
 text, flags = bot.dossier(1, 'CleanPlayer', OWNER)
 check(flags == [] and '✅ Проверки пройдены' in text, "у чистого старого аккаунта: «Проверки пройдены»")
-n_before = len([1 for u, j in ctx.webhook_log if j and 'набег' in str(j)])
+n_before = len([1 for u, j in ctx.webhook_log if j and 'Рейд-режим включён' in str(j)])
 for k in range(5):
     fresh = 9_600_000_000 + k
     bot.user_states[fresh] = {'step': 'rules', 'nick': f'Raid{k}', 'password': 'qwerty12345', 'comment': ''}
     press(fresh, 'rules_agree')
-raids = [1 for u, j in ctx.webhook_log if j and 'набег' in str(j)]
-check(len(raids) - n_before == 1, f"5 заявок от совсем новых аккаунтов за час: одно предупреждение о набеге ({len(raids) - n_before})")
+raids = [1 for u, j in ctx.webhook_log if j and 'Рейд-режим включён' in str(j)]
+check(len(raids) - n_before == 1, f"5 заявок от совсем новых аккаунтов за час: рейд-режим включился один раз ({len(raids) - n_before})")
 bot.user_states[9_600_000_010] = {'step': 'rules', 'nick': 'Raid10', 'password': 'qwerty12345', 'comment': ''}
 press(9_600_000_010, 'rules_agree')
-check(len([1 for u, j in ctx.webhook_log if j and 'набег' in str(j)]) - n_before == 1, "повторно в течение 3 часов не шумит")
+check(len([1 for u, j in ctx.webhook_log if j and 'Рейд-режим включён' in str(j)]) - n_before == 1, "повторно в течение 3 часов не шумит")
 for k in list(range(5)) + [10]:
     bot.pending.pop(str(9_600_000_000 + k), None)
 for app_id, decided_at in saved:

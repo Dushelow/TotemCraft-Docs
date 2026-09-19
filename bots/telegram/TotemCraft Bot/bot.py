@@ -8,7 +8,7 @@ from tcbot import config, storage, timeutil
 from tcbot.config import TOKEN, ADMIN_ID, DISCORD_WEBHOOK_URL, CONSOLE_WEBHOOK_URL
 from tcbot.logs import log_error, log_warning
 from tcbot.rcon import rcon_command
-from tcbot import bans, mmdb, tgage
+from tcbot import autoaccept, bans, badwords, mmdb, tgage
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -158,7 +158,8 @@ def discord_escape(text):
     """Для Discord: НЕ экранируем подчёркивания и другие символы в embed-полях — они отображаются как есть."""
     return str(text)
 
-def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=None, bans_found=0, test_by=None, risks=None):
+def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=None, bans_found=0, test_by=None, risks=None,
+                            verdict=""):
     if not DISCORD_WEBHOOK_URL: return
     hidden_pw = '*' * len(password) if password else 'не указан'
     username = f"@{user.username}" if user.username else "—"
@@ -178,6 +179,8 @@ def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=N
         desc += f"\n**🧪 Тестовая заявка** (режим игрока, {discord_escape(test_by)})"
     for risk in risks or []:
         desc += f"\n**🔴 Риск:** {discord_escape(risk)}"
+    if verdict:
+        desc += f"\n**Автомат:** {discord_escape(verdict)}"
     embed = {"title": "📩 Новая заявка", "description": desc, "color": 0xFFFF00,
              "timestamp": timeutil.now_iso()}
     try:
@@ -468,7 +471,7 @@ def ban_report(tg_id, nick, viewer=None):
 # ---------- Досье игрока и проверки ----------
 AUTHME_GEOIP = os.path.join(config.MC_SERVER_DIR, 'plugins', 'AuthMe', 'GeoLite2-Country.mmdb')
 VERY_NEW_DAYS = 30        # «совсем новый» аккаунт Telegram: новее всех, кто подавал заявки 30+ дней назад
-RAID_WINDOW_MIN = 60      # набег: столько-то заявок от совсем новых аккаунтов за час
+RAID_WINDOW_MIN = 60      # рейд: столько-то заявок от совсем новых аккаунтов за час
 RAID_COUNT = 5
 _frontier_cache = {'at': 0.0, 'anchors': [], 'border': None}
 
@@ -599,22 +602,27 @@ def dossier(tg_id, nick, viewer=None, app=None, compact=False):
     return text, flags
 
 def check_raid(uid):
-    """Много заявок от совсем новых аккаунтов за час — одно предупреждение команде (не чаще раза в 3 часа)."""
+    """Рейд: много заявок от совсем новых аккаунтов за час. Включает рейд-режим (если автовключение не выключено)
+    или, если выключено, один раз предупреждает команду (не чаще раза в 3 часа)."""
     try:
         if not is_very_new(uid):
             return
         since = (timeutil.now_utc() - timedelta(minutes=RAID_WINDOW_MIN)).isoformat(timespec='seconds')
         ids = [r[0] for r in storage.query("SELECT DISTINCT target_id FROM audit WHERE action='app_submitted' AND ts >= ?", (since,))]
         fresh = [i for i in ids if i and is_very_new(i)]
+        if len(fresh) < RAID_COUNT or raid_active():
+            return
+        reason = f"За последние {RAID_WINDOW_MIN} мин {len(fresh)} заявок от совсем новых аккаунтов Telegram."
+        if storage.setting('raid_auto', True):
+            set_raid(True, reason=reason)
+            return
         last = storage.setting('raid_alert_at')
-        if len(fresh) >= RAID_COUNT and (not last or timeutil.now_utc() - timeutil.parse(last) > timedelta(hours=3)):
+        if not last or timeutil.now_utc() - timeutil.parse(last) > timedelta(hours=3):
             storage.set_setting('raid_alert_at', timeutil.now_iso())
-            text = (f"🔴 <b>Похоже на набег</b>: за последний час {len(fresh)} заявок от совсем новых аккаунтов Telegram.\n"
-                    f"Проверьте очередь заявок внимательнее. Можно приостановить регистрацию в «Управлении».")
-            notify_staff('apps', text)
-            post_discord({"embeds": [{"title": "🔴 Похоже на набег", "color": 0xff0000,
-                                      "description": f"За час {len(fresh)} заявок от совсем новых аккаунтов Telegram.",
-                                      "timestamp": timeutil.now_iso()}]})
+            notify_staff('apps', f"🔴 <b>Похоже на рейд</b>: {reason}\nАвтовключение рейд-режима выключено. "
+                                 f"Включить вручную: «Управление» → «Автопринятие и рейды».")
+            post_discord({"embeds": [{"title": "🔴 Похоже на рейд", "color": 0xff0000,
+                                      "description": reason, "timestamp": timeutil.now_iso()}]})
     except Exception as e:
         log_error(e)
 
@@ -782,6 +790,10 @@ ACTION_NAMES = {
     'reset_timers': '⏰ сбросил таймеры заявок', 'clear_stats': '🧹 очистил статистику',
     'clear_dialogs': '🗑 очистил историю диалогов',
     'staff_added': '👥 выдал доступ', 'staff_role': '👥 сменил роль', 'staff_removed': '👥 снял доступ',
+    'auto_on': '🤖 включил автопринятие', 'auto_off': '🤖 выключил автопринятие', 'auto_limit': '🤖 упёрся в лимит автопринятия',
+    'raid_on': '🛡 включил рейд-режим', 'raid_off': '🛡 выключил рейд-режим',
+    'raid_auto_on': '🛡 включил автовключение рейд-режима', 'raid_auto_off': '🛡 выключил автовключение рейд-режима',
+    'word_added': '📖 добавил слово в словарь', 'word_removed': '📖 убрал слово из словаря',
 }
 
 def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None):
@@ -948,6 +960,12 @@ def send_admin_menu(chat_id, edit_message=None):
     lines = [f"🛡 <b>Панель администратора</b>\n{ROLE_NAMES.get(role, '')}: {escape_html(staff_name(chat_id))}"]
     if pending_count and can(chat_id, 'apps'):
         lines.append(f"⏳ Ожидают рассмотрения: <b>{pending_count}</b>")
+    if can(chat_id, 'apps'):
+        if raid_active():
+            lines.append("🛡 <b>Рейд-режим активен</b>: автопринятие приостановлено")
+        elif auto_enabled():
+            hour, day = auto_counts()
+            lines.append(f"🤖 Автопринятие включено: за сутки {day} из {autoaccept.LIMIT_DAY}")
     if unread_count and can(chat_id, 'messages'):
         lines.append(f"📬 Непрочитанных сообщений: <b>{unread_count}</b>")
     busy = [f"{escape_html(staff_name(a))} ↔ {escape_html(get_user_label(p))}" for a, p in dialogs.items() if a != chat_id]
@@ -1047,6 +1065,9 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
         if old_nicks:
             listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
             text += f"\n\n⚠️ <b>Внимание:</b> данный TG ID (<code>{user_id}</code>) уже подавал заявку ранее! Ники: {listed}"
+        line = auto_line(app, chat_id)
+        if line:
+            text += "\n\n" + line
         text += dossier(user_id, app.get('nick', ''), chat_id, app=app)[0]
         text += ban_report(user_id, app.get('nick', ''), chat_id)
         if len(text) > TG_MAX_LEN:
@@ -1532,6 +1553,7 @@ def show_admin_controls(chat_id, edit_message=None):
         markup.add(B("🧹 Очистить статистику", callback_data="admin_clearstats"))
         markup.add(B("🗑 Очистить историю диалогов", callback_data="admin_cleardialogs"))
     if can(chat_id, 'controls'):
+        markup.add(B("🤖 Автопринятие и рейды", callback_data="auto_menu"))
         markup.add(B("📤 Выгрузить историю заявок (Excel)", callback_data="admin_export"))
     tz_label = timeutil.TZ_NAMES.get(tz_of(chat_id), tz_of(chat_id))
     markup.add(B(f"🕐 Мой часовой пояс: {tz_label}", callback_data="tz_menu"))
@@ -1588,6 +1610,7 @@ CALLBACK_PERMS = [
     ('admin_resettimers', 'controls'), ('admin_cleardialogs', 'controls'), ('confirm_', 'controls'),
     ('admin_export', 'controls'),
     ('jr_', 'journal'), ('staff_', 'staff'),
+    ('auto_', 'controls'), ('raid_', 'controls'), ('words_', 'controls'),
 ]
 
 def tg_display_name(tg_id):
@@ -1951,6 +1974,245 @@ def show_handbook_chapter(chat_id, chapter_key, edit_message=None):
         safe_send(chat_id, chapter['text'], parse_mode='HTML', reply_markup=markup)
 
 
+# ---------- Автопринятие заявок и рейд-режим (правила — tcbot/autoaccept.py) ----------
+SUBSCRIBE_CHAT = os.environ.get('SUBSCRIBE_CHAT', '@totemcraftnet')
+SUBSCRIBE_URL = 'https://t.me/' + SUBSCRIBE_CHAT.lstrip('@')
+RAID_DURATION_MIN = 60
+decision_lock = threading.RLock()   # одна заявка не может быть решена дважды (админ и автомат одновременно)
+
+def auto_enabled():
+    return bool(storage.setting('auto_enabled', False))
+
+def owner_words():
+    return storage.setting('bad_words', []) or []
+
+def raid_active():
+    if storage.setting('raid_manual', False):
+        return True
+    until = storage.setting('raid_until')
+    return bool(until and timeutil.parse(until) > timeutil.now_utc())
+
+def raid_status_text(viewer=None):
+    if storage.setting('raid_manual', False):
+        return "🔴 включён вручную (автопринятие приостановлено)"
+    until = storage.setting('raid_until')
+    if until and timeutil.parse(until) > timeutil.now_utc():
+        return f"🔴 активен до {fmt_time(until, viewer, '%H:%M')} (автопринятие приостановлено)"
+    if storage.setting('raid_auto', True):
+        return f"👀 слежу: включится сам, если за {RAID_WINDOW_MIN} мин придёт {RAID_COUNT}+ заявок от совсем новых аккаунтов"
+    return "⚪ автовключение выключено"
+
+def set_raid(active, actor=None, reason=''):
+    """Включить рейд-режим (на RAID_DURATION_MIN минут, или вручную до выключения) или выключить."""
+    if active:
+        if actor is None:
+            storage.set_setting('raid_until', (timeutil.now_utc() + timedelta(minutes=RAID_DURATION_MIN)).isoformat(timespec='seconds'))
+        else:
+            storage.set_setting('raid_manual', True)
+        audit(actor, 'raid_on', details=reason)
+        text = ("🛡 <b>Рейд-режим включён</b>" + (f" автоматически на {RAID_DURATION_MIN} мин" if actor is None else f": {escape_html(staff_name(actor))}")
+                + (f"\n{escape_html(reason)}" if reason else "") + "\nАвтопринятие приостановлено, заявки ждут ручного решения или окончания режима.")
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("⚪ Выключить рейд-режим", callback_data="raid_off"))
+        for aid in set(staff_with('apps')) | set(staff_with('controls')):
+            notify_staff(None, text, reply_markup=markup if aid in staff_with('controls') else None, only=[aid])
+        post_discord({"embeds": [{"title": "🛡 Рейд-режим включён", "color": 0xff0000,
+                                  "description": reason or f"Включил: {staff_name(actor)}", "timestamp": timeutil.now_iso()}]})
+    else:
+        storage.set_setting('raid_manual', False)
+        storage.set_setting('raid_until', None)
+        audit(actor, 'raid_off')
+        notify_staff('apps', "🛡 Рейд-режим выключен" + (f": {escape_html(staff_name(actor))}" if actor else " (время вышло)")
+                     + ". Автопринятие снова работает, если включено.")
+        post_discord({"embeds": [{"title": "🛡 Рейд-режим выключен", "color": 0x2ecc71, "timestamp": timeutil.now_iso()}]})
+
+def auto_facts(uid, app):
+    """Факты о заявке для правил автопринятия."""
+    uid = int(uid)
+    nick = app.get('nick', '')
+    nicks = [n for n in [nick] + [n for n in previous_nicks(uid) if n.lower() != nick.lower()] if n]
+    f = {'nick': nick, 'comment': app.get('comment', ''), 'blocked': uid in blocked_users,
+         'asked_support': bool(app.get('asked')), 'subscribed': bool(app.get('subscribed'))}
+    tg = app.get('tg') or {}
+    if 'photo' in tg:
+        f['has_photo'] = tg['photo']
+    if 'username' in tg:
+        f['has_username'] = tg['username']
+    try:
+        f['tg_age_days'] = (date.today() - tgage.estimate(uid, _frontier()['anchors'])).days
+    except Exception as e:
+        log_error(e)
+    words = owner_words()
+    f['bad_nick'] = badwords.find(nick, words)
+    f['bad_password'] = badwords.find(app.get('password', ''), words)
+    f['bad_comment'] = badwords.find(app.get('comment', ''), words)
+    f['approved_before'] = [r[0] for r in storage.query(
+        "SELECT nick FROM applications WHERE tg_id=? AND status='Одобрено'", (uid,))]
+    f['rejected_before'] = storage.query("SELECT COUNT(*) FROM applications WHERE tg_id=? AND status='Отклонено'", (uid,))[0][0]
+    found, past, errors = bans.find(nicks)
+    f['bans'] = ([f"{it['who']} ({it['kind']})" for it in found if 'бан' in it['kind'] or 'мут' in it['kind']]
+                 + [f"раньше {k} ×{v}" for k, v in past.items() if 'бан' in k or 'мут' in k])
+    if errors:
+        f['bans'].append("не удалось проверить: " + "; ".join(errors))  # не прочитали баны — не рискуем
+    ips = set()
+    for username, ip, regip, _, _ in bans.authme_accounts(nicks):
+        ips.update(x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0'))
+    others = [n for n in bans.authme_accounts_on_ips(sorted(ips)) if n.lower() not in {x.lower() for x in nicks}] if ips else []
+    if others:
+        twin_found, twin_past, _ = bans.find(others)
+        f['ip_banned_twins'] = sorted({it['who'] for it in twin_found if 'бан' in it['kind']})
+    return f
+
+def schedule_auto(uid, app, keep_due=False):
+    """Считает вердикт автомата и записывает его в заявку. keep_due — не сдвигать уже назначенное время."""
+    try:
+        v = autoaccept.decide(auto_facts(uid, app))
+    except Exception as e:
+        log_error(e)
+        v = {'manual': True, 'stop': [f"не удалось проверить заявку: {e}"], 'minor': [], 'delay': None, 'icon': '✋'}
+    old = app.get('auto') or {}
+    due = None
+    if not v['manual']:
+        due = (timeutil.parse(app.get('date')) + v['delay']).isoformat(timespec='seconds')
+        if keep_due and old.get('due'):
+            due = min(due, old['due'])
+    app['auto'] = {'manual': v['manual'], 'stop': v['stop'], 'minor': v['minor'], 'icon': v['icon'], 'due': due,
+                   'delay': autoaccept.delay_text(v['delay']) if v['delay'] else None}
+    if str(uid) in pending:
+        pending[str(uid)] = app
+    return app['auto']
+
+def auto_line(app, viewer=None, html=True):
+    """Строка вердикта для карточки, уведомления и Discord (игрок её не видит)."""
+    a = (app or {}).get('auto')
+    if not a:
+        return ""
+    esc = escape_html if html else (lambda x: x)
+    b = (lambda x: f"<b>{x}</b>") if html else (lambda x: x)
+    if a['manual']:
+        return f"✋ {b('Только вручную')}: " + esc("; ".join(a['stop']))
+    note = ""
+    if not auto_enabled():
+        note = " (автопринятие выключено)"
+    elif raid_active():
+        note = " (ждёт: включён рейд-режим)"
+    minor = ", ".join(a['minor']) if a['minor'] else "мелочей нет"
+    return (f"{a['icon']} {b('Автопринятие')} в {fmt_time(a['due'], viewer, '%d.%m %H:%M')}{note} · {esc(minor)}"
+            + (" · подписан на группу" if (app or {}).get('subscribed') else ""))
+
+def auto_counts():
+    now = timeutil.now_utc()
+    hour = (now - timedelta(hours=1)).isoformat(timespec='seconds')
+    day = (now - timedelta(days=1)).isoformat(timespec='seconds')
+    rows = storage.query("SELECT SUM(ts >= ?), SUM(ts >= ?) FROM audit WHERE actor_role='system' AND action='approved'",
+                         (hour, day))[0]
+    return rows[0] or 0, rows[1] or 0
+
+def auto_job():
+    """Каждую минуту: рейд-режим по времени и автопринятие подошедших заявок (с перепроверкой)."""
+    try:
+        until = storage.setting('raid_until')
+        if until and timeutil.parse(until) <= timeutil.now_utc():
+            set_raid(False)
+        if not auto_enabled() or raid_active():
+            return
+        now = timeutil.now_utc()
+        queue = sorted((a['auto']['due'], k) for k, a in pending.items()
+                       if a.get('auto') and not a['auto'].get('manual') and a['auto'].get('due'))
+        for due, key in queue:
+            if timeutil.parse(due) > now:
+                break
+            if key in app_claims:
+                continue  # сейчас решает админ
+            app = pending.get(key)
+            if not app:
+                continue
+            verdict = schedule_auto(int(key), app, keep_due=True)  # перепроверка: вдруг появился бан и т.п.
+            if verdict['manual']:
+                notify_staff('apps', f"✋ Автомат не принял <code>{escape_html(app.get('nick', ''))}</code>: "
+                                     f"{escape_html('; '.join(verdict['stop']))}. Решите вручную.",
+                             reply_markup=types.InlineKeyboardMarkup().add(
+                                 types.InlineKeyboardButton("📋 Открыть заявку", callback_data=f"pending_goto_{key}")))
+                continue
+            hour, day = auto_counts()
+            if hour >= autoaccept.LIMIT_HOUR or day >= autoaccept.LIMIT_DAY:
+                app['auto'].update(manual=True, stop=[f"лимит автопринятия ({autoaccept.LIMIT_HOUR} в час, {autoaccept.LIMIT_DAY} в сутки)"],
+                                   icon='✋', due=None)
+                pending[key] = app
+                last = storage.setting('auto_limit_alert_at')
+                if not last or now - timeutil.parse(last) > timedelta(hours=1):
+                    storage.set_setting('auto_limit_alert_at', timeutil.now_iso())
+                    audit(None, 'auto_limit', details=f"за час {hour}, за сутки {day}")
+                    notify_staff('apps', f"🤖 <b>Автомат упёрся в лимит</b>: за час {hour} из {autoaccept.LIMIT_HOUR}, "
+                                         f"за сутки {day} из {autoaccept.LIMIT_DAY}. Похоже на наплыв заявок. "
+                                         f"Остальные заявки ждут ручного решения, ничего не заморожено и не отклонено.")
+                    post_discord({"embeds": [{"title": "🤖 Автопринятие упёрлось в лимит", "color": 0xffaa00,
+                                              "description": f"За час {hour}, за сутки {day}. Остальные заявки вручную.",
+                                              "timestamp": timeutil.now_iso()}]})
+                continue
+            desc = f"{app['auto']['icon']} {', '.join(app['auto']['minor']) or 'мелочей нет'}, срок {app['auto']['delay']}"
+            process_admin_decision('approve', key, '', {'actor': None, 'auto_desc': desc})
+    except Exception as e:
+        log_error(e)
+
+def show_auto_settings(chat_id, edit_message=None):
+    B = types.InlineKeyboardButton
+    enabled = auto_enabled()
+    hour, day = auto_counts()
+    waiting = [a for a in pending.values() if (a.get('auto') or {}).get('due') and not a['auto'].get('manual')]
+    manual = [a for a in pending.values() if (a.get('auto') or {}).get('manual')]
+    nearest = min((a['auto']['due'] for a in waiting), default=None)
+    lines = [f"🤖 <b>Автопринятие</b>: {'✅ включено' if enabled else '⛔ выключено'}",
+             f"Принято автоматически: за час {hour} из {autoaccept.LIMIT_HOUR}, за сутки {day} из {autoaccept.LIMIT_DAY}",
+             f"Ждут автопринятия: {len(waiting)}" + (f", ближайшая в {fmt_time(nearest, chat_id, '%d.%m %H:%M')}" if nearest else ""),
+             f"Только вручную: {len(manual)}",
+             "",
+             f"🛡 <b>Рейд-режим</b>: {raid_status_text(chat_id)}",
+             f"📖 <b>Словарь</b>: встроенный + своих слов {len(owner_words())}",
+             "",
+             "<b>Сроки</b>: без мелочей 1 ч (подписан на группу — 5 мин), 1 мелочь 12 ч, 2 — 24 ч, 3+ — 48 ч.",
+             "<b>Мелочи</b>: нет аватарки, нет username, Telegram моложе года, есть комментарий, 6+ цифр в нике.",
+             "<b>Только вручную</b>: бан или мут когда-либо, твинк, блок в боте, брань и символика, раньше отклоняли, "
+             "Telegram моложе 2 месяцев, пытался писать в поддержку, пока ждёт.",
+             "Перед принятием бот всё перепроверяет. Игрок ничего этого не видит."]
+    markup = types.InlineKeyboardMarkup()
+    markup.row(B("⛔ Выключить автопринятие" if enabled else "✅ Включить автопринятие", callback_data="auto_toggle"))
+    if raid_active():
+        markup.row(B("⚪ Выключить рейд-режим", callback_data="raid_off"))
+    else:
+        markup.row(B("🔴 Включить рейд-режим сейчас", callback_data="raid_on"))
+    raid_auto = storage.setting('raid_auto', True)
+    markup.row(B(("✅" if raid_auto else "⬜") + " Рейд-режим включается сам", callback_data="raid_auto_toggle"))
+    markup.row(B(f"📖 Свои слова ({len(owner_words())})", callback_data="words_list"))
+    markup.row(B("🔙 Управление", callback_data="admin_menu_controls"))
+    text = "\n".join(lines)
+    if edit_message:
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
+    else:
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
+
+def show_words(chat_id, edit_message=None):
+    B = types.InlineKeyboardButton
+    words = owner_words()
+    text = ("📖 <b>Свои слова словаря</b>\nИщутся в нике, пароле и комментарии заявки вместе со встроенным словарём "
+            "(мат, оскорбления, символика, политика). Нажмите на слово, чтобы убрать его.\n\n"
+            + (", ".join(f"<code>{escape_html(w)}</code>" for w in words) if words else "<i>Своих слов пока нет.</i>"))
+    markup = types.InlineKeyboardMarkup(row_width=3)
+    markup.add(*[B(f"✖ {w}", callback_data=f"words_del_{i}") for i, w in enumerate(words[:60])])
+    markup.row(B("➕ Добавить слово", callback_data="words_add"))
+    markup.row(B("🔙 Автопринятие", callback_data="auto_menu"))
+    if edit_message:
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
+    else:
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
+
+def mark_asked(uid):
+    """Игрок пытался обратиться, пока заявка ждёт: автомат такую заявку не примет."""
+    app = pending.get(str(uid))
+    if app and not app.get('asked'):
+        app['asked'] = True
+        schedule_auto(uid, app, keep_due=True)
+
 # ---------- Страховка обработчиков ----------
 def guarded(handler):
     """Ошибка в обработчике не должна оставлять кнопку «крутиться» и теряться молча:
@@ -2195,6 +2457,17 @@ def handle_all_messages(m):
                 show_journal(uid, 'p', target, 0)
             flush_admin_notifications(uid)
             return
+        if action == 'word_add':
+            del admin_states[uid]
+            words = owner_words()
+            added = [w.lower() for w in text.split() if len(w) >= 3 and w.lower() not in words]
+            if added:
+                storage.set_setting('bad_words', words + added)
+                audit(uid, 'word_added', details=", ".join(added))
+            safe_send(uid, ("✅ Добавлено: " + ", ".join(added)) if added else "Ничего не добавлено: слово короче 3 букв или уже есть.")
+            show_words(uid)
+            flush_admin_notifications(uid)
+            return
         if action == 'staff_add':
             del admin_states[uid]
             try:
@@ -2304,6 +2577,7 @@ def handle_all_messages(m):
     if text == "🚨 Жалоба/вопрос админу":
         # Запрет писать при активной заявке
         if str(uid) in pending:
+            mark_asked(uid)
             safe_send(uid,
                 "⚠️ <b>Обращение к администрации недоступно</b>\n\n"
                 "У вас есть активная заявка на регистрацию, которая ожидает рассмотрения.\n\n"
@@ -2644,6 +2918,7 @@ def callback_handler(call):
             if test_by:
                 new_app['test_by'] = test_by  # заявка из режима игрока: на сервере не регистрируется
             pending[app_id] = new_app
+            schedule_auto(uid, new_app)
             if not test_by:
                 last_application[str(uid)] = timeutil.now_iso()
             audit(uid, 'app_submitted', uid, state['nick'], state.get('comment', ''))
@@ -2662,6 +2937,7 @@ def callback_handler(call):
                 + f"Ник: <code>{escape_html(state['nick'])}</code>\n"
                 f"В очереди: <b>{len(pending)}</b>"
                 f"{dup_warning}"
+                f"\n\n{auto_line(new_app)}"
                 f"{info}"
                 f"{bans}"
             )[:TG_MAX_LEN]
@@ -2669,7 +2945,8 @@ def callback_handler(call):
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),
                                     old_nicks=old_nicks, bans_found=bans.count('\n🚫') + bans.count('\n🔇'),
                                     test_by=staff_name(uid) if test_by else None,
-                                    risks=[re.sub(r'<[^>]+>', '', t) for lvl, t in flags if lvl == '🔴'])
+                                    risks=[re.sub(r'<[^>]+>', '', t) for lvl, t in flags if lvl == '🔴'],
+                                    verdict=auto_line(new_app, html=False))
             check_raid(uid)
             safe_send(uid,
                 "✅ <b>Ваша заявка принята и отправлена на рассмотрение.</b>\n\n"
@@ -2677,6 +2954,11 @@ def callback_handler(call):
                 "Результат рассмотрения придёт вам автоматически.",
                 parse_mode='HTML',
                 reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            sub = types.InlineKeyboardMarkup()
+            sub.row(types.InlineKeyboardButton("➡️ Перейти в группу", url=SUBSCRIBE_URL),
+                    types.InlineKeyboardButton("✅ Я подписался", callback_data="sub_check"))
+            safe_send(uid, "📢 Пока ждёте, подпишитесь на нашу группу TotemCraft: там новости и анонсы сервера.",
+                      reply_markup=sub)
         else:
             safe_send(uid, "❌ Заявка отменена - вы не приняли правила сервера.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         del user_states[uid]
@@ -2761,6 +3043,7 @@ def callback_handler(call):
     if data == "menu_support":
         bot.answer_callback_query(call.id)
         if str(uid) in pending:
+            mark_asked(uid)
             safe_send(uid,
                 "⚠️ <b>Обращение к администрации недоступно</b>\n\n"
                 "У вас есть активная заявка на регистрацию, которая ожидает рассмотрения.\n\n"
@@ -2805,6 +3088,27 @@ def callback_handler(call):
         chapter_key = data[3:]
         show_handbook_chapter(uid, chapter_key, edit_message=msg)
         bot.answer_callback_query(call.id)
+        return
+
+    # --- Подписка на группу (игрок): ускоряет только чистые заявки, игрок об этом не знает ---
+    if data == "sub_check":
+        try:
+            member = bot.get_chat_member(SUBSCRIBE_CHAT, uid).status in ('member', 'administrator', 'creator')
+        except Exception as e:
+            log_warning(f"не удалось проверить подписку на {SUBSCRIBE_CHAT}: {e}")
+            member = None
+        if member is False:
+            bot.answer_callback_query(call.id, "Пока не вижу подписки. Подпишитесь и нажмите ещё раз.", show_alert=True)
+            return
+        app = pending.get(str(uid))
+        if member and app and not app.get('subscribed'):
+            app['subscribed'] = True
+            schedule_auto(uid, app, keep_due=True)
+        bot.answer_callback_query(call.id, "Спасибо за подписку!")
+        try:
+            bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
+        except Exception:
+            pass
         return
 
     # --- Только команда ---
@@ -2901,7 +3205,7 @@ def callback_handler(call):
         safe_send(uid, "🔍 Введите ник (или его часть) для поиска:", reply_markup=markup)
         return
     if data == "cancel_admin_search":
-        if admin_states.get(uid, {}).get('action') in ('search', 'journal_player', 'staff_add'):
+        if admin_states.get(uid, {}).get('action') in ('search', 'journal_player', 'staff_add', 'word_add'):
             del admin_states[uid]
         flush_admin_notifications(uid)
         ok(); send_admin_menu(uid, edit_message=msg); return
@@ -3140,6 +3444,55 @@ def callback_handler(call):
         safe_send(uid, "🗑 История диалогов и все тикеты полностью очищены.")
         return
 
+    # --- Автопринятие, рейд-режим, словарь (владелец) ---
+    if data == "auto_menu":
+        ok(); show_auto_settings(uid, edit_message=msg); return
+    if data == "auto_toggle":
+        value = not auto_enabled()
+        storage.set_setting('auto_enabled', value)
+        audit(uid, 'auto_on' if value else 'auto_off')
+        post_discord({"embeds": [{"title": "🤖 Автопринятие " + ("включено" if value else "выключено"), "color": 0x9b59b6,
+                                  "description": f"Изменил: {staff_name(uid)}", "timestamp": timeutil.now_iso()}]})
+        ok("Автопринятие включено" if value else "Автопринятие выключено")
+        show_auto_settings(uid, edit_message=msg)
+        return
+    if data in ("raid_on", "raid_off"):
+        if data == "raid_on" and not raid_active():
+            set_raid(True, actor=uid)
+        elif data == "raid_off" and raid_active():
+            set_raid(False, actor=uid)
+        ok()
+        if msg.text and msg.text.startswith("🤖 Автопринятие"):
+            show_auto_settings(uid, edit_message=msg)
+        else:
+            try:
+                bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
+            except Exception:
+                pass
+        return
+    if data == "raid_auto_toggle":
+        value = not storage.setting('raid_auto', True)
+        storage.set_setting('raid_auto', value)
+        audit(uid, 'raid_auto_on' if value else 'raid_auto_off')
+        ok(); show_auto_settings(uid, edit_message=msg); return
+    if data == "words_list":
+        ok(); show_words(uid, edit_message=msg); return
+    if data == "words_add":
+        admin_states[uid] = {'action': 'word_add'}
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="cancel_admin_search"))
+        safe_send(uid, "📖 Напишите слово или часть слова (латиницей или по-русски). Несколько слов — через пробел.",
+                  reply_markup=markup)
+        ok(); return
+    if data.startswith('words_del_'):
+        words = owner_words()
+        i = int(data.split('_')[2])
+        if 0 <= i < len(words):
+            removed = words.pop(i)
+            storage.set_setting('bad_words', words)
+            audit(uid, 'word_removed', details=removed)
+        ok(); show_words(uid, edit_message=msg); return
+
     # --- Журнал ---
     if data == "jr_pick":
         ok(); show_journal_staff_pick(uid, msg); return
@@ -3224,20 +3577,26 @@ def callback_handler(call):
 
 # ---------- Обработка решения по заявке ----------
 def process_admin_decision(action, user_id_str, comment, state):
-    actor = state.get('actor', ADMIN_ID)
-    app_claims.pop(user_id_str, None)
-    app = pending.get(user_id_str)
-    if not app:
-        safe_send(actor, "⚠️ Заявка не найдена: игрок её отменил или её уже рассмотрел коллега.")
-        send_admin_menu(actor)
-        return
-    status = 'Одобрено' if action == 'approve' else 'Отклонено'
-    test_by = app.get('test_by')
-    if not test_by:
-        storage.add_application(app, status, comment, actor, staff_name(actor))
-    del pending[user_id_str]
-    audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'],
-          (comment or '') + (' [тестовая заявка]' if test_by else ''))
+    """Решение по заявке. state['actor'] — кто решил; None — автомат (автопринятие)."""
+    actor = state['actor'] if 'actor' in state else ADMIN_ID
+    decider = staff_name(actor) if actor is not None else "🤖 автоматически"
+    with decision_lock:
+        app_claims.pop(user_id_str, None)
+        app = pending.get(user_id_str)
+        if not app:
+            if actor is not None:
+                safe_send(actor, "⚠️ Заявка не найдена: игрок её отменил или её уже рассмотрел коллега.")
+                send_admin_menu(actor)
+            return
+        status = 'Одобрено' if action == 'approve' else 'Отклонено'
+        test_by = app.get('test_by')
+        if not test_by:
+            storage.add_application(app, status, comment, actor, decider)
+        del pending[user_id_str]
+    details = (comment or '') + (' [тестовая заявка]' if test_by else '')
+    if actor is None:
+        details = "автоматически: " + state.get('auto_desc', '') + details
+    audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'], details)
     if action == 'approve' and not test_by:
         run_in_background(register_on_server, app['nick'], app['password'], actor, app['user_id'])
 
@@ -3245,7 +3604,7 @@ def process_admin_decision(action, user_id_str, comment, state):
     action_icon = "✅" if action == 'approve' else "❌"
     action_label = "ОДОБРЕНО" if action == 'approve' else "ОТКЛОНЕНО"
     decided_at = fmt_time(timeutil.now_iso(), actor)
-    decision_suffix = f"\n\n{action_icon} <b>{action_label}</b> [{decided_at}] · {escape_html(staff_name(actor))}"
+    decision_suffix = f"\n\n{action_icon} <b>{action_label}</b> [{decided_at}] · {escape_html(decider)}"
     if comment:
         decision_suffix += f"\n💬 Комментарий: {escape_html(comment)}"
     if test_by:
@@ -3268,16 +3627,16 @@ def process_admin_decision(action, user_id_str, comment, state):
         except Exception:
             pass
     # У коллег уведомление о заявке помечается решённым
-    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{{t}}] · {escape_html(staff_name(actor))}")
+    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{{t}}] · {escape_html(decider)}")
 
-    if state.get('prompt_msg_id'):
+    if state.get('prompt_msg_id') and actor is not None:
         try:
             bot.delete_message(chat_id=actor, message_id=state['prompt_msg_id'])
         except Exception:
             pass
 
     run_in_background(notify_player_decision, action, user_id_str, app, comment)
-    discord_decision_notify(app["nick"], status, (comment or "") + (" [тестовая заявка]" if test_by else ""), staff_name(actor))
+    discord_decision_notify(app["nick"], status, (comment or "") + (" [тестовая заявка]" if test_by else ""), decider)
     send_admin_menu(actor)
 
 def notify_player_decision(action, user_id_str, app, comment):
@@ -3380,7 +3739,8 @@ def backup_job():
 
 def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
-    schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
+    schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)
+    schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима  # копия bot.db в backups/, 14 последних
     while True:
         schedule.run_pending()
         time.sleep(60)

@@ -117,6 +117,9 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
     ctx.types = types
 
     ctx.blocked_chats = set()   # игроки, заблокировавшие бота: Telegram отвечает 403
+    ctx.no_photo = set()        # у кого нет аватарки
+    ctx.members = set()         # кто подписан на группу
+    ctx.bot_not_admin = False   # бот не админ группы: проверка подписки невозможна
     ctx.tg_errors = []          # ошибки, которые вернул бы настоящий Telegram
     ctx.messages = {}           # (chat_id, message_id) -> (text, markup) — чтобы ловить «message is not modified»
 
@@ -135,7 +138,13 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
             cid = int(params['chat_id'])
             return {'id': cid, 'type': 'private', 'first_name': ctx.names.get(cid, 'Имя'), 'username': f"u{cid}"}
         if method_name == 'getUserProfilePhotos':
-            return {'total_count': 1, 'photos': []}
+            return {'total_count': 0 if int(params['user_id']) in ctx.no_photo else 1, 'photos': []}
+        if method_name == 'getChatMember':
+            uid = int(params['user_id'])
+            if ctx.bot_not_admin:
+                fail(method_name, 400, 'Bad Request: member list is inaccessible')
+            return {'status': 'member' if uid in ctx.members else 'left',
+                    'user': {'id': uid, 'is_bot': False, 'first_name': 'X'}}
         chat = params.get('chat_id')
         if chat is not None and int(chat) in ctx.blocked_chats and method_name.startswith('send'):
             fail(method_name, 403, 'Forbidden: bot was blocked by the user')

@@ -1,0 +1,202 @@
+"""Автопринятие заявок, рейд-режим, словарь.
+Запуск: python tests/test_auto.py <временная папка>"""
+import os
+import shutil
+import sys
+from datetime import timedelta
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fakes
+from fakes import check, sent_to, edited, buttons
+
+WORK = sys.argv[1]
+shutil.rmtree(WORK, ignore_errors=True)
+MC = os.path.join(WORK, 'mc')
+fakes.make_mc(MC)
+OWNER, ADMIN, HELPER = 1000, 2000, 3000
+ctx = fakes.start(os.path.join(WORK, 'bot'), MC, owner=OWNER, names={OWNER: 'Влад', ADMIN: 'Вася', HELPER: 'Петя'})
+bot, storage = ctx.bot, ctx.bot.storage
+bot.RATE_LIMIT = 10 ** 6
+aa, bw, tu = bot.autoaccept, bot.badwords, bot.timeutil
+for tg, name, role in ((ADMIN, 'Вася', 'admin'), (HELPER, 'Петя', 'helper')):
+    storage.execute("INSERT INTO staff (tg_id, name, role, added_by, added_at) VALUES (?,?,?,?,?)",
+                    (tg, name, role, OWNER, tu.now_iso()))
+bot.load_staff()
+# Старая заявка другого игрока «месяц назад» — чтобы у бота была граница «совсем новых» аккаунтов
+storage.execute("INSERT INTO applications (created_at, decided_at, tg_id, tg_username, nick, status) VALUES (?,?,?,?,?,?)",
+                ('2026-01-01T00:00:00+00:00', '2026-01-01T01:00:00+00:00', 8_500_000_000, 'old', 'OldPlayer', 'Одобрено'))
+
+print("=== 1. Правила ===")
+base = {'nick': 'GoodNick', 'has_photo': True, 'has_username': True, 'tg_age_days': 900}
+v = aa.decide(base)
+check(not v['manual'] and v['delay'] == timedelta(hours=1), "чистая заявка: 1 час")
+check(aa.decide(dict(base, subscribed=True))['delay'] == timedelta(minutes=5), "чистая и подписан: 5 минут")
+check(aa.decide(dict(base, has_photo=False))['delay'] == timedelta(hours=12), "одна мелочь (нет аватарки): 12 часов")
+check(aa.decide(dict(base, has_photo=False, has_username=False))['delay'] == timedelta(hours=24), "две мелочи: сутки")
+check(aa.decide(dict(base, has_photo=False, has_username=False, comment='привет'))['delay'] == timedelta(hours=48),
+      "три мелочи: 48 часов")
+check(aa.decide(dict(base, has_photo=False, subscribed=True))['delay'] == timedelta(hours=12), "подписка не ускоряет заявку с мелочью")
+check(aa.decide(dict(base, tg_age_days=200))['minor'] == ['аккаунту Telegram меньше года'], "Telegram моложе года: мелочь")
+check(aa.decide(dict(base, nick='Steve1234567'))['minor'] == ['в нике 6+ цифр подряд'], "6+ цифр в нике: мелочь")
+for key, value, what in [('bans', ['GoodNick (бан)'], 'бан'), ('approved_before', ['Old'], 'твинк по TG'),
+                         ('ip_banned_twins', ['Bad'], 'твинк по IP'), ('blocked', True, 'блок в боте'),
+                         ('bad_nick', [('мат', 'pidor')], 'брань в нике'), ('bad_password', [('символика', '14/88')], 'символика в пароле'),
+                         ('bad_comment', [('мат', 'сука')], 'брань в комментарии'), ('rejected_before', 1, 'раньше отклоняли'),
+                         ('tg_age_days', 40, 'Telegram моложе 2 месяцев'), ('asked_support', True, 'писал в поддержку')]:
+    check(aa.decide(dict(base, **{key: value}))['manual'], f"стоп: {what}")
+check(not aa.decide(dict(base, tg_age_days=70))['manual'], "Telegram 70 дней: не стоп (только мелочь)")
+
+print("\n=== 2. Заявка: вердикт виден команде, игрок ничего не видит ===")
+P = 6_000_000_001  # аккаунт ~2023 года
+bot.user_states[P] = {'step': 'rules', 'nick': 'CleanNick', 'password': 'Str0ngPass1', 'comment': ''}
+(t, _), log = ctx.press(P, 'rules_agree')
+app = bot.pending[str(P)]
+check(app['auto']['icon'] == '🟢' and not app['auto']['manual'], f"вердикт: 🟢 ({app['auto']})")
+note = sent_to(log, OWNER)[0]
+check('Автопринятие' in note and 'выключено' in note, "в уведомлении вердикт и пометка «автопринятие выключено»")
+pm = " ".join(sent_to(log, P))
+check('Автопринят' not in pm and 'мелоч' not in pm, "игрок критериев и сроков не видит")
+check('подпишитесь на нашу группу' in pm and '✅ Я подписался' in buttons(log, P), "игроку предложили подписаться на группу")
+disc = [j for u, j in ctx.webhook_log if j and 'embeds' in j and 'Новая заявка' in j['embeds'][0]['title']]
+check(disc and 'Автомат:' in disc[-1]['embeds'][0]['description'], "в Discord вердикт автомата")
+(t, _), log = ctx.press(ADMIN, 'admin_menu_applications')
+check(any('Автопринятие' in x for _, x in edited(log)), "в карточке заявки вердикт")
+
+print("\n=== 3. Подписка ускоряет чистую заявку ===")
+(t, _), _ = ctx.press(P, 'sub_check')
+check('Пока не вижу' in (t or ''), "без подписки: «пока не вижу подписки»")
+ctx.members.add(P)
+(t, _), _ = ctx.press(P, 'sub_check')
+due = tu.parse(bot.pending[str(P)]['auto']['due'])
+check(t == 'Спасибо за подписку!' and due - tu.parse(bot.pending[str(P)]['date']) == timedelta(minutes=5),
+      "подписался: срок 5 минут")
+
+print("\n=== 4. Автомат выключен — ничего не принимает; включён — принимает ===")
+bot.pending[str(P)] = dict(bot.pending[str(P)], date=(tu.now_utc() - timedelta(hours=2)).isoformat(timespec='seconds'))
+bot.schedule_auto(P, bot.pending[str(P)])
+bot.auto_job()
+check(str(P) in bot.pending, "автопринятие выключено: заявка ждёт")
+(t, alert), _ = ctx.press(ADMIN, 'auto_toggle')
+check(alert and 'нет доступа' in (t or ''), "включать автомат может только владелец")
+ctx.press(OWNER, 'auto_toggle')
+check(bot.auto_enabled(), "владелец включил автопринятие")
+n_rcon = len(ctx.rcon_log)
+ctx.tg_log.clear()
+bot.auto_job()
+log = list(ctx.tg_log)
+check(str(P) not in bot.pending, "заявка принята автоматически")
+check(ctx.rcon_log[n_rcon:] == ['authme register CleanNick Str0ngPass1'], "регистрация на сервере")
+check(any('одобрена' in x for x in sent_to(log, P)), "игрок получил обычное одобрение")
+check(any('🤖 автоматически' in x for _, x in edited(log)), "у команды уведомление: «ОДОБРЕНО · 🤖 автоматически»")
+row = storage.query("SELECT decided_by, decided_by_name FROM applications WHERE tg_id=?", (P,))[0]
+check(row == (None, '🤖 автоматически'), "в истории «рассмотрел: автоматически»")
+check(storage.query("SELECT COUNT(*) FROM audit WHERE actor_role='system' AND action='approved'")[0][0] == 1,
+      "в журнале: бот одобрил")
+
+print("\n=== 5. Перепроверка перед принятием ===")
+def submit(tg, nick, hours_ago=2, comment='', photo=True):
+    if not photo:
+        ctx.no_photo.add(tg)
+    bot.user_states[tg] = {'step': 'rules', 'nick': nick, 'password': 'Str0ngPass1', 'comment': comment}
+    ctx.press(tg, 'rules_agree')
+    a = bot.pending[str(tg)]
+    a['date'] = (tu.now_utc() - timedelta(hours=hours_ago)).isoformat(timespec='seconds')
+    bot.pending[str(tg)] = a
+    bot.schedule_auto(tg, a)
+    return a
+Q = 6_000_000_002
+submit(Q, 'LaterBanned')
+with open(os.path.join(MC, 'banned-players.json'), 'w', encoding='utf-8') as f:
+    f.write('[{"name": "LaterBanned", "created": "2026-09-19 12:00:00 +0300", "source": "Steve", "expires": "forever", "reason": "x"}]')
+ctx.tg_log.clear()
+bot.auto_job()
+check(str(Q) in bot.pending and bot.pending[str(Q)]['auto']['manual'], "бан появился, пока заявка ждала: автомат не принял")
+check(any('Автомат не принял' in x for x in sent_to(ctx.tg_log, ADMIN)), "команде сообщили почему")
+bot.pending.pop(str(Q))
+
+print("\n=== 6. Мелочи, стопы и обращения ===")
+R = 6_000_000_003
+a = submit(R, 'NoPhotoGuy', hours_ago=1, photo=False)
+check(a['auto']['icon'] == '🟡' and a['auto']['minor'] == ['нет аватарки'], "нет аватарки: 🟡 12 часов")
+bot.auto_job()
+check(str(R) in bot.pending, "12 часов не прошло: ждёт")
+ctx.press(R, 'menu_support')
+check(bot.pending[str(R)]['auto']['manual'], "пытался обратиться в поддержку: только вручную")
+bot.pending.pop(str(R))
+S = 6_000_000_004
+a = submit(S, 'Mr_pidor')
+check(a['auto']['manual'] and any('ник' in r for r in a['auto']['stop']), "брань в нике: только вручную")
+bot.pending.pop(str(S))
+T = 9_900_000_000  # совсем новый аккаунт
+a = submit(T, 'FreshNick')
+check(a['auto']['manual'] and any('2 месяцев' in r for r in a['auto']['stop']), "Telegram моложе 2 месяцев: только вручную")
+bot.pending.pop(str(T))
+
+print("\n=== 7. Лимит 5 в час ===")
+storage.execute("DELETE FROM audit WHERE actor_role='system'")
+ids = [6_100_000_000 + k for k in range(7)]
+for k, tg in enumerate(ids):
+    submit(tg, f'LimitNick{k}')
+ctx.tg_log.clear()
+bot.auto_job()
+accepted = [tg for tg in ids if str(tg) not in bot.pending]
+left = [tg for tg in ids if str(tg) in bot.pending]
+check(len(accepted) == 5, f"принято 5 из 7 ({len(accepted)})")
+check(all(bot.pending[str(tg)]['auto']['manual'] for tg in left), "остальные переведены в «вручную», не отклонены")
+alerts = [x for x in sent_to(ctx.tg_log, OWNER) if 'упёрся в лимит' in x]
+check(len(alerts) == 1, "команде одно сообщение про лимит")
+(t, _), log = ctx.press(OWNER, 'auto_menu')
+check(any('за час 5 из 5' in x for _, x in edited(log)), "в настройках видно «за час 5 из 5»")
+for tg in left:
+    bot.pending.pop(str(tg))
+
+print("\n=== 8. Рейд-режим ===")
+storage.execute("DELETE FROM audit WHERE actor_role='system'")
+U = 6_200_000_000
+submit(U, 'WaitsRaid')
+all_log = []
+for k in range(5):
+    tg = 9_950_000_000 + k
+    bot.user_states[tg] = {'step': 'rules', 'nick': f'RaidNick{k}', 'password': 'Str0ngPass1', 'comment': ''}
+    all_log += ctx.press(tg, 'rules_agree')[1]
+check(bot.raid_active(), "5 заявок от совсем новых аккаунтов за час: рейд-режим включился сам")
+raid_msgs = [x for x in sent_to(all_log, OWNER) if 'Рейд-режим включён' in x]
+check(len(raid_msgs) == 1, f"владельцу одно сообщение о рейде ({len(raid_msgs)})")
+check(any('Выключить рейд-режим' in b for b in buttons(all_log, OWNER)), "в сообщении кнопка «Выключить рейд-режим»")
+check(any('Рейд-режим включён' in x for x in sent_to(all_log, ADMIN)), "админ тоже узнал о рейде")
+bot.auto_job()
+check(str(U) in bot.pending, "во время рейда автомат не принимает")
+(t, _), log = ctx.press(ADMIN, 'admin_back')
+check(any('Рейд-режим активен' in x for _, x in edited(log)), "команда видит «Рейд-режим активен» в панели")
+ctx.press(OWNER, 'raid_off')
+check(not bot.raid_active(), "владелец выключил рейд-режим")
+bot.auto_job()
+check(str(U) not in bot.pending, "после рейда автомат снова принимает")
+ctx.press(OWNER, 'raid_on')
+check(bot.raid_active() and storage.setting('raid_manual'), "рейд-режим включён вручную")
+ctx.press(OWNER, 'raid_off')
+storage.set_setting('raid_until', (tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds'))
+bot.auto_job()
+check(not bot.raid_active() and storage.setting('raid_until') is None, "рейд-режим по времени отключается сам")
+for k in range(5):
+    bot.pending.pop(str(9_950_000_000 + k), None)
+
+print("\n=== 9. Словарь владельца ===")
+ctx.press(OWNER, 'words_add')
+ctx.say(OWNER, 'kringe лол')
+check(bot.owner_words() == ['kringe', 'лол'], f"добавлены свои слова: {bot.owner_words()}")
+check(bw.find('SuperKringe_2010', bot.owner_words()), "своё слово ловится в нике")
+ctx.press(OWNER, 'words_del_0')
+check(bot.owner_words() == ['лол'], "слово убрано кнопкой")
+(t, alert), _ = ctx.press(HELPER, 'words_list')
+check(alert, "помощнику словарь недоступен")
+
+print("\n=== 10. Бот не админ группы ===")
+ctx.bot_not_admin = True
+V = 6_300_000_000
+submit(V, 'NoAdminCheck')
+(t, _), _ = ctx.press(V, 'sub_check')
+check(t == 'Спасибо за подписку!' and not bot.pending[str(V)].get('subscribed'),
+      "проверить подписку нельзя: игрок получает «спасибо», ускорения нет, бот не падает")
+
+fakes.finish()
