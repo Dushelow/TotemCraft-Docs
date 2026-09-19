@@ -703,6 +703,15 @@ def notify_new_ticket(user, text_msg, tid, nick=''):
     audit(uid, 'ticket_opened', uid, nick, text_msg)
     notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=uid)
 
+def notify_ticket_followup(user, text_msg, tid):
+    """Игрок дописал в открытое обращение, а диалога нет (никто не отвечал или админ отошёл)."""
+    notify = format_admin_notify(user, text_msg, extra="↩️ Дописал в открытое обращение\n", ticket_id=tid)
+    B = types.InlineKeyboardButton
+    markup = types.InlineKeyboardMarkup()
+    markup.row(B("💬 Ответить", callback_data=f"reply_{user.id}"), B("📜 Переписка", callback_data=f"hist_{user.id}"))
+    markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{user.id}"))
+    notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=user.id)
+
 def player_nick(uid):
     """Самый свежий известный ник игрока: заявка в очереди, история заявок, тикет. Пусто, если не знаем."""
     app = pending.get(str(uid))
@@ -835,6 +844,7 @@ ACTION_NAMES = {
     'registered': '🎮 зарегистрирован на сервере', 'reg_failed': '⚠️ регистрация не прошла',
     'ticket_opened': '🎫 открыл обращение', 'ticket_closed_by_player': '🔒 закрыл своё обращение',
     'dialog_opened': '💬 начал диалог', 'dialog_closed': '🔇 завершил диалог',
+    'dialog_paused': '⏸ отошёл от диалога', 'ticket_followup': '✉️ дописал в обращение',
     'msg_to_player': '✉️ написал игроку', 'ticket_closed': '🔒 закрыл обращение без ответа',
     'blocked': '🚫 заблокировал в боте', 'unblocked': '✅ разблокировал в боте',
     'paused': '⏸️ приостановил регистрацию', 'resumed': '▶️ возобновил регистрацию',
@@ -1010,7 +1020,8 @@ def send_admin_menu(chat_id, edit_message=None):
     inline.row(B("⚙️ Управление и настройки", callback_data="admin_menu_controls"))
     inline.row(B("👤 Посмотреть как игрок", callback_data="player_view_on"))
     if my_dialog:
-        inline.row(B(f"🔴 Завершить диалог с {get_user_label(my_dialog)}", callback_data="admin_end_dialog"))
+        inline.row(B("⏸ Отойти от диалога", callback_data="pause_dialog"),
+                   B("✅ Ответил, закрыть", callback_data="admin_end_dialog"))
 
     lines = ["🛡 <b>Панель администратора</b>"]
     if can(chat_id, 'staff'):
@@ -2839,6 +2850,13 @@ def handle_all_messages(m):
     if text == "❌ Завершить диалог" and not is_staff(uid):
         if dialog_admin(uid):
             end_dialog(player_id=uid, user_initiated=True)
+        elif get_ticket(uid):  # админ отошёл, а у игрока осталась кнопка: закрываем обращение
+            ticket = get_ticket(uid)
+            close_ticket(uid)
+            clear_unread(uid)
+            audit(uid, 'ticket_closed_by_player', uid, player_nick(uid), f"тикет #{ticket['id']}")
+            close_notices('ticket', uid, "🔒 <b>Игрок закрыл обращение</b>")
+            safe_send(uid, f"✅ Обращение #{ticket['id']} закрыто.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         else:
             safe_send(uid, "Нет активного диалога.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
@@ -2861,10 +2879,14 @@ def handle_all_messages(m):
         notify_staff(None, f"👤 {escape_html(label)}:\n{escape_html(shown)}", only=[talker])
         return
 
-    # Если у пользователя открытый тикет — не создаём новый, просим ждать
+    # Открытый тикет без диалога (никто не взял или админ отошёл): дописываем и сообщаем команде
     ticket = get_ticket(uid)
     if ticket:
-        safe_send(uid, f"⏳ У вас уже открыт тикет #{ticket['id']}. Пожалуйста, ожидайте ответа администратора.\n\nЕсли хотите закрыть обращение — нажмите кнопку ниже.",
+        add_to_history(uid, text, from_user=True)
+        add_unread(uid)
+        audit(uid, 'ticket_followup', uid, player_nick(uid), text)
+        notify_ticket_followup(m.from_user, text, ticket['id'])
+        safe_send(uid, f"✉️ Добавлено к обращению #{ticket['id']}. Администратор ответит здесь.",
                   reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
 
@@ -3469,6 +3491,18 @@ def callback_handler(call):
         ok(); show_user_profile(uid, data.split('_')[2], msg); return
     if data in ("admin_end_dialog", "end_dialog"):
         ok(); end_dialog(admin_id=uid); return
+    if data == "pause_dialog":
+        target = dialogs.pop(uid, None)
+        if not target:
+            ok("Диалог уже завершён."); return
+        audit(uid, 'dialog_paused', target, player_nick(target))
+        ticket = get_ticket(target)
+        ok("Тикет остаётся открытым")
+        safe_send(uid, f"⏸ Вы отошли от диалога с <b>{escape_html(get_user_label(target))}</b>. "
+                       f"Тикет{' #' + str(ticket['id']) if ticket else ''} открыт: когда игрок напишет, придёт уведомление "
+                       f"с кнопкой «💬 Ответить». Ваши сообщения игроку больше не уходят.", parse_mode='HTML')
+        send_admin_menu(uid)
+        return
     if data.startswith('admin_close_ticket_'):
         target = int(data.split('_')[3])
         ticket = get_ticket(target)
@@ -3513,9 +3547,11 @@ def callback_handler(call):
         close_notices('ticket', target, f"💬 <b>Отвечает:</b> {escape_html(staff_name(uid))}")
         i_markup = types.InlineKeyboardMarkup()
         i_markup.row(types.InlineKeyboardButton("✅ Ответил, закрыть", callback_data="end_dialog"),
-                     types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{target}"))
+                     types.InlineKeyboardButton("⏸ Отойти", callback_data="pause_dialog"))
+        row = [types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{target}")]
         if can(uid, 'block'):
-            i_markup.row(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"))
+            row.append(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"))
+        i_markup.row(*row)
         i_markup.row(types.InlineKeyboardButton("🏠 Меню", callback_data="admin_back"))
         safe_send(uid, dialog_intro(uid, target), parse_mode='HTML', reply_markup=i_markup)
         try:
