@@ -8,7 +8,7 @@ from tcbot import config, storage, timeutil
 from tcbot.config import TOKEN, ADMIN_ID, DISCORD_WEBHOOK_URL, CONSOLE_WEBHOOK_URL
 from tcbot.logs import log_error, log_warning
 from tcbot.rcon import rcon_command
-from tcbot import autoaccept, bans, badwords, mmdb, tgage
+from tcbot import autoaccept, bans, badwords, mmdb, tgage, i18n
 
 bot = telebot.TeleBot(TOKEN)
 
@@ -22,6 +22,14 @@ last_application = storage.PersistentDict('last_application')  # str(tg_id) -> U
 active_tickets = storage.PersistentDict('tickets')  # str(tg_id) -> {'id', 'status', 'message', 'nick', 'date'}
 unread_messages = storage.PersistentSet('unread', str)
 registration_paused = bool(storage.setting('paused', False))
+user_lang = storage.PersistentDict('lang')          # str(tg_id) -> язык игрока: ru, uk, en
+
+def lang_of(uid):
+    return user_lang.get(str(uid)) or i18n.DEFAULT
+
+def tr(uid, key, **kw):
+    """Текст для игрока на его языке (tcbot/i18n.py)."""
+    return i18n.text(lang_of(uid), key, **kw)
 
 user_last_request = {}
 RATE_LIMIT = 5
@@ -343,7 +351,7 @@ def reload_pending():
     pending.reload()
 
 # ---------- Валидация AuthMe ----------
-def validate_nick_authme(nick):
+def validate_nick_authme(nick, lang=i18n.DEFAULT):
     """
     Проверяет ник по правилам AuthMe:
     - Длина: 3–16 символов
@@ -351,14 +359,14 @@ def validate_nick_authme(nick):
     Возвращает (True, '') или (False, 'причина')
     """
     if not nick:
-        return False, "Ник не может быть пустым."
+        return False, i18n.text(lang, 'nick_empty')
     if len(nick) < 3:
-        return False, f"Ник слишком короткий ({len(nick)} симв.). Минимум - 3 символа."
+        return False, i18n.text(lang, 'nick_short', n=len(nick))
     if len(nick) > 16:
-        return False, f"Ник слишком длинный ({len(nick)} симв.). Максимум - 16 символов."
+        return False, i18n.text(lang, 'nick_long', n=len(nick))
     if not re.fullmatch(r'[A-Za-z0-9_]+', nick):
         invalid = set(re.sub(r'[A-Za-z0-9_]', '', nick))
-        return False, f"Ник содержит недопустимые символы: {' '.join(invalid)}.\nРазрешены только латинские буквы, цифры и знак подчёркивания (_)."
+        return False, i18n.text(lang, 'nick_chars', chars=' '.join(invalid))
     return True, ''
 
 WEAK_PASSWORDS = {
@@ -408,7 +416,7 @@ def _is_repeated_pattern(password):
                 return True
     return False
 
-def validate_password_authme(password, nick=None):
+def validate_password_authme(password, nick=None, lang=i18n.DEFAULT):
     """
     Проверяет пароль по правилам AuthMe:
     - Длина: 6–30 символов
@@ -420,25 +428,25 @@ def validate_password_authme(password, nick=None):
     Возвращает (True, '') или (False, 'причина')
     """
     if not password:
-        return False, "Пароль не может быть пустым."
+        return False, i18n.text(lang, 'pw_empty')
     if len(password) < 6:
-        return False, f"Пароль слишком короткий ({len(password)} симв.). Минимум - 6 символов."
+        return False, i18n.text(lang, 'pw_short', n=len(password))
     if len(password) > 30:
-        return False, f"Пароль слишком длинный ({len(password)} симв.). Максимум - 30 символов."
+        return False, i18n.text(lang, 'pw_long', n=len(password))
     if re.search(r'[а-яёА-ЯЁ]', password):
-        return False, "Пароль не может содержать кириллицу. Используйте только латинские буквы, цифры и спецсимволы."
+        return False, i18n.text(lang, 'pw_cyrillic')
     if ' ' in password:
-        return False, "Пароль не может содержать пробелы."
+        return False, i18n.text(lang, 'pw_space')
     if nick and password.lower() == nick.lower():
-        return False, "Пароль не должен совпадать с ником. Придумайте другой пароль."
+        return False, i18n.text(lang, 'pw_is_nick')
     if password.lower() in WEAK_PASSWORDS:
-        return False, "Этот пароль слишком простой и не принимается сервером. Придумайте более надёжный пароль."
+        return False, i18n.text(lang, 'pw_weak')
     if _is_repeated_pattern(password):
-        return False, "Пароль состоит из повторяющихся символов или блоков. Придумайте более надёжный пароль."
+        return False, i18n.text(lang, 'pw_repeated')
     if _is_sequential(password):
-        return False, "Пароль является простой последовательностью символов. Придумайте более надёжный пароль."
+        return False, i18n.text(lang, 'pw_sequence')
     if re.fullmatch(r'\d+', password):
-        return False, "Пароль не может состоять только из цифр. Добавьте буквы или спецсимволы."
+        return False, i18n.text(lang, 'pw_digits')
     return True, ''
 
 def check_nick_already_approved(nick):
@@ -659,7 +667,7 @@ def check_rate_limit(user_id):
     if len(timestamps) > RATE_LIMIT:
         user_cooldown_until[user_id] = now + RATE_COOLDOWN
         user_last_request[user_id] = []
-        try: bot.send_message(user_id, "⚠️ Слишком много запросов. Подождите 10 сек.")
+        try: bot.send_message(user_id, tr(user_id, 'rate_limit'))
         except: pass
         return False
     return True
@@ -976,21 +984,21 @@ def main_keyboard(is_admin=False, user_id=None):
         if in_text_input or in_active_dialog:
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
             if in_active_dialog:
-                markup.add("❌ Завершить диалог")
+                markup.add(tr(user_id, 'btn_end_dialog'))
             elif step in {'support_nick', 'support_text', 'guest_message'}:
-                markup.add("❌ Отменить")
+                markup.add(tr(user_id, 'btn_cancel'))
             else:
-                markup.add("❌ Отменить заявку")
+                markup.add(tr(user_id, 'btn_cancel_app'))
             return markup
 
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-        markup.add("🏠 Главное меню")
+        markup.add(tr(user_id, 'btn_main_menu'))
         has_ticket = (user_id is not None and get_ticket(user_id))
         has_active_app = (user_id is not None and str(user_id) in pending)
         if has_ticket:
-            markup.add("📋 Мои обращения")
+            markup.add(tr(user_id, 'btn_my_tickets'))
         if has_active_app:
-            markup.add("❌ Отменить заявку")
+            markup.add(tr(user_id, 'btn_cancel_app'))
         return markup
 
 def send_admin_menu(chat_id, edit_message=None):
@@ -1052,21 +1060,31 @@ def send_admin_menu(chat_id, edit_message=None):
             pass
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=inline)
 
+def send_lang_menu(uid, edit_message=None):
+    """Выбор языка: при первом /start и по кнопке «🌐 Язык» в главном меню."""
+    inline = types.InlineKeyboardMarkup(row_width=1)
+    inline.add(*[types.InlineKeyboardButton(i18n.LANG_BUTTONS[code], callback_data=f"lang_{code}") for code in i18n.LANGS])
+    if edit_message:
+        edit_message_safe(uid, edit_message.message_id, i18n.LANG_PICK, reply_markup=inline)
+    else:
+        safe_send(uid, i18n.LANG_PICK, reply_markup=inline)
+
 def send_main_menu(uid, edit_message=None):
     """Отправляет главное меню. Убирает реплай-клавиатуру одним сообщением."""
-    text = "🏠 Главное меню"
+    text = tr(uid, 'main_menu')
     inline = types.InlineKeyboardMarkup(row_width=1)
     buttons = [
-        types.InlineKeyboardButton("📝 Подать заявку на сервер", callback_data="menu_apply"),
-        types.InlineKeyboardButton("🚨 Жалоба / вопрос администратору", callback_data="menu_support"),
-        types.InlineKeyboardButton("📖 О сервере", callback_data="menu_handbook"),
-        types.InlineKeyboardButton("📢 Подписаться на группу", callback_data="menu_subscribe"),
+        types.InlineKeyboardButton(tr(uid, 'btn_apply'), callback_data="menu_apply"),
+        types.InlineKeyboardButton(tr(uid, 'btn_support'), callback_data="menu_support"),
+        types.InlineKeyboardButton(tr(uid, 'btn_handbook'), callback_data="menu_handbook"),
+        types.InlineKeyboardButton(tr(uid, 'btn_subscribe'), callback_data="menu_subscribe"),
+        types.InlineKeyboardButton(tr(uid, 'btn_lang'), callback_data="menu_lang"),
     ]
     if get_ticket(uid):
-        buttons.insert(1, types.InlineKeyboardButton("📋 Мои обращения", callback_data="menu_my_tickets"))
+        buttons.insert(1, types.InlineKeyboardButton(tr(uid, 'btn_my_tickets'), callback_data="menu_my_tickets"))
     if uid in player_view:
         # Кнопку видит только админ в режиме игрока, обычным игрокам её нет
-        text = "🏠 Главное меню\n\n🧪 <i>Режим игрока: вы видите бота как обычный игрок. Заявки отсюда помечаются как тестовые и не регистрируются на сервере.</i>"
+        text = tr(uid, 'main_menu') + "\n\n🧪 <i>Режим игрока: вы видите бота как обычный игрок. Заявки отсюда помечаются как тестовые и не регистрируются на сервере.</i>"
         buttons.append(types.InlineKeyboardButton("🛡 Вернуться в админку", callback_data="player_view_off"))
     inline.add(*buttons)
     if edit_message:
@@ -1082,9 +1100,9 @@ def send_main_menu(uid, edit_message=None):
         safe_send(uid, text, parse_mode='HTML', reply_markup=inline)
 
 
-def cancel_keyboard(label="❌ Отменить заявку"):
+def cancel_keyboard(uid, key='btn_cancel_app'):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
-    markup.add(label)
+    markup.add(tr(uid, key))
     return markup
 
 # ---------- Интерфейсные разделы ----------
@@ -1699,7 +1717,7 @@ def end_dialog(admin_id=None, player_id=None, user_initiated=False, quiet_admin=
         pass
     if not quiet_admin:
         send_admin_menu(admin_id)
-    safe_send(target, "🔇 Диалог с администратором завершён.",
+    safe_send(target, tr(target, 'dialog_ended'),
               reply_markup=main_keyboard(is_admin=False, user_id=target))
 
 # Какое право нужно для кнопки: первый подходящий префикс (порядок важен: approved_ раньше approve_)
@@ -1942,154 +1960,40 @@ def show_staff_add_role(chat_id, new_id):
 
 # ---------- Справочник "О сервере" ----------
 
-HANDBOOK_CHAPTERS = {
-    'rules': {
-        'emoji': '🛡',
-        'title': 'Правила',
-        'text': (
-            "🛡 <b>Правила сервера</b>\n\n"
-            "<b>Запрещено и наказуемо баном:</b>\n"
-            "• Порча чужих построек\n"
-            "• Воровство\n"
-            "• PvP без согласия\n"
-            "• Оскорбление родных\n"
-            "• Агрессивное обсуждение политики\n\n"
-            "Если вы стали жертвой — узнайте ник нарушителя командой <code>/co i</code> "
-            "и отправьте жалобу в Discord. Администрация откатит ущерб и вернёт лут.\n\n"
-            "<i>Действия, которые могут не входить в список правил, но всё равно портят окружающим людям игровой процесс, могут повлечь за собой наказание — просто будьте вежливыми и не мешайте другим!</i>"
-        )
-    },
-    'start': {
-        'emoji': '🚢',
-        'title': 'Начало игры',
-        'text': (
-            "🚢 <b>Начало игры</b>\n\n"
-            "При первом заходе вы появляетесь на корабле — это общий мир.\n\n"
-            "🚣 Возьмите лодку и плывите в любом направлении, пока не попадёте на берег.\n\n"
-            "🏗 Стройте, творите и развивайтесь!\n\n"
-            "По пути вы можете встретить дома, селения и города — просим не разрушать "
-            "и не брать чужих ресурсов без спроса."
-        )
-    },
-    'life': {
-        'emoji': '🌍',
-        'title': 'Жизнь игроков',
-        'text': (
-            "🌍 <b>Жизнь игроков</b>\n\n"
-            "<b>Идея и геймплей:</b>\n"
-            "Основная идея — застройка мира красивыми проектами в выживании и история, "
-            "которую игроки создают сами.\n\n"
-            "Популярные занятия: ивенты, настолки на редстоуне, написание истории на вики, "
-            "отыгрыш политики и общение.\n\n"
-            "📌 <b>Важные факты:</b>\n"
-            "• Вайп основного мира — никогда\n"
-            "• Вайп Края и Незера — раз в полгода\n"
-            "• Границы расширяются со временем\n"
-            "• Точка возрождения — кровать\n"
-            "• Телепортов нет — метро в незере или элитры\n"
-            "• Незер-хаб: координаты <code>0, 0</code>\n\n"
-            "🏪 Торговая зона — нулевые координаты. В радиусе 500 блоков можно ставить "
-            "магазины после разрешения администрации."
-        )
-    },
-    'clans': {
-        'emoji': '⚔️',
-        'title': 'Кланы и PvP',
-        'text': (
-            "⚔️ <b>Кланы и PvP</b>\n\n"
-            "В игре нет принудительного PvP и фракционных режимов. Для RolePlay политики "
-            "организована система кланов — объединений игроков с общей идеей и историей.\n\n"
-            "<b>Главное преимущество клана</b> — возможность проводить PvP-сражения.\n\n"
-            "<b>⚔️ Правила войн:</b>\n"
-            "• Лидеры фиксируют условия конфликта книгой и пером\n"
-            "• Оба лидера подписывают свой экземпляр и обмениваются им\n"
-            "• Проигравшая сторона выполняет условия победителя\n"
-            "• PvP вне войны — запрещено\n\n"
-            "<b>Требования для создания клана:</b>\n"
-            "• 3 участника\n"
-            "• Клановая база\n"
-            "• Баннер (флаг)\n"
-            "• Стабильный онлайн\n\n"
-            "Для создания клана обратитесь к администрации."
-        )
-    },
-    'commands': {
-        'emoji': '⌨️',
-        'title': 'Команды',
-        'text': (
-            "⌨️ <b>Команды (плагины)</b>\n\n"
-            "<b>Скин и внешность:</b>\n"
-            "• <code>/skin &lt;название&gt;</code> — смена скина по нику\n\n"
-            "<b>Проверка и приват:</b>\n"
-            "• <code>/co i</code> — история блока (выявление гриферов)\n"
-            "• <code>/lock</code> — приват сундука\n"
-            "• <code>/unlock</code> — снять приват с сундука\n"
-            "• <code>/cmodify &lt;ник&gt;</code> — дать доступ к сундуку\n"
-            "• <code>/cpassword</code> — пароль на сундук\n"
-            "• <code>/cpersist</code> — спам команд (для приватки множества сундуков)\n"
-            "• <code>/cremoveall</code> — удалить все приваты сундуков\n"
-            "• <code>/chopper on</code> — открыть сундук для воронки\n\n"
-            "<b>Чат:</b>\n"
-            "• <code>/tell &lt;ник&gt;</code> — личное сообщение\n"
-            "• <code>/r</code> — быстрый ответ\n"
-            "• <code>/ignore &lt;ник&gt;</code> — скрыть сообщения\n"
-            "• <code>/me</code> — РП описание действия\n"
-            "• <code>/toggleshout</code> — переключить глобальный чат\n\n"
-            "<b>Прочее:</b>\n"
-            "• <code>/sit</code> или ПКМ по ступенькам — сесть (анимация)"
-        )
-    },
-    'links': {
-        'emoji': '🔗',
-        'title': 'Ссылки',
-        'text': (
-            "🔗 <b>Ссылки</b>\n\n"
-            "💬 <b>Discord:</b> <a href=\"https://discord.gg/MWeUjNWJG3\">discord.gg/MWeUjNWJG3</a>\n\n"
-            "📘 <b>ВКонтакте:</b> <a href=\"https://vk.com/totemcraftnet\">vk.com/totemcraftnet</a>\n\n"
-            "🌐 <b>Сайт:</b> <a href=\"https://totemcraft.net\">totemcraft.net</a>\n\n"
-            "📚 <b>Вики:</b> <a href=\"https://wiki.totemcraft.net\">wiki.totemcraft.net</a>"
-        )
-    },
-}
-
-CHAPTER_ORDER = ['rules', 'start', 'life', 'clans', 'commands', 'links']
-
-def handbook_index_markup():
+# Тексты справочника на трёх языках: tcbot/i18n.py (HANDBOOK)
+def handbook_index_markup(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     buttons = []
-    for key in CHAPTER_ORDER:
-        ch = HANDBOOK_CHAPTERS[key]
-        buttons.append(types.InlineKeyboardButton(f"{ch['emoji']} {ch['title']}", callback_data=f"hb_{key}"))
+    for key in i18n.CHAPTER_ORDER:
+        title, _ = i18n.chapter(lang_of(chat_id), key)
+        buttons.append(types.InlineKeyboardButton(f"{i18n.CHAPTER_EMOJI[key]} {title}", callback_data=f"hb_{key}"))
     markup.add(*buttons)
-    markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="user_main_menu"))
+    markup.add(types.InlineKeyboardButton(tr(chat_id, 'btn_main_menu'), callback_data="user_main_menu"))
     return markup
 
-def handbook_chapter_markup():
+def handbook_chapter_markup(chat_id):
     markup = types.InlineKeyboardMarkup()
-    markup.add(types.InlineKeyboardButton("🔙 К разделам", callback_data="hb_index"))
-    markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="user_main_menu"))
+    markup.add(types.InlineKeyboardButton(tr(chat_id, 'btn_hb_back'), callback_data="hb_index"))
+    markup.add(types.InlineKeyboardButton(tr(chat_id, 'btn_main_menu'), callback_data="user_main_menu"))
     return markup
 
 def show_handbook_index(chat_id, edit_message=None):
-    text = (
-        "📖 <b>Справочник TotemCraft</b>\n\n"
-        "Выберите раздел:"
-    )
-    markup = handbook_index_markup()
+    text = tr(chat_id, 'handbook_index')
+    markup = handbook_index_markup(chat_id)
     if edit_message:
         edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
     else:
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
 def show_handbook_chapter(chat_id, chapter_key, edit_message=None):
-    if chapter_key not in HANDBOOK_CHAPTERS:
+    if chapter_key not in i18n.CHAPTER_ORDER:
         return
-    chapter = HANDBOOK_CHAPTERS[chapter_key]
-    markup = handbook_chapter_markup()
+    _, text = i18n.chapter(lang_of(chat_id), chapter_key)
+    markup = handbook_chapter_markup(chat_id)
     if edit_message:
-        edit_message_safe(chat_id, edit_message.message_id, chapter['text'], parse_mode='HTML', reply_markup=markup)
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
     else:
-        safe_send(chat_id, chapter['text'], parse_mode='HTML', reply_markup=markup)
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
 
 # ---------- Автопринятие заявок и рейд-режим (правила — tcbot/autoaccept.py) ----------
@@ -2453,9 +2357,9 @@ def guarded(handler):
                 log_error(e)
             try:
                 if is_call:
-                    bot.answer_callback_query(obj.id, "Кнопка устарела. Откройте меню заново: /start", show_alert=True)
+                    bot.answer_callback_query(obj.id, tr(obj.from_user.id, 'btn_outdated'), show_alert=True)
                 else:
-                    safe_send(obj.chat.id, "⚠️ Что-то пошло не так. Попробуйте ещё раз или нажмите /start.")
+                    safe_send(obj.chat.id, tr(obj.chat.id, 'something_wrong'))
             except Exception:
                 pass
     wrapper.__name__ = handler.__name__
@@ -2472,14 +2376,14 @@ def set_paused(actor, value):
 def do_unblock(actor, tid):
     blocked_users.discard(tid)
     audit(actor, 'unblocked', tid, player_nick(tid))
-    safe_send(tid, "✅ Вы были разблокированы администратором. Можете снова пользоваться ботом.",
+    safe_send(tid, tr(tid, 'unblocked'),
               reply_markup=main_keyboard(is_admin=False, user_id=tid))
 
 @bot.message_handler(commands=['id'])
 @guarded
 def id_cmd(m):
     # Нужен, чтобы будущий админ узнал свой ID и передал владельцу
-    safe_send(m.chat.id, f"Ваш Telegram ID: <code>{m.chat.id}</code>", parse_mode='HTML')
+    safe_send(m.chat.id, tr(m.chat.id, 'your_id', id=m.chat.id), parse_mode='HTML')
 
 @bot.message_handler(commands=['admin'])
 @guarded
@@ -2576,11 +2480,13 @@ def start_cmd(m):
     if not check_rate_limit(m.chat.id): return
     if m.chat.id in blocked_users:
         try:
-            bot.send_message(m.chat.id, "🚫 Вы заблокированы и не можете использовать бота.", reply_markup=types.ReplyKeyboardRemove())
+            bot.send_message(m.chat.id, tr(m.chat.id, 'blocked_start'), reply_markup=types.ReplyKeyboardRemove())
         except: pass
         return
     if is_staff(m.chat.id):
         send_admin_menu(m.chat.id)
+    elif str(m.chat.id) not in user_lang:
+        send_lang_menu(m.chat.id)  # новый игрок: сначала язык, потом меню
     else:
         send_main_menu(m.chat.id)
 
@@ -2594,22 +2500,22 @@ def handle_all_messages(m):
     if uid in blocked_users: return
 
     # Возврат в главное меню (для пользователя)
-    if text == "🏠 Главное меню" and not is_staff(uid):
+    if text in i18n.variants('btn_main_menu') and not is_staff(uid):
         step = user_states.get(uid, {}).get('step')
         text_input_steps = {'nick', 'password', 'comment', 'support_nick', 'support_text', 'guest_message'}
         # Если пользователь в активном диалоге — кнопка не должна была быть видна,
         # но на всякий случай: не прерываем диалог, напоминаем
         if dialog_admin(uid):
-            safe_send(uid, "⚠️ Сейчас идёт диалог с администратором. Чтобы выйти — нажмите «❌ Завершить диалог».",
+            safe_send(uid, tr(uid, 'in_dialog_warn', btn=tr(uid, 'btn_end_dialog')),
                       reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
         # Если ждём ввода текста — тоже не сбрасываем молча, а предупреждаем
         if step in text_input_steps:
-            safe_send(uid, "⚠️ Ввод прерван. Возвращаю в главное меню.")
+            safe_send(uid, tr(uid, 'input_interrupted'))
             del user_states[uid]
         send_main_menu(uid)
         return
-    if text == "❌ Отменить заявку" and not is_staff(uid):
+    if text in i18n.variants('btn_cancel_app') and not is_staff(uid):
         cancelled = False
         nick_cancelled = None
         # Отмена на этапе заполнения (до подтверждения)
@@ -2650,16 +2556,16 @@ def handle_all_messages(m):
             discord_application_cancelled(nick_cancelled, uid, app.get('username', ''), app.get('tg_name', ''))
             cancelled = True
         if cancelled:
-            safe_send(uid, "❌ Заявка отменена.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'app_cancelled'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
         # Кнопка нажата но нет активной заявки
-        safe_send(uid, "У вас нет активной заявки.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+        safe_send(uid, tr(uid, 'no_active_app'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
     if uid in user_states and not is_staff(uid):
         step = user_states[uid].get('step')
-        if text == "❌ Отменить" and step in ['support_nick','support_text','guest_message']:
+        if text in i18n.variants('btn_cancel') and step in ['support_nick','support_text','guest_message']:
             del user_states[uid]
-            safe_send(uid, "❌ Отменено.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'cancelled'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
 
     # Админ вводит комментарий, причину, поиск и т.п.
@@ -2728,7 +2634,7 @@ def handle_all_messages(m):
     # Админ в диалоге: любой текст — сообщение игроку (игрок видит «администрация», без имени)
     if is_staff(uid) and uid in dialogs:
         target = dialogs[uid]
-        sent = safe_send(target, f"📨 <b>Сообщение от администрации:</b>\n\n{escape_html(text)}", parse_mode='HTML')
+        sent = safe_send(target, tr(target, 'msg_from_admins', text=escape_html(text)), parse_mode='HTML')
         if sent:
             add_to_history(target, text, from_user=False, by=uid)
             clear_unread(target)
@@ -2753,14 +2659,13 @@ def handle_all_messages(m):
             if not validate_nick_authme(typed)[0]:
                 # игрок сразу написал проблему вместо ника: текст сохраняем, ник спрашиваем отдельно
                 state['support_draft'] = f"{state['support_draft']}\n{text}" if state.get('support_draft') else text
-                safe_send(uid, "Сообщение сохранил. Теперь напишите только игровой ник: латинские буквы, цифры и _, "
-                               "например <code>Steve_2010</code>.", parse_mode='HTML',
-                          reply_markup=cancel_keyboard("❌ Отменить"))
+                safe_send(uid, tr(uid, 'support_nick_retry'), parse_mode='HTML',
+                          reply_markup=cancel_keyboard(uid, 'btn_cancel'))
                 return
             state['support_nick'] = text.strip()
             if not state.get('support_draft'):
                 state['step'] = 'support_text'
-                safe_send(uid, "Опишите вашу проблему или вопрос:", reply_markup=cancel_keyboard("❌ Отменить"))
+                safe_send(uid, tr(uid, 'support_describe'), reply_markup=cancel_keyboard(uid, 'btn_cancel'))
                 return
             step, text = 'support_text', state['support_draft']
         if step == 'support_text':
@@ -2772,7 +2677,7 @@ def handle_all_messages(m):
             notify_new_ticket(m.from_user, text_msg, tid, nick=nick)
             discord_player_message(m.from_user, uid, nick, text_msg)
             del user_states[uid]
-            safe_send(uid, f"✅ Ваше обращение отправлено администратору (тикет #{tid}). Ожидайте ответа.")
+            safe_send(uid, tr(uid, 'ticket_sent', tid=tid))
             send_main_menu(uid)
             return
         elif step == 'guest_message':
@@ -2783,7 +2688,7 @@ def handle_all_messages(m):
             notify_new_ticket(m.from_user, text_msg, tid)
             discord_guest_message(m.from_user, uid)
             del user_states[uid]
-            safe_send(uid, f"✅ Ваше сообщение отправлено администратору (тикет #{tid}). Ожидайте ответа.")
+            safe_send(uid, tr(uid, 'guest_sent', tid=tid))
             send_main_menu(uid)
             return
         else:
@@ -2793,9 +2698,9 @@ def handle_all_messages(m):
     # Общие кнопки гостя
     if text == "📝 Подать заявку на сервер":
         if registration_paused:
-            safe_send(uid, "⏸️ Регистрация временно приостановлена."); return
+            safe_send(uid, tr(uid, 'reg_paused')); return
         if uid in blocked_users:
-            safe_send(uid, "🚫 Вы заблокированы."); return
+            safe_send(uid, tr(uid, 'blocked_short')); return
         last_time_str = last_application.get(str(uid))
         if last_time_str:
             last_dt = timeutil.parse(last_time_str)
@@ -2803,51 +2708,34 @@ def handle_all_messages(m):
                 remaining = last_dt + timedelta(hours=24) - timeutil.now_utc()
                 hours, rem = divmod(remaining.seconds, 3600)
                 minutes = rem // 60
-                safe_send(uid, f"⏳ Вы уже подавали заявку. Пожалуйста, подождите {hours} ч. {minutes} мин. перед повторной отправкой.",
+                safe_send(uid, tr(uid, 'wait_reapply', h=hours, m=minutes),
                           reply_markup=main_keyboard(is_admin=False, user_id=uid))
                 return
         if str(uid) in pending:
-            safe_send(uid, "⏳ У вас уже есть активная заявка. Дождитесь решения администратора."); return
+            safe_send(uid, tr(uid, 'has_pending')); return
         user_states[uid] = {'step': 'nick'}
-        safe_send(uid, "Введите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+        safe_send(uid, tr(uid, 'ask_nick'), reply_markup=cancel_keyboard(uid))
         return
     if text == "🚨 Жалоба/вопрос админу":
         # Запрет писать при активной заявке
         if str(uid) in pending:
             mark_asked(uid)
-            safe_send(uid,
-                "⚠️ <b>Обращение к администрации недоступно</b>\n\n"
-                "У вас есть активная заявка на регистрацию, которая ожидает рассмотрения.\n\n"
-                "Пожалуйста, дождитесь решения по вашей заявке - она будет рассмотрена в порядке очереди.\n\n"
-                "<i>Обратиться к администрации можно только после получения решения по заявке.</i>",
-                parse_mode='HTML', reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'support_blocked_by_app'), parse_mode='HTML', reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
         # Предупреждение об использовании поддержки
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Понимаю, продолжить", callback_data="support_confirmed"),
-                   types.InlineKeyboardButton("❌ Отмена", callback_data="support_cancel"))
-        safe_send(uid,
-            "📋 <b>Важная информация перед обращением</b>\n\n"
-            "Данный канал связи предназначен исключительно для:\n"
-            "• технических вопросов и проблем;\n"
-            "• жалоб и спорных ситуаций;\n"
-            "• сообщений об ошибках и неполадках.\n\n"
-            "⛔ <b>Обращения со следующими вопросами не рассматриваются:</b>\n"
-            "• «Когда рассмотрят мою заявку?»\n"
-            "• «Зарегистрируйте меня быстрее»\n"
-            "• и иные вопросы, касающиеся сроков рассмотрения заявок.\n\n"
-            "❗ За подобные обращения заявка на регистрацию может быть <b>отклонена без объяснения причин</b>.\n\n"
-            "Вы подтверждаете, что ваш вопрос соответствует указанным критериям?",
-            parse_mode='HTML', reply_markup=markup)
+        markup.add(types.InlineKeyboardButton(tr(uid, 'btn_support_continue'), callback_data="support_confirmed"),
+                   types.InlineKeyboardButton(tr(uid, 'btn_cancel_inline'), callback_data="support_cancel"))
+        safe_send(uid, tr(uid, 'support_info'), parse_mode='HTML', reply_markup=markup)
         return
     if text == "📢 Подписаться на группу":
-        markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton("➡️ Перейти в группу", url="https://t.me/totemcraftnet"))
-        safe_send(uid, "📢 <b>TotemCraft – игровое сообщество</b>\nПрисоединяйтесь к нашей группе!", parse_mode='HTML', reply_markup=markup)
+        markup = types.InlineKeyboardMarkup().add(types.InlineKeyboardButton(tr(uid, 'btn_go_group'), url="https://t.me/totemcraftnet"))
+        safe_send(uid, tr(uid, 'subscribe_text'), parse_mode='HTML', reply_markup=markup)
         return
     if text == "📖 О сервере":
         show_handbook_index(uid)
         return
-    if text == "❌ Завершить диалог" and not is_staff(uid):
+    if text in i18n.variants('btn_end_dialog') and not is_staff(uid):
         if dialog_admin(uid):
             end_dialog(player_id=uid, user_initiated=True)
         elif get_ticket(uid):  # админ отошёл, а у игрока осталась кнопка: закрываем обращение
@@ -2856,18 +2744,18 @@ def handle_all_messages(m):
             clear_unread(uid)
             audit(uid, 'ticket_closed_by_player', uid, player_nick(uid), f"тикет #{ticket['id']}")
             close_notices('ticket', uid, "🔒 <b>Игрок закрыл обращение</b>")
-            safe_send(uid, f"✅ Обращение #{ticket['id']} закрыто.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'ticket_closed_n', id=ticket['id']), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         else:
-            safe_send(uid, "Нет активного диалога.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'no_dialog'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
-    if text == "📋 Мои обращения" and not is_staff(uid):
+    if text in i18n.variants('btn_my_tickets') and not is_staff(uid):
         ticket = get_ticket(uid)
         if ticket:
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("❌ Закрыть тикет", callback_data="close_ticket"))
-            safe_send(uid, f"📋 У вас открыт тикет #{ticket['id']}. Ожидайте ответа администратора.", reply_markup=markup)
+            markup.add(types.InlineKeyboardButton(tr(uid, 'btn_close_ticket'), callback_data="close_ticket"))
+            safe_send(uid, tr(uid, 'ticket_open_wait', id=ticket['id']), reply_markup=markup)
         else:
-            safe_send(uid, "У вас нет открытых обращений.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'no_tickets'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
 
     # Пользователь в активном диалоге с админом — пересылаем сообщение его админу
@@ -2886,7 +2774,7 @@ def handle_all_messages(m):
         add_unread(uid)
         audit(uid, 'ticket_followup', uid, player_nick(uid), text)
         notify_ticket_followup(m.from_user, text, ticket['id'])
-        safe_send(uid, f"✉️ Добавлено к обращению #{ticket['id']}. Администратор ответит здесь.",
+        safe_send(uid, tr(uid, 'followup_added', id=ticket['id']),
                   reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
 
@@ -2908,7 +2796,7 @@ def handle_photo(m):
         caption = m.caption or ""
         try:
             bot.send_photo(target, file_id,
-                           caption="📨 Фото от администрации" + (f"\n{caption}" if caption else ""))
+                           caption=tr(target, 'photo_from_admins') + (f"\n{caption}" if caption else ""))
             add_to_history(target, f"[фото от админа]{': ' + caption if caption else ''}", from_user=False, by=uid)
             clear_unread(target)
             audit(uid, 'msg_to_player', target, player_nick(target), f"[фото] {caption}")
@@ -2935,7 +2823,7 @@ def handle_photo(m):
     if is_staff(uid):
         send_admin_menu(uid)
         return
-    safe_send(uid, "📷 Картинки можно отправлять только во время активного диалога с администратором. Напишите ваше сообщение:",
+    safe_send(uid, tr(uid, 'photo_only_dialog'),
               reply_markup=main_keyboard(is_admin=False, user_id=uid))
 
 
@@ -2946,31 +2834,28 @@ def handle_application(m):
     step = state['step']
 
     if step == 'nick':
-        ok, reason = validate_nick_authme(text)
+        ok, reason = validate_nick_authme(text, lang_of(uid))
         if not ok:
-            safe_send(uid, f"❌ Недопустимый ник.\n\n{reason}\n\nПожалуйста, введите другой ник:", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+            safe_send(uid, tr(uid, 'bad_nick', reason=reason), reply_markup=cancel_keyboard(uid))
             return
         if check_nick_already_approved(text):
-            safe_send(uid, "❌ Данный никнейм уже используется на сервере. Пожалуйста, выберите другой ник:", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+            safe_send(uid, tr(uid, 'nick_taken'), reply_markup=cancel_keyboard(uid))
             return
         state['nick'] = text
         state['step'] = 'password'
-        safe_send(uid, "🔑 Введите пароль (6–30 символов, без пробелов):", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+        safe_send(uid, tr(uid, 'ask_password'), reply_markup=cancel_keyboard(uid))
     elif step == 'password':
-        ok, reason = validate_password_authme(text, nick=state.get('nick'))
+        ok, reason = validate_password_authme(text, nick=state.get('nick'), lang=lang_of(uid))
         if not ok:
-            safe_send(uid, f"❌ Недопустимый пароль.\n\n{reason}\n\nПожалуйста, придумайте другой пароль:", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+            safe_send(uid, tr(uid, 'bad_password', reason=reason), reply_markup=cancel_keyboard(uid))
             return
         state['password'] = text
         state['step'] = 'comment'
         markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-        markup.add("Пропустить", "❌ Отменить заявку")
-        safe_send(uid,
-            "💬 Хотите оставить комментарий к заявке? Напишите сейчас или нажмите кнопку «Пропустить».\n\n"
-            "<i>⚠️ Обращения с просьбами ускорить или осуществить регистрацию не рассматриваются и могут повлечь отклонение заявки.</i>",
-            parse_mode='HTML', reply_markup=markup)
+        markup.add(tr(uid, 'btn_skip'), tr(uid, 'btn_cancel_app'))
+        safe_send(uid, tr(uid, 'ask_comment', skip=tr(uid, 'btn_skip')), parse_mode='HTML', reply_markup=markup)
     elif step == 'comment':
-        if text == "Пропустить":
+        if text in i18n.variants('btn_skip'):
             state['comment'] = ''
         else:
             state['comment'] = text
@@ -2988,11 +2873,11 @@ def show_confirmation(uid, state):
     password = escape_html(state['password'])
     comment = escape_html(state.get('comment', ''))
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.add(types.InlineKeyboardButton("✅ Подтвердить", callback_data="confirm_yes"),
-               types.InlineKeyboardButton("❌ Отмена", callback_data="confirm_no"))
-    text = f"📋 <b>Проверьте данные:</b>\n\n👤 Ник: <code>{nick}</code>\n🔑 Пароль: <code>{password}</code>"
-    if comment: text += f"\n💬 Комментарий: {comment}"
-    text += "\n\nВсё верно?"
+    markup.add(types.InlineKeyboardButton(tr(uid, 'btn_confirm'), callback_data="confirm_yes"),
+               types.InlineKeyboardButton(tr(uid, 'btn_cancel_inline'), callback_data="confirm_no"))
+    text = tr(uid, 'confirm_data', nick=nick, password=password)
+    if comment: text += tr(uid, 'confirm_comment', comment=comment)
+    text += tr(uid, 'confirm_q')
     safe_send(uid, text, parse_mode='HTML', reply_markup=markup)
     state['step'] = 'confirm'
 
@@ -3008,55 +2893,55 @@ def callback_handler(call):
     if data == "support_confirmed":
         if get_ticket(uid):
             ticket = get_ticket(uid)
-            bot.answer_callback_query(call.id, f"У вас уже открыт тикет #{ticket['id']}", show_alert=True)
-            safe_send(uid, f"⏳ У вас уже открыт тикет #{ticket['id']}. Дождитесь ответа или закройте его.",
+            bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
+            safe_send(uid, tr(uid, 'ticket_already', id=ticket['id']),
                       reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Да, есть аккаунт", callback_data="support_existing"),
-                   types.InlineKeyboardButton("❌ Нет аккаунта", callback_data="support_no_account"))
-        safe_send(uid, "У вас уже есть аккаунт на сервере?", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton(tr(uid, 'btn_have_account'), callback_data="support_existing"),
+                   types.InlineKeyboardButton(tr(uid, 'btn_no_account'), callback_data="support_no_account"))
+        safe_send(uid, tr(uid, 'q_have_account'), reply_markup=markup)
         bot.answer_callback_query(call.id)
         return
     if data == "support_cancel":
-        safe_send(uid, "Обращение отменено.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+        safe_send(uid, tr(uid, 'support_cancelled'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         bot.answer_callback_query(call.id)
         return
     if data == "support_existing":
         if get_ticket(uid):
             ticket = get_ticket(uid)
-            bot.answer_callback_query(call.id, f"У вас уже открыт тикет #{ticket['id']}", show_alert=True)
+            bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
             return
         user_states[uid] = {'step': 'support_nick'}
-        safe_send(uid, "Введите ваш игровой ник на сервере:", reply_markup=cancel_keyboard("❌ Отменить"))
+        safe_send(uid, tr(uid, 'ask_game_nick'), reply_markup=cancel_keyboard(uid, 'btn_cancel'))
         bot.answer_callback_query(call.id)
         return
     if data == "support_no_account":
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("📝 Подать заявку", callback_data="support_new"),
-                   types.InlineKeyboardButton("✉️ Просто сообщение", callback_data="support_guest"))
-        safe_send(uid, "Хотите подать заявку на регистрацию?", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton(tr(uid, 'btn_apply_short'), callback_data="support_new"),
+                   types.InlineKeyboardButton(tr(uid, 'btn_just_message'), callback_data="support_guest"))
+        safe_send(uid, tr(uid, 'q_want_apply'), reply_markup=markup)
         bot.answer_callback_query(call.id)
         return
     if data == "support_new":
         if registration_paused:
-            safe_send(uid, "⏸️ Регистрация временно приостановлена.")
+            safe_send(uid, tr(uid, 'reg_paused'))
         elif uid in blocked_users:
-            safe_send(uid, "🚫 Вы заблокированы.")
+            safe_send(uid, tr(uid, 'blocked_short'))
         elif str(uid) in pending:
-            safe_send(uid, "⏳ У вас уже есть активная заявка.")
+            safe_send(uid, tr(uid, 'has_pending_short'))
         else:
             user_states[uid] = {'step': 'nick'}
-            safe_send(uid, "Введите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+            safe_send(uid, tr(uid, 'ask_nick'), reply_markup=cancel_keyboard(uid))
         bot.answer_callback_query(call.id)
         return
     if data == "support_guest":
         if get_ticket(uid):
             ticket = get_ticket(uid)
-            bot.answer_callback_query(call.id, f"У вас уже открыт тикет #{ticket['id']}", show_alert=True)
+            bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
             return
         user_states[uid] = {'step': 'guest_message'}
-        safe_send(uid, "✍️ Напишите ваше сообщение:", reply_markup=cancel_keyboard("❌ Отменить"))
+        safe_send(uid, tr(uid, 'write_message'), reply_markup=cancel_keyboard(uid, 'btn_cancel'))
         bot.answer_callback_query(call.id)
         return
 
@@ -3099,10 +2984,10 @@ def callback_handler(call):
     # --- Подтверждение заявки ---
     if data in ("confirm_yes", "confirm_no"):
         if uid not in user_states:
-            bot.answer_callback_query(call.id, "Заявка устарела."); return
+            bot.answer_callback_query(call.id, tr(uid, 'app_outdated')); return
         state = user_states[uid]
         if state.get('step') != 'confirm':
-            bot.answer_callback_query(call.id, "Уже обработана."); return
+            bot.answer_callback_query(call.id, tr(uid, 'already_done')); return
         if data == "confirm_yes":
             last_time_str = None if uid in player_view else last_application.get(str(uid))
             if last_time_str:
@@ -3111,34 +2996,22 @@ def callback_handler(call):
                     remaining = last_dt + timedelta(hours=24) - timeutil.now_utc()
                     hours, rem = divmod(remaining.seconds, 3600)
                     minutes = rem // 60
-                    safe_send(uid, f"⏳ Вы уже подавали заявку. Пожалуйста, подождите {hours} ч. {minutes} мин. перед повторной отправкой.",
+                    safe_send(uid, tr(uid, 'wait_reapply', h=hours, m=minutes),
                               reply_markup=main_keyboard(is_admin=False, user_id=uid))
                     del user_states[uid]
                     bot.answer_callback_query(call.id)
                     return
             # Показываем правила перед отправкой заявки
             state['step'] = 'rules'
-            rules_text = (
-                "📜 <b>Правила сервера</b>\n\n"
-                "Перед отправкой заявки ознакомьтесь с правилами и подтвердите своё согласие:\n\n"
-                "• Запрещено воровать и портить чужое имущество\n"
-                "• Запрещены читы\n"
-                "• Запрещено PvP без согласия двух сторон\n"
-                "• Запрещена реклама\n"
-                "• Запрещена политика\n"
-                "• Запрещено оскорбление родных\n"
-                "• Запрещены механизмы, нагружающие сервер (большое количество воронок)\n\n"
-                "<i>Действия, которые могут не входить в список правил, но всё равно портят окружающим людям игровой процесс, могут повлечь за собой наказание — просто будьте вежливыми и не мешайте другим!</i>\n\n"
-                "Вы принимаете правила сервера?"
-            )
+            rules_text = tr(uid, 'rules_confirm')
             rules_markup = types.InlineKeyboardMarkup(row_width=2)
             rules_markup.add(
-                types.InlineKeyboardButton("Согласен", callback_data="rules_agree"),
-                types.InlineKeyboardButton("Не согласен", callback_data="rules_disagree")
+                types.InlineKeyboardButton(tr(uid, 'btn_agree'), callback_data="rules_agree"),
+                types.InlineKeyboardButton(tr(uid, 'btn_disagree'), callback_data="rules_disagree")
             )
             safe_send(uid, rules_text, parse_mode='HTML', reply_markup=rules_markup)
         else:
-            safe_send(uid, "❌ Заявка отменена.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'app_cancelled'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             del user_states[uid]
         bot.answer_callback_query(call.id)
         return
@@ -3146,10 +3019,10 @@ def callback_handler(call):
     # --- Правила сервера ---
     if data in ("rules_agree", "rules_disagree"):
         if uid not in user_states:
-            bot.answer_callback_query(call.id, "Заявка устарела."); return
+            bot.answer_callback_query(call.id, tr(uid, 'app_outdated')); return
         state = user_states[uid]
         if state.get('step') != 'rules':
-            bot.answer_callback_query(call.id, "Уже обработана."); return
+            bot.answer_callback_query(call.id, tr(uid, 'already_done')); return
         if data == "rules_agree":
             app_id = str(uid)
             test_by = uid if uid in player_view else None
@@ -3183,19 +3056,16 @@ def callback_handler(call):
                                     risks=[],
                                     verdict=auto_line(new_app, html=False))
             check_raid(uid)
-            safe_send(uid,
-                "✅ <b>Ваша заявка принята и отправлена на рассмотрение.</b>\n\n"
-                "📋 Заявки рассматриваются в порядке очереди. Срок рассмотрения - <b>как правило, до 24 часов</b>.\n\n"
-                "Результат рассмотрения придёт вам автоматически.",
+            safe_send(uid, tr(uid, 'app_submitted'),
                 parse_mode='HTML',
                 reply_markup=main_keyboard(is_admin=False, user_id=uid))
             sub = types.InlineKeyboardMarkup()
-            sub.row(types.InlineKeyboardButton("➡️ Перейти в группу", url=SUBSCRIBE_URL),
-                    types.InlineKeyboardButton("✅ Я подписался", callback_data="sub_check"))
-            safe_send(uid, "📢 Пока ждёте, подпишитесь на нашу группу TotemCraft: там новости и анонсы сервера.",
+            sub.row(types.InlineKeyboardButton(tr(uid, 'btn_go_group'), url=SUBSCRIBE_URL),
+                    types.InlineKeyboardButton(tr(uid, 'btn_subscribed'), callback_data="sub_check"))
+            safe_send(uid, tr(uid, 'sub_wait'),
                       reply_markup=sub)
         else:
-            safe_send(uid, "❌ Заявка отменена - вы не приняли правила сервера.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'rules_declined'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         del user_states[uid]
         bot.answer_callback_query(call.id)
         return
@@ -3208,22 +3078,16 @@ def callback_handler(call):
     if data == "menu_my_tickets" and not is_staff(uid):
         ticket = get_ticket(uid)
         if ticket:
-            nick_line = f"🎮 Ник: <code>{escape_html(ticket['nick'])}</code>\n" if ticket.get('nick') else ""
-            date_line = f"📅 Дата: {fmt_time(ticket.get('date'))}\n" if ticket.get('date') else ""
-            msg_text = escape_html(ticket.get('message', '')) or '<i>нет текста</i>'
-            text_out = (
-                f"📋 <b>Тикет #{ticket['id']}</b>\n"
-                f"Статус: 🟡 Открыт\n"
-                f"{nick_line}"
-                f"{date_line}\n"
-                f"<b>Ваше обращение:</b>\n{msg_text}"
-            )
+            nick_line = tr(uid, 'ticket_card_nick', nick=escape_html(ticket['nick'])) if ticket.get('nick') else ""
+            date_line = tr(uid, 'ticket_card_date', date=fmt_time(ticket.get('date'))) if ticket.get('date') else ""
+            msg_text = escape_html(ticket.get('message', '')) or tr(uid, 'ticket_card_empty')
+            text_out = tr(uid, 'ticket_card', id=ticket['id'], nick=nick_line, date=date_line, text=msg_text)
             markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("❌ Закрыть тикет", callback_data="close_ticket"))
-            markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="user_main_menu"))
+            markup.add(types.InlineKeyboardButton(tr(uid, 'btn_close_ticket'), callback_data="close_ticket"))
+            markup.add(types.InlineKeyboardButton(tr(uid, 'btn_main_menu'), callback_data="user_main_menu"))
             safe_send(uid, text_out, parse_mode='HTML', reply_markup=markup)
         else:
-            safe_send(uid, "У вас нет открытых обращений.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'no_tickets'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         bot.answer_callback_query(call.id)
         return
     if data == "close_ticket" and not is_staff(uid):
@@ -3243,10 +3107,10 @@ def callback_handler(call):
                 bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
             except Exception:
                 pass
-            safe_send(uid, "✅ Тикет закрыт.")
+            safe_send(uid, tr(uid, 'ticket_closed'))
             send_main_menu(uid)
         else:
-            safe_send(uid, "Тикет не найден.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'ticket_not_found'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         bot.answer_callback_query(call.id)
         return
 
@@ -3254,10 +3118,10 @@ def callback_handler(call):
     if data == "menu_apply":
         bot.answer_callback_query(call.id)
         if registration_paused:
-            safe_send(uid, "⏸️ Регистрация временно приостановлена.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'reg_paused'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
         if uid in blocked_users:
-            safe_send(uid, "🚫 Вы заблокированы.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
+            safe_send(uid, tr(uid, 'blocked_short'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
         last_time_str = last_application.get(str(uid))
         if last_time_str:
@@ -3266,41 +3130,25 @@ def callback_handler(call):
                 remaining = last_dt + timedelta(hours=24) - timeutil.now_utc()
                 hours_r, rem = divmod(remaining.seconds, 3600)
                 minutes_r = rem // 60
-                safe_send(uid, f"⏳ Вы уже подавали заявку. Пожалуйста, подождите {hours_r} ч. {minutes_r} мин. перед повторной отправкой.",
+                safe_send(uid, tr(uid, 'wait_reapply', h=hours_r, m=minutes_r),
                           reply_markup=main_keyboard(is_admin=False, user_id=uid))
                 return
         if str(uid) in pending:
-            safe_send(uid, "⏳ У вас уже есть активная заявка. Дождитесь решения администратора.")
+            safe_send(uid, tr(uid, 'has_pending'))
             return
         user_states[uid] = {'step': 'nick'}
-        safe_send(uid, "Введите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):", reply_markup=cancel_keyboard("❌ Отменить заявку"))
+        safe_send(uid, tr(uid, 'ask_nick'), reply_markup=cancel_keyboard(uid))
         return
     if data == "menu_support":
         bot.answer_callback_query(call.id)
         if str(uid) in pending:
             mark_asked(uid)
-            safe_send(uid,
-                "⚠️ <b>Обращение к администрации недоступно</b>\n\n"
-                "У вас есть активная заявка на регистрацию, которая ожидает рассмотрения.\n\n"
-                "Пожалуйста, дождитесь решения по вашей заявке.\n\n"
-                "<i>Обратиться к администрации можно только после получения решения по заявке.</i>",
-                parse_mode='HTML')
+            safe_send(uid, tr(uid, 'support_blocked_by_app'), parse_mode='HTML')
             return
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Понимаю, продолжить", callback_data="support_confirmed"),
-                   types.InlineKeyboardButton("❌ Отмена", callback_data="support_cancel"))
-        safe_send(uid,
-            "📋 <b>Важная информация перед обращением</b>\n\n"
-            "Данный канал связи предназначен исключительно для:\n"
-            "• технических вопросов и проблем;\n"
-            "• жалоб и спорных ситуаций;\n"
-            "• сообщений об ошибках и неполадках.\n\n"
-            "⛔ <b>Обращения со следующими вопросами не рассматриваются:</b>\n"
-            "• «Когда рассмотрят мою заявку?»\n"
-            "• «Зарегистрируйте меня быстрее»\n\n"
-            "❗ За подобные обращения заявка может быть <b>отклонена без объяснения причин</b>.\n\n"
-            "Вы подтверждаете, что ваш вопрос соответствует указанным критериям?",
-            parse_mode='HTML', reply_markup=markup)
+        markup.add(types.InlineKeyboardButton(tr(uid, 'btn_support_continue'), callback_data="support_confirmed"),
+                   types.InlineKeyboardButton(tr(uid, 'btn_cancel_inline'), callback_data="support_cancel"))
+        safe_send(uid, tr(uid, 'support_info'), parse_mode='HTML', reply_markup=markup)
         return
     if data == "menu_handbook":
         bot.answer_callback_query(call.id)
@@ -3309,9 +3157,18 @@ def callback_handler(call):
     if data == "menu_subscribe":
         bot.answer_callback_query(call.id)
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("➡️ Перейти в группу", url="https://t.me/totemcraftnet"))
-        markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="user_main_menu"))
-        edit_message_safe(uid, msg.message_id, "📢 TotemCraft – игровое сообщество\nПрисоединяйтесь к нашей группе!", reply_markup=markup)
+        markup.add(types.InlineKeyboardButton(tr(uid, 'btn_go_group'), url="https://t.me/totemcraftnet"))
+        markup.add(types.InlineKeyboardButton(tr(uid, 'btn_main_menu'), callback_data="user_main_menu"))
+        edit_message_safe(uid, msg.message_id, tr(uid, 'subscribe_text'), parse_mode='HTML', reply_markup=markup)
+        return
+    if data == "menu_lang":
+        bot.answer_callback_query(call.id)
+        send_lang_menu(uid, edit_message=msg)
+        return
+    if data.startswith("lang_") and data[5:] in i18n.LANGS:
+        user_lang[str(uid)] = data[5:]
+        bot.answer_callback_query(call.id, i18n.LANG_BUTTONS[data[5:]])
+        send_main_menu(uid, edit_message=msg)
         return
 
     # --- Справочник (доступен всем) ---
@@ -3333,13 +3190,13 @@ def callback_handler(call):
             log_warning(f"не удалось проверить подписку на {SUBSCRIBE_CHAT}: {e}")
             member = None
         if member is False:
-            bot.answer_callback_query(call.id, "Пока не вижу подписки. Подпишитесь и нажмите ещё раз.", show_alert=True)
+            bot.answer_callback_query(call.id, tr(uid, 'sub_not_seen'), show_alert=True)
             return
         app = pending.get(str(uid))
         if member and app and not app.get('subscribed'):
             app['subscribed'] = True
             schedule_auto(uid, app, keep_due=True)
-        bot.answer_callback_query(call.id, "Спасибо за подписку!")
+        bot.answer_callback_query(call.id, tr(uid, 'sub_thanks'))
         try:
             bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
         except Exception:
@@ -3348,7 +3205,7 @@ def callback_handler(call):
 
     # --- Только команда ---
     if uid not in staff:
-        bot.answer_callback_query(call.id, "Нет доступа."); return
+        bot.answer_callback_query(call.id, tr(uid, 'no_access')); return
     if uid in player_view:
         bot.answer_callback_query(call.id, "Вы в режиме игрока. Нажмите «🛡 Вернуться в админку» в меню или /admin.", show_alert=True)
         return
@@ -3516,7 +3373,7 @@ def callback_handler(call):
                 safe_send(talker, f"🔇 Диалог с {enrich_user_label(target)} завершён: {staff_name(uid)} закрыл обращение.")
         if ticket:
             close_ticket(target)
-            safe_send(target, f"✅ Ваш тикет #{ticket['id']} закрыт администратором.",
+            safe_send(target, tr(target, 'ticket_closed_by_admin', id=ticket['id']),
                       reply_markup=main_keyboard(is_admin=False, user_id=target))
             ok(f"Тикет #{ticket['id']} закрыт.")
         elif was_unread:
@@ -3560,7 +3417,7 @@ def callback_handler(call):
             discord_dialog_opened(t_nick or f"ID {target}", target, tchat.username or "", staff_name(uid))
         except Exception:
             pass
-        safe_send(target, "📨 Администратор начал с вами диалог.", reply_markup=main_keyboard(is_admin=False, user_id=target))
+        safe_send(target, tr(target, 'dialog_started'), reply_markup=main_keyboard(is_admin=False, user_id=target))
         ok("Диалог открыт")
         return
     if data.startswith('hist_'):
@@ -3900,24 +3757,12 @@ def process_admin_decision(action, user_id_str, comment, state):
 def notify_player_decision(action, user_id_str, app, comment):
     try:
         if action == 'approve':
-            msg = (
-                f"🎉 Ваша заявка одобрена!\n\n"
-                f"Ник: <code>{escape_html(app['nick'])}</code>\n"
-                f"Пароль: <code>{escape_html(app['password'])}</code>\n"
-                + (f"📱 С телефона или консоли (Bedrock) ваш ник: <code>{escape_html(bedrock_name(app['nick']))}</code>, пароль тот же\n"
-                   if bedrock_name(app['nick']) else "")
-                + "\n"
-                f"IP для всех: <code>play.totemcraft.net</code>\n"
-                f"IP для России: <code>ru.totemcraft.net</code>\n\n"
-                f"Ждём вас на сервере!\n\n"
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"💬 Основной актив сервера в дискорде - более 100 человек. "
-                f"Общайся с игроками - вступай в Discord:\n"
-                f"https://discord.gg/MWeUjNWJG3"
-            )
-            if comment:
-                msg += f"\n\nКомментарий администратора: {escape_html(comment)}"
             uid_int = int(user_id_str)
+            bedrock = bedrock_name(app['nick'])
+            msg = tr(uid_int, 'approved', nick=escape_html(app['nick']), password=escape_html(app['password']),
+                     bedrock=tr(uid_int, 'approved_bedrock', nick=escape_html(bedrock)) if bedrock else "")
+            if comment:
+                msg += tr(uid_int, 'approved_comment', comment=escape_html(comment))
             discord_banner_url = "https://assets-global.website-files.com/6257adef93867e50d84d30e2/636e0b5061df29d55a92d945_full_logo_blurple_RGB.png"
             try:
                 bot.send_photo(uid_int, discord_banner_url)
@@ -3925,9 +3770,9 @@ def notify_player_decision(action, user_id_str, app, comment):
                 pass
             safe_send_long(uid_int, msg, parse_mode='HTML', reply_markup=main_keyboard(is_admin=False, user_id=uid_int))
         else:
-            msg = "❌ Ваша заявка отклонена администратором."
+            msg = tr(user_id_str, 'rejected')
             if comment:
-                msg += f"\nКомментарий: {comment}"
+                msg += tr(user_id_str, 'rejected_comment', comment=comment)
             safe_send_long(int(user_id_str), msg, reply_markup=main_keyboard(is_admin=False, user_id=int(user_id_str)))
     except Exception as e:
         log_error(e)
@@ -3954,9 +3799,9 @@ def process_block(user_id_str, reason, original_msg, actor=ADMIN_ID):
     clear_unread(uid)
     close_notices('ticket', uid, f"🚫 <b>Заблокирован</b> · {escape_html(staff_name(actor))}")
 
-    msg_text = "🚫 Вы были заблокированы администратором."
+    msg_text = tr(uid, 'blocked_by_admin')
     if reason:
-        msg_text += f"\nПричина: {reason}"
+        msg_text += tr(uid, 'block_reason', reason=reason)
     try:
         bot.send_message(uid, msg_text, reply_markup=types.ReplyKeyboardRemove())
     except Exception as e:
@@ -4013,6 +3858,13 @@ if __name__ == '__main__':
         db_exec("INSERT INTO staff (tg_id, name, role, added_by, added_at) VALUES (?,?,?,?,?)",
                 (ADMIN_ID, tg_display_name(ADMIN_ID), ROLE_OWNER, ADMIN_ID, timeutil.now_iso()))
         load_staff()
+    # Описание бота до кнопки START: русское из BotFather, украинское и английское ставим отсюда
+    for code, text in i18n.DESCRIPTION.items():
+        try:
+            bot.set_my_description(text, language_code=code)
+            bot.set_my_short_description(i18n.SHORT_DESCRIPTION[code], language_code=code)
+        except Exception as e:
+            log_warning(f"описание бота ({code}) не обновлено: {e}")
     print("✅ TotemCraftBot запущен")
     threading.Thread(target=run_scheduler, daemon=True).start()
     bot.infinity_polling()
