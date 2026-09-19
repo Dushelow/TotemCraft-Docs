@@ -208,6 +208,37 @@ submit(V, 'NoAdminCheck')
 check(t == 'Спасибо за подписку!' and not bot.pending[str(V)].get('subscribed'),
       "проверить подписку нельзя: игрок получает «спасибо», ускорения нет, бот не падает")
 
+print("\n=== 12. Проверка после первого входа ===")
+import sqlite3
+authme = sqlite3.connect(os.path.join(MC, 'plugins', 'AuthMe', 'authme.db'))
+W1, W2 = 6_400_000_001, 6_400_000_002
+for tg, nick in ((W1, 'TwinAfterBan'), (W2, 'HonestNew')):
+    bot.user_states[tg] = {'step': 'rules', 'nick': nick, 'password': 'Str0ngPass1', 'comment': ''}
+    ctx.press(tg, 'rules_agree')
+    ctx.press(OWNER, f'approve_{tg}', mid=950)
+    ctx.press(OWNER, 'skip_admin_comment')
+check({'TwinAfterBan', 'HonestNew'} <= set(bot.first_login_watch.keys()), "принятые игроки поставлены на слежку за первым входом")
+ctx.tg_log.clear()
+bot.first_login_job()
+check(len(bot.first_login_watch) >= 2 and not sent_to(ctx.tg_log, OWNER), "пока не зашли: ничего не шлёт, слежка остаётся")
+# зашли: один с IP забаненного oldtwink (10.9.9.9), другой с чистого IP
+authme.execute("INSERT INTO authme (id, username, realname, password, ip, lastlogin, regip, regdate) VALUES "
+               "(10,'twinafterban','TwinAfterBan','h','10.9.9.9',1789000000000,'',1789000000000),"
+               "(11,'honestnew','HonestNew','h','77.88.8.8',1789000000000,'',1789000000000)")
+authme.commit()
+bot.first_login_job()
+alerts = [x for x in sent_to(ctx.tg_log, OWNER) if 'Возможный твинк' in x]
+check(len(alerts) == 1 and 'TwinAfterBan' in alerts[0] and '10.9.9.9' in alerts[0], "зашёл с IP забаненного: владельцу «Возможный твинк»")
+check(any('Возможный твинк' in x for x in sent_to(ctx.tg_log, ADMIN)) and not sent_to(ctx.tg_log, HELPER), "админу тоже, помощнику нет")
+check('TwinAfterBan' not in bot.first_login_watch and 'HonestNew' not in bot.first_login_watch, "оба проверены один раз и сняты со слежки")
+ctx.tg_log.clear()
+bot.first_login_job()
+check(not [x for x in sent_to(ctx.tg_log, OWNER) if 'Возможный твинк' in x], "повторно не шлёт")
+bot.first_login_watch['GhostNick'] = {'tg': 1, 'until': (tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds')}
+bot.first_login_job()
+check('GhostNick' not in bot.first_login_watch, "не зашёл за 48 часов: снят со слежки")
+check(storage.query("SELECT COUNT(*) FROM audit WHERE action='twin_suspect'")[0][0] == 1, "в журнале запись о возможном твинке")
+
 print("\n=== 11. Инструкция и статус на месте, с кнопкой назад ===")
 for data in ('admin_help', 'admin_status'):
     (t, _), log = ctx.press(ADMIN, data, mid=900)

@@ -790,6 +790,7 @@ ACTION_NAMES = {
     'raid_on': '🛡 включил рейд-режим', 'raid_off': '🛡 выключил рейд-режим',
     'raid_auto_on': '🛡 включил автовключение рейд-режима', 'raid_auto_off': '🛡 выключил автовключение рейд-режима',
     'word_added': '📖 добавил слово в словарь', 'word_removed': '📖 убрал слово из словаря',
+    'twin_suspect': '🔴 возможный твинк после первого входа',
 }
 
 def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None):
@@ -2264,6 +2265,58 @@ def show_words(chat_id, edit_message=None):
     else:
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
+# ---------- Проверка после первого входа ----------
+WATCH_HOURS = 48  # сколько следить за первым входом после принятия
+first_login_watch = storage.PersistentDict('watch')  # ник -> {'tg': ID, 'until': UTC ISO}
+
+def watch_first_login(nick, tg_id):
+    """Принятый игрок: 48 часов ждём его первого входа, чтобы один раз сверить IP с забаненными."""
+    first_login_watch[nick] = {'tg': int(tg_id),
+                               'until': (timeutil.now_utc() + timedelta(hours=WATCH_HOURS)).isoformat(timespec='seconds')}
+
+def first_login_job():
+    """Раз в 5 минут, и только если есть за кем следить: кто из недавно принятых впервые зашёл.
+    Зашедшего проверяем один раз и снимаем со слежки, не зашедших снимаем через 48 часов."""
+    if not len(first_login_watch):
+        return
+    try:
+        now = timeutil.now_utc()
+        for nick, w in first_login_watch.items():
+            if timeutil.parse(w['until']) <= now:
+                first_login_watch.pop(nick, None)
+        nicks = first_login_watch.keys()
+        if not nicks:
+            return
+        for username, ip, regip, _, _ in bans.authme_accounts(nicks):
+            ips = sorted({x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0')})
+            if not ips:
+                continue  # ещё не заходил
+            key = next((n for n in nicks if n.lower() == username.lower()), username)
+            w = first_login_watch.pop(key, None) or {}
+            check_twin_after_login(key, w.get('tg'), ips)
+    except Exception as e:
+        log_error(e)
+
+def check_twin_after_login(nick, tg_id, ips):
+    """Сверка IP только что зашедшего игрока: бан по этому IP или забаненный аккаунт с того же IP."""
+    others = [n for n in bans.authme_accounts_on_ips(ips) if n.lower() != nick.lower()]
+    found, _, _ = bans.find([nick] + others)
+    hits = sorted({f"{it['who']} ({it['kind']}: {it['reason']})" for it in found
+                   if 'бан' in it['kind'] and (it['who'].startswith('IP ') or it['who'].lower() != nick.lower())})
+    if not hits:
+        return
+    audit(None, 'twin_suspect', tg_id, nick, "; ".join(hits)[:500])
+    text = (f"🔴 <b>Возможный твинк</b>: <code>{escape_html(nick)}</code> впервые зашёл на сервер с IP, связанного с баном:\n"
+            + "\n".join(f"   • {escape_html(h)}" for h in hits[:5])
+            + "\n\n<i>Один IP бывает у родственников и соседей, решение за вами.</i>")
+    markup = types.InlineKeyboardMarkup()
+    if tg_id:
+        markup.add(types.InlineKeyboardButton("👤 Профиль игрока", callback_data=f"user_profile_{tg_id}"))
+    notify_staff('block', text, reply_markup=markup)
+    post_discord({"embeds": [{"title": "🔴 Возможный твинк после первого входа", "color": 0xff0000,
+                              "description": f"**Ник:** `{nick}`\n" + "\n".join(hits[:5]),
+                              "timestamp": timeutil.now_iso()}]})
+
 def mark_asked(uid):
     """Игрок пытался обратиться, пока заявка ждёт: автомат такую заявку не примет."""
     app = pending.get(str(uid))
@@ -3670,6 +3723,7 @@ def process_admin_decision(action, user_id_str, comment, state):
     audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'], details)
     if action == 'approve' and not test_by:
         run_in_background(register_on_server, app['nick'], app['password'], actor, app['user_id'])
+        watch_first_login(app['nick'], app['user_id'])
 
     # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
@@ -3810,8 +3864,9 @@ def backup_job():
 
 def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
-    schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)
-    schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима  # копия bot.db в backups/, 14 последних
+    schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
+    schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима
+    schedule.every(5).minutes.do(first_login_job)  # твинк после первого входа (только пока есть за кем следить)
     while True:
         schedule.run_pending()
         time.sleep(60)
