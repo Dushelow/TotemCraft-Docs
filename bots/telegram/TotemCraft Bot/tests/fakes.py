@@ -195,9 +195,9 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
         bot.callback_handler(call)
         return ctx.answers.get(cid, (None, None)), list(ctx.tg_log)
 
-    def say(who, text, mid=70):
+    def say(who, text, mid=70, chat_id=None, chat_type='private'):
         m = types.Message.de_json({
-            'message_id': mid, 'date': 0, 'chat': {'id': who, 'type': 'private'},
+            'message_id': mid, 'date': 0, 'chat': {'id': chat_id or who, 'type': chat_type},
             'from': {'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X'), 'username': f'u{who}'},
             'text': text})
         ctx.tg_log.clear()

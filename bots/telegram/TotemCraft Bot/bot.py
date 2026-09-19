@@ -2276,6 +2276,16 @@ def guarded(handler):
     """Ошибка в обработчике не должна оставлять кнопку «крутиться» и теряться молча:
     нажавший получает понятный ответ, ошибка — в журнал."""
     def wrapper(obj):
+        # Бот работает только в личке. В группе (например, @totemcraftnet, где он админ ради проверки подписки)
+        # он видит все сообщения — на них не отвечаем, иначе бот шлёт меню в общий чат.
+        chat = getattr(obj, 'chat', None) or getattr(getattr(obj, 'message', None), 'chat', None)
+        if chat is not None and chat.type != 'private':
+            if hasattr(obj, 'data'):
+                try:
+                    bot.answer_callback_query(obj.id)
+                except Exception:
+                    pass
+            return None
         try:
             return handler(obj)
         except Exception as e:

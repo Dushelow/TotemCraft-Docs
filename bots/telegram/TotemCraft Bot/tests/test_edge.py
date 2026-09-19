@@ -220,6 +220,20 @@ threads = [threading.Thread(target=worker, args=(k,)) for k in range(8)]
 check(not errors, f"8 потоков по 20 действий: без ошибок базы ({errors[:2]})")
 check(storage.query("PRAGMA integrity_check")[0][0] == 'ok', "база цела после одновременной записи")
 
+print("\n=== 9а. Бот в группе (админ ради проверки подписки) ===")
+GROUP = -1001234567890
+states_before = dict(bot.user_states)
+for who, text in [(7002, 'Мне надо ник написать'), (7002, '📝 Подать заявку на сервер'), (OWNER, '1'), (7002, '/start')]:
+    log = say(who, text, chat_id=GROUP, chat_type='supergroup')
+    check(not [p for m, p in log if m.startswith('send')], f"в группе бот молчит на «{text}»")
+check(str(GROUP) not in bot.pending and GROUP not in bot.user_states and bot.user_states == states_before,
+      "сообщения из группы не создают заявок и состояний")
+call = ctx.types.CallbackQuery.de_json({'id': 'grp1', 'from': {'id': 7002, 'is_bot': False, 'first_name': 'X'},
+                                        'chat_instance': 'x', 'data': 'menu_apply',
+                                        'message': {'message_id': 1, 'date': 0, 'chat': {'id': GROUP, 'type': 'supergroup'}, 'text': 'меню'}})
+ctx.tg_log.clear(); bot.callback_handler(call)
+check(not [p for m, p in ctx.tg_log if m.startswith('send')], "кнопка под сообщением в группе ничего не запускает")
+
 print("\n=== 10а. Ограничитель частоты ===")
 bot.RATE_LIMIT = 5
 SPAM = 7777
