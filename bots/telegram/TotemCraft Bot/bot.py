@@ -41,9 +41,6 @@ TICKETS_FILE = 'tickets.json'
 ERROR_LOG = 'bot_errors.log'
 
 user_states = {}
-admin_states = {}
-admin_reply_to = None
-pending_admin_notifications = []  # Очередь уведомлений на время ввода комментария
 pending = {}
 blocked_users = set()
 registration_paused = False
@@ -223,30 +220,32 @@ def rcon_command(command):
 # Пароли одобренных игроков, которых не удалось зарегистрировать: ник -> пароль (только в памяти)
 failed_registrations = {}
 
-def register_on_server(nick, password):
+def register_on_server(nick, password, decided_by=None, player_id=None):
     """Регистрирует аккаунт в AuthMe через RCON. В Discord уходит команда со звёздочками."""
     send_console_command(f"authme register {nick} {'*' * 8}")
     try:
         answer = rcon_command(f"authme register {nick} {password}")
         failed_registrations.pop(nick, None)
+        audit(None, 'registered', player_id, nick, answer)
         if answer:
             send_console_command(f"Ответ сервера: {answer}")
     except Exception as e:
         log_error(e)
-        failed_registrations[nick] = password
+        audit(None, 'reg_failed', player_id, nick, str(e))
+        failed_registrations[nick] = (password, player_id)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔁 Повторить регистрацию", callback_data=f"retry_reg_{nick}"))
-        safe_send(ADMIN_ID,
-                  f"⚠️ Не удалось зарегистрировать <code>{escape_html(nick)}</code> на сервере: {escape_html(e)}\n\n"
-                  f"Когда сервер будет доступен, нажмите кнопку. После перезапуска бота кнопка не сработает.",
-                  parse_mode='HTML', reply_markup=markup)
+        notify_staff(None, f"⚠️ Не удалось зарегистрировать <code>{escape_html(nick)}</code> на сервере: {escape_html(e)}\n\n"
+                           f"Когда сервер будет доступен, нажмите кнопку. После перезапуска бота кнопка не сработает.",
+                     reply_markup=markup, kind='reg', ref=nick,
+                     only=sorted({a for a in (decided_by, ADMIN_ID) if a in staff}))
 
 # ---------- Discord ----------
 def discord_escape(text):
     """Для Discord: НЕ экранируем подчёркивания и другие символы в embed-полях — они отображаются как есть."""
     return str(text)
 
-def discord_new_application(user, tg_id, nick, password, comment=""):
+def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=None, bans_found=0, test_by=None):
     if not DISCORD_WEBHOOK_URL: return
     hidden_pw = '*' * len(password) if password else 'не указан'
     username = f"@{user.username}" if user.username else "—"
@@ -258,6 +257,12 @@ def discord_new_application(user, tg_id, nick, password, comment=""):
         f"**Пароль:** {hidden_pw}\n"
         f"**Комментарий:** {comment if comment else 'нет'}"
     )
+    if old_nicks:
+        desc += "\n**Повторная заявка, прошлые ники:** " + ", ".join(f"`{discord_escape(n)}`" for n in old_nicks)
+    if bans_found:
+        desc += f"\n**⚠️ Блокировки:** найдено {bans_found}, подробности в Telegram"
+    if test_by:
+        desc += f"\n**🧪 Тестовая заявка** (режим игрока, {discord_escape(test_by)})"
     embed = {"title": "📩 Новая заявка", "description": desc, "color": 0xFFFF00,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
@@ -265,11 +270,13 @@ def discord_new_application(user, tg_id, nick, password, comment=""):
     except Exception as e:
         log_error(e)
 
-def discord_decision_notify(nick, status, admin_comment=""):
+def discord_decision_notify(nick, status, admin_comment="", decided_by=""):
     if not DISCORD_WEBHOOK_URL: return
     color = 0x00ff00 if status == 'Одобрено' else 0xff0000
     status_text = 'Одобрена' if status == 'Одобрено' else 'Отклонена'
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**Статус:** {status_text}"
+    if decided_by:
+        desc += f"\n**Рассмотрел:** {discord_escape(decided_by)}"
     if admin_comment:
         desc += f"\n**Комментарий админа:** {discord_escape(admin_comment)}"
     embed = {"title": f"📋 Заявка {status_text.lower()}", "description": desc, "color": color,
@@ -312,10 +319,12 @@ def discord_guest_message(user, tg_id):
     except Exception as e:
         log_error(e)
 
-def discord_player_blocked(nick, tg_id, username, reason=""):
+def discord_player_blocked(nick, tg_id, username, reason="", blocked_by=""):
     if not DISCORD_WEBHOOK_URL: return
     uname = f"@{username}" if username else "—"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}"
+    if blocked_by:
+        desc += f"\n**Заблокировал:** {discord_escape(blocked_by)}"
     if reason:
         desc += f"\n**Причина:** {discord_escape(reason)}"
     embed = {"title": "🚫 Игрок заблокирован", "description": desc, "color": 0xff4400,
@@ -325,10 +334,12 @@ def discord_player_blocked(nick, tg_id, username, reason=""):
     except Exception as e:
         log_error(e)
 
-def discord_dialog_opened(nick, tg_id, username):
+def discord_dialog_opened(nick, tg_id, username, admin_name=""):
     if not DISCORD_WEBHOOK_URL: return
     uname = f"@{username}" if username else "—"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}"
+    if admin_name:
+        desc += f"\n**Администратор:** {discord_escape(admin_name)}"
     embed = {"title": "💬 Диалог открыт администратором", "description": desc, "color": 0x00aaff,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
     try:
@@ -336,10 +347,12 @@ def discord_dialog_opened(nick, tg_id, username):
     except Exception as e:
         log_error(e)
 
-def discord_dialog_closed(nick, tg_id, username, by_user=False):
+def discord_dialog_closed(nick, tg_id, username, by_user=False, admin_name=""):
     if not DISCORD_WEBHOOK_URL: return
     uname = f"@{username}" if username else "—"
     who = "игроком" if by_user else "администратором"
+    if admin_name:
+        who += f" ({discord_escape(admin_name)})"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}\n**Закрыт:** {who}"
     embed = {"title": "🔇 Диалог (тикет) закрыт", "description": desc, "color": 0x888888,
              "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
@@ -363,6 +376,14 @@ def discord_application_cancelled(nick, tg_id, username, tg_name=""):
         post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
+
+def discord_staff_change(title, name, tg_id, role_text, by_name):
+    if not DISCORD_WEBHOOK_URL: return
+    desc = (f"**Кто:** {discord_escape(name)}\n**TG ID:** {tg_id}\n"
+            f"**Роль:** {role_text}\n**Изменил:** {discord_escape(by_name)}")
+    embed = {"title": title, "description": desc, "color": 0x9b59b6,
+             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+    post_discord({"embeds": [embed]})
 
 def discord_daily_reminder():
     if not DISCORD_WEBHOOK_URL: return
@@ -709,7 +730,7 @@ def ban_report(tg_id, nick):
     return text
 
 def check_rate_limit(user_id):
-    if user_id == ADMIN_ID:
+    if user_id in staff:
         return True
     now = time.time()
     if user_id in user_cooldown_until and now < user_cooldown_until[user_id]:
@@ -747,8 +768,23 @@ def format_admin_notify(user, text, extra="", ticket_id=None):
     msg += f"ID: <code>{uid}</code>\n"
     if extra:
         msg += extra
-    msg += f"\nТекст: {escape_html(text[:200])}"
+    msg += f"\nТекст: {escape_html(text[:1500])}"
     return msg
+
+def notify_new_ticket(user, text_msg, tid, nick=''):
+    """Новое обращение: уведомление всем, кто отвечает на сообщения."""
+    uid = user.id
+    extra = f"Игровой ник: <code>{escape_html(nick)}</code>\n" if nick else ""
+    if uid in player_view:
+        extra += f"🧪 Тест: написал {escape_html(staff_name(uid))} в режиме игрока\n"
+    notify = format_admin_notify(user, text_msg, extra=extra, ticket_id=tid)
+    B = types.InlineKeyboardButton
+    markup = types.InlineKeyboardMarkup()
+    markup.row(B("💬 Ответить", callback_data=f"reply_{uid}"), B("📜 Переписка", callback_data=f"hist_{uid}"))
+    markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"),
+               B("🚫 Заблокировать", callback_data=f"block_{uid}"))
+    audit(uid, 'ticket_opened', uid, nick, text_msg)
+    notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=uid)
 
 def get_user_label(uid):
     for app in pending.values():
@@ -786,12 +822,15 @@ def enrich_user_label(uid):
         parts.append("[—]")
     return " ".join(parts)
 
-def add_to_history(user_id, text, from_user=True):
-    chat_history[str(user_id)].append({
+def add_to_history(user_id, text, from_user=True, by=None):
+    entry = {
         "from": "user" if from_user else "admin",
         "text": text,
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    })
+    }
+    if by is not None:
+        entry["by"] = staff_name(by)  # кто из админов написал; игрок этого не видит
+    chat_history[str(user_id)].append(entry)
     save_json(CHAT_HISTORY_FILE, {uid: list(msgs) for uid, msgs in chat_history.items()})
 
 def add_unread(user_id):
@@ -807,26 +846,151 @@ def clear_unread(user_id):
 def save_tickets():
     save_json(TICKETS_FILE, {'counter': ticket_counter, 'tickets': active_tickets})
 
-def notify_admin(text, parse_mode=None, reply_markup=None):
-    """Отправляет уведомление админу, или откладывает если он сейчас вводит комментарий."""
-    if ADMIN_ID in admin_states:
-        pending_admin_notifications.append({
-            'text': text,
-            'parse_mode': parse_mode,
-            'reply_markup': reply_markup
-        })
-    else:
-        safe_send(ADMIN_ID, text, parse_mode=parse_mode, reply_markup=reply_markup)
+# ---------- Команда: админы, роли, журнал (база bot.db) ----------
+BOT_DB = 'bot.db'
+_db_lock = threading.Lock()
 
-def flush_admin_notifications():
-    """Доставляет все отложенные уведомления."""
-    if not pending_admin_notifications:
+ROLE_OWNER, ROLE_ADMIN, ROLE_HELPER = 'owner', 'admin', 'helper'
+ROLE_NAMES = {ROLE_OWNER: 'Владелец', ROLE_ADMIN: 'Админ', ROLE_HELPER: 'Помощник'}
+# Что может каждая роль
+PERMS = {
+    ROLE_OWNER:  {'apps', 'messages', 'block', 'stats', 'search', 'controls', 'journal', 'staff'},
+    ROLE_ADMIN:  {'apps', 'messages', 'block', 'stats', 'search'},
+    ROLE_HELPER: {'apps', 'search'},
+}
+
+def db_exec(sql, params=(), fetch=False):
+    with _db_lock, closing(sqlite3.connect(BOT_DB, timeout=10)) as db:
+        cur = db.execute(sql, params)
+        rows = cur.fetchall() if fetch else None
+        db.commit()
+        return rows
+
+db_exec("""CREATE TABLE IF NOT EXISTS staff (tg_id INTEGER PRIMARY KEY, name TEXT, role TEXT NOT NULL,
+           added_by INTEGER, added_at TEXT)""")
+db_exec("""CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
+           actor_id INTEGER, actor_name TEXT, actor_role TEXT, action TEXT NOT NULL,
+           target_id INTEGER, target_nick TEXT, details TEXT)""")
+db_exec("CREATE INDEX IF NOT EXISTS audit_actor ON audit(actor_id)")
+db_exec("CREATE INDEX IF NOT EXISTS audit_target ON audit(target_id)")
+db_exec("CREATE TABLE IF NOT EXISTS notices (kind TEXT, ref TEXT, chat_id INTEGER, message_id INTEGER, text TEXT)")
+
+staff = {}  # tg_id -> {'name': ..., 'role': ...}
+
+def load_staff():
+    staff.clear()
+    for tg_id, name, role in db_exec("SELECT tg_id, name, role FROM staff", fetch=True):
+        staff[tg_id] = {'name': name, 'role': role}
+    staff[ADMIN_ID] = {'name': staff.get(ADMIN_ID, {}).get('name') or 'Владелец', 'role': ROLE_OWNER}
+
+load_staff()
+
+player_view = set()  # админы, которые сейчас смотрят бота глазами игрока
+
+def is_staff(uid):
+    """Член команды, который сейчас работает как админ (не в режиме игрока)."""
+    return uid in staff and uid not in player_view
+
+def can(uid, perm):
+    return is_staff(uid) and perm in PERMS.get(staff[uid]['role'], set())
+
+def staff_name(uid):
+    return staff[uid]['name'] if uid in staff else f"ID {uid}"
+
+def staff_with(perm):
+    return [a for a, s in staff.items() if perm in PERMS.get(s['role'], set())]
+
+ACTION_NAMES = {
+    'app_submitted': '📩 подал заявку', 'app_cancelled': '↩️ отозвал заявку',
+    'approved': '✅ одобрил заявку', 'rejected': '❌ отклонил заявку',
+    'registered': '🎮 зарегистрирован на сервере', 'reg_failed': '⚠️ регистрация не прошла',
+    'ticket_opened': '🎫 открыл обращение', 'ticket_closed_by_player': '🔒 закрыл своё обращение',
+    'dialog_opened': '💬 начал диалог', 'dialog_closed': '🔇 завершил диалог',
+    'msg_to_player': '✉️ написал игроку', 'ticket_closed': '🔒 закрыл обращение без ответа',
+    'blocked': '🚫 заблокировал в боте', 'unblocked': '✅ разблокировал в боте',
+    'paused': '⏸️ приостановил регистрацию', 'resumed': '▶️ возобновил регистрацию',
+    'reset_timers': '⏰ сбросил таймеры заявок', 'clear_stats': '🧹 очистил статистику',
+    'clear_dialogs': '🗑 очистил историю диалогов',
+    'staff_added': '👥 выдал доступ', 'staff_role': '👥 сменил роль', 'staff_removed': '👥 снял доступ',
+}
+
+def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None):
+    """Запись в журнал: кто, что и с кем сделал. actor_id=None — действие самого бота."""
+    try:
+        if actor_role is None:
+            actor_role = staff[actor_id]['role'] if actor_id in staff else ('system' if actor_id is None else 'player')
+        name = 'бот' if actor_id is None else (staff_name(actor_id) if actor_role != 'player' else '')
+        db_exec("INSERT INTO audit (ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M:%S'), actor_id, name, actor_role, action,
+                 int(target_id) if target_id not in (None, '') else None, target_nick or '', (details or '')[:2000]))
+    except Exception as e:
+        log_error(e)
+
+def last_decision(target_id):
+    """Кто и когда последним рассмотрел заявку игрока: (имя, время, действие) или None."""
+    try:
+        rows = db_exec("SELECT actor_name, ts, action FROM audit WHERE target_id=? AND action IN ('approved','rejected') "
+                       "ORDER BY id DESC LIMIT 1", (int(target_id),), fetch=True)
+        return rows[0] if rows else None
+    except Exception as e:
+        log_error(e)
+        return None
+
+# ---------- Уведомления команде ----------
+admin_states = {}                          # admin_id -> что админ сейчас вводит
+delayed_notifications = defaultdict(list)  # admin_id -> уведомления, отложенные на время ввода комментария
+dialogs = {}                               # admin_id -> player_id: с кем админ сейчас в диалоге
+app_claims = {}                            # player_id (str) -> admin_id: кто сейчас пишет решение по заявке
+
+def dialog_admin(player_id):
+    """Админ, который ведёт диалог с игроком, или None."""
+    return next((a for a, p in dialogs.items() if p == player_id), None)
+
+def _deliver(aid, text, markup, kind, ref):
+    m = safe_send(aid, text, parse_mode='HTML', reply_markup=markup)
+    if m and kind:
+        try:
+            db_exec("INSERT INTO notices VALUES (?,?,?,?,?)", (kind, str(ref), aid, m.message_id, text))
+        except Exception as e:
+            log_error(e)
+
+def notify_staff(perm, text, reply_markup=None, kind=None, ref=None, only=None):
+    """Уведомление всем, у кого есть право perm (или списку only).
+    Кто сейчас вводит комментарий, получит его после ввода.
+    kind/ref запоминают сообщение, чтобы потом у всех дописать итог (close_notices)."""
+    for aid in (only if only is not None else staff_with(perm)):
+        if aid in admin_states:
+            delayed_notifications[aid].append((text, reply_markup, kind, ref))
+        else:
+            _deliver(aid, text, reply_markup, kind, ref)
+
+def flush_admin_notifications(aid):
+    """Доставляет админу уведомления, отложенные на время ввода комментария."""
+    items = delayed_notifications.pop(aid, [])
+    if items:
+        safe_send(aid, f"📬 Пока вы вводили комментарий, пришло уведомлений: {len(items)}")
+        for text, markup, kind, ref in items:
+            _deliver(aid, text, markup, kind, ref)
+
+def close_notices(kind, ref, footer):
+    """Дописывает итог к уведомлению у всех админов и убирает кнопки, чтобы дело не взяли дважды."""
+    try:
+        rows = db_exec("SELECT chat_id, message_id, text FROM notices WHERE kind=? AND ref=?", (kind, str(ref)), fetch=True)
+        db_exec("DELETE FROM notices WHERE kind=? AND ref=?", (kind, str(ref)))
+    except Exception as e:
+        log_error(e)
         return
-    count = len(pending_admin_notifications)
-    safe_send(ADMIN_ID, f"📬 Пока вы вводили комментарий, пришло {count} уведомление(-й):")
-    for n in pending_admin_notifications:
-        safe_send(ADMIN_ID, n['text'], parse_mode=n['parse_mode'], reply_markup=n['reply_markup'])
-    pending_admin_notifications.clear()
+    def edit_all():
+        for chat_id, message_id, text in rows:
+            try:
+                bot.edit_message_text(f"{text}\n\n{footer}"[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
+            except Exception:
+                pass
+    run_in_background(edit_all)
+    # Отложенные, ещё не доставленные уведомления по этому делу тоже устарели
+    for aid in list(delayed_notifications):
+        delayed_notifications[aid] = [n for n in delayed_notifications[aid] if not (n[2] == kind and str(n[3]) == str(ref))]
 
 def open_ticket(user_id, message_text='', nick=''):
     """Открывает новый тикет для пользователя. Возвращает номер тикета."""
@@ -862,7 +1026,7 @@ def main_keyboard(is_admin=False, user_id=None):
         step = user_states.get(user_id, {}).get('step') if user_id else None
         text_input_steps = {'nick', 'password', 'comment', 'support_nick', 'support_text', 'guest_message'}
         in_text_input = step in text_input_steps
-        in_active_dialog = (admin_reply_to is not None and user_id is not None and user_id == admin_reply_to)
+        in_active_dialog = user_id is not None and dialog_admin(user_id) is not None
 
         if in_text_input or in_active_dialog:
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
@@ -888,27 +1052,43 @@ def send_admin_menu(chat_id, edit_message=None):
     """Отправляет/обновляет инлайн-панель администратора."""
     pending_count = len(pending)
     unread_count = len(unread_messages)
+    my_dialog = dialogs.get(chat_id)
+    B = types.InlineKeyboardButton
 
-    pending_label = f"📋 Заявки" + (f"  •  {pending_count} новых" if pending_count else "")
-    messages_label = f"💬 Сообщения" + (f"  •  {unread_count} непрочитанных" if unread_count else "")
-    dialog_label = f"🔴 Завершить диалог с {enrich_user_label(admin_reply_to)}" if admin_reply_to else None
+    inline = types.InlineKeyboardMarkup(row_width=2)
+    if can(chat_id, 'apps'):
+        inline.row(B("📋 Заявки" + (f" • {pending_count}" if pending_count else ""), callback_data="admin_menu_applications"))
+    if can(chat_id, 'messages'):
+        inline.row(B("💬 Сообщения" + (f" • {unread_count}" if unread_count else ""), callback_data="admin_menu_messages"))
+    row = [B("🔍 Поиск по нику", callback_data="admin_search")] if can(chat_id, 'search') else []
+    if can(chat_id, 'stats'):
+        row.append(B("📊 Статистика", callback_data="admin_menu_stats"))
+    if row:
+        inline.row(*row)
+    row = []
+    if can(chat_id, 'journal'):
+        row.append(B("📒 Журнал", callback_data="jr_a_0_0"))
+    if can(chat_id, 'staff'):
+        row.append(B("👥 Команда", callback_data="staff_list"))
+    if row:
+        inline.row(*row)
+    if can(chat_id, 'controls') or can(chat_id, 'block'):
+        inline.row(B("⚙️ Управление", callback_data="admin_menu_controls"))
+    inline.row(B("👤 Посмотреть как игрок", callback_data="player_view_on"))
+    if my_dialog:
+        inline.row(B(f"🔴 Завершить диалог с {get_user_label(my_dialog)}", callback_data="admin_end_dialog"))
 
-    inline = types.InlineKeyboardMarkup(row_width=1)
-    inline.add(types.InlineKeyboardButton(pending_label, callback_data="admin_menu_applications"))
-    inline.add(types.InlineKeyboardButton(messages_label, callback_data="admin_menu_messages"))
-    inline.add(types.InlineKeyboardButton("📊 Статистика", callback_data="admin_menu_stats"))
-    inline.add(types.InlineKeyboardButton("🔍 Поиск по нику", callback_data="admin_search"))
-    inline.add(types.InlineKeyboardButton("⚙️ Управление", callback_data="admin_menu_controls"))
-    if dialog_label:
-        inline.add(types.InlineKeyboardButton(dialog_label, callback_data="admin_end_dialog"))
-
-    lines = ["🛡 <b>Панель администратора</b>"]
-    if pending_count:
+    role = staff.get(chat_id, {}).get('role')
+    lines = [f"🛡 <b>Панель администратора</b>\n{ROLE_NAMES.get(role, '')}: {escape_html(staff_name(chat_id))}"]
+    if pending_count and can(chat_id, 'apps'):
         lines.append(f"⏳ Ожидают рассмотрения: <b>{pending_count}</b>")
-    if unread_count:
+    if unread_count and can(chat_id, 'messages'):
         lines.append(f"📬 Непрочитанных сообщений: <b>{unread_count}</b>")
-    if admin_reply_to:
-        lines.append(f"💬 Активный диалог: <b>{enrich_user_label(admin_reply_to)}</b>")
+    busy = [f"{escape_html(staff_name(a))} ↔ {escape_html(get_user_label(p))}" for a, p in dialogs.items() if a != chat_id]
+    if my_dialog:
+        lines.append(f"💬 Ваш диалог: <b>{escape_html(enrich_user_label(my_dialog))}</b>")
+    if busy and can(chat_id, 'messages'):
+        lines.append("🗣 Диалоги коллег: " + "; ".join(busy))
     text = "\n".join(lines)
 
     if edit_message:
@@ -933,10 +1113,14 @@ def send_main_menu(uid, edit_message=None):
     ]
     if get_ticket(uid):
         buttons.insert(1, types.InlineKeyboardButton("📋 Мои обращения", callback_data="menu_my_tickets"))
+    if uid in player_view:
+        # Кнопку видит только админ в режиме игрока, обычным игрокам её нет
+        text = "🏠 Главное меню\n\n🧪 <i>Режим игрока: вы видите бота как обычный игрок. Заявки отсюда помечаются как тестовые и не регистрируются на сервере.</i>"
+        buttons.append(types.InlineKeyboardButton("🛡 Вернуться в админку", callback_data="player_view_off"))
     inline.add(*buttons)
     if edit_message:
         # Редактируем существующее сообщение вместо нового
-        edit_message_safe(uid, edit_message.message_id, text, reply_markup=inline)
+        edit_message_safe(uid, edit_message.message_id, text, parse_mode='HTML', reply_markup=inline)
     else:
         # Убираем реплай-клавиатуру и отправляем инлайн-меню.
         try:
@@ -944,7 +1128,7 @@ def send_main_menu(uid, edit_message=None):
             bot.delete_message(uid, rm.message_id)
         except Exception:
             pass
-        safe_send(uid, text, reply_markup=inline)
+        safe_send(uid, text, parse_mode='HTML', reply_markup=inline)
 
 
 def cancel_keyboard(label="❌ Отменить заявку"):
@@ -966,6 +1150,7 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
     # Сортируем: сначала старые (в порядке очереди)
     sorted_apps = sorted(pending.items(), key=lambda x: x[1].get('date', ''))
     total = len(sorted_apps)
+    page = max(0, min(page, total - 1))  # коллега мог закрыть заявку, пока листали
     app_id, app = sorted_apps[page]
     try:
         nick = escape_html(app.get('nick', '?'))
@@ -976,8 +1161,13 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
         date_str = app.get('date', '')[:19].replace('T', ' ')
         display_name = f"@{escape_html(username)}" if username and not username.startswith('id') else f"ID {user_id}"
         hidden_pw = '●' * len(app.get('password', ''))
-        text = (
-            f"📩 <b>Заявка {page + 1} из {total}</b>\n"
+        text = f"📩 <b>Заявка {page + 1} из {total}</b>\n"
+        if app.get('test_by'):
+            text += f"🧪 <b>Тестовая</b> (режим игрока, {escape_html(staff_name(app['test_by']))}): на сервере не регистрируется\n"
+        claimer = app_claims.get(str(user_id))
+        if claimer and claimer != chat_id:
+            text += f"⏳ <b>Сейчас рассматривает: {escape_html(staff_name(claimer))}</b>\n"
+        text += (
             f"👤 Ник: <code>{nick}</code>\n"
             f"🔑 Пароль: <code>{hidden_pw}</code>\n"
             f"🧑 Имя TG: {tg_name if tg_name else '—'}\n"
@@ -1008,9 +1198,16 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
             types.InlineKeyboardButton("✅ Одобрить", callback_data=f"approve_{user_id}"),
             types.InlineKeyboardButton("❌ Отклонить", callback_data=f"reject_{user_id}"),
         )
-        markup.add(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{user_id}"))
-        markup.add(types.InlineKeyboardButton("💬 Ответить", callback_data=f"reply_{user_id}"))
-        markup.add(types.InlineKeyboardButton("🔙 Главное меню", callback_data="admin_back"))
+        extra = []
+        if can(chat_id, 'messages'):
+            extra.append(types.InlineKeyboardButton("💬 Написать", callback_data=f"reply_{user_id}"))
+        if can(chat_id, 'block'):
+            extra.append(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{user_id}"))
+        if extra:
+            markup.row(*extra)
+        if can(chat_id, 'journal'):
+            markup.row(types.InlineKeyboardButton("📒 Журнал по игроку", callback_data=f"jr_p_{user_id}_0"))
+        markup.row(types.InlineKeyboardButton("🔙 Главное меню", callback_data="admin_back"))
         if edit_message:
             edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
         else:
@@ -1077,7 +1274,7 @@ def do_nick_search(chat_id, query):
         if r['source'] == 'pending' and r['tg_id']:
             markup.add(types.InlineKeyboardButton(
                 f"📋 Открыть заявку {r['nick']}", callback_data=f"pending_goto_{r['tg_id']}"))
-        elif r['tg_id']:
+        elif r['tg_id'] and can(chat_id, 'messages'):
             markup.add(types.InlineKeyboardButton(
                 f"👤 Профиль {r['nick']}", callback_data=f"user_profile_{r['tg_id']}"))
     markup.add(types.InlineKeyboardButton("🔍 Новый поиск", callback_data="admin_search"))
@@ -1156,6 +1353,8 @@ def show_application_card(chat_id, index, edit_message=None):
         text += f"\n💬 Комментарий игрока: {escape_html(player_comment)}"
     if admin_comment:
         text += f"\n👑 Комментарий админа: {escape_html(admin_comment)}"
+    if len(row) > 8 and row[8]:
+        text += f"\n🛡 Рассмотрел: {escape_html(row[8])}"
     markup = types.InlineKeyboardMarkup(row_width=3)
     nav = []
     if index < total - 1:
@@ -1164,8 +1363,10 @@ def show_application_card(chat_id, index, edit_message=None):
     if index > 0:
         nav.append(types.InlineKeyboardButton("▶️", callback_data=f"apphistory_view_{index - 1}"))
     markup.add(*nav)
-    if str(tg_id).isdigit():
+    if str(tg_id).isdigit() and can(chat_id, 'messages'):
         markup.add(types.InlineKeyboardButton("👤 Профиль и сообщения", callback_data=f"user_profile_{tg_id}"))
+    if str(tg_id).isdigit() and can(chat_id, 'journal'):
+        markup.add(types.InlineKeyboardButton("📒 Журнал по игроку", callback_data=f"jr_p_{tg_id}_0"))
     markup.add(types.InlineKeyboardButton("🔙 К списку", callback_data=f"apphistory_page_{(total - 1 - index) // PROFILES_PER_PAGE}"))
     if edit_message:
         edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
@@ -1314,6 +1515,9 @@ def show_messages_menu(message, page=0, edit_message=None, category='unanswered'
 
     for uid in page_uids:
         label = get_user_label(int(uid)) if uid.isdigit() else uid
+        talker = dialog_admin(int(uid)) if uid.isdigit() else None
+        if talker:
+            label += f" · 💬 {staff_name(talker)}"  # видно, кто из команды уже отвечает
         markup.add(types.InlineKeyboardButton(f"👤 {label}", callback_data=f"user_profile_{uid}"))
 
     nav_buttons = []
@@ -1376,37 +1580,57 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
     if nick:
         lines.append(f"🎮 Игровой ник: <code>{escape_html(nick)}</code>")
 
+    # Заявки игрока: сколько, с какими никами, кто рассмотрел последнюю
+    apps = [r for r in read_approved_csv() if len(r) >= 6 and str(r[2]) == str(uid)]
+    if apps:
+        ok_n = sum(1 for r in apps if r[5] == 'Одобрено')
+        nicks = ", ".join(dict.fromkeys(f"<code>{escape_html(r[3])}</code>" for r in apps))
+        lines.append(f"🗂 Заявок: {len(apps)} (✅ {ok_n}, ❌ {len(apps) - ok_n}), ники: {nicks}")
+        last = apps[-1]
+        decider = f", рассмотрел: {escape_html(last[8])}" if len(last) > 8 and last[8] else ""
+        lines.append(f"    последняя: {last[0][:10]}, {escape_html(last[5])}{decider}")
+    if str(uid) in pending:
+        lines.append("⏳ Сейчас есть заявка на рассмотрении")
+
     # Статистика обращений
     msgs = list(chat_history.get(str(uid), []))
     lines.append(f"\n📨 Сообщений в истории: {len(msgs)}")
     ticket = get_ticket(uid)
     if ticket:
         lines.append(f"🎫 Тикет: #{ticket['id']} (открыт)")
+    talker = dialog_admin(uid)
+    if talker:
+        lines.append(f"💬 Сейчас в диалоге с: <b>{escape_html(staff_name(talker))}</b>")
     is_blocked = uid in blocked_users
     if is_blocked:
-        lines.append("🚫 <b>Заблокирован</b>")
+        lines.append("🚫 <b>Заблокирован в боте</b>")
 
     # Последние сообщения прямо в профиле, чтобы не открывать историю отдельно
     if msgs:
         lines.append("\n<b>Последние сообщения:</b>")
         for x in msgs[-5:]:
-            who = '👤' if x['from'] == 'user' else '👑'
-            text = x['text'] if len(x['text']) <= 500 else x['text'][:500] + '…'
+            who = '👤' if x['from'] == 'user' else f"👑 {escape_html(x.get('by', ''))}".rstrip()
+            text = x['text'] if len(x['text']) <= 300 else x['text'][:300] + '…'
             lines.append(f"{who} <i>{x['time'][5:16]}</i>\n{escape_html(text)}")
 
-    profile_text = "\n".join(lines)
+    profile_text = "\n".join(lines) + ban_report(uid, nick)
 
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(types.InlineKeyboardButton("💬 Ответить на тикет", callback_data=f"reply_{uid}"))
+    B = types.InlineKeyboardButton
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.row(B("💬 Ответить", callback_data=f"reply_{uid}"),
+               B("📜 Вся переписка", callback_data=f"hist_{uid}"))
     if ticket or str(uid) in unread_messages:
-        markup.add(types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"))
-    markup.add(types.InlineKeyboardButton("📜 История сообщений", callback_data=f"hist_{uid}"))
-    if is_blocked:
-        markup.add(types.InlineKeyboardButton("🔓 Разблокировать", callback_data=f"unblock_{uid}"))
-    else:
-        markup.add(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{uid}"))
-    markup.add(types.InlineKeyboardButton("🔙 Назад к сообщениям", callback_data="admin_menu_messages"))
-    markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="admin_back"))
+        markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"))
+    row = []
+    if can(admin_chat_id, 'block'):
+        row.append(B("🔓 Разблокировать", callback_data=f"unblock_{uid}") if is_blocked
+                   else B("🚫 Заблокировать", callback_data=f"block_{uid}"))
+    if can(admin_chat_id, 'journal'):
+        row.append(B("📒 Журнал", callback_data=f"jr_p_{uid}_0"))
+    if row:
+        markup.row(*row)
+    markup.row(B("🔙 К сообщениям", callback_data="admin_menu_messages"),
+               B("🏠 Меню", callback_data="admin_back"))
 
     if len(profile_text) > TG_MAX_LEN:
         profile_text = profile_text[:TG_MAX_LEN - 1] + '…'
@@ -1428,54 +1652,279 @@ def show_blocked_users(chat_id, edit_message=None):
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
 def show_admin_controls(chat_id, edit_message=None):
+    B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup(row_width=1)
-    if registration_paused:
-        markup.add(types.InlineKeyboardButton("▶️ Возобновить регистрацию", callback_data="admin_resume"))
-    else:
-        markup.add(types.InlineKeyboardButton("⏸️ Приостановить регистрацию", callback_data="admin_pause"))
-    markup.add(types.InlineKeyboardButton("📊 Статус", callback_data="admin_status"))
-    markup.add(types.InlineKeyboardButton("🚫 Заблокированные", callback_data="show_blocked"))
-    markup.add(types.InlineKeyboardButton("⏰ Сбросить таймеры заявок", callback_data="admin_resettimers"))
-    markup.add(types.InlineKeyboardButton("🧹 Очистить статистику", callback_data="admin_clearstats"))
-    markup.add(types.InlineKeyboardButton("🗑 Очистить историю диалогов", callback_data="admin_cleardialogs"))
-    markup.add(types.InlineKeyboardButton("📖 Инструкция", callback_data="admin_help"))
-    markup.add(types.InlineKeyboardButton("🔙 Главное меню", callback_data="admin_back"))
+    if can(chat_id, 'controls'):
+        if registration_paused:
+            markup.add(B("▶️ Возобновить регистрацию", callback_data="admin_resume"))
+        else:
+            markup.add(B("⏸️ Приостановить регистрацию", callback_data="admin_pause"))
+    markup.add(B("📊 Статус", callback_data="admin_status"))
+    if can(chat_id, 'block'):
+        markup.add(B("🚫 Заблокированные в боте", callback_data="show_blocked"))
+    if can(chat_id, 'controls'):
+        markup.add(B("⏰ Сбросить таймеры заявок", callback_data="admin_resettimers"))
+        markup.add(B("🧹 Очистить статистику", callback_data="admin_clearstats"))
+        markup.add(B("🗑 Очистить историю диалогов", callback_data="admin_cleardialogs"))
+    markup.add(B("📖 Инструкция", callback_data="admin_help"))
+    markup.add(B("🔙 Главное меню", callback_data="admin_back"))
     text = "⚙️ Управление ботом"
     if edit_message:
         edit_message_safe(chat_id, edit_message.message_id, text, reply_markup=markup)
     else:
         safe_send(chat_id, text, reply_markup=markup)
 
-def end_dialog(chat_obj, user_initiated=False):
-    global admin_reply_to
-    if admin_reply_to:
-        target = admin_reply_to
-        admin_reply_to = None
-        label = enrich_user_label(target)
-        close_ticket(target)
-        if user_initiated:
-            safe_send(ADMIN_ID, f"🔔 Пользователь {label} завершил диалог (тикет закрыт).")
-        else:
-            safe_send(ADMIN_ID, f"🔇 Диалог с {label} завершён.")
-        # Discord уведомление
-        try:
-            tchat = bot.get_chat(target)
-            t_nick = ""
-            for app in pending.values():
-                if str(app.get('user_id')) == str(target):
-                    t_nick = app.get('nick', '')
-                    break
-            discord_dialog_closed(t_nick or f"ID {target}", target, tchat.username or "", by_user=user_initiated)
-        except Exception:
-            pass
-        send_admin_menu(ADMIN_ID)
-        try:
-            safe_send(target, "🔇 Диалог с администратором завершён.",
-                      reply_markup=main_keyboard(is_admin=False, user_id=target))
-        except: pass
+def end_dialog(admin_id=None, player_id=None, user_initiated=False, quiet_admin=False):
+    """Завершает диалог. Можно указать админа или игрока: второго бот найдёт сам."""
+    if admin_id is None and player_id is not None:
+        admin_id = dialog_admin(player_id)
+    target = dialogs.pop(admin_id, None) if admin_id is not None else None
+    if not target:
+        if admin_id is not None and not quiet_admin:
+            safe_send(admin_id, "Нет активного диалога.")
+            send_admin_menu(admin_id)
+        return
+    label = enrich_user_label(target)
+    close_ticket(target)
+    if user_initiated:
+        audit(target, 'ticket_closed_by_player', target, get_user_label(target), f"диалог вёл {staff_name(admin_id)}")
+        safe_send(admin_id, f"🔔 Пользователь {label} завершил диалог (тикет закрыт).")
     else:
-        safe_send(ADMIN_ID, "Нет активного диалога.")
-        send_admin_menu(ADMIN_ID)
+        audit(admin_id, 'dialog_closed', target, get_user_label(target))
+        if not quiet_admin:
+            safe_send(admin_id, f"🔇 Диалог с {label} завершён.")
+    try:
+        tchat = bot.get_chat(target)
+        t_nick = next((app.get('nick', '') for app in pending.values() if str(app.get('user_id')) == str(target)), "")
+        discord_dialog_closed(t_nick or f"ID {target}", target, tchat.username or "", by_user=user_initiated,
+                              admin_name=staff_name(admin_id))
+    except Exception:
+        pass
+    if not quiet_admin:
+        send_admin_menu(admin_id)
+    safe_send(target, "🔇 Диалог с администратором завершён.",
+              reply_markup=main_keyboard(is_admin=False, user_id=target))
+
+# Какое право нужно для кнопки: первый подходящий префикс (порядок важен: approved_ раньше approve_)
+CALLBACK_PERMS = [
+    ('approved_page_', 'stats'), ('rejected_page_', 'stats'),
+    ('approve_', 'apps'), ('reject_', 'apps'), ('admin_menu_applications', 'apps'), ('pending_', 'apps'),
+    ('admin_menu_messages', 'messages'), ('msg_', 'messages'), ('user_profile_', 'messages'),
+    ('admin_close_ticket_', 'messages'), ('reply_', 'messages'), ('hist_', 'messages'),
+    ('admin_menu_stats', 'stats'), ('back_to_stats', 'stats'), ('show_approved', 'stats'),
+    ('show_rejected', 'stats'), ('show_apphistory', 'stats'), ('apphistory_', 'stats'),
+    ('admin_search', 'search'),
+    ('show_blocked', 'block'), ('block_', 'block'), ('unblock_', 'block'),
+    ('admin_pause', 'controls'), ('admin_resume', 'controls'), ('admin_clearstats', 'controls'),
+    ('admin_resettimers', 'controls'), ('admin_cleardialogs', 'controls'), ('confirm_', 'controls'),
+    ('jr_', 'journal'), ('staff_', 'staff'),
+]
+
+def tg_display_name(tg_id):
+    """Имя человека из Telegram для списка команды: «Имя @username»."""
+    try:
+        chat = bot.get_chat(tg_id)
+        name = " ".join(p for p in (chat.first_name, chat.last_name) if p)
+        if chat.username:
+            name = f"{name} @{chat.username}".strip()
+        return name or f"ID {tg_id}"
+    except Exception:
+        return f"ID {tg_id}"
+
+def admin_help_text(uid):
+    role = staff.get(uid, {}).get('role')
+    lines = ["📖 <b>Инструкция</b>", f"Ваша роль: <b>{ROLE_NAMES.get(role, '')}</b>\n"]
+    lines.append("• <b>Заявки:</b> «Одобрить» или «Отклонить», затем комментарий или «Пропустить». "
+                 "Пока вы пишете комментарий, заявка закреплена за вами, коллеги её не возьмут.")
+    lines.append("• Решение видят все: у коллег уведомление о заявке помечается «Одобрено: имя».")
+    if can(uid, 'messages'):
+        lines.append("• <b>Сообщения:</b> «Ответить» открывает диалог. Игрок видит «Администрация», ваше имя ему не показывается. "
+                     "«Закрыть без ответа» убирает обращение из непрочитанных.")
+    if can(uid, 'block'):
+        lines.append("• <b>Блокировка в боте:</b> кнопка «🚫 Заблокировать» или /block &lt;ID&gt; &lt;причина&gt;, снять: /unblock &lt;ID&gt;.")
+    lines.append("• <b>Посмотреть как игрок:</b> бот выглядит как у обычного игрока. Заявки оттуда тестовые, на сервере не регистрируются. "
+                 "Вернуться: кнопка «🛡 Вернуться в админку» или /admin.")
+    if can(uid, 'journal'):
+        lines.append("• <b>Журнал:</b> все действия команды и игроков, фильтр по админу и по игроку.")
+    if can(uid, 'staff'):
+        lines.append("• <b>Команда:</b> выдать доступ по Telegram ID (человек узнаёт его командой /id), сменить роль, снять доступ.")
+    return "\n".join(lines)
+
+# ---------- Журнал ----------
+JOURNAL_PER_PAGE = 8
+
+def resolve_player(query):
+    """Telegram ID игрока по нику или ID: из заявок, истории и журнала."""
+    q = query.strip()
+    if q.isdigit():
+        return int(q)
+    ql = q.lower()
+    for app in pending.values():
+        if app.get('nick', '').lower() == ql:
+            return int(app['user_id'])
+    for row in reversed(read_approved_csv()):
+        if len(row) > 3 and row[3].lower() == ql and row[2].isdigit():
+            return int(row[2])
+    rows = db_exec("SELECT target_id FROM audit WHERE LOWER(target_nick)=? AND target_id IS NOT NULL ORDER BY id DESC LIMIT 1",
+                   (ql,), fetch=True)
+    return rows[0][0] if rows else None
+
+def _journal_line(ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details):
+    when = f"{ts[8:10]}.{ts[5:7]} {ts[11:16]}"
+    if actor_role == 'system':
+        who = "🤖 Бот"
+    elif actor_role == 'player':
+        who = "👤 Игрок"
+    else:
+        who = f"🛡 {escape_html(actor_name or '')}"
+    what = ACTION_NAMES.get(action, action)
+    target = ""
+    if target_id and not (actor_role == 'player' and actor_id == target_id and not target_nick):
+        target = f" · <code>{escape_html(target_nick)}</code>" if target_nick else ""
+        target += f" (ID {target_id})"
+    line = f"<b>{when}</b> {who}\n{what}{target}"
+    if details:
+        d = details if len(details) <= 160 else details[:160] + '…'
+        line += f"\n   <i>{escape_html(d)}</i>"
+    return line
+
+def show_journal(chat_id, mode, value, page, edit_message=None):
+    """mode: a — все действия, s — действия члена команды value, p — всё по игроку value."""
+    where, params, title = "", (), "все действия"
+    if mode == 's':
+        where, params = "WHERE actor_id=?", (value,)
+        title = f"действия: {escape_html(staff_name(value) if value in staff else (db_exec('SELECT actor_name FROM audit WHERE actor_id=? ORDER BY id DESC LIMIT 1', (value,), fetch=True) or [['ID ' + str(value)]])[0][0])}"
+    elif mode == 'p':
+        where, params = "WHERE target_id=? OR actor_id=?", (value, value)
+        nick = next((r[3] for r in reversed(read_approved_csv()) if len(r) > 3 and r[2] == str(value)), '')
+        title = f"игрок {escape_html(nick) + ' ' if nick else ''}(ID {value})"
+    try:
+        total = db_exec(f"SELECT COUNT(*) FROM audit {where}", params, fetch=True)[0][0]
+        pages = max(1, (total + JOURNAL_PER_PAGE - 1) // JOURNAL_PER_PAGE)
+        page = max(0, min(page, pages - 1))
+        rows = db_exec(f"SELECT ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details FROM audit {where} "
+                       f"ORDER BY id DESC LIMIT ? OFFSET ?", params + (JOURNAL_PER_PAGE, page * JOURNAL_PER_PAGE), fetch=True)
+    except Exception as e:
+        log_error(e)
+        safe_send(chat_id, f"⚠️ Не удалось прочитать журнал: {escape_html(e)}", parse_mode='HTML')
+        return
+    head = f"📒 <b>Журнал</b> · {title}\nЗаписей: {total}, страница {page + 1} из {pages}, новые сверху"
+    body = "\n\n".join(_journal_line(*r) for r in rows) if rows else "<i>Записей пока нет.</i>"
+    text = f"{head}\n\n{body}"
+    if len(text) > TG_MAX_LEN:
+        text = text[:TG_MAX_LEN - 1] + '…'
+    B = types.InlineKeyboardButton
+    markup = types.InlineKeyboardMarkup()
+    nav = []
+    if page > 0:
+        nav.append(B("◀️ Новее", callback_data=f"jr_{mode}_{value}_{page - 1}"))
+    if page < pages - 1:
+        nav.append(B("Старее ▶️", callback_data=f"jr_{mode}_{value}_{page + 1}"))
+    if nav:
+        markup.row(*nav)
+    markup.row(B("👥 По админу", callback_data="jr_pick"), B("🔍 По игроку", callback_data="jr_ask"))
+    row = []
+    if mode != 'a':
+        row.append(B("📒 Все действия", callback_data="jr_a_0_0"))
+    if mode == 'p' and can(chat_id, 'messages'):
+        row.append(B("👤 Профиль", callback_data=f"user_profile_{value}"))
+    if mode == 's' and value in staff and can(chat_id, 'staff') and value != ADMIN_ID:
+        row.append(B("🛡 Карточка", callback_data=f"staff_card_{value}"))
+    if row:
+        markup.row(*row)
+    markup.row(B("🏠 Меню", callback_data="admin_back"))
+    if edit_message:
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
+    else:
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
+
+def show_journal_staff_pick(chat_id, edit_message):
+    """Выбор члена команды для фильтра журнала (и тех, у кого доступ уже сняли)."""
+    people = {a: s['name'] for a, s in staff.items()}
+    for actor_id, name in db_exec("SELECT DISTINCT actor_id, actor_name FROM audit WHERE actor_role IN ('owner','admin','helper')", fetch=True):
+        people.setdefault(actor_id, f"{name} (доступ снят)")
+    markup = types.InlineKeyboardMarkup()
+    for actor_id, name in sorted(people.items(), key=lambda x: x[1].lower()):
+        markup.row(types.InlineKeyboardButton(f"🛡 {name}", callback_data=f"jr_s_{actor_id}_0"))
+    markup.row(types.InlineKeyboardButton("🔙 Журнал", callback_data="jr_a_0_0"))
+    edit_message_safe(chat_id, edit_message.message_id, "📒 Чьи действия показать?", reply_markup=markup)
+
+# ---------- Команда ----------
+def show_staff_list(chat_id, edit_message=None):
+    B = types.InlineKeyboardButton
+    groups = {ROLE_OWNER: [], ROLE_ADMIN: [], ROLE_HELPER: []}
+    for a, s in staff.items():
+        groups.setdefault(s['role'], []).append((a, s['name']))
+    lines = ["👥 <b>Команда</b>\n"]
+    lines.append("👑 Владелец: " + ", ".join(escape_html(n) for _, n in groups[ROLE_OWNER]))
+    lines.append("🛡 Админы: " + (", ".join(escape_html(n) for _, n in groups[ROLE_ADMIN]) or "—"))
+    lines.append("🤝 Помощники: " + (", ".join(escape_html(n) for _, n in groups[ROLE_HELPER]) or "—"))
+    lines.append("\n<b>Что может роль</b>\n"
+                 "• Админ: заявки, сообщения, блокировки в боте, статистика, поиск\n"
+                 "• Помощник: только заявки и поиск\n"
+                 "• Журнал, команда и опасные кнопки есть только у владельца")
+    markup = types.InlineKeyboardMarkup()
+    for role in (ROLE_ADMIN, ROLE_HELPER):
+        for a, n in sorted(groups[role], key=lambda x: x[1].lower()):
+            markup.row(B(f"{'🛡' if role == ROLE_ADMIN else '🤝'} {n}", callback_data=f"staff_card_{a}"))
+    markup.row(B("➕ Добавить", callback_data="staff_add"))
+    markup.row(B("🔙 Меню", callback_data="admin_back"))
+    text = "\n".join(lines)
+    if edit_message:
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
+    else:
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
+
+def show_staff_card(chat_id, member, edit_message=None):
+    if member not in staff:
+        show_staff_list(chat_id, edit_message=edit_message)
+        return
+    B = types.InlineKeyboardButton
+    s = staff[member]
+    info = db_exec("SELECT added_by, added_at FROM staff WHERE tg_id=?", (member,), fetch=True)
+    stats = db_exec("SELECT COUNT(*), MAX(ts), SUM(action='approved'), SUM(action='rejected') FROM audit WHERE actor_id=?",
+                    (member,), fetch=True)[0]
+    lines = [f"🛡 <b>{escape_html(s['name'])}</b>",
+             f"Роль: <b>{ROLE_NAMES.get(s['role'], s['role'])}</b>",
+             f"TG ID: <code>{member}</code>"]
+    if info and info[0][1]:
+        lines.append(f"Добавлен: {info[0][1]}, выдал: {escape_html(staff_name(info[0][0]))}")
+    lines.append(f"\nДействий в журнале: {stats[0]}, одобрил: {stats[2] or 0}, отклонил: {stats[3] or 0}")
+    if stats[1]:
+        lines.append(f"Последнее действие: {stats[1][:16]}")
+    if member in dialogs:
+        lines.append(f"💬 Сейчас в диалоге с {escape_html(get_user_label(dialogs[member]))}")
+    markup = types.InlineKeyboardMarkup()
+    if s['role'] == ROLE_ADMIN:
+        markup.row(B("🤝 Сделать помощником", callback_data=f"staff_role_{member}_{ROLE_HELPER}"))
+    elif s['role'] == ROLE_HELPER:
+        markup.row(B("🛡 Сделать админом", callback_data=f"staff_role_{member}_{ROLE_ADMIN}"))
+    markup.row(B("📒 Его действия", callback_data=f"jr_s_{member}_0"),
+               B("🗑 Снять доступ", callback_data=f"staff_del_{member}"))
+    markup.row(B("🔙 К команде", callback_data="staff_list"))
+    text = "\n".join(lines)
+    if edit_message:
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
+    else:
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
+
+def show_staff_add_role(chat_id, new_id):
+    if new_id in staff:
+        safe_send(chat_id, "Этот человек уже в команде.")
+        show_staff_card(chat_id, new_id)
+        return
+    name = tg_display_name(new_id)
+    warn = ""
+    if name == f"ID {new_id}":
+        warn = "\n\n⚠️ Бот не знает этого человека: пусть сначала напишет боту /start, иначе бот не сможет присылать ему уведомления."
+    if new_id in blocked_users:
+        warn += "\n\n⚠️ Он заблокирован в боте. При выдаче доступа блокировка снимется."
+    markup = types.InlineKeyboardMarkup()
+    markup.row(types.InlineKeyboardButton("🛡 Админ", callback_data=f"staff_new_{new_id}_{ROLE_ADMIN}"),
+               types.InlineKeyboardButton("🤝 Помощник", callback_data=f"staff_new_{new_id}_{ROLE_HELPER}"))
+    markup.row(types.InlineKeyboardButton("❌ Отмена", callback_data="staff_list"))
+    safe_send(chat_id, f"➕ Выдать доступ: <b>{escape_html(name)}</b> (ID <code>{new_id}</code>)\nВыберите роль:{warn}",
+              parse_mode='HTML', reply_markup=markup)
 
 # ---------- Справочник "О сервере" ----------
 
@@ -1630,27 +2079,46 @@ def show_handbook_chapter(chat_id, chapter_key, edit_message=None):
 
 
 # ---------- Команды ----------
+def set_paused(actor, value):
+    global registration_paused
+    registration_paused = value
+    config['paused'] = value
+    save_json(CONFIG_FILE, config)
+    audit(actor, 'paused' if value else 'resumed')
+
+def do_unblock(actor, tid):
+    blocked_users.discard(tid)
+    save_json(BLOCKED_FILE, list(blocked_users))
+    audit(actor, 'unblocked', tid, get_user_label(tid))
+    safe_send(tid, "✅ Вы были разблокированы администратором. Можете снова пользоваться ботом.",
+              reply_markup=main_keyboard(is_admin=False, user_id=tid))
+
+@bot.message_handler(commands=['id'])
+def id_cmd(m):
+    # Нужен, чтобы будущий админ узнал свой ID и передал владельцу
+    safe_send(m.chat.id, f"Ваш Telegram ID: <code>{m.chat.id}</code>", parse_mode='HTML')
+
+@bot.message_handler(commands=['admin'])
+def admin_cmd(m):
+    if m.chat.id in staff:
+        player_view.discard(m.chat.id)
+        send_admin_menu(m.chat.id)
+
 @bot.message_handler(commands=['pause'])
 def pause_reg(m):
-    if m.chat.id != ADMIN_ID: return
-    global registration_paused
-    registration_paused = True
-    config['paused'] = True
-    save_json(CONFIG_FILE, config)
+    if not can(m.chat.id, 'controls'): return
+    set_paused(m.chat.id, True)
     safe_send(m.chat.id, "⏸️ Регистрация приостановлена.")
 
 @bot.message_handler(commands=['resume'])
 def resume_reg(m):
-    if m.chat.id != ADMIN_ID: return
-    global registration_paused
-    registration_paused = False
-    config['paused'] = False
-    save_json(CONFIG_FILE, config)
+    if not can(m.chat.id, 'controls'): return
+    set_paused(m.chat.id, False)
     safe_send(m.chat.id, "▶️ Регистрация возобновлена.")
 
 @bot.message_handler(commands=['block'])
 def block_user(m):
-    if m.chat.id != ADMIN_ID: return
+    if not can(m.chat.id, 'block'): return
     parts = m.text.strip().split()
     if len(parts) < 2:
         safe_send(m.chat.id, "Использование: /block <user_id> [причина]")
@@ -1660,34 +2128,40 @@ def block_user(m):
     except ValueError:
         safe_send(m.chat.id, "ID пользователя должно быть числом.")
         return
+    if tid in staff:
+        safe_send(m.chat.id, "Это член команды. Сначала снимите доступ в разделе «Команда».")
+        return
     reason = ' '.join(parts[2:]) if len(parts) > 2 else ''
-    process_block(str(tid), reason, m)
+    process_block(str(tid), reason, m, actor=m.chat.id)
 
 @bot.message_handler(commands=['unblock'])
 def unblock_user(m):
-    if m.chat.id != ADMIN_ID: return
+    if not can(m.chat.id, 'block'): return
     try:
         tid = int(m.text.split()[1])
     except:
         safe_send(m.chat.id, "/unblock <id>"); return
-    blocked_users.discard(tid)
-    save_json(BLOCKED_FILE, list(blocked_users))
+    do_unblock(m.chat.id, tid)
     safe_send(m.chat.id, f"✅ {tid} разблокирован.")
-    try:
-        safe_send(tid, "✅ Вы были разблокированы администратором. Можете снова пользоваться ботом.",
-                  reply_markup=main_keyboard(is_admin=False, user_id=tid))
-    except: pass
+
+def status_text(aid):
+    my = dialogs.get(aid)
+    lines = [f"📌 Регистрация: {'приостановлена' if registration_paused else 'активна'}",
+             f"🚫 Заблокировано в боте: {len(blocked_users)}",
+             f"📨 Ваш диалог: {get_user_label(my) if my else 'нет'}"]
+    others = [f"{staff_name(a)} ↔ {get_user_label(p)}" for a, p in dialogs.items() if a != aid]
+    if others:
+        lines.append("🗣 Диалоги коллег: " + "; ".join(others))
+    return "\n".join(lines)
 
 @bot.message_handler(commands=['status'])
 def status_cmd(m):
-    if m.chat.id != ADMIN_ID: return
-    safe_send(m.chat.id, f"📌 Регистрация: {'приостановлена' if registration_paused else 'активна'}\n"
-                         f"🚫 Заблокировано: {len(blocked_users)}\n"
-                         f"📨 Диалог: {get_user_label(admin_reply_to) if admin_reply_to else 'нет'}")
+    if not is_staff(m.chat.id): return
+    safe_send(m.chat.id, status_text(m.chat.id))
 
 @bot.message_handler(commands=['history'])
 def history_cmd(m):
-    if m.chat.id != ADMIN_ID: return
+    if not can(m.chat.id, 'messages'): return
     try:
         target = int(m.text.split()[1])
     except:
@@ -1696,25 +2170,24 @@ def history_cmd(m):
     if not msgs:
         safe_send(m.chat.id, "История пуста."); return
     txt = f"📜 История с {enrich_user_label(target)}:\n" + "\n".join(
-        f"{'👤' if x['from']=='user' else '👑'} {x['time']}: {x['text']}" for x in msgs)
-    safe_send(m.chat.id, txt)
+        f"{'👤' if x['from']=='user' else '👑 ' + x.get('by', '')} {x['time']}: {x['text']}" for x in msgs)
+    safe_send_long(m.chat.id, txt)
 
 @bot.message_handler(commands=['stopreply'])
 def stopreply_cmd(m):
-    if m.chat.id != ADMIN_ID: return
-    end_dialog(m)
+    if not is_staff(m.chat.id): return
+    end_dialog(admin_id=m.chat.id)
 
 # ---------- Старт ----------
 @bot.message_handler(commands=['start'])
 def start_cmd(m):
     if not check_rate_limit(m.chat.id): return
-    is_admin = m.chat.id == ADMIN_ID
     if m.chat.id in blocked_users:
         try:
             bot.send_message(m.chat.id, "🚫 Вы заблокированы и не можете использовать бота.", reply_markup=types.ReplyKeyboardRemove())
         except: pass
         return
-    if is_admin:
+    if is_staff(m.chat.id):
         send_admin_menu(m.chat.id)
     else:
         send_main_menu(m.chat.id)
@@ -1723,18 +2196,17 @@ def start_cmd(m):
 @bot.message_handler(content_types=['text'])
 def handle_all_messages(m):
     if not check_rate_limit(m.chat.id): return
-    global admin_reply_to
     uid, text = m.chat.id, m.text.strip()
 
     if uid in blocked_users: return
 
     # Возврат в главное меню (для пользователя)
-    if text == "🏠 Главное меню" and uid != ADMIN_ID:
+    if text == "🏠 Главное меню" and not is_staff(uid):
         step = user_states.get(uid, {}).get('step')
         text_input_steps = {'nick', 'password', 'comment', 'support_nick', 'support_text', 'guest_message'}
         # Если пользователь в активном диалоге — кнопка не должна была быть видна,
         # но на всякий случай: не прерываем диалог, напоминаем
-        if admin_reply_to == uid:
+        if dialog_admin(uid):
             safe_send(uid, "⚠️ Сейчас идёт диалог с администратором. Чтобы выйти — нажмите «❌ Завершить диалог».",
                       reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
@@ -1744,7 +2216,7 @@ def handle_all_messages(m):
             del user_states[uid]
         send_main_menu(uid)
         return
-    if text == "❌ Отменить заявку":
+    if text == "❌ Отменить заявку" and not is_staff(uid):
         cancelled = False
         nick_cancelled = None
         # Отмена на этапе заполнения (до подтверждения)
@@ -1756,33 +2228,35 @@ def handle_all_messages(m):
                 cancelled = True
         # Отмена уже поданной заявки (находится в pending)
         if not cancelled and str(uid) in pending:
-            app = pending[str(uid)]
+            app = pending.pop(str(uid))
             nick_cancelled = app.get('nick', '?')
-            del pending[str(uid)]
             save_json(PENDING_FILE, pending)
+            audit(uid, 'app_cancelled', uid, nick_cancelled)
             # Сбрасываем таймер чтобы игрок мог подать заново немедленно
             if str(uid) in last_application:
                 del last_application[str(uid)]
                 save_json(LAST_APPLICATION_FILE, last_application)
-            # Если админ как раз обрабатывает эту заявку — прерываем операцию
-            if ADMIN_ID in admin_states and admin_states[ADMIN_ID].get('user_id') == str(uid):
-                del admin_states[ADMIN_ID]
-                safe_send(ADMIN_ID,
+            close_notices('app', uid, f"↩️ <b>Игрок отозвал заявку</b> [{datetime.now().strftime('%H:%M')}]")
+            # Если админ как раз пишет решение по этой заявке — прерываем
+            claimer = app_claims.pop(str(uid), None)
+            if claimer is not None and admin_states.get(claimer, {}).get('user_id') == str(uid):
+                state = admin_states.pop(claimer)
+                if state.get('prompt_msg_id'):
+                    try:
+                        bot.delete_message(claimer, state['prompt_msg_id'])
+                    except Exception:
+                        pass
+                safe_send(claimer,
                     f"⚠️ <b>Заявка отменена игроком!</b>\n\n"
                     f"Игрок <code>{escape_html(nick_cancelled)}</code> (ID: <code>{uid}</code>) "
-                    f"отозвал свою заявку пока вы вводили комментарий.\n"
-                    f"Операция одобрения/отклонения прервана.",
+                    f"отозвал свою заявку, пока вы вводили комментарий. Решение не сохранено.",
                     parse_mode='HTML')
-                send_admin_menu(ADMIN_ID)
-                flush_admin_notifications()
-            else:
-                label = enrich_user_label(uid)
-                notify_admin(
-                    f"🔔 <b>Заявка отозвана игроком</b>\n\n"
-                    f"Игрок {label} (<code>{escape_html(nick_cancelled)}</code>) отменил свою заявку.",
-                    parse_mode='HTML')
-                discord_application_cancelled(nick_cancelled, uid, app.get('username', ''), app.get('tg_name', ''))
-                send_admin_menu(ADMIN_ID)
+                flush_admin_notifications(claimer)
+            label = enrich_user_label(uid)
+            notify_staff('apps',
+                f"🔔 <b>Заявка отозвана игроком</b>\n\n"
+                f"Игрок {escape_html(label)} (<code>{escape_html(nick_cancelled)}</code>) отменил свою заявку.")
+            discord_application_cancelled(nick_cancelled, uid, app.get('username', ''), app.get('tg_name', ''))
             cancelled = True
         if cancelled:
             safe_send(uid, "❌ Заявка отменена.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
@@ -1790,60 +2264,79 @@ def handle_all_messages(m):
         # Кнопка нажата но нет активной заявки
         safe_send(uid, "У вас нет активной заявки.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
-    if uid in user_states:
+    if uid in user_states and not is_staff(uid):
         step = user_states[uid].get('step')
         if text == "❌ Отменить" and step in ['support_nick','support_text','guest_message']:
             del user_states[uid]
             safe_send(uid, "❌ Отменено.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
 
-    # Админ вводит комментарий/причину
-    if uid == ADMIN_ID and ADMIN_ID in admin_states:
-        state = admin_states[ADMIN_ID]
-        if state.get('action') == 'search':
-            query = text.strip().lower()
-            del admin_states[ADMIN_ID]
-            do_nick_search(uid, query)
+    # Админ вводит комментарий, причину, поиск и т.п.
+    if is_staff(uid) and uid in admin_states:
+        state = admin_states[uid]
+        action = state.get('action')
+        if action == 'search':
+            del admin_states[uid]
+            do_nick_search(uid, text.strip().lower())
+            flush_admin_notifications(uid)
             return
-        if state.get('action') in ('approve', 'reject'):
-            action_label = 'одобрению' if state['action'] == 'approve' else 'отклонению'
-            # Удаляем сообщение с просьбой ввести комментарий
+        if action == 'journal_player':
+            del admin_states[uid]
+            query = text.strip()
+            target = resolve_player(query)
+            if target is None:
+                safe_send(uid, f"🔍 Игрок «{escape_html(query)}» не найден ни в заявках, ни в журнале.", parse_mode='HTML')
+                show_journal(uid, 'a', 0, 0)
+            else:
+                show_journal(uid, 'p', target, 0)
+            flush_admin_notifications(uid)
+            return
+        if action == 'staff_add':
+            del admin_states[uid]
+            try:
+                new_id = int(text.strip())
+            except ValueError:
+                safe_send(uid, "❌ Нужен числовой Telegram ID. Человек может узнать его командой /id в этом боте.")
+                show_staff_list(uid)
+                return
+            show_staff_add_role(uid, new_id)
+            flush_admin_notifications(uid)
+            return
+        if action in ('approve', 'reject'):
+            del admin_states[uid]
             if state.get('prompt_msg_id'):
                 try:
-                    bot.delete_message(chat_id=ADMIN_ID, message_id=state['prompt_msg_id'])
+                    bot.delete_message(chat_id=uid, message_id=state['prompt_msg_id'])
                 except Exception:
                     pass
-            # Удаляем само сообщение-комментарий администратора
             try:
-                bot.delete_message(chat_id=m.chat.id, message_id=m.message_id)
+                bot.delete_message(chat_id=uid, message_id=m.message_id)
             except Exception:
                 pass
-            process_admin_decision(state['action'], state['user_id'],
-                                   text if text != '-' else '', state)
-            del admin_states[ADMIN_ID]
-            flush_admin_notifications()
+            state['prompt_msg_id'] = None
+            process_admin_decision(action, state['user_id'], text if text != '-' else '', state)
+            flush_admin_notifications(uid)
             return
-        if state.get('action') == 'block':
-            target_id = state['user_id']
-            reason = text if text != '-' else ''
-            process_block(target_id, reason, m)
-            del admin_states[ADMIN_ID]
-            flush_admin_notifications()
+        if action == 'block':
+            del admin_states[uid]
+            process_block(state['user_id'], text if text != '-' else '', m, actor=uid)
+            flush_admin_notifications(uid)
             return
 
-    # Админ в диалоге: любой текст — сообщение пользователю
-    if uid == ADMIN_ID and admin_reply_to is not None:
-        try:
-            safe_send(admin_reply_to, f"📨 <b>Сообщение от администрации:</b>\n\n{escape_html(text)}", parse_mode='HTML')
-            add_to_history(admin_reply_to, text, from_user=False)
-            clear_unread(admin_reply_to)
-        except Exception as e:
-            log_error(e)
-            safe_send(uid, f"❌ Ошибка отправки: {e}")
+    # Админ в диалоге: любой текст — сообщение игроку (игрок видит «администрация», без имени)
+    if is_staff(uid) and uid in dialogs:
+        target = dialogs[uid]
+        sent = safe_send(target, f"📨 <b>Сообщение от администрации:</b>\n\n{escape_html(text)}", parse_mode='HTML')
+        if sent:
+            add_to_history(target, text, from_user=False, by=uid)
+            clear_unread(target)
+            audit(uid, 'msg_to_player', target, get_user_label(target), text)
+        else:
+            safe_send(uid, "❌ Сообщение не доставлено: возможно, игрок заблокировал бота.")
         return
 
     # Админ без диалога — любой текст возвращает в панель
-    if uid == ADMIN_ID:
+    if is_staff(uid):
         send_admin_menu(uid)
         return
 
@@ -1862,13 +2355,7 @@ def handle_all_messages(m):
             add_to_history(uid, f"Игровой ник: {nick}\nСообщение: {text_msg}", from_user=True)
             add_unread(uid)
             tid = open_ticket(uid, message_text=text_msg, nick=nick)
-            notify = format_admin_notify(m.from_user, text_msg, extra=f"Игровой ник: <code>{escape_html(nick)}</code>\n", ticket_id=tid)
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("💬 Ответить", callback_data=f"reply_{uid}"),
-                       types.InlineKeyboardButton("📜 История", callback_data=f"hist_{uid}"))
-            markup.add(types.InlineKeyboardButton("🔒 Закрыть тикет", callback_data=f"admin_close_ticket_{uid}"),
-                       types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{uid}"))
-            notify_admin(notify, parse_mode='HTML', reply_markup=markup)
+            notify_new_ticket(m.from_user, text_msg, tid, nick=nick)
             discord_player_message(m.from_user, uid, nick, text_msg)
             del user_states[uid]
             safe_send(uid, f"✅ Ваше обращение отправлено администратору (тикет #{tid}). Ожидайте ответа.")
@@ -1879,13 +2366,7 @@ def handle_all_messages(m):
             add_to_history(uid, f"Гость: {text_msg}", from_user=True)
             add_unread(uid)
             tid = open_ticket(uid, message_text=text_msg)
-            notify = format_admin_notify(m.from_user, text_msg, ticket_id=tid)
-            markup = types.InlineKeyboardMarkup()
-            markup.add(types.InlineKeyboardButton("💬 Ответить", callback_data=f"reply_{uid}"),
-                       types.InlineKeyboardButton("📜 История", callback_data=f"hist_{uid}"))
-            markup.add(types.InlineKeyboardButton("🔒 Закрыть тикет", callback_data=f"admin_close_ticket_{uid}"),
-                       types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{uid}"))
-            notify_admin(notify, parse_mode='HTML', reply_markup=markup)
+            notify_new_ticket(m.from_user, text_msg, tid)
             discord_guest_message(m.from_user, uid)
             del user_states[uid]
             safe_send(uid, f"✅ Ваше сообщение отправлено администратору (тикет #{tid}). Ожидайте ответа.")
@@ -1951,13 +2432,13 @@ def handle_all_messages(m):
     if text == "📖 О сервере":
         show_handbook_index(uid)
         return
-    if text == "❌ Завершить диалог" and uid != ADMIN_ID:
-        if admin_reply_to == uid:
-            end_dialog(m, user_initiated=True)
+    if text == "❌ Завершить диалог" and not is_staff(uid):
+        if dialog_admin(uid):
+            end_dialog(player_id=uid, user_initiated=True)
         else:
             safe_send(uid, "Нет активного диалога.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
-    if text == "📋 Мои обращения" and uid != ADMIN_ID:
+    if text == "📋 Мои обращения" and not is_staff(uid):
         ticket = get_ticket(uid)
         if ticket:
             markup = types.InlineKeyboardMarkup()
@@ -1967,11 +2448,12 @@ def handle_all_messages(m):
             safe_send(uid, "У вас нет открытых обращений.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         return
 
-    # Пользователь в активном диалоге с админом — пересылаем сообщение
-    if admin_reply_to == uid:
+    # Пользователь в активном диалоге с админом — пересылаем сообщение его админу
+    talker = dialog_admin(uid)
+    if talker:
         label = enrich_user_label(uid)
         add_to_history(uid, text, from_user=True)
-        notify_admin(f"👤 {label}: {text}")
+        notify_staff(None, f"👤 {escape_html(label)}:\n{escape_html(text)}", only=[talker])
         return
 
     # Если у пользователя открытый тикет — не создаём новый, просим ждать
@@ -1991,37 +2473,43 @@ def handle_photo(m):
     uid = m.chat.id
     if uid in blocked_users: return
 
-    # Админ отправляет фото пользователю
-    if uid == ADMIN_ID and admin_reply_to is not None:
+    # Админ отправляет фото игроку
+    if is_staff(uid) and uid in dialogs:
+        target = dialogs[uid]
         file_id = m.photo[-1].file_id
         caption = m.caption or ""
         try:
-            bot.send_photo(admin_reply_to, file_id,
+            bot.send_photo(target, file_id,
                            caption="📨 Фото от администрации" + (f"\n{caption}" if caption else ""))
-            add_to_history(admin_reply_to, f"[фото от админа]{': ' + caption if caption else ''}", from_user=False)
-            clear_unread(admin_reply_to)
+            add_to_history(target, f"[фото от админа]{': ' + caption if caption else ''}", from_user=False, by=uid)
+            clear_unread(target)
+            audit(uid, 'msg_to_player', target, get_user_label(target), f"[фото] {caption}")
         except Exception as e:
             log_error(e)
             safe_send(uid, f"❌ Ошибка отправки фото: {e}")
         return
 
-    # Пользователь в активном диалоге отправляет фото админу
-    if admin_reply_to == uid:
+    # Игрок в активном диалоге отправляет фото своему админу
+    talker = dialog_admin(uid)
+    if talker:
         label = enrich_user_label(uid)
         file_id = m.photo[-1].file_id
         caption = m.caption or ""
         try:
-            bot.send_photo(ADMIN_ID, file_id,
+            bot.send_photo(talker, file_id,
                            caption=f"🖼 Фото от {label}" + (f"\n{caption}" if caption else ""))
             add_to_history(uid, f"[фото]{': ' + caption if caption else ''}", from_user=True)
-            notify_admin(f"🖼 {label} прислал фото" + (f': «{caption}»' if caption else ""))
         except Exception as e:
             log_error(e)
         return
 
     # Вне диалога — подсказываем
+    if is_staff(uid):
+        send_admin_menu(uid)
+        return
     safe_send(uid, "📷 Картинки можно отправлять только во время активного диалога с администратором. Напишите ваше сообщение:",
               reply_markup=main_keyboard(is_admin=False, user_id=uid))
+
 
 # ---------- Анкета ----------
 def handle_application(m):
@@ -2079,7 +2567,6 @@ def show_confirmation(uid, state):
 # ---------- Callback-обработчик ----------
 @bot.callback_query_handler(func=lambda call: True)
 def callback_handler(call):
-    global admin_reply_to, registration_paused
     if not check_rate_limit(call.from_user.id):
         bot.answer_callback_query(call.id); return
     data, uid, msg = call.data, call.from_user.id, call.message
@@ -2140,36 +2627,40 @@ def callback_handler(call):
         bot.answer_callback_query(call.id)
         return
 
-    # --- Комментарий админа ---
-    if data == "skip_admin_comment" and uid == ADMIN_ID and ADMIN_ID in admin_states:
-        bot.answer_callback_query(call.id, "Пропущено")
-        state = admin_states.pop(ADMIN_ID)
-        if state.get('action') in ('approve', 'reject'):
-            # Удаляем сообщение с просьбой ввести комментарий (текущее сообщение с кнопками Пропустить/Отмена)
-            try:
-                bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
-            except Exception:
-                pass
-            state['prompt_msg_id'] = None  # уже удалили выше
-            process_admin_decision(state['action'], state['user_id'], '', state)
-        elif state.get('action') == 'block':
-            try:
-                bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
-            except Exception:
-                pass
-            process_block(state['user_id'], '', msg)
-        flush_admin_notifications()
+    # --- Выход из режима игрока (кнопку видит только админ в этом режиме) ---
+    if data == "player_view_off" and uid in staff:
+        player_view.discard(uid)
+        user_states.pop(uid, None)
+        bot.answer_callback_query(call.id, "Вы снова в админке")
+        send_admin_menu(uid, edit_message=msg)
         return
-    if data == "cancel_admin_comment" and uid == ADMIN_ID:
-        if ADMIN_ID in admin_states:
-            del admin_states[ADMIN_ID]
-        flush_admin_notifications()
-        bot.answer_callback_query(call.id, "Отменено")
+
+    # --- Комментарий админа ---
+    if data == "skip_admin_comment" and is_staff(uid) and uid in admin_states:
+        bot.answer_callback_query(call.id, "Пропущено")
+        state = admin_states.pop(uid)
         try:
             bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
         except Exception:
             pass
-        send_admin_menu(ADMIN_ID)
+        if state.get('action') in ('approve', 'reject'):
+            state['prompt_msg_id'] = None  # уже удалили выше
+            process_admin_decision(state['action'], state['user_id'], '', state)
+        elif state.get('action') == 'block':
+            process_block(state['user_id'], '', msg, actor=uid)
+        flush_admin_notifications(uid)
+        return
+    if data == "cancel_admin_comment" and is_staff(uid):
+        state = admin_states.pop(uid, None)
+        if state and app_claims.get(state.get('user_id')) == uid:
+            app_claims.pop(state['user_id'], None)
+        bot.answer_callback_query(call.id, "Отменено")
+        flush_admin_notifications(uid)
+        try:
+            bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
+        except Exception:
+            pass
+        send_admin_menu(uid)
         return
 
     # --- Подтверждение заявки ---
@@ -2180,7 +2671,7 @@ def callback_handler(call):
         if state.get('step') != 'confirm':
             bot.answer_callback_query(call.id, "Уже обработана."); return
         if data == "confirm_yes":
-            last_time_str = last_application.get(str(uid))
+            last_time_str = None if uid in player_view else last_application.get(str(uid))
             if last_time_str:
                 last_dt = datetime.fromisoformat(last_time_str)
                 if datetime.now() - last_dt < timedelta(hours=24):
@@ -2237,23 +2728,34 @@ def callback_handler(call):
                 'comment': state.get('comment', ''),
                 'date': datetime.now().isoformat()
             }
+            test_by = uid if uid in player_view else None
+            if test_by:
+                pending[app_id]['test_by'] = test_by  # заявка из режима игрока: на сервере не регистрируется
             save_json(PENDING_FILE, pending)
-            last_application[str(uid)] = datetime.now().isoformat()
-            save_json(LAST_APPLICATION_FILE, last_application)
+            if not test_by:
+                last_application[str(uid)] = datetime.now().isoformat()
+                save_json(LAST_APPLICATION_FILE, last_application)
+            audit(uid, 'app_submitted', uid, state['nick'], state.get('comment', ''))
+            old_nicks = previous_nicks(uid)
             dup_warning = ""
-            if check_duplicate_tg_id(uid):
-                dup_warning = f"\n⚠️ <b>Внимание:</b> данный TG ID уже подавал заявку ранее!"
+            if old_nicks:
+                listed = ", ".join(f"<code>{escape_html(n)}</code>" for n in old_nicks)
+                dup_warning = f"\n⚠️ <b>Внимание:</b> данный TG ID уже подавал заявку ранее! Ники: {listed}"
+            bans = ban_report(uid, state['nick'])
             admin_markup = types.InlineKeyboardMarkup()
-            admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявки", callback_data="admin_menu_applications"))
+            admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявку", callback_data=f"pending_goto_{uid}"))
             admin_msg = (
                 f"📩 <b>Новая заявка!</b>\n"
-                f"Ник: <code>{escape_html(state['nick'])}</code>\n"
+                + (f"🧪 Тестовая: {escape_html(staff_name(uid))} в режиме игрока\n" if test_by else "")
+                + f"Ник: <code>{escape_html(state['nick'])}</code>\n"
                 f"В очереди: <b>{len(pending)}</b>"
                 f"{dup_warning}"
-                f"{ban_report(uid, state['nick'])}"
+                f"{bans}"
             )[:TG_MAX_LEN]
-            notify_admin(admin_msg, parse_mode='HTML', reply_markup=admin_markup)
-            discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''))
+            notify_staff('apps', admin_msg, reply_markup=admin_markup, kind='app', ref=uid)
+            discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),
+                                    old_nicks=old_nicks, bans_found=bans.count('\n🚫') + bans.count('\n🔇'),
+                                    test_by=staff_name(uid) if test_by else None)
             safe_send(uid,
                 "✅ <b>Ваша заявка принята и отправлена на рассмотрение.</b>\n\n"
                 "📋 Заявки рассматриваются в порядке очереди. Срок рассмотрения - <b>как правило, до 24 часов</b>.\n\n"
@@ -2271,7 +2773,7 @@ def callback_handler(call):
         bot.answer_callback_query(call.id)
         send_main_menu(uid, edit_message=msg)
         return
-    if data == "menu_my_tickets" and uid != ADMIN_ID:
+    if data == "menu_my_tickets" and not is_staff(uid):
         ticket = get_ticket(uid)
         if ticket:
             nick_line = f"🎮 Ник: <code>{escape_html(ticket['nick'])}</code>\n" if ticket.get('nick') else ""
@@ -2292,17 +2794,19 @@ def callback_handler(call):
             safe_send(uid, "У вас нет открытых обращений.", reply_markup=main_keyboard(is_admin=False, user_id=uid))
         bot.answer_callback_query(call.id)
         return
-    if data == "close_ticket" and uid != ADMIN_ID:
+    if data == "close_ticket" and not is_staff(uid):
         ticket = get_ticket(uid)
         if ticket:
             close_ticket(uid)
+            clear_unread(uid)
             label = enrich_user_label(uid)
             # Если с этим пользователем открыт диалог — завершаем его
-            if admin_reply_to == uid:
-                end_dialog(msg, user_initiated=True)
+            if dialog_admin(uid):
+                end_dialog(player_id=uid, user_initiated=True)
             else:
-                safe_send(ADMIN_ID, f"🔔 Пользователь {label} закрыл тикет #{ticket['id']}.")
-                send_admin_menu(ADMIN_ID)
+                audit(uid, 'ticket_closed_by_player', uid, get_user_label(uid))
+                close_notices('ticket', uid, "🔒 <b>Игрок сам закрыл обращение</b>")
+                notify_staff('messages', f"🔔 Пользователь {escape_html(label)} закрыл тикет #{ticket['id']}.")
             try:
                 bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
             except Exception:
@@ -2388,392 +2892,428 @@ def callback_handler(call):
         bot.answer_callback_query(call.id)
         return
 
-    # --- Только админ ---
-    if uid != ADMIN_ID:
+    # --- Только команда ---
+    if uid not in staff:
         bot.answer_callback_query(call.id, "Нет доступа."); return
+    if uid in player_view:
+        bot.answer_callback_query(call.id, "Вы в режиме игрока. Нажмите «🛡 Вернуться в админку» в меню или /admin.", show_alert=True)
+        return
+    need = next((perm for prefix, perm in CALLBACK_PERMS if data.startswith(prefix)), None)
+    if need and not can(uid, need):
+        bot.answer_callback_query(call.id, f"У роли «{ROLE_NAMES.get(staff[uid]['role'], '')}» нет доступа к этому разделу.", show_alert=True)
+        return
 
+    def ok(text=None, alert=False):
+        bot.answer_callback_query(call.id, text, show_alert=alert)
+
+    if data == "noop":
+        ok(); return
     if data == "admin_back":
-        send_admin_menu(ADMIN_ID, edit_message=msg)
-        bot.answer_callback_query(call.id)
+        ok(); send_admin_menu(uid, edit_message=msg); return
+    if data == "player_view_on":
+        if uid in dialogs:
+            ok("Сначала завершите диалог с игроком.", alert=True); return
+        admin_states.pop(uid, None)
+        player_view.add(uid)
+        ok("Режим игрока включён")
+        send_main_menu(uid, edit_message=msg)
         return
+
+    # --- Заявки ---
     if data == "admin_menu_applications":
-        bot.answer_callback_query(call.id)
-        show_pending_applications(ADMIN_ID, page=0, edit_message=msg)
-        return
+        ok(); show_pending_applications(uid, page=0, edit_message=msg); return
     if data.startswith('pending_page_'):
-        page = int(data.split('_')[2])
-        show_pending_applications(ADMIN_ID, page=page, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
+        ok(); show_pending_applications(uid, page=int(data.split('_')[2]), edit_message=msg); return
     if data.startswith('pending_goto_'):
-        # Прыгнуть на конкретную заявку по TG ID
+        # Прыгнуть на конкретную заявку по TG ID (из уведомления или поиска)
         target_id = data.split('_')[2]
         sorted_apps = sorted(pending.items(), key=lambda x: x[1].get('date', ''))
-        idx = next((i for i, (aid, app) in enumerate(sorted_apps)
-                    if str(app.get('user_id', aid)) == target_id), 0)
-        show_pending_applications(ADMIN_ID, page=idx, edit_message=msg)
-        bot.answer_callback_query(call.id)
+        idx = next((i for i, (aid, app) in enumerate(sorted_apps) if str(app.get('user_id', aid)) == target_id), None)
+        if idx is None:
+            ok("Заявка уже рассмотрена или отозвана.", alert=True)
+            return
+        ok()
+        show_pending_applications(uid, page=idx, edit_message=None if msg.text and msg.text.startswith("📩 Новая заявка") else msg)
         return
-    if data == "noop":
-        bot.answer_callback_query(call.id)
+    if data.startswith('approve_') or data.startswith('reject_'):
+        action = 'approve' if data.startswith('approve_') else 'reject'
+        target_id = data.split('_')[1]
+        if target_id not in pending:
+            ok("Заявка уже рассмотрена коллегой или отозвана игроком.", alert=True)
+            show_pending_applications(uid, edit_message=msg)
+            return
+        claimer = app_claims.get(target_id)
+        if claimer is not None and claimer != uid and admin_states.get(claimer, {}).get('user_id') == target_id:
+            ok(f"Эту заявку сейчас рассматривает {staff_name(claimer)}.", alert=True)
+            return
+        if uid in admin_states:
+            ok("Сначала закончите предыдущее действие (введите комментарий или нажмите «Отмена»).", alert=True)
+            return
+        ok()
+        app_claims[target_id] = uid
+        admin_states[uid] = {'action': action, 'user_id': target_id, 'actor': uid,
+                             'app_msg_chat_id': msg.chat.id, 'app_msg_message_id': msg.message_id}
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("Пропустить", callback_data="skip_admin_comment"),
+                   types.InlineKeyboardButton("Отмена", callback_data="cancel_admin_comment"))
+        action_label = 'одобрению' if action == 'approve' else 'отклонению'
+        prompt_msg = safe_send(uid, f"✍️ Введите комментарий к {action_label} или нажмите кнопку.\n\n"
+                                    f"⚠️ <b>Не отвечайте сейчас на другие сообщения</b> - любой текст будет принят как комментарий.",
+                               parse_mode='HTML', reply_markup=markup)
+        if prompt_msg:
+            admin_states[uid]['prompt_msg_id'] = prompt_msg.message_id
         return
-    if data == "admin_menu_messages":
-        bot.answer_callback_query(call.id)
-        show_messages_menu(msg, edit_message=msg)
-        return
-    if data == "admin_menu_stats":
-        bot.answer_callback_query(call.id)
-        show_statistics(ADMIN_ID, edit_message=msg)
-        return
-    if data == "admin_menu_controls":
-        bot.answer_callback_query(call.id)
-        show_admin_controls(ADMIN_ID, edit_message=msg)
-        return
-    if data == "admin_end_dialog":
-        end_dialog(msg)
-        bot.answer_callback_query(call.id)
-        return
-    if data == "back_to_stats":
-        show_statistics(ADMIN_ID, edit_message=msg)
-        bot.answer_callback_query(call.id)
+    if data.startswith('retry_reg_'):
+        nick = data[len('retry_reg_'):]
+        saved = failed_registrations.get(nick)
+        if not saved:
+            ok("Пароля нет: бот перезапускался. Попросите игрока подать заявку заново.", alert=True)
+            return
+        ok("Повторяю регистрацию...")
+        try:
+            bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
+        except Exception:
+            pass
+        run_in_background(register_on_server, nick, saved[0], uid, saved[1])
         return
 
-    if data == "show_approved":
-        show_approved_list(ADMIN_ID, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
-    if data == "show_rejected":
-        show_rejected_list(ADMIN_ID, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
-    if data == "show_blocked":
-        show_blocked_users(ADMIN_ID, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
-    if data == "show_apphistory":
-        show_application_history(ADMIN_ID, page=0, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
-    if data.startswith('apphistory_page_'):
-        page = int(data.split('_')[2])
-        show_application_history(ADMIN_ID, page=page, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
-    if data.startswith('apphistory_view_'):
-        show_application_card(ADMIN_ID, int(data.split('_')[2]), edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
+    # --- Поиск ---
     if data == "admin_search":
-        admin_states[ADMIN_ID] = {'action': 'search'}
-        bot.answer_callback_query(call.id)
+        admin_states[uid] = {'action': 'search'}
+        ok()
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="cancel_admin_search"))
-        safe_send(ADMIN_ID, "🔍 Введите ник (или его часть) для поиска:", reply_markup=markup)
+        safe_send(uid, "🔍 Введите ник (или его часть) для поиска:", reply_markup=markup)
         return
     if data == "cancel_admin_search":
-        if ADMIN_ID in admin_states and admin_states[ADMIN_ID].get('action') == 'search':
-            del admin_states[ADMIN_ID]
-        send_admin_menu(ADMIN_ID, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
+        if admin_states.get(uid, {}).get('action') in ('search', 'journal_player', 'staff_add'):
+            del admin_states[uid]
+        flush_admin_notifications(uid)
+        ok(); send_admin_menu(uid, edit_message=msg); return
 
+    # --- Статистика и история заявок ---
+    if data in ("admin_menu_stats", "back_to_stats"):
+        ok(); show_statistics(uid, edit_message=msg); return
+    if data == "show_approved":
+        ok(); show_approved_list(uid, edit_message=msg); return
+    if data == "show_rejected":
+        ok(); show_rejected_list(uid, edit_message=msg); return
     if data.startswith('approved_page_'):
-        page = int(data.split('_')[2])
-        show_approved_list(ADMIN_ID, page=page, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
+        ok(); show_approved_list(uid, page=int(data.split('_')[2]), edit_message=msg); return
     if data.startswith('rejected_page_'):
-        page = int(data.split('_')[2])
-        show_rejected_list(ADMIN_ID, page=page, edit_message=msg)
-        bot.answer_callback_query(call.id)
-        return
+        ok(); show_rejected_list(uid, page=int(data.split('_')[2]), edit_message=msg); return
+    if data == "show_apphistory":
+        ok(); show_application_history(uid, page=0, edit_message=msg); return
+    if data.startswith('apphistory_page_'):
+        ok(); show_application_history(uid, page=int(data.split('_')[2]), edit_message=msg); return
+    if data.startswith('apphistory_view_'):
+        ok(); show_application_card(uid, int(data.split('_')[2]), edit_message=msg); return
 
-    if data == "admin_pause":
-        registration_paused = True; config['paused'] = True; save_json(CONFIG_FILE, config)
-        bot.answer_callback_query(call.id, "Регистрация приостановлена.")
-        show_admin_controls(ADMIN_ID, edit_message=msg)
-    elif data == "admin_resume":
-        registration_paused = False; config['paused'] = False; save_json(CONFIG_FILE, config)
-        bot.answer_callback_query(call.id, "Регистрация возобновлена.")
-        show_admin_controls(ADMIN_ID, edit_message=msg)
-    elif data == "admin_status":
-        bot.answer_callback_query(call.id)
-        safe_send(ADMIN_ID, f"📌 Регистрация: {'приостановлена' if registration_paused else 'активна'}\n"
-                            f"🚫 Заблокировано: {len(blocked_users)}\n"
-                            f"📨 Диалог: {get_user_label(admin_reply_to) if admin_reply_to else 'нет'}")
-    elif data == "admin_clearstats":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Да, очистить статистику", callback_data="confirm_clearstats_yes"),
-                   types.InlineKeyboardButton("❌ Нет", callback_data="confirm_clearstats_no"))
-        safe_send(ADMIN_ID, "Вы уверены, что хотите очистить всю статистику и заявки?", reply_markup=markup)
-        bot.answer_callback_query(call.id)
-    elif data == "admin_resettimers":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Да, сбросить таймеры", callback_data="confirm_resettimers_yes"),
-                   types.InlineKeyboardButton("❌ Нет", callback_data="confirm_resettimers_no"))
-        safe_send(ADMIN_ID, "Сбросить 24-часовой таймер повторной заявки для всех пользователей?", reply_markup=markup)
-        bot.answer_callback_query(call.id)
-    elif data == "admin_cleardialogs":
-        markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("✅ Да, очистить диалоги", callback_data="confirm_cleardialogs_yes"),
-                   types.InlineKeyboardButton("❌ Нет", callback_data="confirm_cleardialogs_no"))
-        safe_send(ADMIN_ID, "Вы уверены, что хотите очистить историю всех диалогов?", reply_markup=markup)
-        bot.answer_callback_query(call.id)
-    elif data == "admin_help":
-        help_text = (
-            "📖 <b>Инструкция для администратора</b>\n\n"
-            "• <b>Блокировка:</b> используйте кнопку «🚫 Заблокировать» в уведомлениях или команду /block &lt;ID&gt; &lt;причина&gt;.\n"
-            "• <b>Разблокировка:</b> в разделе «Заблокированные» или команда /unblock &lt;ID&gt;.\n"
-            "• <b>Заявки:</b> нажмите «Одобрить»/«Отклонить», можно оставить комментарий.\n"
-            "• <b>Повторная заявка:</b> игрок не сможет подать заявку раньше чем через 24 часа.\n"
-            "• <b>Сброс таймеров:</b> кнопка «⏰ Сбросить таймеры» снимает 24-часовой лимит для всех.\n"
-            "• <b>Тикеты:</b> каждое обращение получает номер #N. Удалить через «Очистить диалоги»."
-        )
-        safe_send(ADMIN_ID, help_text, parse_mode='HTML')
-        bot.answer_callback_query(call.id)
-    elif data == "confirm_clearstats_yes":
-        with open(APPROVED_CSV, 'w', newline='', encoding='utf-8-sig') as f:
-            csv.writer(f).writerow(['Дата','TG_Username','TG_ID','Minecraft_Ник','Пароль','Статус','Комментарий_игрока','Комментарий_админа'])
-        pending.clear(); save_json(PENDING_FILE, pending)
-        bot.answer_callback_query(call.id, "Статистика и заявки очищены.")
-        safe_send(ADMIN_ID, "🧹 Статистика и заявки полностью очищены.")
-    elif data == "confirm_clearstats_no":
-        bot.answer_callback_query(call.id, "Отменено.")
-    elif data == "confirm_resettimers_yes":
-        last_application.clear()
-        save_json(LAST_APPLICATION_FILE, {})
-        bot.answer_callback_query(call.id, "Таймеры сброшены.")
-        safe_send(ADMIN_ID, "⏰ Таймеры 24-часового ожидания сброшены для всех пользователей.")
-        send_admin_menu(ADMIN_ID)
-    elif data == "confirm_resettimers_no":
-        bot.answer_callback_query(call.id, "Отменено.")
-    elif data == "confirm_cleardialogs_yes":
-        chat_history.clear(); unread_messages.clear()
-        active_tickets.clear(); save_tickets()
-        save_json(CHAT_HISTORY_FILE, {}); save_json(MESSAGE_QUEUE_FILE, [])
-        bot.answer_callback_query(call.id, "История диалогов очищена.")
-        safe_send(ADMIN_ID, "🗑 История диалогов и все тикеты полностью очищены.")
-    elif data == "confirm_cleardialogs_no":
-        bot.answer_callback_query(call.id, "Отменено.")
-    elif data.startswith('msg_page_'):
-        page = int(data.split('_')[2])
-        show_messages_menu(call.message, page=page, edit_message=msg)
-        bot.answer_callback_query(call.id)
-    elif data.startswith('msg_cat_'):
-        # msg_cat_{category}_{page}
-        parts = data.split('_')
-        cat = parts[2]
-        pg = int(parts[3])
-        show_messages_menu(call.message, page=pg, edit_message=msg, category=cat)
-        bot.answer_callback_query(call.id)
-    elif data.startswith('user_profile_'):
-        target_uid = data.split('_')[2]
-        show_user_profile(ADMIN_ID, target_uid, msg)
-        bot.answer_callback_query(call.id)
-    elif data.startswith('admin_close_ticket_'):
+    # --- Сообщения и диалоги ---
+    if data == "admin_menu_messages":
+        ok(); show_messages_menu(msg, edit_message=msg); return
+    if data.startswith('msg_page_'):
+        ok(); show_messages_menu(msg, page=int(data.split('_')[2]), edit_message=msg); return
+    if data.startswith('msg_cat_'):
+        parts = data.split('_')  # msg_cat_{category}_{page}
+        ok(); show_messages_menu(msg, page=int(parts[3]), edit_message=msg, category=parts[2]); return
+    if data.startswith('user_profile_'):
+        ok(); show_user_profile(uid, data.split('_')[2], msg); return
+    if data in ("admin_end_dialog", "end_dialog"):
+        ok(); end_dialog(admin_id=uid); return
+    if data.startswith('admin_close_ticket_'):
         target = int(data.split('_')[3])
         ticket = get_ticket(target)
         was_unread = str(target) in unread_messages
         clear_unread(target)  # закрытое обращение уходит из «Не отвеченных»
         from_notification = bool(msg.text and msg.text.startswith("📬 Новое сообщение"))
+        talker = dialog_admin(target)
+        if talker is not None:
+            dialogs.pop(talker, None)
+            if talker != uid:
+                safe_send(talker, f"🔇 Диалог с {enrich_user_label(target)} завершён: {staff_name(uid)} закрыл обращение.")
         if ticket:
             close_ticket(target)
-            label = enrich_user_label(target)
-            # Если с этим юзером открыт диалог — завершаем его тоже
-            if admin_reply_to == target:
-                admin_reply_to = None
-                try:
-                    safe_send(target, "🔇 Диалог с администратором завершён.",
-                              reply_markup=main_keyboard(is_admin=False, user_id=target))
-                except Exception:
-                    pass
-            else:
-                try:
-                    safe_send(target, f"✅ Ваш тикет #{ticket['id']} закрыт администратором.",
-                              reply_markup=main_keyboard(is_admin=False, user_id=target))
-                except Exception:
-                    pass
-            bot.answer_callback_query(call.id, f"Тикет #{ticket['id']} закрыт.")
+            safe_send(target, f"✅ Ваш тикет #{ticket['id']} закрыт администратором.",
+                      reply_markup=main_keyboard(is_admin=False, user_id=target))
+            ok(f"Тикет #{ticket['id']} закрыт.")
         elif was_unread:
-            bot.answer_callback_query(call.id, "Отмечено как прочитанное.")
+            ok("Отмечено как прочитанное.")
         else:
-            bot.answer_callback_query(call.id, "Тикет уже закрыт.")
-        if from_notification:
-            # Уведомление остаётся в чате с пометкой, без кнопок
-            try:
-                bot.edit_message_text(msg.html_text + "\n\n🔒 <b>Закрыто без ответа</b>", ADMIN_ID, msg.message_id,
-                                      parse_mode='HTML', reply_markup=None)
-            except Exception:
-                pass
-        else:
+            ok("Тикет уже закрыт.")
+        if ticket or was_unread:
+            audit(uid, 'ticket_closed', target, get_user_label(target), f"тикет #{ticket['id']}" if ticket else "")
+        close_notices('ticket', target, f"🔒 <b>Закрыто без ответа</b> · {escape_html(staff_name(uid))}")
+        if not from_notification:
             show_messages_menu(msg, edit_message=msg)
-    elif data.startswith('reply_'):
+        return
+    if data.startswith('reply_'):
+        target = int(data.split('_')[1])
+        if target in staff:
+            ok("Это член команды, ему можно написать напрямую.", alert=True); return
+        talker = dialog_admin(target)
+        if talker is not None and talker != uid:
+            if staff[uid]['role'] != ROLE_OWNER:
+                ok(f"С этим игроком уже ведёт диалог {staff_name(talker)}.", alert=True); return
+            dialogs.pop(talker, None)  # владелец забирает диалог себе
+            safe_send(talker, f"👑 {staff_name(uid)} забрал(а) диалог с {enrich_user_label(target)}.")
+        if uid in dialogs and dialogs[uid] != target:
+            end_dialog(admin_id=uid, quiet_admin=True)  # у админа один диалог за раз
+        dialogs[uid] = target
+        clear_unread(target)
+        audit(uid, 'dialog_opened', target, get_user_label(target))
+        close_notices('ticket', target, f"💬 <b>Отвечает:</b> {escape_html(staff_name(uid))}")
+        i_markup = types.InlineKeyboardMarkup()
+        i_markup.row(types.InlineKeyboardButton("❌ Завершить", callback_data="end_dialog"),
+                     types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{target}"))
+        if can(uid, 'block'):
+            i_markup.row(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"))
+        label = enrich_user_label(target)
+        last_user_msg = next((x for x in reversed(chat_history.get(str(target), [])) if x['from'] == 'user'), None)
+        quote = ""
+        if last_user_msg:
+            quote = f"\n\n<b>Последнее сообщение игрока</b> ({last_user_msg['time'][5:16]}):\n{escape_html(last_user_msg['text'][:1500])}"
+        safe_send(uid, f"📨 Диалог с <b>{escape_html(label)}</b> активирован.\n"
+                       f"Всё, что вы напишете, уйдёт игроку от имени «Администрация».{quote}",
+                  parse_mode='HTML', reply_markup=i_markup)
+        send_admin_menu(uid)
         try:
-            target = int(data.split('_')[1])
-            admin_reply_to = target
-            clear_unread(target)
-            i_markup = types.InlineKeyboardMarkup()
-            i_markup.add(types.InlineKeyboardButton("❌ Завершить", callback_data="end_dialog"),
-                         types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"),
-                         types.InlineKeyboardButton("✅ Разблокировать", callback_data=f"unblock_{target}"))
-            label = enrich_user_label(target)
-            last_user_msg = next((x for x in reversed(chat_history.get(str(target), [])) if x['from'] == 'user'), None)
-            quote = ""
-            if last_user_msg:
-                quote = f"\n\n<b>Последнее сообщение игрока</b> ({last_user_msg['time'][5:16]}):\n{escape_html(last_user_msg['text'][:1500])}"
-            safe_send(ADMIN_ID, f"📨 Диалог с <b>{escape_html(label)}</b> активирован.\nТеперь все ваши сообщения будут пересылаться этому пользователю.{quote}",
-                      parse_mode='HTML', reply_markup=i_markup)
-            send_admin_menu(ADMIN_ID)
-            # Discord уведомление об открытии диалога
-            try:
-                tchat = bot.get_chat(target)
-                t_nick = ""
-                for app in pending.values():
-                    if str(app.get('user_id')) == str(target):
-                        t_nick = app.get('nick', '')
-                        break
-                discord_dialog_opened(t_nick or f"ID {target}", target, tchat.username or "")
-            except Exception:
-                pass
-            try:
-                safe_send(target, "📨 Администратор начал с вами диалог.", reply_markup=main_keyboard(is_admin=False, user_id=target))
-            except: pass
-            bot.answer_callback_query(call.id, f"Диалог с {target}")
-        except Exception as e:
-            log_error(e); bot.answer_callback_query(call.id, "Ошибка.")
-    elif data.startswith('hist_'):
+            tchat = bot.get_chat(target)
+            t_nick = next((a.get('nick', '') for a in pending.values() if str(a.get('user_id')) == str(target)), "")
+            discord_dialog_opened(t_nick or f"ID {target}", target, tchat.username or "", staff_name(uid))
+        except Exception:
+            pass
+        safe_send(target, "📨 Администратор начал с вами диалог.", reply_markup=main_keyboard(is_admin=False, user_id=target))
+        ok(f"Диалог с {target}")
+        return
+    if data.startswith('hist_'):
         target = int(data.split('_')[1])
         msgs = chat_history.get(str(target), [])
         if not msgs:
-            bot.answer_callback_query(call.id, "История пуста.")
-            return
+            ok("История пуста."); return
         lines = []
         for x in list(msgs)[-20:]:
-            who = '👤 Игрок' if x['from'] == 'user' else '👑 Админ'
+            who = '👤 Игрок' if x['from'] == 'user' else f"👑 {x.get('by') or 'Админ'}"
             lines.append(f"{who} [{x['time']}]:\n{x['text']}")
-        header = f"📜 История с {enrich_user_label(target)}:\n\n"
-        history_text = header + "\n\n".join(lines)
+        history_text = f"📜 История с {enrich_user_label(target)}:\n\n" + "\n\n".join(lines)
         hist_markup = types.InlineKeyboardMarkup(row_width=1)
         hist_markup.add(types.InlineKeyboardButton("🔙 Назад к профилю", callback_data=f"user_profile_{target}"))
         hist_markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="admin_back"))
-        safe_send_long(ADMIN_ID, history_text, reply_markup=hist_markup)
-        bot.answer_callback_query(call.id)
-    elif data == "end_dialog":
-        end_dialog(msg); bot.answer_callback_query(call.id, "Диалог завершён.")
-    elif data.startswith('block_'):
+        safe_send_long(uid, history_text, reply_markup=hist_markup)
+        ok()
+        return
+
+    # --- Блокировки в боте ---
+    if data == "show_blocked":
+        ok(); show_blocked_users(uid, edit_message=msg); return
+    if data.startswith('block_'):
         target = int(data.split('_')[1])
-        if admin_reply_to is not None and admin_reply_to != target:
-            bot.answer_callback_query(call.id, "⚠️ Сначала завершите активный диалог!", show_alert=True)
-            safe_send(ADMIN_ID, f"⚠️ У вас открыт диалог с пользователем {enrich_user_label(admin_reply_to)}.\n\n"
-                                f"Сначала завершите его кнопкой «❌ Завершить диалог», затем заблокируйте.")
-            return
-        admin_states[ADMIN_ID] = {
-            'action': 'block',
-            'user_id': str(target),
-            'msg_chat_id': msg.chat.id,
-            'msg_message_id': msg.message_id
-        }
+        if target in staff:
+            ok("Это член команды. Сначала снимите доступ в разделе «Команда».", alert=True); return
+        if uid in dialogs and dialogs[uid] != target:
+            ok("⚠️ Сначала завершите активный диалог!", alert=True); return
+        if uid in admin_states:
+            ok("Сначала закончите предыдущее действие.", alert=True); return
+        admin_states[uid] = {'action': 'block', 'user_id': str(target), 'actor': uid,
+                             'msg_chat_id': msg.chat.id, 'msg_message_id': msg.message_id}
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("Пропустить", callback_data="skip_admin_comment"),
                    types.InlineKeyboardButton("Отмена", callback_data="cancel_admin_comment"))
-        safe_send(ADMIN_ID, f"✍️ Введите причину блокировки для {enrich_user_label(target)} или нажмите кнопку:", reply_markup=markup)
-        bot.answer_callback_query(call.id)
-    elif data.startswith('unblock_'):
+        safe_send(uid, f"✍️ Введите причину блокировки для {enrich_user_label(target)} или нажмите кнопку:", reply_markup=markup)
+        ok()
+        return
+    if data.startswith('unblock_'):
         target = int(data.split('_')[1])
-        blocked_users.discard(target)
-        save_json(BLOCKED_FILE, list(blocked_users))
-        bot.answer_callback_query(call.id, f"Пользователь {target} разблокирован.")
-        try:
-            if target not in blocked_users:
-                safe_send(target, "✅ Вы были разблокированы администратором. Можете снова пользоваться ботом.",
-                          reply_markup=main_keyboard(is_admin=False, user_id=target))
-        except: pass
+        do_unblock(uid, target)
+        ok(f"Пользователь {target} разблокирован.")
         if msg and msg.text and msg.text.startswith("🚫 Заблокированные"):
-            show_blocked_users(ADMIN_ID, edit_message=msg)
-    elif data.startswith('approve_') or data.startswith('reject_'):
-        action = 'approve' if data.startswith('approve_') else 'reject'
-        target_id = data.split('_')[1]
-        # Защита: если открыт активный диалог с другим пользователем — предупредить
-        if admin_reply_to is not None and str(admin_reply_to) != str(target_id):
-            bot.answer_callback_query(call.id, "\u26a0\ufe0f Сначала завершите активный диалог!", show_alert=True)
-            safe_send(ADMIN_ID, f"\u26a0\ufe0f У вас открыт диалог с пользователем {enrich_user_label(admin_reply_to)}.\n\n"
-                                f"Сначала завершите его кнопкой «\u274c Завершить диалог», затем обработайте заявку.")
-            return
-        bot.answer_callback_query(call.id)
-        admin_states[ADMIN_ID] = {
-            'action': action,
-            'user_id': target_id,
-            'app_msg_chat_id': msg.chat.id,
-            'app_msg_message_id': msg.message_id
-        }
+            show_blocked_users(uid, edit_message=msg)
+        return
+
+    # --- Управление ---
+    if data == "admin_menu_controls":
+        ok(); show_admin_controls(uid, edit_message=msg); return
+    if data == "admin_status":
+        ok(); safe_send(uid, status_text(uid)); return
+    if data == "admin_help":
+        ok(); safe_send(uid, admin_help_text(uid), parse_mode='HTML'); return
+    if data in ("admin_pause", "admin_resume"):
+        set_paused(uid, data == "admin_pause")
+        ok("Регистрация приостановлена." if data == "admin_pause" else "Регистрация возобновлена.")
+        show_admin_controls(uid, edit_message=msg)
+        return
+    confirm_texts = {
+        'admin_clearstats': ("clearstats", "✅ Да, очистить статистику", "Вы уверены, что хотите очистить всю статистику и заявки?"),
+        'admin_resettimers': ("resettimers", "✅ Да, сбросить таймеры", "Сбросить 24-часовой таймер повторной заявки для всех пользователей?"),
+        'admin_cleardialogs': ("cleardialogs", "✅ Да, очистить диалоги", "Вы уверены, что хотите очистить историю всех диалогов?"),
+    }
+    if data in confirm_texts:
+        key, yes_text, question = confirm_texts[data]
         markup = types.InlineKeyboardMarkup()
-        markup.add(types.InlineKeyboardButton("Пропустить", callback_data="skip_admin_comment"),
-                   types.InlineKeyboardButton("Отмена", callback_data="cancel_admin_comment"))
-        action_label = 'одобрению' if action == 'approve' else 'отклонению'
-        prompt_msg = safe_send(ADMIN_ID, f"\u270d\ufe0f Введите комментарий к {action_label} или нажмите кнопку.\n\n"
-                            f"\u26a0\ufe0f <b>Не отвечайте сейчас на другие сообщения</b> - любой текст будет принят как комментарий.",
-                  parse_mode='HTML', reply_markup=markup)
-        if prompt_msg:
-            admin_states[ADMIN_ID]['prompt_msg_id'] = prompt_msg.message_id
-    elif data.startswith('retry_reg_'):
-        nick = data[len('retry_reg_'):]
-        password = failed_registrations.get(nick)
-        if not password:
-            bot.answer_callback_query(call.id, "Пароля нет: бот перезапускался. Попросите игрока подать заявку заново.", show_alert=True)
-            return
-        bot.answer_callback_query(call.id, "Повторяю регистрацию...")
+        markup.add(types.InlineKeyboardButton(yes_text, callback_data=f"confirm_{key}_yes"),
+                   types.InlineKeyboardButton("❌ Нет", callback_data=f"confirm_{key}_no"))
+        safe_send(uid, question, reply_markup=markup)
+        ok()
+        return
+    if data in ("confirm_clearstats_no", "confirm_resettimers_no", "confirm_cleardialogs_no"):
+        ok("Отменено.")
         try:
-            bot.edit_message_reply_markup(ADMIN_ID, msg.message_id, reply_markup=None)
+            bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
         except Exception:
             pass
-        run_in_background(register_on_server, nick, password)
-    else:
-        bot.answer_callback_query(call.id)
+        return
+    if data == "confirm_clearstats_yes":
+        with open(APPROVED_CSV, 'w', newline='', encoding='utf-8-sig') as f:
+            csv.writer(f).writerow(['Дата','TG_Username','TG_ID','Minecraft_Ник','Пароль','Статус','Комментарий_игрока','Комментарий_админа','Рассмотрел'])
+        pending.clear(); save_json(PENDING_FILE, pending)
+        audit(uid, 'clear_stats')
+        ok("Статистика и заявки очищены.")
+        safe_send(uid, "🧹 Статистика и заявки полностью очищены.")
+        return
+    if data == "confirm_resettimers_yes":
+        last_application.clear()
+        save_json(LAST_APPLICATION_FILE, {})
+        audit(uid, 'reset_timers')
+        ok("Таймеры сброшены.")
+        safe_send(uid, "⏰ Таймеры 24-часового ожидания сброшены для всех пользователей.")
+        send_admin_menu(uid)
+        return
+    if data == "confirm_cleardialogs_yes":
+        chat_history.clear(); unread_messages.clear()
+        active_tickets.clear(); save_tickets()
+        save_json(CHAT_HISTORY_FILE, {}); save_json(MESSAGE_QUEUE_FILE, [])
+        audit(uid, 'clear_dialogs')
+        ok("История диалогов очищена.")
+        safe_send(uid, "🗑 История диалогов и все тикеты полностью очищены.")
+        return
+
+    # --- Журнал ---
+    if data == "jr_pick":
+        ok(); show_journal_staff_pick(uid, msg); return
+    if data == "jr_ask":
+        admin_states[uid] = {'action': 'journal_player'}
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="cancel_admin_search"))
+        safe_send(uid, "🔍 Введите ник игрока или его Telegram ID:", reply_markup=markup)
+        ok()
+        return
+    if data.startswith('jr_'):
+        _, mode, value, page = data.split('_')
+        ok(); show_journal(uid, mode, int(value), int(page), edit_message=msg); return
+
+    # --- Команда ---
+    if data == "staff_list":
+        ok(); show_staff_list(uid, edit_message=msg); return
+    if data == "staff_add":
+        admin_states[uid] = {'action': 'staff_add'}
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="cancel_admin_search"))
+        safe_send(uid, "➕ <b>Новый член команды</b>\n\nОтправьте его Telegram ID числом.\n"
+                       "Человек может узнать свой ID, написав этому боту команду /id.",
+                  parse_mode='HTML', reply_markup=markup)
+        ok()
+        return
+    if data.startswith('staff_card_'):
+        ok(); show_staff_card(uid, int(data.split('_')[2]), edit_message=msg); return
+    if data.startswith('staff_new_') or data.startswith('staff_role_'):
+        _, kind, member, role = data.split('_')
+        member = int(member)
+        if role not in (ROLE_ADMIN, ROLE_HELPER) or member == ADMIN_ID:
+            ok(); return
+        if kind == 'new' and member in staff:
+            ok("Этот человек уже в команде."); show_staff_card(uid, member, edit_message=msg); return
+        name = staff[member]['name'] if member in staff else tg_display_name(member)
+        db_exec("INSERT OR REPLACE INTO staff (tg_id, name, role, added_by, added_at) VALUES (?,?,?,?, "
+                "COALESCE((SELECT added_at FROM staff WHERE tg_id=?), ?))",
+                (member, name, role, uid, member, datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M')))
+        load_staff()
+        blocked_users.discard(member)
+        audit(uid, 'staff_added' if kind == 'new' else 'staff_role', member, name, ROLE_NAMES[role])
+        discord_staff_change("👥 Новый член команды" if kind == 'new' else "👥 Роль изменена",
+                             name, member, ROLE_NAMES[role], staff_name(uid))
+        safe_send(member, f"🛡 Вам выдан доступ к админке TotemCraft.\nРоль: <b>{ROLE_NAMES[role]}</b>\n\nНажмите /start, чтобы открыть панель.",
+                  parse_mode='HTML')
+        ok("Готово")
+        show_staff_card(uid, member, edit_message=msg)
+        return
+    if data.startswith('staff_del_'):
+        member = int(data.split('_')[2])
+        markup = types.InlineKeyboardMarkup()
+        markup.row(types.InlineKeyboardButton("✅ Да, снять доступ", callback_data=f"staff_delok_{member}"),
+                   types.InlineKeyboardButton("❌ Нет", callback_data=f"staff_card_{member}"))
+        edit_message_safe(uid, msg.message_id, f"Снять доступ к админке у {escape_html(staff_name(member))}?\n"
+                                               f"Журнал его действий сохранится.", parse_mode='HTML', reply_markup=markup)
+        ok()
+        return
+    if data.startswith('staff_delok_'):
+        member = int(data.split('_')[2])
+        if member == ADMIN_ID or member not in staff:
+            ok(); return
+        name = staff_name(member)
+        end_dialog(admin_id=member, quiet_admin=True)
+        admin_states.pop(member, None)
+        player_view.discard(member)
+        for app_id, who in list(app_claims.items()):
+            if who == member:
+                app_claims.pop(app_id, None)
+        db_exec("DELETE FROM staff WHERE tg_id=?", (member,))
+        load_staff()
+        audit(uid, 'staff_removed', member, name)
+        discord_staff_change("👥 Доступ снят", name, member, "нет", staff_name(uid))
+        safe_send(member, "Доступ к админке TotemCraft снят.")
+        send_main_menu(member)
+        ok("Доступ снят")
+        show_staff_list(uid, edit_message=msg)
+        return
+
+    ok()
+
 
 # ---------- Обработка решения по заявке ----------
 def process_admin_decision(action, user_id_str, comment, state):
+    actor = state.get('actor', ADMIN_ID)
+    app_claims.pop(user_id_str, None)
     app = pending.get(user_id_str)
     if not app:
-        safe_send(ADMIN_ID, "⚠️ Заявка не найдена - возможно, игрок её уже отменил.")
+        safe_send(actor, "⚠️ Заявка не найдена: игрок её отменил или её уже рассмотрел коллега.")
+        send_admin_menu(actor)
         return
     status = 'Одобрено' if action == 'approve' else 'Отклонено'
-    with open(APPROVED_CSV, 'a', newline='', encoding='utf-8-sig') as f:
-        csv.writer(f).writerow([
-            datetime.now().isoformat(),
-            app['username'],
-            app['user_id'],
-            app['nick'],
-            HIDDEN_PASSWORD,
-            status,
-            app.get('comment', ''),
-            comment
-        ])
+    test_by = app.get('test_by')
+    if not test_by:
+        with open(APPROVED_CSV, 'a', newline='', encoding='utf-8-sig') as f:
+            csv.writer(f).writerow([
+                datetime.now().isoformat(),
+                app['username'],
+                app['user_id'],
+                app['nick'],
+                HIDDEN_PASSWORD,
+                status,
+                app.get('comment', ''),
+                comment,
+                staff_name(actor),
+            ])
     del pending[user_id_str]
     save_json(PENDING_FILE, pending)
-    if action == 'approve':
-        run_in_background(register_on_server, app['nick'], app['password'])
+    audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'],
+          (comment or '') + (' [тестовая заявка]' if test_by else ''))
+    if action == 'approve' and not test_by:
+        run_in_background(register_on_server, app['nick'], app['password'], actor, app['user_id'])
 
-    # Редактируем карточку заявки — оставляем её в чате с пометкой решения
+    # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
     action_label = "ОДОБРЕНО" if action == 'approve' else "ОТКЛОНЕНО"
-    try:
-        orig_chat_id = state.get('app_msg_chat_id', ADMIN_ID)
-        orig_msg_id = state['app_msg_message_id']
-        orig_msg_obj = bot.forward_message(ADMIN_ID, orig_chat_id, orig_msg_id) if False else None  # не нужно
-        # Получаем текст оригинального сообщения и добавляем метку решения
-        decided_at = datetime.now().strftime('%Y-%m-%d %H:%M')
-        decision_suffix = f"\n\n{action_icon} <b>{action_label}</b> [{decided_at}]"
-        if comment:
-            decision_suffix += f"\n💬 Комментарий: {escape_html(comment)}"
+    decided_at = datetime.now().strftime('%Y-%m-%d %H:%M')
+    decision_suffix = f"\n\n{action_icon} <b>{action_label}</b> [{decided_at}] · {escape_html(staff_name(actor))}"
+    if comment:
+        decision_suffix += f"\n💬 Комментарий: {escape_html(comment)}"
+    if test_by:
+        decision_suffix += "\n🧪 Тестовая заявка: на сервере не регистрировалась"
+    if state.get('app_msg_message_id'):
         try:
-            cur = bot.forward_message(ADMIN_ID, orig_chat_id, orig_msg_id) if False else None
-        except Exception:
-            pass
-        # Редактируем оригинальное сообщение: убираем кнопки и добавляем итог
-        try:
-            cur_text = bot.edit_message_text(
-                chat_id=orig_chat_id,
-                message_id=orig_msg_id,
+            bot.edit_message_text(
+                chat_id=state.get('app_msg_chat_id', actor),
+                message_id=state['app_msg_message_id'],
                 text=f"📁 <b>Заявка закрыта</b>\n"
                      f"👤 Ник: <code>{escape_html(app['nick'])}</code>\n"
                      f"🧑 {escape_html(app.get('tg_name', '—'))}\n"
@@ -2786,20 +3326,18 @@ def process_admin_decision(action, user_id_str, comment, state):
             )
         except Exception:
             pass
-    except Exception:
-        pass
+    # У коллег уведомление о заявке помечается решённым
+    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{datetime.now().strftime('%H:%M')}] · {escape_html(staff_name(actor))}")
 
-    # Удаляем сообщение с просьбой ввести комментарий
     if state.get('prompt_msg_id'):
         try:
-            bot.delete_message(chat_id=ADMIN_ID, message_id=state['prompt_msg_id'])
+            bot.delete_message(chat_id=actor, message_id=state['prompt_msg_id'])
         except Exception:
             pass
 
     run_in_background(notify_player_decision, action, user_id_str, app, comment)
-    discord_decision_notify(app['nick'], status, comment)
-    # Возврат в панель администратора
-    send_admin_menu(ADMIN_ID)
+    discord_decision_notify(app["nick"], status, (comment or "") + (" [тестовая заявка]" if test_by else ""), staff_name(actor))
+    send_admin_menu(actor)
 
 def notify_player_decision(action, user_id_str, app, comment):
     try:
@@ -2834,20 +3372,27 @@ def notify_player_decision(action, user_id_str, app, comment):
         log_error(e)
 
 # ---------- Блокировка ----------
-def process_block(user_id_str, reason, original_msg):
-    global admin_reply_to
+def process_block(user_id_str, reason, original_msg, actor=ADMIN_ID):
     try:
         uid = int(user_id_str)
     except ValueError:
-        safe_send(original_msg.chat.id, "Некорректный ID."); return
+        safe_send(actor, "Некорректный ID."); return
+    if uid in staff:
+        safe_send(actor, "Это член команды. Сначала снимите доступ в разделе «Команда».")
+        return
     blocked_users.add(uid)
     save_json(BLOCKED_FILE, list(blocked_users))
+    audit(actor, 'blocked', uid, get_user_label(uid), reason)
 
-    # Завершаем диалог если он был активен с этим пользователем — до уведомлений
-    was_in_dialog = (admin_reply_to == uid)
-    if was_in_dialog:
-        admin_reply_to = None
+    # Завершаем диалог, если кто-то из команды его вёл
+    talker = dialog_admin(uid)
+    if talker is not None:
+        dialogs.pop(talker, None)
         close_ticket(uid)
+        if talker != actor:
+            safe_send(talker, f"🔇 Диалог с {enrich_user_label(uid)} завершён: {staff_name(actor)} заблокировал пользователя.")
+    clear_unread(uid)
+    close_notices('ticket', uid, f"🚫 <b>Заблокирован</b> · {escape_html(staff_name(actor))}")
 
     msg_text = "🚫 Вы были заблокированы администратором."
     if reason:
@@ -2856,13 +3401,11 @@ def process_block(user_id_str, reason, original_msg):
         bot.send_message(uid, msg_text, reply_markup=types.ReplyKeyboardRemove())
     except Exception as e:
         log_error(e)
-        safe_send(original_msg.chat.id, f"Заблокирован, но не удалось уведомить {uid}: {e}")
-        return
+        safe_send(actor, f"Заблокирован, но не удалось уведомить {uid}: {e}")
 
-    if was_in_dialog:
-        safe_send(ADMIN_ID, f"🔇 Диалог с {enrich_user_label(uid)} завершён — пользователь заблокирован.")
-    safe_send(original_msg.chat.id, f"🚫 Пользователь {uid} заблокирован.")
-    # Discord уведомление о блокировке
+    if talker == actor:
+        safe_send(actor, f"🔇 Диалог с {enrich_user_label(uid)} завершён — пользователь заблокирован.")
+    safe_send(actor, f"🚫 Пользователь {uid} заблокирован.")
     try:
         t_nick = ""
         t_username = ""
@@ -2873,24 +3416,21 @@ def process_block(user_id_str, reason, original_msg):
                 break
         if not t_username:
             try:
-                tchat = bot.get_chat(uid)
-                t_username = tchat.username or ""
+                t_username = bot.get_chat(uid).username or ""
             except Exception:
                 pass
-        discord_player_blocked(t_nick or f"ID {uid}", uid, t_username, reason)
+        discord_player_blocked(t_nick or f"ID {uid}", uid, t_username, reason, staff_name(actor))
     except Exception:
         pass
-    # Возврат в главное меню после блокировки
-    send_admin_menu(ADMIN_ID)
+    send_admin_menu(actor)
 
 # ---------- Ежедневное напоминание ----------
 def daily_job():
     reload_pending()
     if pending:
         discord_daily_reminder()
-        try:
-            safe_send(ADMIN_ID, f"⏳ Напоминание: в очереди {len(pending)} заявок(и). Проверьте бот.")
-        except: pass
+        notify_staff('apps', f"⏳ Напоминание: в очереди {len(pending)} заявок(и). Проверьте бот.")
+
 
 def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
@@ -2899,6 +3439,11 @@ def run_scheduler():
         time.sleep(60)
 
 if __name__ == '__main__':
+    # Владелец в списке команды под своим именем из Telegram
+    if not db_exec("SELECT 1 FROM staff WHERE tg_id=?", (ADMIN_ID,), fetch=True):
+        db_exec("INSERT INTO staff (tg_id, name, role, added_by, added_at) VALUES (?,?,?,?,?)",
+                (ADMIN_ID, tg_display_name(ADMIN_ID), ROLE_OWNER, ADMIN_ID, datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M')))
+        load_staff()
     print("✅ TotemCraftBot запущен")
     threading.Thread(target=run_scheduler, daemon=True).start()
     bot.infinity_polling()
