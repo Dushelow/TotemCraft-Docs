@@ -142,13 +142,22 @@ bot.auto_job()
 accepted = [tg for tg in ids if str(tg) not in bot.pending]
 left = [tg for tg in ids if str(tg) in bot.pending]
 check(len(accepted) == 5, f"принято 5 из 7 ({len(accepted)})")
-check(all(bot.pending[str(tg)]['auto']['manual'] for tg in left), "остальные переведены в «вручную», не отклонены")
+check(all(not bot.pending[str(tg)]['auto']['manual'] and bot.pending[str(tg)]['auto'].get('limit_wait') for tg in left),
+      "остальные ждут лимита: не вручную, не отклонены")
 alerts = [x for x in sent_to(ctx.tg_log, OWNER) if 'упёрся в лимит' in x]
-check(len(alerts) == 1, "команде одно сообщение про лимит")
+check(len(alerts) == 1 and 'Продолжу сам' in alerts[0], "команде одно сообщение про лимит и когда продолжит")
 (t, _), log = ctx.press(OWNER, 'auto_menu')
-check(any('за час 5 из 5' in x for _, x in edited(log)), "в настройках видно «за час 5 из 5»")
-for tg in left:
-    bot.pending.pop(str(tg))
+check(any('за час 5 из 5' in x and 'ждут лимита: 2' in x for _, x in edited(log)), "в настройках «за час 5 из 5» и «ждут лимита: 2»")
+check('ждёт лимита' in bot.auto_line(bot.pending[str(left[0])]), "в карточке заявки «ждёт лимита, продолжит примерно в …»")
+bot.auto_job()
+check(all(str(tg) in bot.pending for tg in left), "пока лимит занят, повторно не принимает")
+# прошло больше часа: сдвигаем время автопринятий в журнале на 2 часа назад
+old = (tu.now_utc() - timedelta(hours=2)).isoformat(timespec='seconds')
+storage.execute("UPDATE audit SET ts=? WHERE actor_role='system' AND action='approved'", (old,))
+bot.auto_job()
+check(all(str(tg) not in bot.pending for tg in left), "лимит освободился: ждавшие приняты сами")
+check(storage.query("SELECT details FROM audit WHERE actor_role='system' AND action='approved' ORDER BY id DESC LIMIT 1")[0][0].endswith('ждала лимита'),
+      "в журнале видно, что заявка ждала лимита")
 
 print("\n=== 8. Рейд-режим ===")
 storage.execute("DELETE FROM audit WHERE actor_role='system'")

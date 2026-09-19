@@ -2078,6 +2078,8 @@ def schedule_auto(uid, app, keep_due=False):
             due = min(due, old['due'])
     app['auto'] = {'manual': v['manual'], 'stop': v['stop'], 'minor': v['minor'], 'icon': v['icon'], 'due': due,
                    'delay': autoaccept.delay_text(v['delay']) if v['delay'] else None}
+    if not v['manual'] and old.get('limit_wait'):
+        app['auto']['limit_wait'] = True  # перепроверка не должна сбрасывать очередь лимита
     if str(uid) in pending:
         pending[str(uid)] = app
     return app['auto']
@@ -2096,6 +2098,8 @@ def auto_line(app, viewer=None, html=True):
         note = " (автопринятие выключено)"
     elif raid_active():
         note = " (ждёт: включён рейд-режим)"
+    elif a.get('limit_wait'):
+        note = f" (ждёт лимита, продолжит примерно в {fmt_time(auto_limit_free_at(), viewer, '%H:%M')})"
     minor = ", ".join(a['minor']) if a['minor'] else "мелочей нет"
     return (f"{a['icon']} {b('Автопринятие')} в {fmt_time(a['due'], viewer, '%d.%m %H:%M')}{note} · {esc(minor)}"
             + (" · подписан на группу" if (app or {}).get('subscribed') else ""))
@@ -2107,6 +2111,23 @@ def auto_counts():
     rows = storage.query("SELECT SUM(ts >= ?), SUM(ts >= ?) FROM audit WHERE actor_role='system' AND action='approved'",
                          (hour, day))[0]
     return rows[0] or 0, rows[1] or 0
+
+def auto_limit_free_at():
+    """Когда освободится место в лимите (UTC ISO): самое раннее автопринятие в окне + час или сутки."""
+    now = timeutil.now_utc()
+    hour, day = auto_counts()
+    candidates = []
+    if hour >= autoaccept.LIMIT_HOUR:
+        first = storage.query("SELECT MIN(ts) FROM audit WHERE actor_role='system' AND action='approved' AND ts >= ?",
+                              ((now - timedelta(hours=1)).isoformat(timespec='seconds'),))[0][0]
+        if first:
+            candidates.append(timeutil.parse(first) + timedelta(hours=1))
+    if day >= autoaccept.LIMIT_DAY:
+        first = storage.query("SELECT MIN(ts) FROM audit WHERE actor_role='system' AND action='approved' AND ts >= ?",
+                              ((now - timedelta(days=1)).isoformat(timespec='seconds'),))[0][0]
+        if first:
+            candidates.append(timeutil.parse(first) + timedelta(days=1))
+    return max(candidates).isoformat(timespec='seconds') if candidates else timeutil.now_iso()
 
 def auto_job():
     """Каждую минуту: рейд-режим по времени и автопринятие подошедших заявок (с перепроверкой)."""
@@ -2136,21 +2157,31 @@ def auto_job():
                 continue
             hour, day = auto_counts()
             if hour >= autoaccept.LIMIT_HOUR or day >= autoaccept.LIMIT_DAY:
-                app['auto'].update(manual=True, stop=[f"лимит автопринятия ({autoaccept.LIMIT_HOUR} в час, {autoaccept.LIMIT_DAY} в сутки)"],
-                                   icon='✋', due=None)
-                pending[key] = app
+                # Лимит: подошедшие заявки ждут и примутся сами, когда лимит освободится (админы могут решить раньше)
+                waiting = [k for d, k in queue if timeutil.parse(d) <= now and k in pending]
+                for k in waiting:
+                    a = pending[k]
+                    if not a['auto'].get('limit_wait'):
+                        a['auto']['limit_wait'] = True
+                        pending[k] = a
                 last = storage.setting('auto_limit_alert_at')
                 if not last or now - timeutil.parse(last) > timedelta(hours=1):
                     storage.set_setting('auto_limit_alert_at', timeutil.now_iso())
-                    audit(None, 'auto_limit', details=f"за час {hour}, за сутки {day}")
+                    free_at = auto_limit_free_at()
+                    audit(None, 'auto_limit', details=f"за час {hour}, за сутки {day}, ждут {len(waiting)}")
                     notify_staff('apps', f"🤖 <b>Автомат упёрся в лимит</b>: за час {hour} из {autoaccept.LIMIT_HOUR}, "
-                                         f"за сутки {day} из {autoaccept.LIMIT_DAY}. Похоже на наплыв заявок. "
-                                         f"Остальные заявки ждут ручного решения, ничего не заморожено и не отклонено.")
+                                         f"за сутки {day} из {autoaccept.LIMIT_DAY}. Похоже на наплыв заявок.\n"
+                                         f"Ждут автопринятия: {len(waiting)}. Продолжу сам примерно в "
+                                         f"{fmt_time(free_at, None, '%H:%M')} (МСК). Их можно принять и вручную, "
+                                         f"ничего не заморожено и не отклонено.")
                     post_discord({"embeds": [{"title": "🤖 Автопринятие упёрлось в лимит", "color": 0xffaa00,
-                                              "description": f"За час {hour}, за сутки {day}. Остальные заявки вручную.",
+                                              "description": f"За час {hour}, за сутки {day}. Ждут: {len(waiting)}. "
+                                                             f"Продолжит сам, когда лимит освободится.",
                                               "timestamp": timeutil.now_iso()}]})
-                continue
+                break
             desc = f"{app['auto']['icon']} {', '.join(app['auto']['minor']) or 'мелочей нет'}, срок {app['auto']['delay']}"
+            if app['auto'].get('limit_wait'):
+                desc += ", ждала лимита"
             process_admin_decision('approve', key, '', {'actor': None, 'auto_desc': desc})
     except Exception as e:
         log_error(e)
@@ -2165,6 +2196,9 @@ def show_auto_settings(chat_id, edit_message=None):
     lines = [f"🤖 <b>Автопринятие</b>: {'✅ включено' if enabled else '⛔ выключено'}",
              f"Принято автоматически: за час {hour} из {autoaccept.LIMIT_HOUR}, за сутки {day} из {autoaccept.LIMIT_DAY}",
              f"Ждут автопринятия: {len(waiting)}" + (f", ближайшая в {fmt_time(nearest, chat_id, '%d.%m %H:%M')}" if nearest else ""),
+             *([f"⏳ Из них ждут лимита: {sum(1 for a in waiting if a['auto'].get('limit_wait'))}, "
+                f"продолжу сам примерно в {fmt_time(auto_limit_free_at(), chat_id, '%H:%M')}"]
+               if any(a['auto'].get('limit_wait') for a in waiting) else []),
              f"Только вручную: {len(manual)}",
              "",
              f"🛡 <b>Рейд-режим</b>: {raid_status_text(chat_id)}",
