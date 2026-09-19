@@ -529,16 +529,18 @@ def dossier(tg_id, nick, viewer=None, app=None, compact=False):
 
     # Telegram
     try:
-        parts = [f"аккаунт {tgage.describe(tg_id, _frontier()['anchors'])}"]
+        line = f"📱 Telegram {tgage.describe(tg_id, _frontier()['anchors'])}"
         facts = (app or {}).get('tg') or {}
         if facts:
-            parts.append("Premium" if facts.get('premium') else "без Premium")
+            marks = []
             if 'photo' in facts:
-                parts.append("есть фото" if facts['photo'] else "нет фото")
-            parts.append("есть username" if facts.get('username') else "нет username")
+                marks.append("фото " + ("✅" if facts['photo'] else "❌"))
+            marks.append("username " + ("✅" if facts.get('username') else "❌"))
+            marks.append("Premium " + ("✅" if facts.get('premium') else "❌"))
             if facts.get('lang'):
-                parts.append(f"язык {facts['lang']}")
-        lines.append("📱 Telegram: " + ", ".join(parts))
+                marks.append(f"язык {escape_html(facts['lang'])}")
+            line += "\n    " + " · ".join(marks)
+        lines.append(line)
         since = is_very_new(tg_id)
         if since:
             bare = facts and not facts.get('username') and facts.get('photo') is False
@@ -956,16 +958,16 @@ def send_admin_menu(chat_id, edit_message=None):
     if my_dialog:
         inline.row(B(f"🔴 Завершить диалог с {get_user_label(my_dialog)}", callback_data="admin_end_dialog"))
 
-    role = staff.get(chat_id, {}).get('role')
-    lines = [f"🛡 <b>Панель администратора</b>\n{ROLE_NAMES.get(role, '')}: {escape_html(staff_name(chat_id))}"]
+    lines = ["🛡 <b>Панель администратора</b>"]
+    if can(chat_id, 'staff'):
+        lines.append(f"👑 {escape_html(staff_name(chat_id))}")
     if pending_count and can(chat_id, 'apps'):
         lines.append(f"⏳ Ожидают рассмотрения: <b>{pending_count}</b>")
-    if can(chat_id, 'apps'):
-        if raid_active():
-            lines.append("🛡 <b>Рейд-режим активен</b>: автопринятие приостановлено")
-        elif auto_enabled():
-            hour, day = auto_counts()
-            lines.append(f"🤖 Автопринятие включено: за сутки {day} из {autoaccept.LIMIT_DAY}")
+    if can(chat_id, 'apps') and raid_active():
+        lines.append("🛡 <b>Рейд-режим</b>: автопринятие на паузе")
+    if can(chat_id, 'controls') and auto_enabled() and not raid_active():
+        hour, day = auto_counts()
+        lines.append(f"🤖 Автопринятие: вкл · сегодня {day}/{autoaccept.LIMIT_DAY}")
     if unread_count and can(chat_id, 'messages'):
         lines.append(f"📬 Непрочитанных сообщений: <b>{unread_count}</b>")
     busy = [f"{escape_html(staff_name(a))} ↔ {escape_html(get_user_label(p))}" for a, p in dialogs.items() if a != chat_id]
@@ -1539,31 +1541,36 @@ def show_blocked_users(chat_id, edit_message=None):
 
 def show_admin_controls(chat_id, edit_message=None):
     B = types.InlineKeyboardButton
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    if can(chat_id, 'controls'):
-        if registration_paused:
-            markup.add(B("▶️ Возобновить регистрацию", callback_data="admin_resume"))
-        else:
-            markup.add(B("⏸️ Приостановить регистрацию", callback_data="admin_pause"))
-    markup.add(B("📊 Статус", callback_data="admin_status"))
-    if can(chat_id, 'block'):
-        markup.add(B("🚫 Заблокированные в боте", callback_data="show_blocked"))
-    if can(chat_id, 'controls'):
-        markup.add(B("⏰ Сбросить таймеры заявок", callback_data="admin_resettimers"))
-        markup.add(B("🧹 Очистить статистику", callback_data="admin_clearstats"))
-        markup.add(B("🗑 Очистить историю диалогов", callback_data="admin_cleardialogs"))
-    if can(chat_id, 'controls'):
-        markup.add(B("🤖 Автопринятие и рейды", callback_data="auto_menu"))
-        markup.add(B("📤 Выгрузить историю заявок (Excel)", callback_data="admin_export"))
+    markup = types.InlineKeyboardMarkup()
     tz_label = timeutil.TZ_NAMES.get(tz_of(chat_id), tz_of(chat_id))
-    markup.add(B(f"🕐 Мой часовой пояс: {tz_label}", callback_data="tz_menu"))
-    markup.add(B("📖 Инструкция", callback_data="admin_help"))
-    markup.add(B("🔙 Главное меню", callback_data="admin_back"))
-    text = "⚙️ Управление ботом"
+    lines = ["⚙️ <b>Управление и настройки</b>", ""]
+    lines.append("📝 Регистрация: " + ("⏸ на паузе" if registration_paused else "✅ открыта"))
+    if can(chat_id, 'controls'):
+        lines.append("🤖 Автопринятие: " + ("✅ включено" if auto_enabled() else "⛔ выключено")
+                     + (" · 🛡 рейд-режим" if raid_active() else ""))
+    lines.append(f"🕐 Ваш пояс: {tz_label}")
+    if can(chat_id, 'controls'):
+        markup.row(B("🤖 Автопринятие и рейды", callback_data="auto_menu"))
+        markup.row(B("▶️ Открыть регистрацию" if registration_paused else "⏸ Приостановить регистрацию",
+                     callback_data="admin_resume" if registration_paused else "admin_pause"))
+    row = [B("📊 Статус", callback_data="admin_status")]
+    if can(chat_id, 'block'):
+        row.append(B("🚫 Заблокированные", callback_data="show_blocked"))
+    markup.row(*row)
+    row = [B("🕐 Часовой пояс", callback_data="tz_menu")]
+    if can(chat_id, 'controls'):
+        row.insert(0, B("📤 Выгрузка в Excel", callback_data="admin_export"))
+    markup.row(*row)
+    if can(chat_id, 'controls'):
+        markup.row(B("⏰ Сбросить таймеры", callback_data="admin_resettimers"),
+                   B("🧹 Очистить статистику", callback_data="admin_clearstats"))
+        markup.row(B("🗑 Очистить историю диалогов", callback_data="admin_cleardialogs"))
+    markup.row(B("📖 Инструкция", callback_data="admin_help"), B("🔙 Меню", callback_data="admin_back"))
+    text = "\n".join(lines)
     if edit_message:
-        edit_message_safe(chat_id, edit_message.message_id, text, reply_markup=markup)
+        edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
     else:
-        safe_send(chat_id, text, reply_markup=markup)
+        safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
 def end_dialog(admin_id=None, player_id=None, user_initiated=False, quiet_admin=False):
     """Завершает диалог. Можно указать админа или игрока: второго бот найдёт сам."""
@@ -1626,25 +1633,33 @@ def tg_display_name(tg_id):
 
 def admin_help_text(uid):
     role = staff.get(uid, {}).get('role')
-    lines = ["📖 <b>Инструкция</b>", f"Ваша роль: <b>{ROLE_NAMES.get(role, '')}</b>\n"]
-    lines.append("• <b>Заявки:</b> «Одобрить» или «Отклонить», затем комментарий или «Пропустить». "
-                 "Пока вы пишете комментарий, заявка закреплена за вами, коллеги её не возьмут.")
-    lines.append("• Решение видят все: у коллег уведомление о заявке помечается «Одобрено: имя».")
-    lines.append("• <b>Досье</b> в карточке заявки: возраст аккаунта Telegram (примерно, ±3 месяца), аккаунт на сервере, страна, "
-                 "другие аккаунты с того же IP. 🔴 — серьёзно (бан, твинк в бане), 🟡 — обратить внимание "
-                 "(раньше отклоняли, совсем новый аккаунт), «✅ Проверки пройдены» — ничего не нашлось.")
+    parts = [f"📖 <b>Инструкция</b> · {ROLE_NAMES.get(role, '')}"]
+    parts.append("📋 <b>Заявки</b>\n"
+                 "Нажмите «Одобрить» или «Отклонить», затем напишите комментарий или нажмите «Пропустить». "
+                 "Пока вы пишете, заявка закреплена за вами, коллеги её не возьмут. Решение видят все.")
+    parts.append("🧾 <b>Досье и значки</b>\n"
+                 "Возраст аккаунта Telegram (примерно, ±3 месяца), аккаунт на сервере, страна, другие аккаунты с того же IP.\n"
+                 "🔴 серьёзно: бан, твинк в бане\n🟡 обратить внимание: раньше отклоняли, совсем новый аккаунт\n"
+                 "✅ проверки пройдены: ничего не нашлось")
+    parts.append("🤖 <b>Автопринятие</b>\n"
+                 "В заявке видно, примет ли её бот сам и когда: 🟢 через час, 🟡 через 12 ч, 🟠 через сутки и больше, "
+                 "✋ только вручную. Принять или отклонить раньше можно как обычно.")
     if can(uid, 'messages'):
-        lines.append("• <b>Сообщения:</b> «Ответить» открывает диалог. Игрок видит «Администрация», ваше имя ему не показывается. "
+        parts.append("💬 <b>Сообщения</b>\n"
+                     "«Ответить» открывает диалог: игрок видит «Администрация», ваше имя ему не показывается. "
                      "«Закрыть без ответа» убирает обращение из непрочитанных.")
     if can(uid, 'block'):
-        lines.append("• <b>Блокировка в боте:</b> кнопка «🚫 Заблокировать» или /block &lt;ID&gt; &lt;причина&gt;, снять: /unblock &lt;ID&gt;.")
-    lines.append("• <b>Посмотреть как игрок:</b> бот выглядит как у обычного игрока. Заявки оттуда тестовые, на сервере не регистрируются. "
-                 "Вернуться: кнопка «🛡 Вернуться в админку» или /admin.")
+        parts.append("🚫 <b>Блокировка в боте</b>\nКнопка «Заблокировать» или /block &lt;ID&gt; &lt;причина&gt;, снять: /unblock &lt;ID&gt;.")
+    parts.append("👤 <b>Посмотреть как игрок</b>\n"
+                 "Бот выглядит как у обычного игрока. Заявки оттуда тестовые и на сервере не регистрируются. "
+                 "Вернуться: «🛡 Вернуться в админку» или /admin.")
     if can(uid, 'journal'):
-        lines.append("• <b>Журнал:</b> все действия команды и игроков, фильтр по админу и по игроку.")
+        parts.append("📒 <b>Журнал</b>\nВсе действия команды, бота и игроков. Фильтр по админу и по игроку.")
     if can(uid, 'staff'):
-        lines.append("• <b>Команда:</b> выдать доступ по Telegram ID (человек узнаёт его командой /id), сменить роль, снять доступ.")
-    return "\n".join(lines)
+        parts.append("👥 <b>Команда</b>\nВыдать доступ по Telegram ID (человек узнаёт его командой /id), сменить роль, снять доступ.")
+    if can(uid, 'controls'):
+        parts.append("⚙️ <b>Автопринятие, рейд-режим, словарь</b>\n«Управление и настройки» → «Автопринятие и рейды».")
+    return "\n\n".join(parts)
 
 # ---------- Журнал ----------
 JOURNAL_PER_PAGE = 8
@@ -1994,13 +2009,13 @@ def raid_active():
 
 def raid_status_text(viewer=None):
     if storage.setting('raid_manual', False):
-        return "🔴 включён вручную (автопринятие приостановлено)"
+        return "🔴 включён вручную\n   Автопринятие на паузе, пока не выключите"
     until = storage.setting('raid_until')
     if until and timeutil.parse(until) > timeutil.now_utc():
-        return f"🔴 активен до {fmt_time(until, viewer, '%H:%M')} (автопринятие приостановлено)"
+        return f"🔴 активен до {fmt_time(until, viewer, '%H:%M')}\n   Автопринятие на паузе"
     if storage.setting('raid_auto', True):
-        return f"👀 слежу: включится сам, если за {RAID_WINDOW_MIN} мин придёт {RAID_COUNT}+ заявок от совсем новых аккаунтов"
-    return "⚪ автовключение выключено"
+        return f"👀 слежу\n   Включится сам на час, если за час придёт {RAID_COUNT}+ заявок от совсем новых аккаунтов"
+    return "⚪ сам не включается\n   При рейде бот только предупредит команду"
 
 def set_raid(active, actor=None, reason=''):
     """Включить рейд-режим (на RAID_DURATION_MIN минут, или вручную до выключения) или выключить."""
@@ -2010,8 +2025,10 @@ def set_raid(active, actor=None, reason=''):
         else:
             storage.set_setting('raid_manual', True)
         audit(actor, 'raid_on', details=reason)
-        text = ("🛡 <b>Рейд-режим включён</b>" + (f" автоматически на {RAID_DURATION_MIN} мин" if actor is None else f": {escape_html(staff_name(actor))}")
-                + (f"\n{escape_html(reason)}" if reason else "") + "\nАвтопринятие приостановлено, заявки ждут ручного решения или окончания режима.")
+        who = f"сам, на {RAID_DURATION_MIN} мин" if actor is None else f"вручную · {escape_html(staff_name(actor))}"
+        text = (f"🛡 <b>Рейд-режим включён</b> ({who})\n"
+                + (f"{escape_html(reason)}\n" if reason else "")
+                + "\nАвтопринятие на паузе. Заявки можно решать вручную как обычно.")
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("⚪ Выключить рейд-режим", callback_data="raid_off"))
         for aid in set(staff_with('apps')) | set(staff_with('controls')):
@@ -2022,8 +2039,8 @@ def set_raid(active, actor=None, reason=''):
         storage.set_setting('raid_manual', False)
         storage.set_setting('raid_until', None)
         audit(actor, 'raid_off')
-        notify_staff('apps', "🛡 Рейд-режим выключен" + (f": {escape_html(staff_name(actor))}" if actor else " (время вышло)")
-                     + ". Автопринятие снова работает, если включено.")
+        notify_staff('apps', "🛡 <b>Рейд-режим выключен</b> (" + (f"вручную · {escape_html(staff_name(actor))}" if actor else "время вышло")
+                     + ")\nАвтопринятие снова работает, если включено.")
         post_discord({"embeds": [{"title": "🛡 Рейд-режим выключен", "color": 0x2ecc71, "timestamp": timeutil.now_iso()}]})
 
 def auto_facts(uid, app):
@@ -2091,18 +2108,25 @@ def auto_line(app, viewer=None, html=True):
         return ""
     esc = escape_html if html else (lambda x: x)
     b = (lambda x: f"<b>{x}</b>") if html else (lambda x: x)
+    if not html:  # для Discord одной строкой
+        if a['manual']:
+            return "✋ только вручную: " + "; ".join(a['stop'])
+        return f"{a['icon']} через {a['delay']} · " + (", ".join(a['minor']) or "мелочей нет")
     if a['manual']:
-        return f"✋ {b('Только вручную')}: " + esc("; ".join(a['stop']))
+        return f"✋ {b('Только вручную')}\n" + "\n".join(f"   • {esc(r)}" for r in a['stop'])
+    when = fmt_time(a['due'], viewer, '%H:%M' if fmt_time(a['due'], viewer, '%d.%m') == fmt_time(timeutil.now_iso(), viewer, '%d.%m') else '%d.%m %H:%M')
+    head = f"{a['icon']} {b('Автопринятие через ' + a['delay'])} · в {when}"
+    details = ", ".join(a['minor']) if a['minor'] else "мелочей нет"
+    if (app or {}).get('subscribed'):
+        details += " · подписан на группу"
     note = ""
     if not auto_enabled():
-        note = " (автопринятие выключено)"
+        note = "\n   ⏸ <i>автопринятие выключено в настройках</i>"
     elif raid_active():
-        note = " (ждёт: включён рейд-режим)"
+        note = "\n   🛡 <i>ждёт окончания рейд-режима</i>"
     elif a.get('limit_wait'):
-        note = f" (ждёт лимита, продолжит примерно в {fmt_time(auto_limit_free_at(), viewer, '%H:%M')})"
-    minor = ", ".join(a['minor']) if a['minor'] else "мелочей нет"
-    return (f"{a['icon']} {b('Автопринятие')} в {fmt_time(a['due'], viewer, '%d.%m %H:%M')}{note} · {esc(minor)}"
-            + (" · подписан на группу" if (app or {}).get('subscribed') else ""))
+        note = f"\n   ⏳ <i>ждёт лимита, продолжит примерно в {fmt_time(auto_limit_free_at(), viewer, '%H:%M')}</i>"
+    return f"{head}\n   {esc(details)}{note}"
 
 def auto_counts():
     now = timeutil.now_utc()
@@ -2193,32 +2217,37 @@ def show_auto_settings(chat_id, edit_message=None):
     waiting = [a for a in pending.values() if (a.get('auto') or {}).get('due') and not a['auto'].get('manual')]
     manual = [a for a in pending.values() if (a.get('auto') or {}).get('manual')]
     nearest = min((a['auto']['due'] for a in waiting), default=None)
-    lines = [f"🤖 <b>Автопринятие</b>: {'✅ включено' if enabled else '⛔ выключено'}",
-             f"Принято автоматически: за час {hour} из {autoaccept.LIMIT_HOUR}, за сутки {day} из {autoaccept.LIMIT_DAY}",
-             f"Ждут автопринятия: {len(waiting)}" + (f", ближайшая в {fmt_time(nearest, chat_id, '%d.%m %H:%M')}" if nearest else ""),
-             *([f"⏳ Из них ждут лимита: {sum(1 for a in waiting if a['auto'].get('limit_wait'))}, "
-                f"продолжу сам примерно в {fmt_time(auto_limit_free_at(), chat_id, '%H:%M')}"]
-               if any(a['auto'].get('limit_wait') for a in waiting) else []),
-             f"Только вручную: {len(manual)}",
+    limit_wait = sum(1 for a in waiting if a['auto'].get('limit_wait'))
+    lines = [f"🤖 <b>Автопринятие</b> · {'✅ включено' if enabled else '⛔ выключено'}",
              "",
-             f"🛡 <b>Рейд-режим</b>: {raid_status_text(chat_id)}",
-             f"📖 <b>Словарь</b>: встроенный + своих слов {len(owner_words())}",
+             "📊 <b>Сейчас</b>",
+             f"   Принято за час: <b>{hour}</b> из {autoaccept.LIMIT_HOUR} · за сутки: <b>{day}</b> из {autoaccept.LIMIT_DAY}",
+             f"   Ждут автопринятия: <b>{len(waiting)}</b>" + (f" · ближайшая в {fmt_time(nearest, chat_id, '%d.%m %H:%M')}" if nearest else ""),
+             *([f"   ⏳ Ждут лимита: <b>{limit_wait}</b> · продолжу примерно в {fmt_time(auto_limit_free_at(), chat_id, '%H:%M')}"]
+               if limit_wait else []),
+             f"   Только вручную: <b>{len(manual)}</b>",
              "",
-             "<b>Сроки</b>: без мелочей 1 ч (подписан на группу — 5 мин), 1 мелочь 12 ч, 2 — 24 ч, 3+ — 48 ч.",
-             "<b>Мелочи</b>: нет аватарки, нет username, Telegram моложе года, есть комментарий, 6+ цифр в нике.",
-             "<b>Только вручную</b>: бан или мут когда-либо, твинк, блок в боте, брань и символика, раньше отклоняли, "
-             "Telegram моложе 2 месяцев, пытался писать в поддержку, пока ждёт.",
-             "Перед принятием бот всё перепроверяет. Игрок ничего этого не видит."]
+             f"🛡 <b>Рейд-режим</b> · {raid_status_text(chat_id)}",
+             "",
+             "⏱ <b>Сроки</b>",
+             "   ⚡ 5 мин: без мелочей и подписан на группу",
+             "   🟢 1 ч: без мелочей",
+             "   🟡 12 ч: одна мелочь",
+             "   🟠 24 ч: две мелочи · 48 ч: три и больше",
+             "",
+             "🔸 <b>Мелочи</b>: нет аватарки, нет username, Telegram моложе года, есть комментарий, 6+ цифр в нике",
+             "✋ <b>Только вручную</b>: бан или мут когда-либо, твинк, блок в боте, брань и символика, раньше отклоняли, "
+             "Telegram моложе 2 месяцев, писал в поддержку, пока ждёт",
+             "",
+             f"📖 Словарь: встроенный + своих слов {len(owner_words())}",
+             "<i>Перед принятием бот всё перепроверяет. Игрок ничего этого не видит.</i>"]
     markup = types.InlineKeyboardMarkup()
     markup.row(B("⛔ Выключить автопринятие" if enabled else "✅ Включить автопринятие", callback_data="auto_toggle"))
-    if raid_active():
-        markup.row(B("⚪ Выключить рейд-режим", callback_data="raid_off"))
-    else:
-        markup.row(B("🔴 Включить рейд-режим сейчас", callback_data="raid_on"))
     raid_auto = storage.setting('raid_auto', True)
-    markup.row(B(("✅" if raid_auto else "⬜") + " Рейд-режим включается сам", callback_data="raid_auto_toggle"))
-    markup.row(B(f"📖 Свои слова ({len(owner_words())})", callback_data="words_list"))
-    markup.row(B("🔙 Управление", callback_data="admin_menu_controls"))
+    markup.row(B("⚪ Выключить рейд" if raid_active() else "🔴 Включить рейд", callback_data="raid_off" if raid_active() else "raid_on"),
+               B(("✅" if raid_auto else "⬜") + " Рейд сам", callback_data="raid_auto_toggle"))
+    markup.row(B(f"📖 Свои слова ({len(owner_words())})", callback_data="words_list"),
+               B("🔙 Назад", callback_data="admin_menu_controls"))
     text = "\n".join(lines)
     if edit_message:
         edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
@@ -2228,13 +2257,14 @@ def show_auto_settings(chat_id, edit_message=None):
 def show_words(chat_id, edit_message=None):
     B = types.InlineKeyboardButton
     words = owner_words()
-    text = ("📖 <b>Свои слова словаря</b>\nИщутся в нике, пароле и комментарии заявки вместе со встроенным словарём "
-            "(мат, оскорбления, символика, политика). Нажмите на слово, чтобы убрать его.\n\n"
-            + (", ".join(f"<code>{escape_html(w)}</code>" for w in words) if words else "<i>Своих слов пока нет.</i>"))
+    text = (f"📖 <b>Свои слова</b> · {len(words)}\n"
+            "<i>Ищутся в нике, пароле и комментарии вместе со встроенным словарём: мат, оскорбления, символика, политика.</i>\n\n"
+            + (" · ".join(f"<code>{escape_html(w)}</code>" for w in words) + "\n\nЧтобы убрать слово, нажмите ✖ рядом с ним."
+               if words else "Своих слов пока нет."))
     markup = types.InlineKeyboardMarkup(row_width=3)
     markup.add(*[B(f"✖ {w}", callback_data=f"words_del_{i}") for i, w in enumerate(words[:60])])
     markup.row(B("➕ Добавить слово", callback_data="words_add"))
-    markup.row(B("🔙 Автопринятие", callback_data="auto_menu"))
+    markup.row(B("🔙 Назад", callback_data="auto_menu"))
     if edit_message:
         edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
     else:
@@ -2966,10 +2996,9 @@ def callback_handler(call):
             admin_markup = types.InlineKeyboardMarkup()
             admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявку", callback_data=f"pending_goto_{uid}"))
             admin_msg = (
-                f"📩 <b>Новая заявка!</b>\n"
+                f"📩 <b>Новая заявка</b> · в очереди {len(pending)}\n"
                 + (f"🧪 Тестовая: {escape_html(staff_name(uid))} в режиме игрока\n" if test_by else "")
-                + f"Ник: <code>{escape_html(state['nick'])}</code>\n"
-                f"В очереди: <b>{len(pending)}</b>"
+                + f"👤 <code>{escape_html(state['nick'])}</code>"
                 f"{dup_warning}"
                 f"\n\n{auto_line(new_app)}"
                 f"{info}"

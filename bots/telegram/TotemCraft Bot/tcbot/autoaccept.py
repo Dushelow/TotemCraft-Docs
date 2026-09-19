@@ -33,9 +33,9 @@ def decide(f):
         stop.append("твинк: с того же IP есть аккаунт в бане (" + ", ".join(f['ip_banned_twins'][:3]) + ")")
     if f.get('blocked'):
         stop.append("заблокирован в боте")
-    for where, hits in (('ник', f.get('bad_nick')), ('пароль', f.get('bad_password')), ('комментарий', f.get('bad_comment'))):
+    for where, hits in (('нике', f.get('bad_nick')), ('пароле', f.get('bad_password')), ('комментарии', f.get('bad_comment'))):
         if hits:
-            stop.append(f"{where}: " + ", ".join(sorted({cat for cat, _ in hits})))
+            stop.append(", ".join(sorted({cat for cat, _ in hits})) + f" в {where}")
     if f.get('rejected_before'):
         stop.append(f"раньше отклоняли ({f['rejected_before']})")
     age = f.get('tg_age_days')

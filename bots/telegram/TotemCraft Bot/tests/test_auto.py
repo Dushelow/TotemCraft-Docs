@@ -125,7 +125,7 @@ check(bot.pending[str(R)]['auto']['manual'], "пытался обратитьс�
 bot.pending.pop(str(R))
 S = 6_000_000_004
 a = submit(S, 'Mr_pidor')
-check(a['auto']['manual'] and any('ник' in r for r in a['auto']['stop']), "брань в нике: только вручную")
+check(a['auto']['manual'] and any('в нике' in r for r in a['auto']['stop']), "брань в нике: только вручную")
 bot.pending.pop(str(S))
 T = 9_900_000_000  # совсем новый аккаунт
 a = submit(T, 'FreshNick')
@@ -147,7 +147,7 @@ check(all(not bot.pending[str(tg)]['auto']['manual'] and bot.pending[str(tg)]['a
 alerts = [x for x in sent_to(ctx.tg_log, OWNER) if 'упёрся в лимит' in x]
 check(len(alerts) == 1 and 'Продолжу сам' in alerts[0], "команде одно сообщение про лимит и когда продолжит")
 (t, _), log = ctx.press(OWNER, 'auto_menu')
-check(any('за час 5 из 5' in x and 'ждут лимита: 2' in x for _, x in edited(log)), "в настройках «за час 5 из 5» и «ждут лимита: 2»")
+check(any('за час: <b>5</b> из 5' in x and 'Ждут лимита: <b>2</b>' in x for _, x in edited(log)), "в настройках «за час 5 из 5» и «ждут лимита: 2»")
 check('ждёт лимита' in bot.auto_line(bot.pending[str(left[0])]), "в карточке заявки «ждёт лимита, продолжит примерно в …»")
 bot.auto_job()
 check(all(str(tg) in bot.pending for tg in left), "пока лимит занят, повторно не принимает")
@@ -176,7 +176,7 @@ check(any('Рейд-режим включён' in x for x in sent_to(all_log, AD
 bot.auto_job()
 check(str(U) in bot.pending, "во время рейда автомат не принимает")
 (t, _), log = ctx.press(ADMIN, 'admin_back')
-check(any('Рейд-режим активен' in x for _, x in edited(log)), "команда видит «Рейд-режим активен» в панели")
+check(any('Рейд-режим</b>: автопринятие на паузе' in x for _, x in edited(log)), "команда видит рейд-режим в панели")
 ctx.press(OWNER, 'raid_off')
 check(not bot.raid_active(), "владелец выключил рейд-режим")
 bot.auto_job()
