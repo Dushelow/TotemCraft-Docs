@@ -1,1 +1,8 @@
 minecraft/custom-plugins/FishClaim/target/
+__pycache__/
+# Рабочие файлы Telegram-бота на сервере: данные игроков и секреты, в репозиторий не кладём
+bots/telegram/TotemCraft Bot/*.db*
+bots/telegram/TotemCraft Bot/.env
+bots/telegram/TotemCraft Bot/backups/
+bots/telegram/TotemCraft Bot/legacy_files/
+bots/telegram/TotemCraft Bot/bot_errors.log*

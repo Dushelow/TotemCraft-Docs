@@ -1,57 +1,27 @@
 import telebot
 from telebot import types
-import json, csv, os, re, time, requests, traceback, threading, schedule, pytz, socket, struct, sqlite3, html as _html
-from contextlib import closing
-from datetime import datetime, date, timezone, timedelta
-from collections import defaultdict, deque
+import os, re, time, requests, threading, schedule, html as _html
+from datetime import timedelta
+from collections import defaultdict
 
-# Загрузка переменных окружения из .env файла (если установлен python-dotenv)
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-except ImportError:
-    pass  # На сервере переменные берутся из systemd EnvironmentFile
-
-def _require_env(name):
-    val = os.environ.get(name)
-    if not val:
-        raise RuntimeError(f"Переменная окружения {name!r} не задана. Проверьте файл .env или EnvironmentFile в systemd.")
-    return val
-
-TOKEN              = _require_env('BOT_TOKEN')
-ADMIN_ID           = int(_require_env('ADMIN_ID'))
-DISCORD_WEBHOOK_URL = _require_env('DISCORD_WEBHOOK_URL')
-CONSOLE_WEBHOOK_URL = _require_env('CONSOLE_WEBHOOK_URL')
-# RCON сервера Minecraft: регистрация идёт напрямую, без пароля в Discord
-RCON_HOST     = os.environ.get('RCON_HOST', '127.0.0.1')
-RCON_PORT     = int(os.environ.get('RCON_PORT', '25575'))
-RCON_PASSWORD = os.environ.get('RCON_PASSWORD', '')
-MOSCOW_TZ = pytz.timezone('Europe/Moscow')
+from tcbot import config, storage, timeutil
+from tcbot.config import TOKEN, ADMIN_ID, DISCORD_WEBHOOK_URL, CONSOLE_WEBHOOK_URL
+from tcbot.logs import log_error
+from tcbot.rcon import rcon_command
+from tcbot import bans
 
 bot = telebot.TeleBot(TOKEN)
 
-PENDING_FILE = 'pending.json'
-APPROVED_CSV = 'approved_applications.csv'
-CONFIG_FILE = 'bot_config.json'
-BLOCKED_FILE = 'blocked_users.json'
-CHAT_HISTORY_FILE = 'chat_history.json'
-MESSAGE_QUEUE_FILE = 'message_queue.json'
-LAST_APPLICATION_FILE = 'last_application.json'
-TICKETS_FILE = 'tickets.json'
-ERROR_LOG = 'bot_errors.log'
+# База: схема и разовый перенос старых файлов JSON/CSV
+storage.migrate()
 
-user_states = {}
-pending = {}
-blocked_users = set()
-registration_paused = False
-last_application = {}
-
-# Тикеты: { str(uid): { 'id': int, 'status': 'open' } }
-active_tickets = {}
-ticket_counter = 0
-
-chat_history = defaultdict(lambda: deque(maxlen=20))
-unread_messages = set()
+user_states = {}                                   # игрок -> шаг анкеты или обращения (в памяти, это черновик)
+pending = storage.PersistentDict('pending')        # заявки в очереди: str(tg_id) -> данные заявки
+blocked_users = storage.PersistentSet('blocked', int)
+last_application = storage.PersistentDict('last_application')  # str(tg_id) -> UTC ISO последней подачи
+active_tickets = storage.PersistentDict('tickets')  # str(tg_id) -> {'id', 'status', 'message', 'nick', 'date'}
+unread_messages = storage.PersistentSet('unread', str)
+registration_paused = bool(storage.setting('paused', False))
 
 user_last_request = {}
 RATE_LIMIT = 5
@@ -59,57 +29,11 @@ RATE_WINDOW = 5
 RATE_COOLDOWN = 10
 user_cooldown_until = {}
 
-# ---------- Загрузка ----------
-def load_json(filename, default):
-    if os.path.exists(filename):
-        with open(filename, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return default
-
-def save_json(filename, data):
-    with open(filename, 'w', encoding='utf-8') as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-pending = load_json(PENDING_FILE, {})
-config = load_json(CONFIG_FILE, {'paused': False})
-registration_paused = config.get('paused', False)
-blocked_users = set(load_json(BLOCKED_FILE, []))
-history_data = load_json(CHAT_HISTORY_FILE, {})
-for uid, msgs in history_data.items():
-    chat_history[uid] = deque(msgs, maxlen=20)
-unread_messages = set(load_json(MESSAGE_QUEUE_FILE, []))
-last_application = load_json(LAST_APPLICATION_FILE, {})
-_tickets_data = load_json(TICKETS_FILE, {'counter': 0, 'tickets': {}})
-ticket_counter = _tickets_data.get('counter', 0)
-active_tickets = _tickets_data.get('tickets', {})
-
-if not os.path.exists(APPROVED_CSV):
-    with open(APPROVED_CSV, 'w', newline='', encoding='utf-8-sig') as f:
-        csv.writer(f).writerow(['Дата', 'TG_Username', 'TG_ID', 'Minecraft_Ник', 'Пароль', 'Статус', 'Комментарий_игрока', 'Комментарий_админа'])
-
 HIDDEN_PASSWORD = '***'
 
-def scrub_csv_passwords():
-    """Заменяет пароли в истории заявок на звёздочки. Пароль нужен только серверу, хранить его незачем."""
-    with open(APPROVED_CSV, 'r', newline='', encoding='utf-8-sig') as f:
-        rows = list(csv.reader(f))
-    changed = False
-    for row in rows[1:]:
-        if len(row) > 4 and row[4] not in ('', HIDDEN_PASSWORD):
-            row[4] = HIDDEN_PASSWORD
-            changed = True
-    if not changed:
-        return
-    tmp = APPROVED_CSV + '.tmp'
-    with open(tmp, 'w', newline='', encoding='utf-8-sig') as f:
-        csv.writer(f).writerows(rows)
-    os.replace(tmp, APPROVED_CSV)
-
-scrub_csv_passwords()
-
-def log_error(e):
-    with open(ERROR_LOG, 'a', encoding='utf-8') as f:
-        f.write(f"[{datetime.now()}] {traceback.format_exc()}\n")
+def save_json(_name, data):
+    """Совместимость со старым кодом: записать изменения вложенных значений в базу."""
+    data.sync()
 
 def escape_md(text):
     escape_chars = r'_*[]()~`>#+-=|{}.!'
@@ -118,6 +42,18 @@ def escape_md(text):
 def escape_html(text):
     """Экранирует спецсимволы для HTML parse_mode в Telegram."""
     return _html.escape(str(text), quote=False)
+
+def tz_of(uid):
+    """Пояс, в котором человеку показываем время: свой у админа, иначе по умолчанию (Москва)."""
+    return staff.get(uid, {}).get('tz') or config.DEFAULT_TZ
+
+def fmt_time(value, uid=None, pattern='%d.%m.%Y %H:%M'):
+    """Время из базы (UTC) в поясе того, кто смотрит."""
+    try:
+        return timeutil.fmt(value, tz_of(uid), pattern)
+    except (TypeError, ValueError):
+        return str(value or '—')
+
 
 def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     try:
@@ -190,33 +126,6 @@ def send_console_command(command):
     if CONSOLE_WEBHOOK_URL:
         run_in_background(_post_webhook, CONSOLE_WEBHOOK_URL, {"content": command})
 
-def _recv_exact(sock, size):
-    data = b''
-    while len(data) < size:
-        chunk = sock.recv(size - len(data))
-        if not chunk:
-            raise ConnectionError("RCON: соединение закрыто")
-        data += chunk
-    return data
-
-def rcon_command(command):
-    """Выполняет команду в консоли сервера через RCON и возвращает ответ сервера."""
-    if not RCON_PASSWORD:
-        raise RuntimeError("RCON_PASSWORD не задан в .env")
-    with socket.create_connection((RCON_HOST, RCON_PORT), timeout=5) as sock:
-        def send(req_id, ptype, body):
-            packet = struct.pack('<ii', req_id, ptype) + body.encode('utf-8') + b'\x00\x00'
-            sock.sendall(struct.pack('<i', len(packet)) + packet)
-        def recv():
-            length = struct.unpack('<i', _recv_exact(sock, 4))[0]
-            packet = _recv_exact(sock, length)
-            return struct.unpack('<i', packet[:4])[0], packet[8:-2].decode('utf-8', 'replace')
-        send(1, 3, RCON_PASSWORD)
-        if recv()[0] == -1:
-            raise RuntimeError("RCON: неверный пароль")
-        send(2, 2, command)
-        return re.sub(r'§.', '', recv()[1]).strip()
-
 # Пароли одобренных игроков, которых не удалось зарегистрировать: ник -> пароль (только в памяти)
 failed_registrations = {}
 
@@ -264,7 +173,7 @@ def discord_new_application(user, tg_id, nick, password, comment="", old_nicks=N
     if test_by:
         desc += f"\n**🧪 Тестовая заявка** (режим игрока, {discord_escape(test_by)})"
     embed = {"title": "📩 Новая заявка", "description": desc, "color": 0xFFFF00,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -280,7 +189,7 @@ def discord_decision_notify(nick, status, admin_comment="", decided_by=""):
     if admin_comment:
         desc += f"\n**Комментарий админа:** {discord_escape(admin_comment)}"
     embed = {"title": f"📋 Заявка {status_text.lower()}", "description": desc, "color": color,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -297,7 +206,7 @@ def discord_player_message(user, tg_id, nick, message_text):
         f"*Администратор – перейдите в Telegram для просмотра сообщения.*"
     )
     embed = {"title": "📬 Обращение игрока", "description": desc, "color": 0x808080,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -313,7 +222,7 @@ def discord_guest_message(user, tg_id):
         f"*Администратор – перейдите в Telegram для просмотра сообщения.*"
     )
     embed = {"title": "📬 Обращение гостя", "description": desc, "color": 0x808080,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -328,7 +237,7 @@ def discord_player_blocked(nick, tg_id, username, reason="", blocked_by=""):
     if reason:
         desc += f"\n**Причина:** {discord_escape(reason)}"
     embed = {"title": "🚫 Игрок заблокирован", "description": desc, "color": 0xff4400,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -341,7 +250,7 @@ def discord_dialog_opened(nick, tg_id, username, admin_name=""):
     if admin_name:
         desc += f"\n**Администратор:** {discord_escape(admin_name)}"
     embed = {"title": "💬 Диалог открыт администратором", "description": desc, "color": 0x00aaff,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -355,7 +264,7 @@ def discord_dialog_closed(nick, tg_id, username, by_user=False, admin_name=""):
         who += f" ({discord_escape(admin_name)})"
     desc = f"**Игровой ник:** `{discord_escape(nick)}`\n**TG ID:** {tg_id}\n**TG Username:** {uname}\n**Закрыт:** {who}"
     embed = {"title": "🔇 Диалог (тикет) закрыт", "description": desc, "color": 0x888888,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -371,7 +280,7 @@ def discord_application_cancelled(nick, tg_id, username, tg_name=""):
         f"**Игровой ник:** `{discord_escape(nick)}`"
     )
     embed = {"title": "↩️ Игрок отменил заявку", "description": desc, "color": 0xff8800,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
@@ -382,7 +291,7 @@ def discord_staff_change(title, name, tg_id, role_text, by_name):
     desc = (f"**Кто:** {discord_escape(name)}\n**TG ID:** {tg_id}\n"
             f"**Роль:** {role_text}\n**Изменил:** {discord_escape(by_name)}")
     embed = {"title": title, "description": desc, "color": 0x9b59b6,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     post_discord({"embeds": [embed]})
 
 def discord_daily_reminder():
@@ -391,15 +300,14 @@ def discord_daily_reminder():
     if not pending: return
     desc = f"В очереди {len(pending)} заявок(и). Проверьте их в Telegram."
     embed = {"title": "⏳ Незакрытые заявки", "description": desc, "color": 0xffaa00,
-             "timestamp": datetime.now(MOSCOW_TZ).isoformat()}
+             "timestamp": timeutil.now_iso()}
     try:
         post_discord({"embeds": [embed]})
     except Exception as e:
         log_error(e)
 
 def reload_pending():
-    global pending
-    pending = load_json(PENDING_FILE, {})
+    pending.reload()
 
 # ---------- Валидация AuthMe ----------
 def validate_nick_authme(nick):
@@ -506,228 +414,50 @@ def check_nick_already_approved(nick):
     Сравнение регистронезависимое.
     Возвращает True если ник уже занят.
     """
-    if not os.path.exists(APPROVED_CSV):
-        return False
-    nick_lower = nick.lower()
-    with open(APPROVED_CSV, 'r', encoding='utf-8-sig') as f:
-        for row in list(csv.reader(f))[1:]:
-            if len(row) >= 6 and row[5] == 'Одобрено' and row[3].lower() == nick_lower:
-                return True
-    return False
+    return bool(storage.query("SELECT 1 FROM applications WHERE status='Одобрено' AND nick=? COLLATE NOCASE LIMIT 1",
+                              (nick,)))
 
 def check_duplicate_tg_id(tg_id):
     """
     Проверяет, подавал ли данный TG ID заявку ранее (по approved CSV).
     Возвращает True если был в прошлых заявках.
     """
-    if not os.path.exists(APPROVED_CSV):
-        return False
-    str_id = str(tg_id)
-    with open(APPROVED_CSV, 'r', encoding='utf-8-sig') as f:
-        for row in list(csv.reader(f))[1:]:
-            if len(row) >= 3 and row[2] == str_id:
-                return True
-    return False
+    return bool(storage.query("SELECT 1 FROM applications WHERE tg_id=? LIMIT 1", (int(tg_id),)))
 
 def previous_nicks(tg_id):
     """Ники, с которыми этот TG ID подавал заявки раньше (из истории заявок)."""
-    nicks = []
-    for row in read_approved_csv():
-        if len(row) >= 4 and row[2] == str(tg_id) and row[3] and row[3] not in nicks:
-            nicks.append(row[3])
-    return nicks
+    rows = storage.query("SELECT nick FROM applications WHERE tg_id=? AND nick<>'' GROUP BY nick COLLATE NOCASE "
+                         "ORDER BY MIN(id)", (int(tg_id),))
+    return [r[0] for r in rows]
 
-# ---------- Проверка блокировок на сервере (только чтение файлов) ----------
-MC_SERVER_DIR = os.environ.get('MC_SERVER_DIR', '/home/minecraft/server')
-ABX_DATA_DIR  = os.path.join(MC_SERVER_DIR, 'plugins', 'AdvancedBanX', 'data')
-AUTHME_DB     = os.path.join(MC_SERVER_DIR, 'plugins', 'AuthMe', 'authme.db')
-
-PUNISHMENT_NAMES = {
-    'BAN': 'бан', 'TEMP_BAN': 'временный бан',
-    'IP_BAN': 'бан по IP', 'TEMP_IP_BAN': 'временный бан по IP',
-    'MUTE': 'мут', 'TEMP_MUTE': 'временный мут',
-    'WARNING': 'предупреждение', 'TEMP_WARNING': 'временное предупреждение',
-    'KICK': 'кик', 'NOTE': 'заметка',
-}
-BAN_TYPES = {'BAN', 'TEMP_BAN', 'IP_BAN', 'TEMP_IP_BAN'}
-IP_TYPES = {'IP_BAN', 'TEMP_IP_BAN'}
-
-_SQL_ROW = re.compile(r'^(?:/\*C\d+\*/)?INSERT INTO (PUNISHMENTS|PUNISHMENTHISTORY) VALUES\((.*)\)\s*$')
-_SQL_DEL = re.compile(r'^(?:/\*C\d+\*/)?DELETE FROM (PUNISHMENTS|PUNISHMENTHISTORY) WHERE ID=(\d+)\s*$')
-_abx_cache = {'key': None, 'data': None}
-
-def _parse_sql_values(s):
-    """Разбирает список значений из строки INSERT базы HSQLDB: числа, NULL и строки в кавычках."""
-    vals, i = [], 0
-    while i < len(s):
-        if s[i] == "'":
-            j, buf = i + 1, []
-            while True:
-                if s[j] == "'":
-                    if j + 1 < len(s) and s[j + 1] == "'":
-                        buf.append("'"); j += 2; continue
-                    break
-                buf.append(s[j]); j += 1
-            vals.append(re.sub(r'\\u([0-9a-fA-F]{4})', lambda m: chr(int(m.group(1), 16)), ''.join(buf)))
-            i = j + 1
-        else:
-            j = s.find(',', i)
-            j = len(s) if j == -1 else j
-            tok = s[i:j].strip()
-            vals.append(None if tok == 'NULL' else int(tok) if re.fullmatch(r'-?\d+', tok) else tok)
-            i = j
-        if i < len(s) and s[i] == ',':
-            i += 1
-    return vals
-
-def read_advancedban():
-    """Читает базу AdvancedBanX (файлы storage.script и storage.log). Возвращает (активные, история)."""
-    files = [os.path.join(ABX_DATA_DIR, 'storage.script'), os.path.join(ABX_DATA_DIR, 'storage.log')]
-    key = tuple((os.path.getmtime(p), os.path.getsize(p)) if os.path.exists(p) else None for p in files)
-    if key[0] is None:
-        raise FileNotFoundError(f"нет файла {files[0]}")
-    if _abx_cache['key'] == key:
-        return _abx_cache['data']
-    tables = {'PUNISHMENTS': {}, 'PUNISHMENTHISTORY': {}}
-    for path in files:
-        if not os.path.exists(path):
-            continue
-        with open(path, 'r', encoding='utf-8', errors='replace') as f:
-            for line in f:
-                m = _SQL_ROW.match(line)
-                if m:
-                    v = _parse_sql_values(m.group(2))
-                    if len(v) >= 8:
-                        tables[m.group(1)][v[0]] = {'name': v[1] or '', 'uuid': v[2] or '', 'reason': v[3] or '',
-                                                    'operator': v[4] or '', 'type': v[5] or '', 'start': v[6], 'end': v[7]}
-                    continue
-                m = _SQL_DEL.match(line)
-                if m:
-                    tables[m.group(1)].pop(int(m.group(2)), None)
-    data = (list(tables['PUNISHMENTS'].values()), list(tables['PUNISHMENTHISTORY'].values()))
-    _abx_cache.update(key=key, data=data)
-    return data
-
-def authme_ips(nicks):
-    """IP (последний и при регистрации) для ников из базы AuthMe."""
-    if not nicks:
-        return set()
-    q = f"SELECT ip, regip FROM authme WHERE LOWER(username) IN ({','.join('?' * len(nicks))})"
-    try:
-        with closing(sqlite3.connect('file:' + AUTHME_DB + '?mode=ro', uri=True, timeout=5)) as db:
-            rows = db.execute(q, [n.lower() for n in nicks]).fetchall()
-    except sqlite3.OperationalError:
-        # Бот не может писать в папку AuthMe: читаем файл как есть, без блокировок
-        with closing(sqlite3.connect('file:' + AUTHME_DB + '?immutable=1', uri=True, timeout=5)) as db:
-            rows = db.execute(q, [n.lower() for n in nicks]).fetchall()
-    return {ip for row in rows for ip in row if ip and ip not in ('127.0.0.1', '0.0.0.0')}
-
-def _fmt_ms(ms):
-    return datetime.fromtimestamp(ms / 1000, MOSCOW_TZ).strftime('%d.%m.%Y %H:%M')
-
-def _fmt_vanilla_date(s):
-    try:
-        return datetime.strptime(s, '%Y-%m-%d %H:%M:%S %z').astimezone(MOSCOW_TZ).strftime('%d.%m.%Y %H:%M')
-    except Exception:
-        return s
-
-def _vanilla_active(expires):
-    if not expires or expires == 'forever':
-        return True
-    try:
-        return datetime.strptime(expires, '%Y-%m-%d %H:%M:%S %z') > datetime.now(timezone.utc)
-    except Exception:
-        return True
-
-def find_punishments(nicks):
-    """Ищет наказания игрока во всех местах. Возвращает (строки для админа, ошибки чтения).
-    Каждый источник проверяется отдельно: сбой одного не мешает остальным."""
-    lower = {n.lower() for n in nicks if n}
-    items, lines, errors = {}, [], []
-
-    def add(icon, who, kind, until, reason, operator, start, source):
-        # AdvancedBanX копирует баны в ванильный список: одинаковые записи склеиваем
-        key = (who.lower(), reason, start)
-        if key in items:
-            if source not in items[key]['sources']:
-                items[key]['sources'].append(source)
-        else:
-            items[key] = dict(icon=icon, who=who, kind=kind, until=until, reason=reason,
-                              operator=operator, start=start, sources=[source])
-
-    ips = set()
-    try:
-        ips = authme_ips(sorted(lower))
-    except Exception as e:
-        log_error(e)
-        errors.append(f"базу AuthMe (IP игрока): {e}")
-
-    past = defaultdict(int)
-    try:
-        active, history = read_advancedban()
-        now_ms = time.time() * 1000
-        active_ids = set()
-        for p in active:
-            by_ip = p['type'] in IP_TYPES and (p['name'] in ips or p['uuid'] in ips)
-            if not (by_ip or p['name'].lower() in lower or p['uuid'].lower() in lower):
-                continue
-            if isinstance(p['end'], int) and p['end'] != -1 and p['end'] < now_ms:
-                continue  # срок уже вышел, плагин просто ещё не убрал запись
-            active_ids.add((p['name'], p['start']))
-            until = "навсегда" if p['end'] in (-1, None) else f"до {_fmt_ms(p['end'])}"
-            icon = '🚫' if p['type'] in BAN_TYPES else ('🔇' if 'MUTE' in p['type'] else '⚠️')
-            add(icon, f"IP {p['name']}" if by_ip else p['name'], PUNISHMENT_NAMES.get(p['type'], p['type']),
-                until, p['reason'], p['operator'], _fmt_ms(p['start']), 'AdvancedBanX')
-        for p in history:
-            if (p['name'], p['start']) in active_ids or p['type'] in ('NOTE', 'KICK'):
-                continue
-            if p['name'].lower() in lower or p['uuid'].lower() in lower or (p['type'] in IP_TYPES and p['name'] in ips):
-                past[PUNISHMENT_NAMES.get(p['type'], p['type'])] += 1
-    except Exception as e:
-        log_error(e)
-        errors.append(f"AdvancedBanX: {e}")
-
-    for fname, field in (('banned-players.json', 'name'), ('banned-ips.json', 'ip')):
-        try:
-            with open(os.path.join(MC_SERVER_DIR, fname), 'r', encoding='utf-8') as f:
-                entries = json.load(f)
-            for b in entries:
-                value = str(b.get(field, ''))
-                by_ip = value in ips
-                if not (by_ip or value.lower() in lower) or not _vanilla_active(b.get('expires')):
-                    continue
-                until = "навсегда" if b.get('expires') in (None, 'forever') else f"до {_fmt_vanilla_date(b['expires'])}"
-                add('🚫', f"IP {value}" if by_ip else value, 'бан по IP' if by_ip else 'бан', until,
-                    b.get('reason', ''), b.get('source', ''), _fmt_vanilla_date(b.get('created', '')), fname)
-        except Exception as e:
-            log_error(e)
-            errors.append(f"{fname}: {e}")
-
-    for it in items.values():
-        lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])} ({it['until']})\n"
-                     f"    причина: {escape_html(it['reason'])}\n"
-                     f"    выдал: {escape_html(it['operator'])}, {it['start']} [{', '.join(it['sources'])}]")
-    if past:
-        lines.append("🕘 Раньше (сейчас сняты или истекли): " + ", ".join(f"{k}: {v}" for k, v in past.items()))
-    return lines, errors
-
-def ban_report(tg_id, nick):
-    """Блок для карточки заявки: наказания по нику заявки и по прошлым никам этого TG ID. Пусто, если ничего нет."""
+# ---------- Проверка блокировок на сервере (данные — tcbot/bans.py) ----------
+def ban_report(tg_id, nick, viewer=None):
+    """Блок для карточки заявки: наказания по нику заявки и по прошлым никам этого TG ID. Пусто, если ничего нет.
+    Время показывается в поясе того, кто смотрит (viewer)."""
     try:
         nicks = [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()]
-        found, errors = find_punishments(nicks)
+        found, past, errors = bans.find(nicks)
     except Exception as e:
         log_error(e)
         return f"\n\n⚠️ Не удалось проверить блокировки: {escape_html(e)}"
+    lines = []
+    for it in found:
+        until = "навсегда" if it['until'] is None else f"до {fmt_time(it['until'], viewer)}"
+        lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])} ({until})\n"
+                     f"    причина: {escape_html(it['reason'])}\n"
+                     f"    выдал: {escape_html(it['operator'])}, {fmt_time(it['start'], viewer)} [{', '.join(it['sources'])}]")
+    if past:
+        lines.append("🕘 Раньше (сейчас сняты или истекли): " + ", ".join(f"{k}: {v}" for k, v in past.items()))
     text = ""
-    if found:
+    if lines:
         checked = ", ".join(f"<code>{escape_html(n)}</code>" for n in nicks)
-        if len(found) > 12:
-            found = found[:12] + [f"…и ещё {len(found) - 12}"]
-        text += f"\n\n🚨 <b>Блокировки</b> (проверены ники: {checked}):\n" + "\n".join(found)
+        if len(lines) > 12:
+            lines = lines[:12] + [f"…и ещё {len(lines) - 12}"]
+        text += f"\n\n🚨 <b>Блокировки</b> (проверены ники: {checked}):\n" + "\n".join(lines)
     for err in errors:
         text += f"\n⚠️ Не удалось проверить {escape_html(err)}"
     return text
+
 
 def check_rate_limit(user_id):
     if user_id in staff:
@@ -823,33 +553,17 @@ def enrich_user_label(uid):
     return " ".join(parts)
 
 def add_to_history(user_id, text, from_user=True, by=None):
-    entry = {
-        "from": "user" if from_user else "admin",
-        "text": text,
-        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    }
-    if by is not None:
-        entry["by"] = staff_name(by)  # кто из админов написал; игрок этого не видит
-    chat_history[str(user_id)].append(entry)
-    save_json(CHAT_HISTORY_FILE, {uid: list(msgs) for uid, msgs in chat_history.items()})
+    """Сообщение в переписку. by — кто из команды написал (игрок этого не видит)."""
+    storage.add_message(user_id, 'user' if from_user else 'admin', text,
+                        staff_id=by, staff_name=staff_name(by) if by is not None else None)
 
 def add_unread(user_id):
     unread_messages.add(str(user_id))
-    save_json(MESSAGE_QUEUE_FILE, list(unread_messages))
 
 def clear_unread(user_id):
-    uid = str(user_id)
-    if uid in unread_messages:
-        unread_messages.remove(uid)
-        save_json(MESSAGE_QUEUE_FILE, list(unread_messages))
-
-def save_tickets():
-    save_json(TICKETS_FILE, {'counter': ticket_counter, 'tickets': active_tickets})
+    unread_messages.discard(str(user_id))
 
 # ---------- Команда: админы, роли, журнал (база bot.db) ----------
-BOT_DB = 'bot.db'
-_db_lock = threading.Lock()
-
 ROLE_OWNER, ROLE_ADMIN, ROLE_HELPER = 'owner', 'admin', 'helper'
 ROLE_NAMES = {ROLE_OWNER: 'Владелец', ROLE_ADMIN: 'Админ', ROLE_HELPER: 'Помощник'}
 # Что может каждая роль
@@ -860,28 +574,16 @@ PERMS = {
 }
 
 def db_exec(sql, params=(), fetch=False):
-    with _db_lock, closing(sqlite3.connect(BOT_DB, timeout=10)) as db:
-        cur = db.execute(sql, params)
-        rows = cur.fetchall() if fetch else None
-        db.commit()
-        return rows
+    return storage.query(sql, params) if fetch else storage.execute(sql, params)
 
-db_exec("""CREATE TABLE IF NOT EXISTS staff (tg_id INTEGER PRIMARY KEY, name TEXT, role TEXT NOT NULL,
-           added_by INTEGER, added_at TEXT)""")
-db_exec("""CREATE TABLE IF NOT EXISTS audit (id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL,
-           actor_id INTEGER, actor_name TEXT, actor_role TEXT, action TEXT NOT NULL,
-           target_id INTEGER, target_nick TEXT, details TEXT)""")
-db_exec("CREATE INDEX IF NOT EXISTS audit_actor ON audit(actor_id)")
-db_exec("CREATE INDEX IF NOT EXISTS audit_target ON audit(target_id)")
-db_exec("CREATE TABLE IF NOT EXISTS notices (kind TEXT, ref TEXT, chat_id INTEGER, message_id INTEGER, text TEXT)")
-
-staff = {}  # tg_id -> {'name': ..., 'role': ...}
+staff = {}  # tg_id -> {'name': ..., 'role': ..., 'tz': ...}
 
 def load_staff():
     staff.clear()
-    for tg_id, name, role in db_exec("SELECT tg_id, name, role FROM staff", fetch=True):
-        staff[tg_id] = {'name': name, 'role': role}
-    staff[ADMIN_ID] = {'name': staff.get(ADMIN_ID, {}).get('name') or 'Владелец', 'role': ROLE_OWNER}
+    for tg_id, name, role, tz in db_exec("SELECT tg_id, name, role, tz FROM staff", fetch=True):
+        staff[tg_id] = {'name': name, 'role': role, 'tz': tz}
+    owner = staff.get(ADMIN_ID, {})
+    staff[ADMIN_ID] = {'name': owner.get('name') or 'Владелец', 'role': ROLE_OWNER, 'tz': owner.get('tz')}
 
 load_staff()
 
@@ -922,7 +624,7 @@ def audit(actor_id, action, target_id=None, target_nick='', details='', actor_ro
         name = 'бот' if actor_id is None else (staff_name(actor_id) if actor_role != 'player' else '')
         db_exec("INSERT INTO audit (ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details) "
                 "VALUES (?,?,?,?,?,?,?,?)",
-                (datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M:%S'), actor_id, name, actor_role, action,
+                (timeutil.now_iso(), actor_id, name, actor_role, action,
                  int(target_id) if target_id not in (None, '') else None, target_nick or '', (details or '')[:2000]))
     except Exception as e:
         log_error(e)
@@ -940,7 +642,7 @@ def last_decision(target_id):
 # ---------- Уведомления команде ----------
 admin_states = {}                          # admin_id -> что админ сейчас вводит
 delayed_notifications = defaultdict(list)  # admin_id -> уведомления, отложенные на время ввода комментария
-dialogs = {}                               # admin_id -> player_id: с кем админ сейчас в диалоге
+dialogs = storage.PersistentDict('dialogs', int)  # admin_id -> player_id: с кем админ в диалоге (переживает перезапуск)
 app_claims = {}                            # player_id (str) -> admin_id: кто сейчас пишет решение по заявке
 
 def dialog_admin(player_id):
@@ -981,10 +683,12 @@ def close_notices(kind, ref, footer):
     except Exception as e:
         log_error(e)
         return
+    now = timeutil.now_iso()
     def edit_all():
         for chat_id, message_id, text in rows:
+            line = footer.replace('{t}', fmt_time(now, chat_id, '%H:%M'))
             try:
-                bot.edit_message_text(f"{text}\n\n{footer}"[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
+                bot.edit_message_text(f"{text}\n\n{line}"[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
             except Exception:
                 pass
     run_in_background(edit_all)
@@ -994,24 +698,19 @@ def close_notices(kind, ref, footer):
 
 def open_ticket(user_id, message_text='', nick=''):
     """Открывает новый тикет для пользователя. Возвращает номер тикета."""
-    global ticket_counter
-    ticket_counter += 1
+    number = storage.next_counter('ticket_counter')
     active_tickets[str(user_id)] = {
-        'id': ticket_counter,
+        'id': number,
         'status': 'open',
         'message': message_text,
         'nick': nick,
-        'date': datetime.now().strftime('%Y-%m-%d %H:%M')
+        'date': timeutil.now_iso()
     }
-    save_tickets()
-    return ticket_counter
+    return number
 
 def close_ticket(user_id):
     """Закрывает тикет пользователя."""
-    uid = str(user_id)
-    if uid in active_tickets:
-        del active_tickets[uid]
-        save_tickets()
+    active_tickets.pop(str(user_id), None)
 
 def get_ticket(user_id):
     """Возвращает данные тикета или None."""
@@ -1072,8 +771,7 @@ def send_admin_menu(chat_id, edit_message=None):
         row.append(B("👥 Команда", callback_data="staff_list"))
     if row:
         inline.row(*row)
-    if can(chat_id, 'controls') or can(chat_id, 'block'):
-        inline.row(B("⚙️ Управление", callback_data="admin_menu_controls"))
+    inline.row(B("⚙️ Управление и настройки", callback_data="admin_menu_controls"))
     inline.row(B("👤 Посмотреть как игрок", callback_data="player_view_on"))
     if my_dialog:
         inline.row(B(f"🔴 Завершить диалог с {get_user_label(my_dialog)}", callback_data="admin_end_dialog"))
@@ -1158,7 +856,7 @@ def show_pending_applications(chat_id, page=0, edit_message=None):
         user_id = app.get('user_id', app_id)
         username = app.get('username', '')
         tg_name = escape_html(app.get('tg_name', ''))
-        date_str = app.get('date', '')[:19].replace('T', ' ')
+        date_str = fmt_time(app.get('date'), chat_id)
         display_name = f"@{escape_html(username)}" if username and not username.startswith('id') else f"ID {user_id}"
         hidden_pw = '●' * len(app.get('password', ''))
         text = f"📩 <b>Заявка {page + 1} из {total}</b>\n"
@@ -1230,7 +928,7 @@ def do_nick_search(chat_id, query):
                 'tg_name': app.get('tg_name', ''),
                 'username': app.get('username', ''),
                 'tg_id': str(app.get('user_id', app_id)),
-                'date': app.get('date', '')[:10],
+                'date': fmt_time(app.get('date'), chat_id, '%d.%m.%Y'),
                 'status': '⏳ Ожидает',
                 'comment': app.get('comment', ''),
             })
@@ -1247,7 +945,7 @@ def do_nick_search(chat_id, query):
                 'tg_name': '',
                 'username': row[1],
                 'tg_id': row[2],
-                'date': row[0][:10],
+                'date': fmt_time(row[0], chat_id, '%d.%m.%Y'),
                 'status': f"{status_icon} {row[5]}",
                 'comment': row[6] if len(row) > 6 else '',
             })
@@ -1304,7 +1002,7 @@ def show_application_history(chat_id, page=0, edit_message=None):
         row = all_rows[i]
         icon = '✅' if len(row) > 5 and row[5] == 'Одобрено' else ('❌' if len(row) > 5 and row[5] == 'Отклонено' else '⏳')
         nick = row[3] if len(row) > 3 else '—'
-        markup.add(types.InlineKeyboardButton(f"{icon} {nick} · {row[0][:10]}", callback_data=f"apphistory_view_{i}"))
+        markup.add(types.InlineKeyboardButton(f"{icon} {nick} · {fmt_time(row[0], chat_id, '%d.%m.%Y')}", callback_data=f"apphistory_view_{i}"))
     nav = []
     if page > 0:
         nav.append(types.InlineKeyboardButton("◀️", callback_data=f"apphistory_page_{page - 1}"))
@@ -1332,7 +1030,7 @@ def show_application_card(chat_id, index, edit_message=None):
     index = max(0, min(index, total - 1))
     row = all_rows[index]  # [Дата, TG_Username, TG_ID, MC_Ник, Пароль, Статус, Комм_игрока, Комм_админа]
     num = total - index  # номер в списке «новые сверху»
-    date_s = row[0][:19].replace('T', ' ') if len(row) > 0 else '—'
+    date_s = fmt_time(row[0], chat_id)
     tg_uname = row[1] if len(row) > 1 else '—'
     tg_id = row[2] if len(row) > 2 else '—'
     mc_nick = row[3] if len(row) > 3 else '—'
@@ -1375,16 +1073,14 @@ def show_application_card(chat_id, index, edit_message=None):
 
 def show_statistics(chat_id, edit_message=None):
     total_approved = total_rejected = today_approved = today_rejected = 0
-    today_str = date.today().isoformat()
-    for r in read_approved_csv():
-        if len(r) < 6:
-            continue
-        if r[5] == 'Одобрено':
-            total_approved += 1
-            if r[0].startswith(today_str): today_approved += 1
-        elif r[5] == 'Отклонено':
-            total_rejected += 1
-            if r[0].startswith(today_str): today_rejected += 1
+    day_start, day_end = timeutil.today_bounds_iso(tz_of(chat_id))  # «сегодня» в поясе админа
+    for status, total, today in storage.query(
+            "SELECT status, COUNT(*), SUM(decided_at >= ? AND decided_at < ?) FROM applications GROUP BY status",
+            (day_start, day_end)):
+        if status == 'Одобрено':
+            total_approved, today_approved = total, today or 0
+        elif status == 'Отклонено':
+            total_rejected, today_rejected = total, today or 0
     pending_count = len(pending)
     text = (
         f"📊 <b>Статистика</b>\n"
@@ -1403,11 +1099,11 @@ def show_statistics(chat_id, edit_message=None):
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
 def read_approved_csv():
-    """Читает все строки из APPROVED_CSV (без заголовка). Возвращает список строк."""
-    if not os.path.exists(APPROVED_CSV):
-        return []
-    with open(APPROVED_CSV, 'r', encoding='utf-8-sig') as f:
-        return [row for row in list(csv.reader(f))[1:] if row]
+    """История заявок строками в прежнем порядке столбцов:
+    [решение (UTC ISO), TG username, TG ID, ник, '***', статус, комм. игрока, комм. админа, рассмотрел]."""
+    return [[a['decided_at'] or '', a['tg_username'] or '', str(a['tg_id'] or ''), a['nick'] or '', HIDDEN_PASSWORD,
+             a['status'] or '', a['player_comment'] or '', a['admin_comment'] or '', a['decided_by_name'] or '']
+            for a in storage.applications()]
 
 def show_approved_list(chat_id, page=0, edit_message=None):
     approved = [row for row in read_approved_csv() if len(row) >= 6 and row[5] == 'Одобрено']
@@ -1421,7 +1117,7 @@ def show_approved_list(chat_id, page=0, edit_message=None):
     per_page = 10
     pages = (len(approved) + per_page - 1) // per_page
     chunk = approved[page * per_page:(page + 1) * per_page]
-    lines = [f"• <code>{escape_html(r[3])}</code> | {r[0][:10]} | @{escape_html(r[1])}" for r in chunk]
+    lines = [f"• <code>{escape_html(r[3])}</code> | {fmt_time(r[0], chat_id, '%d.%m.%Y')} | @{escape_html(r[1])}" for r in chunk]
     text = f"✅ <b>Подтверждённые заявки</b> ({page+1}/{pages})\n" + "\n".join(lines)
     markup = types.InlineKeyboardMarkup(row_width=3)
     if page > 0: markup.add(types.InlineKeyboardButton("◀️", callback_data=f"approved_page_{page-1}"))
@@ -1444,7 +1140,7 @@ def show_rejected_list(chat_id, page=0, edit_message=None):
     per_page = 10
     pages = (len(rejected) + per_page - 1) // per_page
     chunk = rejected[page * per_page:(page + 1) * per_page]
-    lines = [f"• <code>{escape_html(r[3])}</code> | {r[0][:10]} | @{escape_html(r[1])}" for r in chunk]
+    lines = [f"• <code>{escape_html(r[3])}</code> | {fmt_time(r[0], chat_id, '%d.%m.%Y')} | @{escape_html(r[1])}" for r in chunk]
     text = f"❌ <b>Отклонённые заявки</b> ({page+1}/{pages})\n" + "\n".join(lines)
     markup = types.InlineKeyboardMarkup(row_width=3)
     if page > 0: markup.add(types.InlineKeyboardButton("◀️", callback_data=f"rejected_page_{page-1}"))
@@ -1457,7 +1153,8 @@ def show_rejected_list(chat_id, page=0, edit_message=None):
 
 def show_messages_menu(message, page=0, edit_message=None, category='unanswered'):
     """Показывает меню сообщений с категориями: не отвеченные / отвеченные."""
-    uids_with_history = [uid for uid, msgs in chat_history.items() if msgs]
+    last_times = storage.message_users()
+    uids_with_history = list(last_times)
     chat_id = message.chat.id
     if not uids_with_history:
         markup = types.InlineKeyboardMarkup()
@@ -1473,8 +1170,7 @@ def show_messages_menu(message, page=0, edit_message=None, category='unanswered'
     answered_uids = [uid for uid in uids_with_history if uid not in unread_set]
 
     def last_time(uid):
-        msgs = chat_history.get(uid)
-        return max(m['time'] for m in msgs) if msgs else '0'
+        return last_times.get(uid) or '0'
 
     if category == 'unanswered':
         pool = sorted(unanswered_uids, key=last_time, reverse=True)
@@ -1588,13 +1284,13 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
         lines.append(f"🗂 Заявок: {len(apps)} (✅ {ok_n}, ❌ {len(apps) - ok_n}), ники: {nicks}")
         last = apps[-1]
         decider = f", рассмотрел: {escape_html(last[8])}" if len(last) > 8 and last[8] else ""
-        lines.append(f"    последняя: {last[0][:10]}, {escape_html(last[5])}{decider}")
+        lines.append(f"    последняя: {fmt_time(last[0], admin_chat_id, '%d.%m.%Y')}, {escape_html(last[5])}{decider}")
     if str(uid) in pending:
         lines.append("⏳ Сейчас есть заявка на рассмотрении")
 
     # Статистика обращений
-    msgs = list(chat_history.get(str(uid), []))
-    lines.append(f"\n📨 Сообщений в истории: {len(msgs)}")
+    msgs = storage.get_messages(uid, 5)
+    lines.append(f"\n📨 Сообщений в истории: {storage.message_count(uid)}")
     ticket = get_ticket(uid)
     if ticket:
         lines.append(f"🎫 Тикет: #{ticket['id']} (открыт)")
@@ -1611,7 +1307,7 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
         for x in msgs[-5:]:
             who = '👤' if x['from'] == 'user' else f"👑 {escape_html(x.get('by', ''))}".rstrip()
             text = x['text'] if len(x['text']) <= 300 else x['text'][:300] + '…'
-            lines.append(f"{who} <i>{x['time'][5:16]}</i>\n{escape_html(text)}")
+            lines.append(f"{who} <i>{fmt_time(x['time'], admin_chat_id, '%d.%m %H:%M')}</i>\n{escape_html(text)}")
 
     profile_text = "\n".join(lines) + ban_report(uid, nick)
 
@@ -1666,6 +1362,10 @@ def show_admin_controls(chat_id, edit_message=None):
         markup.add(B("⏰ Сбросить таймеры заявок", callback_data="admin_resettimers"))
         markup.add(B("🧹 Очистить статистику", callback_data="admin_clearstats"))
         markup.add(B("🗑 Очистить историю диалогов", callback_data="admin_cleardialogs"))
+    if can(chat_id, 'controls'):
+        markup.add(B("📤 Выгрузить историю заявок (Excel)", callback_data="admin_export"))
+    tz_label = timeutil.TZ_NAMES.get(tz_of(chat_id), tz_of(chat_id))
+    markup.add(B(f"🕐 Мой часовой пояс: {tz_label}", callback_data="tz_menu"))
     markup.add(B("📖 Инструкция", callback_data="admin_help"))
     markup.add(B("🔙 Главное меню", callback_data="admin_back"))
     text = "⚙️ Управление ботом"
@@ -1717,6 +1417,7 @@ CALLBACK_PERMS = [
     ('show_blocked', 'block'), ('block_', 'block'), ('unblock_', 'block'),
     ('admin_pause', 'controls'), ('admin_resume', 'controls'), ('admin_clearstats', 'controls'),
     ('admin_resettimers', 'controls'), ('admin_cleardialogs', 'controls'), ('confirm_', 'controls'),
+    ('admin_export', 'controls'),
     ('jr_', 'journal'), ('staff_', 'staff'),
 ]
 
@@ -1769,8 +1470,8 @@ def resolve_player(query):
                    (ql,), fetch=True)
     return rows[0][0] if rows else None
 
-def _journal_line(ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details):
-    when = f"{ts[8:10]}.{ts[5:7]} {ts[11:16]}"
+def _journal_line(viewer, ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details):
+    when = fmt_time(ts, viewer, '%d.%m %H:%M')
     if actor_role == 'system':
         who = "🤖 Бот"
     elif actor_role == 'player':
@@ -1809,7 +1510,7 @@ def show_journal(chat_id, mode, value, page, edit_message=None):
         safe_send(chat_id, f"⚠️ Не удалось прочитать журнал: {escape_html(e)}", parse_mode='HTML')
         return
     head = f"📒 <b>Журнал</b> · {title}\nЗаписей: {total}, страница {page + 1} из {pages}, новые сверху"
-    body = "\n\n".join(_journal_line(*r) for r in rows) if rows else "<i>Записей пока нет.</i>"
+    body = "\n\n".join(_journal_line(chat_id, *r) for r in rows) if rows else "<i>Записей пока нет.</i>"
     text = f"{head}\n\n{body}"
     if len(text) > TG_MAX_LEN:
         text = text[:TG_MAX_LEN - 1] + '…'
@@ -1888,10 +1589,10 @@ def show_staff_card(chat_id, member, edit_message=None):
              f"Роль: <b>{ROLE_NAMES.get(s['role'], s['role'])}</b>",
              f"TG ID: <code>{member}</code>"]
     if info and info[0][1]:
-        lines.append(f"Добавлен: {info[0][1]}, выдал: {escape_html(staff_name(info[0][0]))}")
+        lines.append(f"Добавлен: {fmt_time(info[0][1], chat_id)}, выдал: {escape_html(staff_name(info[0][0]))}")
     lines.append(f"\nДействий в журнале: {stats[0]}, одобрил: {stats[2] or 0}, отклонил: {stats[3] or 0}")
     if stats[1]:
-        lines.append(f"Последнее действие: {stats[1][:16]}")
+        lines.append(f"Последнее действие: {fmt_time(stats[1], chat_id)}")
     if member in dialogs:
         lines.append(f"💬 Сейчас в диалоге с {escape_html(get_user_label(dialogs[member]))}")
     markup = types.InlineKeyboardMarkup()
@@ -2082,13 +1783,11 @@ def show_handbook_chapter(chat_id, chapter_key, edit_message=None):
 def set_paused(actor, value):
     global registration_paused
     registration_paused = value
-    config['paused'] = value
-    save_json(CONFIG_FILE, config)
+    storage.set_setting('paused', value)
     audit(actor, 'paused' if value else 'resumed')
 
 def do_unblock(actor, tid):
     blocked_users.discard(tid)
-    save_json(BLOCKED_FILE, list(blocked_users))
     audit(actor, 'unblocked', tid, get_user_label(tid))
     safe_send(tid, "✅ Вы были разблокированы администратором. Можете снова пользоваться ботом.",
               reply_markup=main_keyboard(is_admin=False, user_id=tid))
@@ -2166,11 +1865,11 @@ def history_cmd(m):
         target = int(m.text.split()[1])
     except:
         safe_send(m.chat.id, "/history <id>"); return
-    msgs = chat_history.get(str(target), [])
+    msgs = storage.get_messages(target, 50)
     if not msgs:
         safe_send(m.chat.id, "История пуста."); return
     txt = f"📜 История с {enrich_user_label(target)}:\n" + "\n".join(
-        f"{'👤' if x['from']=='user' else '👑 ' + x.get('by', '')} {x['time']}: {x['text']}" for x in msgs)
+        f"{'👤' if x['from']=='user' else '👑 ' + x.get('by', '')} {fmt_time(x['time'], m.chat.id)}: {x['text']}" for x in msgs)
     safe_send_long(m.chat.id, txt)
 
 @bot.message_handler(commands=['stopreply'])
@@ -2230,13 +1929,10 @@ def handle_all_messages(m):
         if not cancelled and str(uid) in pending:
             app = pending.pop(str(uid))
             nick_cancelled = app.get('nick', '?')
-            save_json(PENDING_FILE, pending)
             audit(uid, 'app_cancelled', uid, nick_cancelled)
             # Сбрасываем таймер чтобы игрок мог подать заново немедленно
-            if str(uid) in last_application:
-                del last_application[str(uid)]
-                save_json(LAST_APPLICATION_FILE, last_application)
-            close_notices('app', uid, f"↩️ <b>Игрок отозвал заявку</b> [{datetime.now().strftime('%H:%M')}]")
+            last_application.pop(str(uid), None)
+            close_notices('app', uid, "↩️ <b>Игрок отозвал заявку</b> [{t}]")
             # Если админ как раз пишет решение по этой заявке — прерываем
             claimer = app_claims.pop(str(uid), None)
             if claimer is not None and admin_states.get(claimer, {}).get('user_id') == str(uid):
@@ -2384,9 +2080,9 @@ def handle_all_messages(m):
             safe_send(uid, "🚫 Вы заблокированы."); return
         last_time_str = last_application.get(str(uid))
         if last_time_str:
-            last_dt = datetime.fromisoformat(last_time_str)
-            if datetime.now() - last_dt < timedelta(hours=24):
-                remaining = last_dt + timedelta(hours=24) - datetime.now()
+            last_dt = timeutil.parse(last_time_str)
+            if timeutil.now_utc() - last_dt < timedelta(hours=24):
+                remaining = last_dt + timedelta(hours=24) - timeutil.now_utc()
                 hours, rem = divmod(remaining.seconds, 3600)
                 minutes = rem // 60
                 safe_send(uid, f"⏳ Вы уже подавали заявку. Пожалуйста, подождите {hours} ч. {minutes} мин. перед повторной отправкой.",
@@ -2673,9 +2369,9 @@ def callback_handler(call):
         if data == "confirm_yes":
             last_time_str = None if uid in player_view else last_application.get(str(uid))
             if last_time_str:
-                last_dt = datetime.fromisoformat(last_time_str)
-                if datetime.now() - last_dt < timedelta(hours=24):
-                    remaining = last_dt + timedelta(hours=24) - datetime.now()
+                last_dt = timeutil.parse(last_time_str)
+                if timeutil.now_utc() - last_dt < timedelta(hours=24):
+                    remaining = last_dt + timedelta(hours=24) - timeutil.now_utc()
                     hours, rem = divmod(remaining.seconds, 3600)
                     minutes = rem // 60
                     safe_send(uid, f"⏳ Вы уже подавали заявку. Пожалуйста, подождите {hours} ч. {minutes} мин. перед повторной отправкой.",
@@ -2719,22 +2415,21 @@ def callback_handler(call):
             bot.answer_callback_query(call.id, "Уже обработана."); return
         if data == "rules_agree":
             app_id = str(uid)
-            pending[app_id] = {
+            test_by = uid if uid in player_view else None
+            new_app = {
                 'user_id': uid,
                 'username': call.from_user.username or f"id{uid}",
                 'tg_name': user_display_name(call.from_user),
                 'nick': state['nick'],
                 'password': state['password'],
                 'comment': state.get('comment', ''),
-                'date': datetime.now().isoformat()
+                'date': timeutil.now_iso()
             }
-            test_by = uid if uid in player_view else None
             if test_by:
-                pending[app_id]['test_by'] = test_by  # заявка из режима игрока: на сервере не регистрируется
-            save_json(PENDING_FILE, pending)
+                new_app['test_by'] = test_by  # заявка из режима игрока: на сервере не регистрируется
+            pending[app_id] = new_app
             if not test_by:
-                last_application[str(uid)] = datetime.now().isoformat()
-                save_json(LAST_APPLICATION_FILE, last_application)
+                last_application[str(uid)] = timeutil.now_iso()
             audit(uid, 'app_submitted', uid, state['nick'], state.get('comment', ''))
             old_nicks = previous_nicks(uid)
             dup_warning = ""
@@ -2777,7 +2472,7 @@ def callback_handler(call):
         ticket = get_ticket(uid)
         if ticket:
             nick_line = f"🎮 Ник: <code>{escape_html(ticket['nick'])}</code>\n" if ticket.get('nick') else ""
-            date_line = f"📅 Дата: {ticket.get('date', '—')}\n" if ticket.get('date') else ""
+            date_line = f"📅 Дата: {fmt_time(ticket.get('date'))}\n" if ticket.get('date') else ""
             msg_text = escape_html(ticket.get('message', '')) or '<i>нет текста</i>'
             text_out = (
                 f"📋 <b>Тикет #{ticket['id']}</b>\n"
@@ -2829,9 +2524,9 @@ def callback_handler(call):
             return
         last_time_str = last_application.get(str(uid))
         if last_time_str:
-            last_dt = datetime.fromisoformat(last_time_str)
-            if datetime.now() - last_dt < timedelta(hours=24):
-                remaining = last_dt + timedelta(hours=24) - datetime.now()
+            last_dt = timeutil.parse(last_time_str)
+            if timeutil.now_utc() - last_dt < timedelta(hours=24):
+                remaining = last_dt + timedelta(hours=24) - timeutil.now_utc()
                 hours_r, rem = divmod(remaining.seconds, 3600)
                 minutes_r = rem // 60
                 safe_send(uid, f"⏳ Вы уже подавали заявку. Пожалуйста, подождите {hours_r} ч. {minutes_r} мин. перед повторной отправкой.",
@@ -3069,10 +2764,10 @@ def callback_handler(call):
         if can(uid, 'block'):
             i_markup.row(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"))
         label = enrich_user_label(target)
-        last_user_msg = next((x for x in reversed(chat_history.get(str(target), [])) if x['from'] == 'user'), None)
+        last_user_msg = next((x for x in reversed(storage.get_messages(target, 20)) if x['from'] == 'user'), None)
         quote = ""
         if last_user_msg:
-            quote = f"\n\n<b>Последнее сообщение игрока</b> ({last_user_msg['time'][5:16]}):\n{escape_html(last_user_msg['text'][:1500])}"
+            quote = f"\n\n<b>Последнее сообщение игрока</b> ({fmt_time(last_user_msg['time'], uid, '%d.%m %H:%M')}):\n{escape_html(last_user_msg['text'][:1500])}"
         safe_send(uid, f"📨 Диалог с <b>{escape_html(label)}</b> активирован.\n"
                        f"Всё, что вы напишете, уйдёт игроку от имени «Администрация».{quote}",
                   parse_mode='HTML', reply_markup=i_markup)
@@ -3088,13 +2783,13 @@ def callback_handler(call):
         return
     if data.startswith('hist_'):
         target = int(data.split('_')[1])
-        msgs = chat_history.get(str(target), [])
+        msgs = storage.get_messages(target, 30)
         if not msgs:
             ok("История пуста."); return
         lines = []
-        for x in list(msgs)[-20:]:
+        for x in msgs:
             who = '👤 Игрок' if x['from'] == 'user' else f"👑 {x.get('by') or 'Админ'}"
-            lines.append(f"{who} [{x['time']}]:\n{x['text']}")
+            lines.append(f"{who} [{fmt_time(x['time'], uid)}]:\n{x['text']}")
         history_text = f"📜 История с {enrich_user_label(target)}:\n\n" + "\n\n".join(lines)
         hist_markup = types.InlineKeyboardMarkup(row_width=1)
         hist_markup.add(types.InlineKeyboardButton("🔙 Назад к профилю", callback_data=f"user_profile_{target}"))
@@ -3130,9 +2825,48 @@ def callback_handler(call):
             show_blocked_users(uid, edit_message=msg)
         return
 
-    # --- Управление ---
+    # --- Управление и настройки ---
     if data == "admin_menu_controls":
         ok(); show_admin_controls(uid, edit_message=msg); return
+    if data == "tz_menu":
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        current = tz_of(uid)
+        markup.add(*[types.InlineKeyboardButton(("✅ " if tz == current else "") + label, callback_data=f"tz_set_{i}")
+                     for i, (label, tz) in enumerate(timeutil.TIMEZONES)])
+        markup.row(types.InlineKeyboardButton("🔙 Назад", callback_data="admin_menu_controls"))
+        now = timeutil.now_iso()
+        edit_message_safe(uid, msg.message_id,
+                          f"🕐 <b>Часовой пояс</b>\nВо всех карточках, журнале и списках время будет в выбранном поясе.\n"
+                          f"Сейчас у вас: {fmt_time(now, uid)}",
+                          parse_mode='HTML', reply_markup=markup)
+        ok(); return
+    if data.startswith('tz_set_'):
+        label, tz = timeutil.TIMEZONES[int(data.split('_')[2])]
+        db_exec("UPDATE staff SET tz=? WHERE tg_id=?", (tz, uid))
+        if not db_exec("SELECT 1 FROM staff WHERE tg_id=?", (uid,), fetch=True):
+            db_exec("INSERT INTO staff (tg_id, name, role, added_by, added_at, tz) VALUES (?,?,?,?,?,?)",
+                    (uid, staff_name(uid), staff[uid]['role'], uid, timeutil.now_iso(), tz))
+        load_staff()
+        ok(f"Пояс: {label}")
+        show_admin_controls(uid, edit_message=msg)
+        return
+    if data == "admin_export":
+        ok("Готовлю файл...")
+        path = f"export_{uid}.csv"
+        try:
+            storage.export_applications_csv(path)
+            with open(path, 'rb') as f:
+                bot.send_document(uid, f, visible_file_name=f"zayavki_{fmt_time(timeutil.now_iso(), uid, '%Y-%m-%d')}.csv",
+                                  caption="📤 История заявок. Время в файле в UTC, паролей нет.")
+        except Exception as e:
+            log_error(e)
+            safe_send(uid, f"⚠️ Не удалось выгрузить: {e}")
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+        return
     if data == "admin_status":
         ok(); safe_send(uid, status_text(uid)); return
     if data == "admin_help":
@@ -3163,25 +2897,24 @@ def callback_handler(call):
             pass
         return
     if data == "confirm_clearstats_yes":
-        with open(APPROVED_CSV, 'w', newline='', encoding='utf-8-sig') as f:
-            csv.writer(f).writerow(['Дата','TG_Username','TG_ID','Minecraft_Ник','Пароль','Статус','Комментарий_игрока','Комментарий_админа','Рассмотрел'])
-        pending.clear(); save_json(PENDING_FILE, pending)
+        storage.backup()  # на случай, если нажали по ошибке
+        storage.clear_applications()
+        pending.clear()
         audit(uid, 'clear_stats')
         ok("Статистика и заявки очищены.")
         safe_send(uid, "🧹 Статистика и заявки полностью очищены.")
         return
     if data == "confirm_resettimers_yes":
         last_application.clear()
-        save_json(LAST_APPLICATION_FILE, {})
         audit(uid, 'reset_timers')
         ok("Таймеры сброшены.")
         safe_send(uid, "⏰ Таймеры 24-часового ожидания сброшены для всех пользователей.")
         send_admin_menu(uid)
         return
     if data == "confirm_cleardialogs_yes":
-        chat_history.clear(); unread_messages.clear()
-        active_tickets.clear(); save_tickets()
-        save_json(CHAT_HISTORY_FILE, {}); save_json(MESSAGE_QUEUE_FILE, [])
+        storage.backup()  # на случай, если нажали по ошибке
+        storage.clear_messages(); unread_messages.clear()
+        active_tickets.clear()
         audit(uid, 'clear_dialogs')
         ok("История диалогов очищена.")
         safe_send(uid, "🗑 История диалогов и все тикеты полностью очищены.")
@@ -3225,7 +2958,7 @@ def callback_handler(call):
         name = staff[member]['name'] if member in staff else tg_display_name(member)
         db_exec("INSERT OR REPLACE INTO staff (tg_id, name, role, added_by, added_at) VALUES (?,?,?,?, "
                 "COALESCE((SELECT added_at FROM staff WHERE tg_id=?), ?))",
-                (member, name, role, uid, member, datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M')))
+                (member, name, role, uid, member, timeutil.now_iso()))
         load_staff()
         blocked_users.discard(member)
         audit(uid, 'staff_added' if kind == 'new' else 'staff_role', member, name, ROLE_NAMES[role])
@@ -3281,20 +3014,8 @@ def process_admin_decision(action, user_id_str, comment, state):
     status = 'Одобрено' if action == 'approve' else 'Отклонено'
     test_by = app.get('test_by')
     if not test_by:
-        with open(APPROVED_CSV, 'a', newline='', encoding='utf-8-sig') as f:
-            csv.writer(f).writerow([
-                datetime.now().isoformat(),
-                app['username'],
-                app['user_id'],
-                app['nick'],
-                HIDDEN_PASSWORD,
-                status,
-                app.get('comment', ''),
-                comment,
-                staff_name(actor),
-            ])
+        storage.add_application(app, status, comment, actor, staff_name(actor))
     del pending[user_id_str]
-    save_json(PENDING_FILE, pending)
     audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'],
           (comment or '') + (' [тестовая заявка]' if test_by else ''))
     if action == 'approve' and not test_by:
@@ -3303,7 +3024,7 @@ def process_admin_decision(action, user_id_str, comment, state):
     # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
     action_label = "ОДОБРЕНО" if action == 'approve' else "ОТКЛОНЕНО"
-    decided_at = datetime.now().strftime('%Y-%m-%d %H:%M')
+    decided_at = fmt_time(timeutil.now_iso(), actor)
     decision_suffix = f"\n\n{action_icon} <b>{action_label}</b> [{decided_at}] · {escape_html(staff_name(actor))}"
     if comment:
         decision_suffix += f"\n💬 Комментарий: {escape_html(comment)}"
@@ -3319,7 +3040,7 @@ def process_admin_decision(action, user_id_str, comment, state):
                      f"🧑 {escape_html(app.get('tg_name', '—'))}\n"
                      f"🆔 <code>{app['user_id']}</code>\n"
                      f"📛 @{escape_html(app.get('username',''))} \n"
-                     f"📅 {app.get('date','')[:19].replace('T',' ')}"
+                     f"📅 {fmt_time(app.get('date'), actor)}"
                      f"{decision_suffix}",
                 parse_mode='HTML',
                 reply_markup=None
@@ -3327,7 +3048,7 @@ def process_admin_decision(action, user_id_str, comment, state):
         except Exception:
             pass
     # У коллег уведомление о заявке помечается решённым
-    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{datetime.now().strftime('%H:%M')}] · {escape_html(staff_name(actor))}")
+    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{{t}}] · {escape_html(staff_name(actor))}")
 
     if state.get('prompt_msg_id'):
         try:
@@ -3381,7 +3102,6 @@ def process_block(user_id_str, reason, original_msg, actor=ADMIN_ID):
         safe_send(actor, "Это член команды. Сначала снимите доступ в разделе «Команда».")
         return
     blocked_users.add(uid)
-    save_json(BLOCKED_FILE, list(blocked_users))
     audit(actor, 'blocked', uid, get_user_label(uid), reason)
 
     # Завершаем диалог, если кто-то из команды его вёл
@@ -3432,8 +3152,15 @@ def daily_job():
         notify_staff('apps', f"⏳ Напоминание: в очереди {len(pending)} заявок(и). Проверьте бот.")
 
 
+def backup_job():
+    try:
+        storage.backup()
+    except Exception as e:
+        log_error(e)
+
 def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
+    schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
     while True:
         schedule.run_pending()
         time.sleep(60)
@@ -3442,7 +3169,7 @@ if __name__ == '__main__':
     # Владелец в списке команды под своим именем из Telegram
     if not db_exec("SELECT 1 FROM staff WHERE tg_id=?", (ADMIN_ID,), fetch=True):
         db_exec("INSERT INTO staff (tg_id, name, role, added_by, added_at) VALUES (?,?,?,?,?)",
-                (ADMIN_ID, tg_display_name(ADMIN_ID), ROLE_OWNER, ADMIN_ID, datetime.now(MOSCOW_TZ).strftime('%Y-%m-%d %H:%M')))
+                (ADMIN_ID, tg_display_name(ADMIN_ID), ROLE_OWNER, ADMIN_ID, timeutil.now_iso()))
         load_staff()
     print("✅ TotemCraftBot запущен")
     threading.Thread(target=run_scheduler, daemon=True).start()
