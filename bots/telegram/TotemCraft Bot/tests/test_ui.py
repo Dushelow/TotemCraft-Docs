@@ -31,10 +31,8 @@ check(bot.when((now - timedelta(days=1)).isoformat()).startswith('вчера в 
 old = (now - timedelta(days=40)).isoformat()
 check(' в ' in bot.when(old) and bot.when(old)[:2].isdigit(), f"давнее: дата с часами ({bot.when(old)})")
 check(bot.when(None) == '—', "пусто остаётся прочерком")
-check(bot.ago((now - timedelta(seconds=30)).isoformat()) == 'только что', "полминуты назад")
-check(bot.ago((now - timedelta(minutes=21)).isoformat()) == '21 минуту назад', "минуты в правильном падеже")
-check(bot.ago((now - timedelta(hours=2)).isoformat()) == '2 часа назад', "часы в правильном падеже")
-check(bot.ago((now - timedelta(days=5)).isoformat()) == '5 дней назад', "дни в правильном падеже")
+check(not hasattr(bot, 'ago') and not hasattr(bot, 'waiting'),
+      "относительного времени в сообщениях нет: «18 минут назад» застывает, сообщение в чате не обновляется")
 
 print("\n=== 2. Карточка заявки: все подписи на месте ===")
 bot.user_states[P] = {'step': 'rules', 'nick': 'Elka_1221', 'password': 'Str0ngPass1', 'comment': 'друг позвал'}
@@ -48,13 +46,14 @@ check('ждёт ' not in card, "в присланном уведомлении �
 keys = buttons(log, OWNER)
 check('🏠 Меню' in keys and '📋 Все заявки' in keys, f"из уведомления о заявке есть выход в меню и очередь: {keys}")
 
-print("\n=== 3. Очередь заявок: видно, сколько заявка ждёт ===")
+print("\n=== 3. Очередь заявок: время подачи ===")
 app = bot.pending[str(P)]
-app['date'] = (tu.now_utc() - timedelta(minutes=40)).isoformat(timespec='seconds')
+app['date'] = (tu.now_utc() - timedelta(days=1, minutes=40)).isoformat(timespec='seconds')
 bot.pending[str(P)] = app
 (t, _), log = press(OWNER, 'admin_menu_applications')
 queue = plain(edited(log)[-1][1] if edited(log) else sent_to(log, OWNER)[0])
-check('ждёт 40 минут' in queue, f"в списке заявок видно ожидание: {[l for l in queue.splitlines() if 'Подал' in l]}")
+check('Подал: вчера в ' in queue, f"в списке заявок время подачи абсолютное: {[l for l in queue.splitlines() if 'Подал' in l]}")
+check('ждёт' not in queue, "«ждёт N минут» не пишем: в сообщении это число устаревает")
 
 print("\n=== 4. Профиль: время решения с часами, подписи, свёрнутые подробности ===")
 press(OWNER, f'approve_{P}', mid=90)
@@ -69,7 +68,7 @@ say(OWNER, 'посмотрю логи')
 raw = edited(log)[-1][1]
 prof = plain(raw)
 for label in ['Ник в игре: Elka_1221', 'Имя в Telegram: Ёлка', 'ID в Telegram: 7700001',
-              'Статус: одобрена сегодня в ', 'Подал: сегодня в ', 'Решил: ', 'Всего заявок: 1',
+              'Статус: одобрена сегодня в ', 'Подал: вчера в ', 'Решил: ', 'Всего заявок: 1',
               'Аккаунт на сервере', 'Открытый тикет: #', 'Сообщений в переписке: ', 'Проверки']:
     check(label in prof, f"в профиле есть «{label.rstrip(': ')}»")
 check('blockquote expandable' in raw, "подробности свёрнуты в раскрывающуюся цитату")

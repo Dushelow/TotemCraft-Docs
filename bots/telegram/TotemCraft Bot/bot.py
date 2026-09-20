@@ -70,22 +70,6 @@ def when(value, uid=None):
     except (TypeError, ValueError):
         return str(value or '—')
 
-def ago(value, uid=None):
-    """«12 минут назад». Только для экранов, которые рисуются при открытии: список заявок, профиль.
-    В уведомлении такое застынет, там нужен when()."""
-    try:
-        return timeutil.ago(value, tz_of(uid))
-    except (TypeError, ValueError):
-        return str(value or '—')
-
-def waiting(value, uid=None):
-    """Сколько заявка ждёт: «20 минут». Пусто, если ждать нечего (только подали)."""
-    text = ago(value, uid)
-    if text in ('только что', '—'):
-        return ''
-    return text[:-len(' назад')] if text.endswith(' назад') else text
-
-
 def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     try:
         return bot.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
@@ -1172,9 +1156,9 @@ def auto_short(app, viewer=None):
         return f"{a['icon']} Автомат упёрся в лимит, примет позже, как освободится"
     return f"{a['icon']} Автомат примет сам {due}, если команда не решит раньше"
 
-def app_compact(user_id, app, viewer=None, title="Заявка", live=False):
+def app_compact(user_id, app, viewer=None, title="Заявка"):
     """Карточка заявки для команды: кто подал, когда, что просил, проверки, вердикт автомата.
-    live=True для экранов, которые рисуются при открытии: там видно ещё и сколько заявка ждёт."""
+    Время только абсолютное: сообщение в чате не обновляется, и «ждёт 18 минут» в нём застынет."""
     nick = app.get('nick', '?')
     username = app.get('username', '')
     lines = [f"📩 <b>{title}</b>", ""]
@@ -1182,8 +1166,7 @@ def app_compact(user_id, app, viewer=None, title="Заявка", live=False):
     lines.append("Имя в Telegram: " + (escape_html(app['tg_name']) if (app.get('tg_name') or '').strip() else "не указано"))
     lines.append("Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"))
     lines.append(f"ID в Telegram: <code>{user_id}</code>")
-    waited = waiting(app.get('date'), viewer) if live else ''
-    lines.append(f"Подал: {when(app.get('date'), viewer)}" + (f", ждёт {waited}" if waited else ""))
+    lines.append(f"Подал: {when(app.get('date'), viewer)}")
     if app.get('comment'):
         c = app['comment']
         lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
@@ -1255,7 +1238,7 @@ def show_pending_applications(chat_id, page=0, edit_message=None, detailed=False
         if detailed:
             text = f"📋 Заявка {page + 1} из {total}\n\n" + app_details(user_id, app, chat_id)
         else:
-            text = app_compact(user_id, app, chat_id, title=f"Заявка {page + 1} из {total}", live=True)
+            text = app_compact(user_id, app, chat_id, title=f"Заявка {page + 1} из {total}")
         markup = types.InlineKeyboardMarkup()
         if total > 1:
             nav = []
@@ -1646,7 +1629,7 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
     rows = app_history(uid)
     lines.append("\n<b>Заявка</b>")
     if app_now:
-        lines.append(f"Статус: ждёт решения, подал {ago(app_now.get('date'), admin_chat_id)}")
+        lines.append("Статус: ждёт решения")
         lines.append(f"Подал: {when(app_now.get('date'), admin_chat_id)}")
     elif rows:
         created, decided, last_nick, status, by = rows[-1]
