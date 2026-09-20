@@ -26,34 +26,34 @@ def decide(f):
     manual (bool), stop (причины «только вручную»), minor (мелочи), delay (timedelta или None), icon."""
     stop, minor = [], []
     if f.get('bans'):
-        stop.append("бан или мут на сервере: " + ", ".join(f['bans'][:3]))
+        stop.append("Наказания на сервере: " + ", ".join(f['bans'][:3]))
     if f.get('approved_before'):
-        stop.append("твинк: у этого Telegram уже был одобренный аккаунт (" + ", ".join(f['approved_before'][:3]) + ")")
+        stop.append("Твинк: с этого Telegram уже одобрен аккаунт " + ", ".join(f['approved_before'][:3]))
     if f.get('ip_banned_twins'):
-        stop.append("твинк: с того же IP есть аккаунт в бане (" + ", ".join(f['ip_banned_twins'][:3]) + ")")
+        stop.append("Твинк: с того же IP заходил забаненный аккаунт " + ", ".join(f['ip_banned_twins'][:3]))
     if f.get('blocked'):
-        stop.append("заблокирован в боте")
+        stop.append("Игрок заблокирован в боте")
     for where, hits in (('нике', f.get('bad_nick')), ('пароле', f.get('bad_password')), ('комментарии', f.get('bad_comment'))):
         if hits:
-            stop.append(", ".join(sorted({cat for cat, _ in hits})) + f" в {where}")
+            stop.append(f"Недопустимые слова в {where}: " + ", ".join(sorted({cat for cat, _ in hits})))
     if f.get('rejected_before'):
-        stop.append(f"раньше отклоняли ({f['rejected_before']})")
+        stop.append(f"Отклоняли раньше: {f['rejected_before']}")
     age = f.get('tg_age_days')
     if age is not None and age < YOUNG_STOP_DAYS:
-        stop.append("аккаунту Telegram меньше 2 месяцев")
+        stop.append("Аккаунту Telegram меньше 2 месяцев")
     if f.get('asked_support'):
-        stop.append("пытался обратиться в поддержку, пока заявка ждёт")
+        stop.append("Писал в поддержку, пока заявка ждёт решения")
 
     if f.get('has_photo') is False:
-        minor.append("нет аватарки")
+        minor.append("Нет аватарки")
     if f.get('has_username') is False:
-        minor.append("нет username")
+        minor.append("Нет username")
     if age is not None and YOUNG_STOP_DAYS <= age < YOUNG_MINOR_DAYS:
-        minor.append("аккаунту Telegram меньше года")
+        minor.append("Аккаунту Telegram меньше года")
     if (f.get('comment') or '').strip():
-        minor.append("есть комментарий")
+        minor.append("Есть комментарий к заявке")
     if re.search(r'\d{6,}', f.get('nick') or ''):
-        minor.append("в нике 6+ цифр подряд")
+        minor.append("В нике 6 и больше цифр подряд")
 
     if stop:
         return {'manual': True, 'stop': stop, 'minor': minor, 'delay': None, 'icon': '✋'}

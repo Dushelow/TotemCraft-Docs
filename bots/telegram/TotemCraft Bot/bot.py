@@ -660,7 +660,10 @@ def check_flags(tg_id, nick, app=None, own_account=False):
 
 
 def checks_text(flags):
-    return "\n".join(f"{lvl} {escape_html(txt)}" for lvl, txt in flags) if flags else "✅ Всё чисто"
+    """Список проверок. Если пусто, пишем, что именно проверено, а не просто «чисто»."""
+    if not flags:
+        return "✅ Наказаний нет · твинков нет · раньше не отклоняли"
+    return "\n".join(f"{lvl} {escape_html(txt)}" for lvl, txt in flags)
 
 
 def dossier(tg_id, nick, viewer=None, app=None, compact=False):
@@ -1164,9 +1167,7 @@ def auto_short(app, viewer=None):
     if not a:
         return ""
     if a['manual']:
-        more = f" и ещё {len(a['stop']) - 1}" if len(a['stop']) > 1 else ""
-        first = re.sub(r'\s*\([^)]*\)$', '', a['stop'][0])  # подробности в скобках — в «Подробнее»
-        return f"✋ Решает команда: {escape_html(first)}{more}"
+        return "✋ Автопринятия не будет, решает команда"
     due = when(a['due'], viewer)
     if not auto_enabled():
         return "Автопринятие выключено, решает команда"

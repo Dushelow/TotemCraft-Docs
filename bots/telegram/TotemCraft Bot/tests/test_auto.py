@@ -36,8 +36,8 @@ check(aa.decide(dict(base, has_photo=False, has_username=False))['delay'] == tim
 check(aa.decide(dict(base, has_photo=False, has_username=False, comment='привет'))['delay'] == timedelta(hours=48),
       "три мелочи: 48 часов")
 check(aa.decide(dict(base, has_photo=False, subscribed=True))['delay'] == timedelta(hours=12), "подписка не ускоряет заявку с мелочью")
-check(aa.decide(dict(base, tg_age_days=200))['minor'] == ['аккаунту Telegram меньше года'], "Telegram моложе года: мелочь")
-check(aa.decide(dict(base, nick='Steve1234567'))['minor'] == ['в нике 6+ цифр подряд'], "6+ цифр в нике: мелочь")
+check(aa.decide(dict(base, tg_age_days=200))['minor'] == ['Аккаунту Telegram меньше года'], "Telegram моложе года: мелочь")
+check(aa.decide(dict(base, nick='Steve1234567'))['minor'] == ['В нике 6 и больше цифр подряд'], "6+ цифр в нике: мелочь")
 for key, value, what in [('bans', ['GoodNick (бан)'], 'бан'), ('approved_before', ['Old'], 'твинк по TG'),
                          ('ip_banned_twins', ['Bad'], 'твинк по IP'), ('blocked', True, 'блок в боте'),
                          ('bad_nick', [('мат', 'pidor')], 'брань в нике'), ('bad_password', [('символика', '14/88')], 'символика в пароле'),
@@ -118,7 +118,7 @@ bot.pending.pop(str(Q))
 print("\n=== 6. Мелочи, стопы и обращения ===")
 R = 6_000_000_003
 a = submit(R, 'NoPhotoGuy', hours_ago=1, photo=False)
-check(a['auto']['icon'] == '🟡' and a['auto']['minor'] == ['нет аватарки'], "нет аватарки: 🟡 12 часов")
+check(a['auto']['icon'] == '🟡' and a['auto']['minor'] == ['Нет аватарки'], "нет аватарки: 🟡 12 часов")
 bot.auto_job()
 check(str(R) in bot.pending, "12 часов не прошло: ждёт")
 ctx.press(R, 'menu_support')

@@ -61,7 +61,7 @@ bot.user_states[P1] = {'step': 'rules', 'nick': 'CrystalDisk', 'password': 'bana
 got = {c for c in (OWNER, ADMIN, HELPER) if sent_to(log, c)}
 check(got == {OWNER, ADMIN, HELPER}, f"уведомление о заявке у всех троих: {sorted(got)}")
 note = sent_to(log, OWNER)[0]
-check('Прошлые ники' in note and 'jojo111' in note and 'Решает команда' in note, "в карточке прошлый ник и «решает команда»")
+check('Прошлые ники' in note and 'jojo111' in note and 'Автопринятия не будет' in note, "в карточке прошлый ник и «решает команда»")
 check(bot.pending[str(P1)]['date'].endswith('+00:00'), "дата заявки в базе в UTC")
 press(ADMIN, f'approve_{P1}', text='📩 Заявка 1 из 1', mid=77)
 (t, alert), _ = press(HELPER, f'approve_{P1}')
@@ -165,7 +165,7 @@ check(tgage.describe(7815237229, today=date(2026, 9, 19)).startswith("≈ май
 check("3 лет" in tgage.age_text(date(2023, 9, 1), today=date(2026, 9, 19)), "«около 3 лет», падеж правильный")
 text, flags = bot.dossier(P1, 'CrystalDisk', OWNER)
 check(any(l == '🔴' and 'бан' in t for l, t in flags), "досье игрока с баном на прошлом нике: 🔴")
-check(any('отклоняли' in t for _, t in flags), "досье: раньше отклоняли")
+check(any('Отклоняли раньше' in t for _, t in flags), "досье: раньше отклоняли")
 check(not any('новый' in t for _, t in flags), "старый аккаунт не помечен новым")
 text, flags = bot.dossier(9_900_000_000, 'CleanNick', OWNER)
 check(any(l == '🔴' and '2 месяцев' in t for l, t in flags), "Telegram моложе 2 месяцев: 🔴, как у автомата")
@@ -175,7 +175,7 @@ saved = storage.query("SELECT id, decided_at FROM applications")
 storage.execute("UPDATE applications SET decided_at='2026-01-01T00:00:00+00:00'")  # все заявки «давние»
 bot._frontier_cache['at'] = 0
 text, flags = bot.dossier(1, 'CleanPlayer', OWNER)
-check(flags == [] and '✅ Всё чисто' in text, "у чистого старого аккаунта: «Всё чисто»")
+check(flags == [] and 'Наказаний нет' in text and 'твинков нет' in text, "у чистого аккаунта видно, что именно проверено")
 n_before = len([1 for u, j in ctx.webhook_log if j and 'Рейд-режим включён' in str(j)])
 for k in range(5):
     fresh = 9_600_000_000 + k
