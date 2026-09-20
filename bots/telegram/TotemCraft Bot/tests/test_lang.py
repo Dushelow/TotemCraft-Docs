@@ -60,6 +60,9 @@ check(bot.storage.query("SELECT value FROM kv WHERE space='lang' AND key=?", (st
 log = say(DE, '/start', lang='de')
 check(any('Main menu' in t for t in sent_to(log, DE)) and bot.user_lang.get(str(DE)) == 'en',
       "немецкий Telegram: английский, а не русский")
+check(bot.detect_lang(type('U', (), {'language_code': 'kk'})) == 'en'
+      and bot.detect_lang(type('U', (), {'language_code': ''})) == 'ru',
+      "язык не из трёх даёт английский, пустой язык даёт русский")
 log = say(RU, '/start', lang='ru')
 check(any('Главное меню' in t for t in sent_to(log, RU)) and bot.user_lang.get(str(RU)) == 'ru',
       "русский Telegram: русский")
