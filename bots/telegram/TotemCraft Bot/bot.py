@@ -31,22 +31,6 @@ def tr(uid, key, **kw):
     """Текст для игрока на его языке (tcbot/i18n.py)."""
     return i18n.text(lang_of(uid), key, **kw)
 
-def detect_lang(user):
-    """Язык по языку приложения Telegram: украинский свой, русскоязычные соседи по-русски, остальные по-английски."""
-    code = (getattr(user, 'language_code', '') or '').lower().split('-')[0]
-    if not code:
-        return i18n.DEFAULT
-    return i18n.BY_CLIENT.get(code, 'en')
-
-def ensure_lang(user):
-    """Первый /start: язык сам по языку Telegram. Кто пользовался ботом раньше, остаётся на русском,
-    пока не сменит кнопкой: у давнего игрока приложение может быть на английском, а говорит он по-русски."""
-    uid = user.id
-    if str(uid) in user_lang:
-        return
-    known = storage.query("SELECT 1 FROM applications WHERE tg_id=? LIMIT 1", (uid,))         or storage.query("SELECT 1 FROM messages WHERE tg_id=? LIMIT 1", (uid,))
-    user_lang[str(uid)] = i18n.DEFAULT if known else detect_lang(user)
-
 user_last_request = {}
 RATE_LIMIT = 5
 RATE_WINDOW = 5
@@ -1116,7 +1100,7 @@ def send_admin_menu(chat_id, edit_message=None):
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=inline)
 
 def send_lang_menu(uid, edit_message=None):
-    """Выбор языка по кнопке в главном меню: сам бот язык угадывает по Telegram (ensure_lang)."""
+    """Три кнопки с флагами: при первом /start и по кнопке языка в главном меню."""
     inline = types.InlineKeyboardMarkup(row_width=1)
     inline.add(*[types.InlineKeyboardButton(i18n.LANG_BUTTONS[code], callback_data=f"lang_{code}") for code in i18n.LANGS])
     if edit_message:
@@ -1127,14 +1111,25 @@ def send_lang_menu(uid, edit_message=None):
 def send_main_menu(uid, edit_message=None):
     """Отправляет главное меню. Убирает реплай-клавиатуру одним сообщением."""
     text = tr(uid, 'main_menu')
+    app_now = pending.get(str(uid))
+    # ник показываем только тому, кого одобрили: у отклонённого его нет
+    row = [] if app_now else storage.query("SELECT nick FROM applications WHERE tg_id=? AND status='Одобрено' "
+                                           "AND nick<>'' ORDER BY id DESC LIMIT 1", (int(uid),))
+    nick_now = row[0][0] if row else ''
+    if app_now:
+        text += "\n\n" + tr(uid, 'menu_pending', date=fmt_time(app_now.get('date'), uid, '%d.%m.%Y'))
+    elif nick_now:
+        text += "\n\n" + tr(uid, 'menu_playing', nick=escape_html(nick_now))
     inline = types.InlineKeyboardMarkup(row_width=1)
     buttons = [
-        types.InlineKeyboardButton(tr(uid, 'btn_apply'), callback_data="menu_apply"),
         types.InlineKeyboardButton(tr(uid, 'btn_support'), callback_data="menu_support"),
         types.InlineKeyboardButton(tr(uid, 'btn_handbook'), callback_data="menu_handbook"),
         types.InlineKeyboardButton(tr(uid, 'btn_subscribe'), callback_data="menu_subscribe"),
         types.InlineKeyboardButton(i18n.LANG_BUTTONS[lang_of(uid)], callback_data="menu_lang"),
     ]
+    if not app_now:
+        # пока заявка на рассмотрении, кнопки подачи нет: нажимать её всё равно бесполезно
+        buttons.insert(0, types.InlineKeyboardButton(tr(uid, 'btn_apply'), callback_data="menu_apply"))
     if get_ticket(uid):
         buttons.insert(1, types.InlineKeyboardButton(tr(uid, 'btn_my_tickets'), callback_data="menu_my_tickets"))
     if uid in player_view:
@@ -1167,12 +1162,12 @@ def auto_short(app, viewer=None):
     if not a:
         return ""
     if a['manual']:
-        return "✋ Автопринятия не будет, решает команда"
+        return "✋ Автомат такую заявку не принимает, решайте вручную"
     due = when(a['due'], viewer)
     if not auto_enabled():
-        return "Автопринятие выключено, решает команда"
+        return "Автопринятие выключено, решайте вручную"
     if raid_active():
-        return "Рейд-режим: автопринятие на паузе, решает команда"
+        return "Рейд-режим: автопринятие на паузе, решайте вручную"
     if a.get('limit_wait'):
         return f"{a['icon']} Автомат упёрся в лимит, примет позже, как освободится"
     return f"{a['icon']} Автомат примет сам {due}, если команда не решит раньше"
@@ -2571,8 +2566,9 @@ def start_cmd(m):
         return
     if is_staff(m.chat.id):
         send_admin_menu(m.chat.id)
+    elif str(m.chat.id) not in user_lang:
+        send_lang_menu(m.chat.id)  # новенький сразу выбирает язык кнопкой с флагом
     else:
-        ensure_lang(m.from_user)
         send_main_menu(m.chat.id)
 
 # ---------- Основной обработчик текста ----------

@@ -92,4 +92,20 @@ check(body.splitlines()[0].startswith('📬 Обращение #') and ' · се
 check('«помогите пожалуйста»' in body, "текст игрока сразу под заголовком")
 check(body.index('помогите пожалуйста') < body.index('ID в Telegram'), "текст выше данных для опознания")
 
+print("\n=== 6. Главное меню игрока: состояние заявки ===")
+M = 7_700_003
+say(M, '/start'); press(M, 'lang_ru')
+bot.user_states[M] = {'step': 'rules', 'nick': 'MenuGuy', 'password': 'Str0ngPass1', 'comment': ''}
+press(M, 'rules_agree')
+log = say(M, '/start')
+menu = plain(sent_to(log, M)[-1])
+keys = buttons(log, M)
+check('на рассмотрении' in menu, f"в меню видно, что заявка на рассмотрении: {menu.splitlines()[-2:]}")
+check(not any('Подать заявку' in k for k in keys), f"кнопки подачи заявки нет, пока заявка ждёт: {keys}")
+press(OWNER, f'approve_{M}', mid=95)
+say(OWNER, '-')
+log = say(M, '/start')
+menu = plain(sent_to(log, M)[-1])
+check('Вы играете под ником MenuGuy' in menu, f"после одобрения в меню ник игрока: {menu.splitlines()[-1:]}")
+
 fakes.finish()

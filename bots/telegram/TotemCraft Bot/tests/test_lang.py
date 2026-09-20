@@ -48,29 +48,32 @@ check(not problems, f"разметка HTML в переводах цела: {pro
 check(all(len(t) <= 512 for t in i18n.DESCRIPTION.values()), "описание бота не длиннее 512 знаков")
 check(all(len(t) <= 120 for t in i18n.SHORT_DESCRIPTION.values()), "короткое описание не длиннее 120 знаков")
 
-print("\n=== 1. Первый /start: язык по языку Telegram ===")
-log = say(UA, '/start', lang='uk')
-check(any('Головне меню' in t for t in sent_to(log, UA)), "украинский Telegram: сразу меню по-украински")
-check(not any('Choose your language' in t for t in sent_to(log, UA)), "экрана с тремя языками больше нет")
+print("\n=== 1. Первый /start: три кнопки с флагами ===")
+log = say(UA, '/start')
+pick = sent_to(log, UA)
+check(pick and pick[0] == '🌐 Язык · Мова · Language', f"одна короткая строка вместо трёх: {pick[:1]}")
+check(buttons(log, UA) == ['🇷🇺 Русский', '🇺🇦 Українська', '🇬🇧 English'], "три кнопки с флагами")
+_, log = press(UA, 'lang_uk')
 check(bot.user_lang.get(str(UA)) == 'uk', "язык сохранён в базе")
+check(any('Головне меню' in t for t in texts_to(log, UA)), "после выбора меню по-украински")
 check('📝 Подати заявку на сервер' in buttons(log, UA) and '🇺🇦 Українська' in buttons(log, UA),
       "меню по-украински, кнопка языка с флагом текущего")
 check(bot.storage.query("SELECT value FROM kv WHERE space='lang' AND key=?", (str(UA),))[0][0] == '"uk"',
       "язык записан в таблицу kv, новых таблиц не нужно")
+log = say(UA, '/start')
+check(any('Головне меню' in t for t in sent_to(log, UA)) and not any('Language' in t for t in sent_to(log, UA)),
+      "второй /start сразу в меню, язык больше не спрашиваем")
 log = say(DE, '/start', lang='de')
-check(any('Main menu' in t for t in sent_to(log, DE)) and bot.user_lang.get(str(DE)) == 'en',
-      "немецкий Telegram: английский, а не русский")
-check(bot.detect_lang(type('U', (), {'language_code': 'kk'})) == 'en'
-      and bot.detect_lang(type('U', (), {'language_code': ''})) == 'ru',
-      "язык не из трёх даёт английский, пустой язык даёт русский")
-log = say(RU, '/start', lang='ru')
-check(any('Главное меню' in t for t in sent_to(log, RU)) and bot.user_lang.get(str(RU)) == 'ru',
-      "русский Telegram: русский")
+check(any('Язык · Мова · Language' in t for t in sent_to(log, DE)), "немцу тоже кнопки, язык Telegram ничего не решает")
+press(DE, 'lang_en')
 bot.storage.execute("INSERT INTO applications (created_at, tg_id, nick, status) VALUES (?,?,?,?)",
                     (bot.timeutil.now_iso(), OLD, 'OldPlayer', 'Одобрено'))
-log = say(OLD, '/start', lang='en')
-check(any('Главное меню' in t for t in sent_to(log, OLD)) and bot.user_lang.get(str(OLD)) == 'ru',
-      "давний игрок с английским Telegram остаётся на русском")
+log = say(OLD, '/start')
+check(any('Язык · Мова · Language' in t for t in sent_to(log, OLD)), "давний игрок выбирает язык при первом /start")
+_, log = press(OLD, 'lang_ru')
+check(any('Главное меню' in t for t in texts_to(log, OLD)) and bot.user_lang.get(str(OLD)) == 'ru',
+      "выбрал русский: меню по-русски")
+say(RU, '/start'); press(RU, 'lang_ru')
 
 print("\n=== 2. Анкета на украинском ===")
 _, log = press(UA, 'menu_apply')
@@ -87,8 +90,9 @@ check(any('Заявку скасовано' in t for t in sent_to(log, UA)) and 
       "украинская кнопка «Скасувати заявку» отменяет анкету")
 
 print("\n=== 3. Английский: вся заявка до одобрения ===")
-say(EN, '/start', lang='en-US')
-check(bot.user_lang.get(str(EN)) == 'en', "en-US понят как английский")
+say(EN, '/start')
+press(EN, 'lang_en')
+check(bot.user_lang.get(str(EN)) == 'en', "выбран английский")
 _, log = press(EN, 'menu_apply')
 check(any('Enter your Minecraft nickname' in t for t in sent_to(log, EN)), "вопрос про ник по-английски")
 say(EN, 'JohnCraft')
@@ -112,7 +116,7 @@ check(any('Bedrock' in x and '.JohnCraft' in x for x in pm), "подсказка
 
 print("\n=== 4. Смена языка в меню, справочник ===")
 _, log = press(EN, 'menu_lang')
-check(any('Choose your language' in t for t in texts_to(log, EN)), "кнопка с флагом открывает выбор языка")
+check(any('Язык · Мова · Language' in t for t in texts_to(log, EN)), "кнопка с флагом открывает выбор языка")
 check(buttons(log, EN) == ['🇷🇺 Русский', '🇺🇦 Українська', '🇬🇧 English'], "в выборе три кнопки с флагами")
 _, log = press(EN, 'lang_ru')
 check(bot.user_lang.get(str(EN)) == 'ru' and any('Главное меню' in t for t in texts_to(log, EN)), "сменил на русский")

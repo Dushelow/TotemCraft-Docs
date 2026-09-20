@@ -10,11 +10,7 @@ DEFAULT = 'ru'
 
 # Кнопки выбора языка: флаг и название на самом этом языке
 LANG_BUTTONS = {'ru': '🇷🇺 Русский', 'uk': '🇺🇦 Українська', 'en': '🇬🇧 English'}
-
-# Язык приложения Telegram -> язык бота: только точное совпадение, остальным английский как международный.
-# Гадать «казахский значит русский» не надо: человек выбрал себе язык сам, а сменить язык в боте одна кнопка.
-BY_CLIENT = {'ru': 'ru', 'uk': 'uk', 'en': 'en'}
-LANG_PICK = "🌐 Выберите язык\n🌐 Оберіть мову\n🌐 Choose your language"
+LANG_PICK = "🌐 Язык · Мова · Language"
 
 T = {
     # ---------- Кнопки ----------
@@ -74,6 +70,14 @@ T = {
                    'en': "⏸️ Registration is temporarily paused."},
 
     # ---------- Заявка ----------
+    'menu_pending': {
+        'ru': "⏳ Ваша заявка от {date} на рассмотрении.\nЗаявки рассматриваются в порядке очереди. Срок рассмотрения - как правило, до 24 часов.",
+        'uk': "⏳ Ваша заявка від {date} на розгляді.\nЗаявки розглядаються в порядку черги. Термін розгляду: зазвичай до 24 годин.",
+        'en': "⏳ Your application from {date} is under review.\nApplications are reviewed in order, usually within 24 hours."},
+    'menu_playing': {
+        'ru': "🎮 Вы играете под ником <code>{nick}</code> · <code>play.totemcraft.net</code>",
+        'uk': "🎮 Ви граєте під ніком <code>{nick}</code> · <code>play.totemcraft.net</code>",
+        'en': "🎮 You play as <code>{nick}</code> · <code>play.totemcraft.net</code>"},
     'app_cancelled': {'ru': "❌ Заявка отменена.", 'uk': "❌ Заявку скасовано.", 'en': "❌ Application cancelled."},
     'no_active_app': {'ru': "У вас нет активной заявки.", 'uk': "У вас немає активної заявки.",
                       'en': "You have no active application."},
