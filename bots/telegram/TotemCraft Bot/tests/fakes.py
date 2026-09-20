@@ -185,20 +185,22 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
     bot.run_in_background = lambda f, *a, **k: f(*a, **k)  # в тестах всё синхронно
     ctx.bot = bot
 
-    def press(who, data, text='panel', mid=50):
+    def press(who, data, text='panel', mid=50, lang=None):
         cid = f"q{len(ctx.answers)}_{who}_{data}"
         call = types.CallbackQuery.de_json({
-            'id': cid, 'from': {'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X'), 'username': f'u{who}'},
+            'id': cid, 'from': dict({'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X'), 'username': f'u{who}'},
+                                    **({'language_code': lang} if lang else {})),
             'chat_instance': 'x', 'data': data,
             'message': {'message_id': mid, 'date': 0, 'chat': {'id': who, 'type': 'private'}, 'text': text}})
         ctx.tg_log.clear()
         bot.callback_handler(call)
         return ctx.answers.get(cid, (None, None)), list(ctx.tg_log)
 
-    def say(who, text, mid=70, chat_id=None, chat_type='private'):
+    def say(who, text, mid=70, chat_id=None, chat_type='private', lang=None):
         m = types.Message.de_json({
             'message_id': mid, 'date': 0, 'chat': {'id': chat_id or who, 'type': chat_type},
-            'from': {'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X'), 'username': f'u{who}'},
+            'from': dict({'id': who, 'is_bot': False, 'first_name': ctx.names.get(who, 'X'), 'username': f'u{who}'},
+                         **({'language_code': lang} if lang else {})),
             'text': text})
         ctx.tg_log.clear()
         commands = {'start': 'start_cmd', 'id': 'id_cmd', 'admin': 'admin_cmd', 'status': 'status_cmd',

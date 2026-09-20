@@ -14,8 +14,9 @@ WORK = sys.argv[1]
 shutil.rmtree(WORK, ignore_errors=True)
 MC = os.path.join(WORK, 'mc')
 fakes.make_mc(MC)
-OWNER, UA, EN, RU = 1000, 8001, 8002, 8003
-ctx = fakes.start(os.path.join(WORK, 'bot'), MC, owner=OWNER, names={OWNER: 'Влад', UA: 'Тарас', EN: 'John', RU: 'Ваня'})
+OWNER, UA, EN, RU, DE, OLD = 1000, 8001, 8002, 8003, 8004, 8005
+ctx = fakes.start(os.path.join(WORK, 'bot'), MC, owner=OWNER,
+                  names={OWNER: 'Влад', UA: 'Тарас', EN: 'John', RU: 'Ваня', DE: 'Hans', OLD: 'Старожил'})
 bot, press, say = ctx.bot, ctx.press, ctx.say
 i18n = bot.i18n
 bot.RATE_LIMIT = 10 ** 6
@@ -47,20 +48,26 @@ check(not problems, f"разметка HTML в переводах цела: {pro
 check(all(len(t) <= 512 for t in i18n.DESCRIPTION.values()), "описание бота не длиннее 512 знаков")
 check(all(len(t) <= 120 for t in i18n.SHORT_DESCRIPTION.values()), "короткое описание не длиннее 120 знаков")
 
-print("\n=== 1. Первый /start: выбор языка ===")
-log = say(UA, '/start')
-check(any('Оберіть мову' in t and 'Choose your language' in t for t in sent_to(log, UA)), "новому игроку выбор языка")
-b = buttons(log, UA)
-check(b == ['🇷🇺 Русский', '🇺🇦 Українська', '🇬🇧 English'], f"три кнопки с флагами: {b}")
-_, log = press(UA, 'lang_uk')
+print("\n=== 1. Первый /start: язык по языку Telegram ===")
+log = say(UA, '/start', lang='uk')
+check(any('Головне меню' in t for t in sent_to(log, UA)), "украинский Telegram: сразу меню по-украински")
+check(not any('Choose your language' in t for t in sent_to(log, UA)), "экрана с тремя языками больше нет")
 check(bot.user_lang.get(str(UA)) == 'uk', "язык сохранён в базе")
-check(any('Головне меню' in t for t in texts_to(log, UA)), "после выбора меню на украинском")
-check('📝 Подати заявку на сервер' in buttons(log, UA) and '🌐 Мова' in buttons(log, UA), "кнопки меню на украинском")
+check('📝 Подати заявку на сервер' in buttons(log, UA) and '🇺🇦 Українська' in buttons(log, UA),
+      "меню по-украински, кнопка языка с флагом текущего")
 check(bot.storage.query("SELECT value FROM kv WHERE space='lang' AND key=?", (str(UA),))[0][0] == '"uk"',
       "язык записан в таблицу kv, новых таблиц не нужно")
-log = say(UA, '/start')
-check(any('Головне меню' in t for t in sent_to(log, UA)) and not any('Choose' in t for t in sent_to(log, UA)),
-      "повторный /start сразу в меню, без выбора языка")
+log = say(DE, '/start', lang='de')
+check(any('Main menu' in t for t in sent_to(log, DE)) and bot.user_lang.get(str(DE)) == 'en',
+      "немецкий Telegram: английский, а не русский")
+log = say(RU, '/start', lang='ru')
+check(any('Главное меню' in t for t in sent_to(log, RU)) and bot.user_lang.get(str(RU)) == 'ru',
+      "русский Telegram: русский")
+bot.storage.execute("INSERT INTO applications (created_at, tg_id, nick, status) VALUES (?,?,?,?)",
+                    (bot.timeutil.now_iso(), OLD, 'OldPlayer', 'Одобрено'))
+log = say(OLD, '/start', lang='en')
+check(any('Главное меню' in t for t in sent_to(log, OLD)) and bot.user_lang.get(str(OLD)) == 'ru',
+      "давний игрок с английским Telegram остаётся на русском")
 
 print("\n=== 2. Анкета на украинском ===")
 _, log = press(UA, 'menu_apply')
@@ -77,8 +84,8 @@ check(any('Заявку скасовано' in t for t in sent_to(log, UA)) and 
       "украинская кнопка «Скасувати заявку» отменяет анкету")
 
 print("\n=== 3. Английский: вся заявка до одобрения ===")
-say(EN, '/start')
-press(EN, 'lang_en')
+say(EN, '/start', lang='en-US')
+check(bot.user_lang.get(str(EN)) == 'en', "en-US понят как английский")
 _, log = press(EN, 'menu_apply')
 check(any('Enter your Minecraft nickname' in t for t in sent_to(log, EN)), "вопрос про ник по-английски")
 say(EN, 'JohnCraft')
@@ -102,7 +109,8 @@ check(any('Bedrock' in x and '.JohnCraft' in x for x in pm), "подсказка
 
 print("\n=== 4. Смена языка в меню, справочник ===")
 _, log = press(EN, 'menu_lang')
-check(any('Choose your language' in t for t in texts_to(log, EN)), "кнопка «Language» открывает выбор")
+check(any('Choose your language' in t for t in texts_to(log, EN)), "кнопка с флагом открывает выбор языка")
+check(buttons(log, EN) == ['🇷🇺 Русский', '🇺🇦 Українська', '🇬🇧 English'], "в выборе три кнопки с флагами")
 _, log = press(EN, 'lang_ru')
 check(bot.user_lang.get(str(EN)) == 'ru' and any('Главное меню' in t for t in texts_to(log, EN)), "сменил на русский")
 press(EN, 'lang_en')
@@ -128,14 +136,15 @@ check(any('Повідомлення від адміністрації' in t and 
 log = say(UA, '❌ Завершити діалог')
 check(any('Діалог з адміністратором завершено' in t for t in sent_to(log, UA)), "украинская кнопка завершает диалог")
 
-print("\n=== 6. Старые игроки и админы ===")
+print("\n=== 6. Игроки без языка и админы ===")
 bot.last_application.pop(str(RU), None)
+bot.user_lang.pop(str(RU), None)  # нажал кнопку в старом сообщении, ни разу не открыв бота заново
 _, log = press(RU, 'menu_apply')
 check(any('Введите ваш Minecraft ник' in t for t in sent_to(log, RU)), "игрок без выбранного языка видит русский")
 log = say(RU, '🏠 Главное меню')
 check(any('Главное меню' in t for t in texts_to(log, RU)), "русская нижняя кнопка работает как раньше")
-log = say(OWNER, '/start')
-check(any('Панель администратора' in t for t in sent_to(log, OWNER)) and not any('Choose' in t for t in sent_to(log, OWNER)),
-      "админу панель, без выбора языка")
+log = say(OWNER, '/start', lang='en')
+check(any('Панель администратора' in t for t in sent_to(log, OWNER)) and str(OWNER) not in bot.user_lang,
+      "админу панель по-русски, язык ему не назначается")
 
 fakes.finish()
