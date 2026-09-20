@@ -92,7 +92,19 @@ check(body.splitlines()[0].startswith('📬 Обращение #') and ' · се
 check('«помогите пожалуйста»' in body, "текст игрока сразу под заголовком")
 check(body.index('помогите пожалуйста') < body.index('ID в Telegram'), "текст выше данных для опознания")
 
-print("\n=== 6. Главное меню игрока: состояние заявки ===")
+print("\n=== 6. Анкета и обращение: шаги ===")
+S = 7_700_004
+say(S, '/start'); press(S, 'lang_ru')
+_, log = press(S, 'menu_apply')
+check('Заявка · шаг 1 из 3' in plain(sent_to(log, S)[0]), "ник: шаг 1 из 3")
+log = say(S, 'Stepper_1')
+check('Заявка · шаг 2 из 3' in plain(sent_to(log, S)[0]), "пароль: шаг 2 из 3")
+log = say(S, 'Str0ngPass1')
+check('шаг 3 из 3, необязательный' in plain(sent_to(log, S)[0]), "комментарий: шаг 3, помечен необязательным")
+log = say(S, 'Пропустить')
+check(any('Проверьте данные' in plain(t) for t in sent_to(log, S)), "после шагов проверка данных")
+
+print("\n=== 7. Главное меню игрока: состояние заявки ===")
 M = 7_700_003
 say(M, '/start'); press(M, 'lang_ru')
 bot.user_states[M] = {'step': 'rules', 'nick': 'MenuGuy', 'password': 'Str0ngPass1', 'comment': ''}

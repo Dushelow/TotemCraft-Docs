@@ -2746,7 +2746,8 @@ def handle_all_messages(m):
             state['support_nick'] = text.strip()
             if not state.get('support_draft'):
                 state['step'] = 'support_text'
-                safe_send(uid, tr(uid, 'support_describe'), reply_markup=cancel_keyboard(uid, 'btn_cancel'))
+                safe_send(uid, tr(uid, 'support_describe'), parse_mode='HTML',
+                          reply_markup=cancel_keyboard(uid, 'btn_cancel'))
                 return
             step, text = 'support_text', state['support_draft']
         if step == 'support_text':
@@ -2758,7 +2759,7 @@ def handle_all_messages(m):
             notify_new_ticket(m.from_user, text_msg, tid, nick=nick)
             discord_player_message(m.from_user, uid, nick, text_msg)
             del user_states[uid]
-            safe_send(uid, tr(uid, 'ticket_sent', tid=tid))
+            safe_send(uid, tr(uid, 'ticket_sent', tid=tid), parse_mode='HTML')
             send_main_menu(uid)
             return
         elif step == 'guest_message':
@@ -2769,7 +2770,7 @@ def handle_all_messages(m):
             notify_new_ticket(m.from_user, text_msg, tid)
             discord_guest_message(m.from_user, uid)
             del user_states[uid]
-            safe_send(uid, tr(uid, 'guest_sent', tid=tid))
+            safe_send(uid, tr(uid, 'guest_sent', tid=tid), parse_mode='HTML')
             send_main_menu(uid)
             return
         else:
@@ -2795,7 +2796,7 @@ def handle_all_messages(m):
         if str(uid) in pending:
             safe_send(uid, tr(uid, 'has_pending')); return
         user_states[uid] = {'step': 'nick'}
-        safe_send(uid, tr(uid, 'ask_nick'), reply_markup=cancel_keyboard(uid))
+        safe_send(uid, tr(uid, 'ask_nick'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
         return
     if text == "🚨 Жалоба/вопрос админу":
         # Запрет писать при активной заявке
@@ -2917,18 +2918,20 @@ def handle_application(m):
     if step == 'nick':
         ok, reason = validate_nick_authme(text, lang_of(uid))
         if not ok:
-            safe_send(uid, tr(uid, 'bad_nick', reason=reason), reply_markup=cancel_keyboard(uid))
+            safe_send(uid, tr(uid, 'bad_nick', reason=escape_html(reason)), parse_mode='HTML',
+                      reply_markup=cancel_keyboard(uid))
             return
         if check_nick_already_approved(text):
-            safe_send(uid, tr(uid, 'nick_taken'), reply_markup=cancel_keyboard(uid))
+            safe_send(uid, tr(uid, 'nick_taken'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
             return
         state['nick'] = text
         state['step'] = 'password'
-        safe_send(uid, tr(uid, 'ask_password'), reply_markup=cancel_keyboard(uid))
+        safe_send(uid, tr(uid, 'ask_password'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
     elif step == 'password':
         ok, reason = validate_password_authme(text, nick=state.get('nick'), lang=lang_of(uid))
         if not ok:
-            safe_send(uid, tr(uid, 'bad_password', reason=reason), reply_markup=cancel_keyboard(uid))
+            safe_send(uid, tr(uid, 'bad_password', reason=escape_html(reason)), parse_mode='HTML',
+                      reply_markup=cancel_keyboard(uid))
             return
         state['password'] = text
         state['step'] = 'comment'
@@ -2994,7 +2997,8 @@ def callback_handler(call):
             bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
             return
         user_states[uid] = {'step': 'support_nick'}
-        safe_send(uid, tr(uid, 'ask_game_nick'), reply_markup=cancel_keyboard(uid, 'btn_cancel'))
+        safe_send(uid, tr(uid, 'ask_game_nick'), parse_mode='HTML',
+                  reply_markup=cancel_keyboard(uid, 'btn_cancel'))
         bot.answer_callback_query(call.id)
         return
     if data == "support_no_account":
@@ -3013,7 +3017,7 @@ def callback_handler(call):
             safe_send(uid, tr(uid, 'has_pending_short'))
         else:
             user_states[uid] = {'step': 'nick'}
-            safe_send(uid, tr(uid, 'ask_nick'), reply_markup=cancel_keyboard(uid))
+            safe_send(uid, tr(uid, 'ask_nick'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
         bot.answer_callback_query(call.id)
         return
     if data == "support_guest":
@@ -3220,7 +3224,7 @@ def callback_handler(call):
             safe_send(uid, tr(uid, 'has_pending'))
             return
         user_states[uid] = {'step': 'nick'}
-        safe_send(uid, tr(uid, 'ask_nick'), reply_markup=cancel_keyboard(uid))
+        safe_send(uid, tr(uid, 'ask_nick'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
         return
     if data == "menu_support":
         bot.answer_callback_query(call.id)

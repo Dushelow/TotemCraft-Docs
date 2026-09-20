@@ -89,27 +89,38 @@ T = {
                     'en': "⏳ You already have an active application. Please wait for the admins' decision."},
     'has_pending_short': {'ru': "⏳ У вас уже есть активная заявка.", 'uk': "⏳ У вас уже є активна заявка.",
                           'en': "⏳ You already have an active application."},
-    'ask_nick': {'ru': "Введите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):",
-                 'uk': "Введіть ваш нік у Minecraft (3–16 символів, A-Z, a-z, 0-9, _):",
-                 'en': "Enter your Minecraft nickname (3–16 characters, A-Z, a-z, 0-9, _):"},
-    'bad_nick': {'ru': "❌ Недопустимый ник.\n\n{reason}\n\nПожалуйста, введите другой ник:",
-                 'uk': "❌ Недопустимий нік.\n\n{reason}\n\nБудь ласка, введіть інший нік:",
-                 'en': "❌ Invalid nickname.\n\n{reason}\n\nPlease enter another nickname:"},
+    'ask_nick': {
+        'ru': "📝 <b>Заявка · шаг 1 из 3</b>\nВведите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):\n"
+              "<i>Поменять ник потом нельзя.</i>",
+        'uk': "📝 <b>Заявка · крок 1 з 3</b>\nВведіть ваш нік у Minecraft (3–16 символів, A-Z, a-z, 0-9, _):\n"
+              "<i>Змінити нік потім не можна.</i>",
+        'en': "📝 <b>Application · step 1 of 3</b>\nEnter your Minecraft nickname (3–16 characters, A-Z, a-z, 0-9, _):\n"
+              "<i>You will not be able to change it later.</i>"},
+    'bad_nick': {'ru': "❌ Недопустимый ник.\n{reason}\nПожалуйста, введите другой ник:",
+                 'uk': "❌ Недопустимий нік.\n{reason}\nБудь ласка, введіть інший нік:",
+                 'en': "❌ Invalid nickname.\n{reason}\nPlease enter another nickname:"},
     'nick_taken': {'ru': "❌ Данный никнейм уже используется на сервере. Пожалуйста, выберите другой ник:",
                    'uk': "❌ Цей нік уже використовується на сервері. Будь ласка, оберіть інший нік:",
                    'en': "❌ This nickname is already taken on the server. Please choose another one:"},
-    'ask_password': {'ru': "🔑 Введите пароль (6–30 символов, без пробелов):",
-                     'uk': "🔑 Введіть пароль (6–30 символів, без пробілів):",
-                     'en': "🔑 Enter a password (6–30 characters, no spaces):"},
-    'bad_password': {'ru': "❌ Недопустимый пароль.\n\n{reason}\n\nПожалуйста, придумайте другой пароль:",
-                     'uk': "❌ Недопустимий пароль.\n\n{reason}\n\nБудь ласка, придумайте інший пароль:",
-                     'en': "❌ Invalid password.\n\n{reason}\n\nPlease choose another password:"},
+    'ask_password': {
+        'ru': "🔑 <b>Заявка · шаг 2 из 3</b>\nВведите пароль (6–30 символов, без пробелов):\n"
+              "<i>Он понадобится при каждом заходе на сервер.</i>",
+        'uk': "🔑 <b>Заявка · крок 2 з 3</b>\nВведіть пароль (6–30 символів, без пробілів):\n"
+              "<i>Він знадобиться під час кожного заходу на сервер.</i>",
+        'en': "🔑 <b>Application · step 2 of 3</b>\nEnter a password (6–30 characters, no spaces):\n"
+              "<i>You will need it every time you join the server.</i>"},
+    'bad_password': {'ru': "❌ Недопустимый пароль.\n{reason}\nПожалуйста, придумайте другой пароль:",
+                     'uk': "❌ Недопустимий пароль.\n{reason}\nБудь ласка, придумайте інший пароль:",
+                     'en': "❌ Invalid password.\n{reason}\nPlease choose another password:"},
     'ask_comment': {
-        'ru': "💬 Хотите оставить комментарий к заявке? Напишите сейчас или нажмите кнопку «{skip}».\n\n"
+        'ru': "💬 <b>Заявка · шаг 3 из 3, необязательный</b>\n"
+              "Хотите оставить комментарий к заявке? Напишите сейчас или нажмите кнопку «{skip}».\n\n"
               "<i>⚠️ Обращения с просьбами ускорить или осуществить регистрацию не рассматриваются и могут повлечь отклонение заявки.</i>",
-        'uk': "💬 Бажаєте залишити коментар до заявки? Напишіть зараз або натисніть кнопку «{skip}».\n\n"
+        'uk': "💬 <b>Заявка · крок 3 з 3, необов'язковий</b>\n"
+              "Бажаєте залишити коментар до заявки? Напишіть зараз або натисніть кнопку «{skip}».\n\n"
               "<i>⚠️ Прохання пришвидшити або провести реєстрацію не розглядаються і можуть призвести до відхилення заявки.</i>",
-        'en': "💬 Would you like to add a comment to your application? Write it now or press «{skip}».\n\n"
+        'en': "💬 <b>Application · step 3 of 3, optional</b>\n"
+              "Would you like to add a comment to your application? Write it now or press «{skip}».\n\n"
               "<i>⚠️ Requests to speed up or push through your registration are not considered and may get your application rejected.</i>"},
     'confirm_data': {'ru': "📋 <b>Проверьте данные:</b>\n\n👤 Ник: <code>{nick}</code>\n🔑 Пароль: <code>{password}</code>",
                      'uk': "📋 <b>Перевірте дані:</b>\n\n👤 Нік: <code>{nick}</code>\n🔑 Пароль: <code>{password}</code>",
@@ -276,8 +287,10 @@ T = {
     'support_cancelled': {'ru': "Обращение отменено.", 'uk': "Звернення скасовано.", 'en': "Request cancelled."},
     'q_have_account': {'ru': "У вас уже есть аккаунт на сервере?", 'uk': "У вас уже є акаунт на сервері?",
                        'en': "Do you already have an account on the server?"},
-    'ask_game_nick': {'ru': "Введите ваш игровой ник на сервере:", 'uk': "Введіть ваш ігровий нік на сервері:",
-                      'en': "Enter your in-game nickname on the server:"},
+    'ask_game_nick': {
+        'ru': "📝 <b>Обращение · шаг 1 из 2</b>\nВведите ваш игровой ник на сервере:",
+        'uk': "📝 <b>Звернення · крок 1 з 2</b>\nВведіть ваш ігровий нік на сервері:",
+        'en': "📝 <b>Request · step 1 of 2</b>\nEnter your in-game nickname on the server:"},
     'q_want_apply': {'ru': "Хотите подать заявку на регистрацию?", 'uk': "Бажаєте подати заявку на реєстрацію?",
                      'en': "Would you like to apply for registration?"},
     'write_message': {'ru': "✍️ Напишите ваше сообщение:", 'uk': "✍️ Напишіть ваше повідомлення:",
@@ -289,14 +302,19 @@ T = {
               "наприклад <code>Steve_2010</code>.",
         'en': "Message saved. Now write only your in-game nickname: Latin letters, digits and _, "
               "for example <code>Steve_2010</code>."},
-    'support_describe': {'ru': "Опишите вашу проблему или вопрос:", 'uk': "Опишіть вашу проблему або питання:",
-                         'en': "Describe your problem or question:"},
-    'ticket_sent': {'ru': "✅ Ваше обращение отправлено администратору (тикет #{tid}). Ожидайте ответа.",
-                    'uk': "✅ Ваше звернення надіслано адміністратору (тікет #{tid}). Очікуйте на відповідь.",
-                    'en': "✅ Your request has been sent to the admins (ticket #{tid}). Please wait for a reply."},
-    'guest_sent': {'ru': "✅ Ваше сообщение отправлено администратору (тикет #{tid}). Ожидайте ответа.",
-                   'uk': "✅ Ваше повідомлення надіслано адміністратору (тікет #{tid}). Очікуйте на відповідь.",
-                   'en': "✅ Your message has been sent to the admins (ticket #{tid}). Please wait for a reply."},
+    'support_describe': {
+        'ru': "💬 <b>Обращение · шаг 2 из 2</b>\nОпишите вашу проблему или вопрос:\n"
+              "<i>Если это спор или пропажа вещей, напишите время и место.</i>",
+        'uk': "💬 <b>Звернення · крок 2 з 2</b>\nОпишіть вашу проблему або питання:\n"
+              "<i>Якщо це суперечка або зникнення речей, напишіть час і місце.</i>",
+        'en': "💬 <b>Request · step 2 of 2</b>\nDescribe your problem or question:\n"
+              "<i>For a dispute or missing items, add the time and place.</i>"},
+    'ticket_sent': {'ru': "✅ <b>Обращение #{tid} отправлено</b>\nВаше обращение отправлено администратору. Ожидайте ответа.",
+                    'uk': "✅ <b>Звернення #{tid} надіслано</b>\nВаше звернення надіслано адміністратору. Очікуйте на відповідь.",
+                    'en': "✅ <b>Request #{tid} sent</b>\nYour request has been sent to the admins. Please wait for a reply."},
+    'guest_sent': {'ru': "✅ <b>Обращение #{tid} отправлено</b>\nВаше сообщение отправлено администратору. Ожидайте ответа.",
+                   'uk': "✅ <b>Звернення #{tid} надіслано</b>\nВаше повідомлення надіслано адміністратору. Очікуйте на відповідь.",
+                   'en': "✅ <b>Request #{tid} sent</b>\nYour message has been sent to the admins. Please wait for a reply."},
     'ticket_already_alert': {'ru': "У вас уже открыт тикет #{id}", 'uk': "У вас уже відкрито тікет #{id}",
                              'en': "You already have ticket #{id} open"},
     'ticket_already': {'ru': "⏳ У вас уже открыт тикет #{id}. Дождитесь ответа или закройте его.",
