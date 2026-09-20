@@ -94,6 +94,13 @@ def ago(value, uid=None):
     except (TypeError, ValueError):
         return str(value or '—')
 
+def waiting(value, uid=None):
+    """Сколько заявка ждёт: «20 минут». Пусто, если ждать нечего (только подали)."""
+    text = ago(value, uid)
+    if text in ('только что', '—'):
+        return ''
+    return text[:-len(' назад')] if text.endswith(' назад') else text
+
 
 def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     try:
@@ -751,6 +758,7 @@ def notify_new_ticket(user, text_msg, tid, nick=''):
     markup.row(B("👤 Профиль игрока", callback_data=f"user_profile_{uid}"), B("📜 Переписка", callback_data=f"hist_{uid}"))
     markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"),
                B("🚫 Заблокировать", callback_data=f"block_{uid}"))
+    markup.row(B("🏠 Меню", callback_data="admin_back"))
     audit(uid, 'ticket_opened', uid, nick, text_msg)
     notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=uid)
 
@@ -760,7 +768,8 @@ def notify_ticket_followup(user, text_msg, tid):
     B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup()
     markup.row(B("💬 Ответить", callback_data=f"reply_{user.id}"), B("📜 Переписка", callback_data=f"hist_{user.id}"))
-    markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{user.id}"))
+    markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{user.id}"),
+               B("🏠 Меню", callback_data="admin_back"))
     notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=user.id)
 
 def player_nick(uid):
@@ -1174,13 +1183,11 @@ def app_compact(user_id, app, viewer=None, title="Заявка", live=False):
     username = app.get('username', '')
     lines = [f"📩 <b>{title}</b>", ""]
     lines.append(f"Ник в игре: <code>{escape_html(nick)}</code>")
-    if app.get('tg_name'):
-        lines.append(f"Имя в Telegram: {escape_html(app['tg_name'])}")
+    lines.append("Имя в Telegram: " + (escape_html(app['tg_name']) if (app.get('tg_name') or '').strip() else "не указано"))
     lines.append("Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"))
     lines.append(f"ID в Telegram: <code>{user_id}</code>")
-    waited = ago(app.get('date'), viewer) if live else ''
-    lines.append(f"Подал: {when(app.get('date'), viewer)}"
-                 + (f", ждёт {waited}" if waited and waited != 'только что' else ""))
+    waited = waiting(app.get('date'), viewer) if live else ''
+    lines.append(f"Подал: {when(app.get('date'), viewer)}" + (f", ждёт {waited}" if waited else ""))
     if app.get('comment'):
         c = app['comment']
         lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
@@ -1214,7 +1221,7 @@ def app_details(user_id, app, viewer=None):
     username = app.get('username', '')
     lines = [f"🧾 <b>Подробно</b>", "",
              f"Ник в игре: <code>{escape_html(nick)}</code>",
-             f"Имя в Telegram: {escape_html(app.get('tg_name') or '—')}",
+             "Имя в Telegram: " + (escape_html(app['tg_name']) if (app.get('tg_name') or '').strip() else "не указано"),
              "Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"),
              f"ID в Telegram: <code>{user_id}</code>",
              f"Подал: {when(app.get('date'), viewer)}"]
@@ -3124,7 +3131,9 @@ def callback_handler(call):
             bans = ban_report(uid, state['nick'])
             admin_markup = types.InlineKeyboardMarkup()
             admin_markup.row(*app_decision_buttons(uid))
-            admin_markup.row(types.InlineKeyboardButton("🧾 Подробнее", callback_data=f"appv_{uid}_d"))
+            admin_markup.row(types.InlineKeyboardButton("🧾 Подробнее", callback_data=f"appv_{uid}_d"),
+                             types.InlineKeyboardButton("📋 Все заявки", callback_data="admin_menu_applications"))
+            admin_markup.row(types.InlineKeyboardButton("🏠 Меню", callback_data="admin_back"))
             admin_msg = app_compact(uid, pending.get(app_id, new_app), None, title=f"Новая заявка · в очереди {len(pending)}")
             notify_staff('apps', admin_msg, reply_markup=admin_markup, kind='app', ref=uid)
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),

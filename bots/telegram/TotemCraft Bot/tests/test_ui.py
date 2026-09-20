@@ -45,6 +45,8 @@ for label in ['Ник в игре: Elka_1221', 'Имя в Telegram: Ёлка', '
     check(label in card, f"в карточке есть «{label.split(':')[0]}»")
 check('Пароль' not in card, "пароля в карточке нет")
 check('ждёт ' not in card, "в присланном уведомлении относительного времени нет: оно бы устарело")
+keys = buttons(log, OWNER)
+check('🏠 Меню' in keys and '📋 Все заявки' in keys, f"из уведомления о заявке есть выход в меню и очередь: {keys}")
 
 print("\n=== 3. Очередь заявок: видно, сколько заявка ждёт ===")
 app = bot.pending[str(P)]
