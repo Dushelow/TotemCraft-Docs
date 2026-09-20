@@ -78,6 +78,22 @@ def fmt_time(value, uid=None, pattern='%d.%m.%Y %H:%M'):
     except (TypeError, ValueError):
         return str(value or '—')
 
+def when(value, uid=None):
+    """Время словами: «сегодня в 10:07», «вчера в 21:03», «12.09 в 10:07».
+    Годится везде, в том числе в отправленных сообщениях: не устаревает."""
+    try:
+        return timeutil.human(value, tz_of(uid))
+    except (TypeError, ValueError):
+        return str(value or '—')
+
+def ago(value, uid=None):
+    """«12 минут назад». Только для экранов, которые рисуются при открытии: список заявок, профиль.
+    В уведомлении такое застынет, там нужен when()."""
+    try:
+        return timeutil.ago(value, tz_of(uid))
+    except (TypeError, ValueError):
+        return str(value or '—')
+
 
 def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     try:
@@ -569,81 +585,94 @@ def collect_tg_facts(user):
         log_error(e)
     return facts
 
-def dossier(tg_id, nick, viewer=None, app=None, compact=False):
-    """Досье игрока и проверки. Проверки — те же, по которым решает автопринятие (autoaccept.decide),
-    поэтому досье и автомат никогда не расходятся. Возвращает (текст для карточки, список (уровень, текст)).
-    Каждый источник читается отдельно: сбой одного не мешает остальным."""
-    tg_id = int(tg_id)
+def tg_lines(tg_id, app=None):
+    """Строки об аккаунте Telegram: возраст и приметы. Приметы снимаются при подаче заявки."""
     lines = []
-
-    # Telegram
     facts_tg = (app or {}).get('tg') or {}
     try:
-        line = f"📱 Telegram {tgage.describe(tg_id, _frontier()['anchors'])}"
+        lines.append(f"Аккаунт Telegram: {tgage.describe(tg_id, _frontier()['anchors'])}")
         if facts_tg:
             marks = []
             if 'photo' in facts_tg:
-                marks.append("фото " + ("✅" if facts_tg['photo'] else "❌"))
-            marks.append("username " + ("✅" if facts_tg.get('username') else "❌"))
-            marks.append("Premium " + ("✅" if facts_tg.get('premium') else "❌"))
+                marks.append("Фото: " + ("есть" if facts_tg['photo'] else "нет"))
+            marks.append("Username: " + ("есть" if facts_tg.get('username') else "нет"))
+            marks.append("Premium: " + ("есть" if facts_tg.get('premium') else "нет"))
             if facts_tg.get('lang'):
-                marks.append(f"язык {escape_html(facts_tg['lang'])}")
-            line += "\n    " + " · ".join(marks)
-        lines.append(line)
+                marks.append(f"Язык: {escape_html(facts_tg['lang'])}")
+            lines.append(" · ".join(marks))
     except Exception as e:
         log_error(e)
-        lines.append(f"📱 Telegram: не удалось оценить ({escape_html(e)})")
+        lines.append(f"Аккаунт Telegram: не удалось оценить ({escape_html(e)})")
+    return lines
 
-    # История в боте
-    try:
-        counts = dict(storage.query("SELECT status, COUNT(*) FROM applications WHERE tg_id=? GROUP BY status", (tg_id,)))
-        if counts:
-            lines.append(f"🗂 Заявки раньше: ✅ {counts.get('Одобрено', 0)} · ❌ {counts.get('Отклонено', 0)}")
-    except Exception as e:
-        log_error(e)
 
-    # Сервер: аккаунты AuthMe, страна по IP, другие аккаунты с того же IP
+def server_lines(tg_id, nick, viewer=None, compact=False):
+    """Строки об аккаунтах на сервере: регистрация, последний вход, страна, соседи по IP."""
     nicks = name_variants([n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n])
-    ips = set()
+    lines, ips, found_any = [], set(), False
     try:
         for username, ip, regip, regdate, lastlogin in bans.authme_accounts(nicks):
+            found_any = True
             geo = None
             try:
                 geo = mmdb.country(AUTHME_GEOIP, ip or regip)
             except Exception as e:
                 log_error(e)
-            where = f" · {_flag_country(geo[0])} {escape_html(geo[1])}" if geo else ""
-            lines.append(f"🎮 <code>{escape_html(username)}</code>: рег. {fmt_time(_authme_time(regdate), viewer, '%d.%m.%Y')}, "
-                         f"вход {fmt_time(_authme_time(lastlogin), viewer, '%d.%m.%Y')}{where}")
+            login = _authme_time(lastlogin)
+            lines.append(f"Аккаунт: <code>{escape_html(username)}</code>")
+            lines.append(f"Регистрация: {when(_authme_time(regdate), viewer)}")
+            lines.append("Последний вход: " + (when(login, viewer) if login else "ни разу не заходил"))
+            if geo:
+                lines.append(f"Страна по IP: {_flag_country(geo[0])} {escape_html(geo[1])}")
             ips.update(x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0'))
         if not compact and ips:
             others = [n for n in bans.authme_accounts_on_ips(sorted(ips)) if n.lower() not in {x.lower() for x in nicks}]
             if others:
-                lines.append("👥 С того же IP: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in others[:10])
+                lines.append("С того же IP заходили: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in others[:10])
                              + (f" и ещё {len(others) - 10}" if len(others) > 10 else ""))
     except Exception as e:
         log_error(e)
-        lines.append(f"🎮 Сервер: не удалось прочитать AuthMe ({escape_html(e)})")
-    if not ips and not any(l.startswith('🎮') for l in lines):
-        lines.append("🎮 На сервере ещё не был")
+        lines.append(f"Сервер: не удалось прочитать AuthMe ({escape_html(e)})")
+    if not found_any and not lines:
+        lines.append("На сервере ещё не был")
+    return lines
 
-    # Проверки: те же, что у автомата
-    flags = []
+
+def check_flags(tg_id, nick, app=None, own_account=False):
+    """Проверки: те же, по которым решает автопринятие, поэтому досье и автомат не расходятся."""
     try:
         base = dict(app) if app else {'nick': nick}
         facts = auto_facts(tg_id, base)
-        if not app:
+        if own_account:
             facts['approved_before'] = []  # в профиле это его собственный аккаунт, а не твинк
         v = autoaccept.decide(facts)
-        flags = [('🔴', r) for r in v['stop']] + [('🟡', r) for r in v['minor']]
+        return [('🔴', r) for r in v['stop']] + [('🟡', r) for r in v['minor']]
     except Exception as e:
         log_error(e)
-        flags = [('🔴', f"не удалось проверить: {e}")]
-    checks = "\n".join(f"{lvl} {escape_html(txt)}" for lvl, txt in flags) if flags else "✅ Всё чисто"
-    text = "\n\n🧾 <b>Досье</b>\n" + "\n".join(lines) + "\n\n🔍 <b>Проверки</b>\n" + checks
+        return [('🔴', f"не удалось проверить: {e}")]
+
+
+def checks_text(flags):
+    return "\n".join(f"{lvl} {escape_html(txt)}" for lvl, txt in flags) if flags else "✅ Всё чисто"
+
+
+def dossier(tg_id, nick, viewer=None, app=None, compact=False):
+    """Досье и проверки для карточки заявки. Возвращает (текст, список (уровень, текст))."""
+    tg_id = int(tg_id)
+    lines = tg_lines(tg_id, app)
+    try:
+        counts = dict(storage.query("SELECT status, COUNT(*) FROM applications WHERE tg_id=? GROUP BY status", (tg_id,)))
+        if counts:
+            lines.append(f"Заявки раньше: одобрено {counts.get('Одобрено', 0)}, отклонено {counts.get('Отклонено', 0)}")
+    except Exception as e:
+        log_error(e)
+    lines += server_lines(tg_id, nick, viewer, compact=compact)
+    flags = check_flags(tg_id, nick, app=app, own_account=not app)
+    text = "\n\n🧾 <b>Досье</b>\n" + "\n".join(lines) + "\n\n🔍 <b>Проверки</b>\n" + checks_text(flags)
     if app and app.get('auto'):
         text += "\n\n" + auto_line(app, viewer)
     return text, flags
+
 
 def check_raid(uid):
     """Рейд: много заявок от совсем новых аккаунтов за час. Включает рейд-режим (если автовключение не выключено)
@@ -698,30 +727,28 @@ def user_display_name(user):
     return f"id{user.id}"
 
 def format_admin_notify(user, text, extra="", ticket_id=None):
-    name = user_display_name(user)
+    """Уведомление команде: сперва текст человека, потом кто он. Время абсолютное: сообщение не обновляется."""
     uid = user.id
-    username = f"@{escape_html(user.username)}" if user.username else "нет"
-    ticket_str = f"🎫 Тикет: <b>#{ticket_id}</b>\n" if ticket_id else ""
-    msg = f"📬 <b>Новое сообщение</b>\n"
-    msg += ticket_str
-    msg += f"От: {escape_html(name)}\n"
-    msg += f"Username: {username}\n"
-    msg += f"ID: <code>{uid}</code>\n"
+    head = "📬 <b>Обращение" + (f" #{ticket_id}" if ticket_id else "") + "</b> · " + when(timeutil.now_iso())
+    who = [f"Имя в Telegram: {escape_html(user_display_name(user))}",
+           "Username: " + (f"@{escape_html(user.username)}" if user.username else "нет"),
+           f"ID в Telegram: <code>{uid}</code>"]
+    msg = f"{head}\n\n«{escape_html(text[:1500])}»\n\n" + "\n".join(who)
     if extra:
-        msg += extra
-    msg += f"\nТекст: {escape_html(text[:1500])}"
+        msg += "\n" + extra.rstrip("\n")
     return msg
 
 def notify_new_ticket(user, text_msg, tid, nick=''):
     """Новое обращение: уведомление всем, кто отвечает на сообщения."""
     uid = user.id
-    extra = f"Игровой ник: <code>{escape_html(nick)}</code>\n" if nick else ""
+    extra = f"Ник в игре: <code>{escape_html(nick)}</code>\n" if nick else ""
     if uid in player_view:
         extra += f"🧪 Тест: написал {escape_html(staff_name(uid))} в режиме игрока\n"
     notify = format_admin_notify(user, text_msg, extra=extra, ticket_id=tid)
     B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup()
-    markup.row(B("💬 Ответить", callback_data=f"reply_{uid}"), B("📜 Переписка", callback_data=f"hist_{uid}"))
+    markup.row(B("💬 Ответить", callback_data=f"reply_{uid}"))
+    markup.row(B("👤 Профиль игрока", callback_data=f"user_profile_{uid}"), B("📜 Переписка", callback_data=f"hist_{uid}"))
     markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"),
                B("🚫 Заблокировать", callback_data=f"block_{uid}"))
     audit(uid, 'ticket_opened', uid, nick, text_msg)
@@ -729,7 +756,7 @@ def notify_new_ticket(user, text_msg, tid, nick=''):
 
 def notify_ticket_followup(user, text_msg, tid):
     """Игрок дописал в открытое обращение, а диалога нет (никто не отвечал или админ отошёл)."""
-    notify = format_admin_notify(user, text_msg, extra="↩️ Дописал в открытое обращение\n", ticket_id=tid)
+    notify = format_admin_notify(user, text_msg, extra="↩️ Дописал в открытое обращение", ticket_id=tid)
     B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup()
     markup.row(B("💬 Ответить", callback_data=f"reply_{user.id}"), B("📜 Переписка", callback_data=f"hist_{user.id}"))
@@ -1123,62 +1150,80 @@ def cancel_keyboard(uid, key='btn_cancel_app'):
 
 # ---------- Интерфейсные разделы ----------
 def auto_short(app, viewer=None):
-    """Вердикт автомата одной строкой для короткой карточки."""
+    """Вердикт автомата для короткой карточки: что будет с заявкой и почему."""
     a = (app or {}).get('auto')
     if not a:
         return ""
     if a['manual']:
-        more = f" (+{len(a['stop']) - 1})" if len(a['stop']) > 1 else ""
+        more = f" и ещё {len(a['stop']) - 1}" if len(a['stop']) > 1 else ""
         first = re.sub(r'\s*\([^)]*\)$', '', a['stop'][0])  # подробности в скобках — в «Подробнее»
-        return f"✋ Вручную: {escape_html(first)}{more}"
-    when = fmt_time(a['due'], viewer, '%H:%M' if fmt_time(a['due'], viewer, '%d.%m') == fmt_time(timeutil.now_iso(), viewer, '%d.%m') else '%d.%m %H:%M')
-    note = ""
+        return f"✋ Решает команда: {escape_html(first)}{more}"
+    due = when(a['due'], viewer)
     if not auto_enabled():
-        note = " · выкл."
-    elif raid_active():
-        note = " · рейд"
-    elif a.get('limit_wait'):
-        note = " · ждёт лимита"
-    return f"{a['icon']} Автопринятие через {a['delay']} · в {when}{note}"
+        return "Автопринятие выключено, решает команда"
+    if raid_active():
+        return "Рейд-режим: автопринятие на паузе, решает команда"
+    if a.get('limit_wait'):
+        return f"{a['icon']} Автомат упёрся в лимит, примет позже, как освободится"
+    return f"{a['icon']} Автомат примет сам {due}, если команда не решит раньше"
 
-def app_compact(user_id, app, viewer=None, title="Заявка"):
-    """Короткая карточка заявки: ник, комментарий, одно предупреждение, вердикт."""
+def app_compact(user_id, app, viewer=None, title="Заявка", live=False):
+    """Карточка заявки для команды: кто подал, когда, что просил, проверки, вердикт автомата.
+    live=True для экранов, которые рисуются при открытии: там видно ещё и сколько заявка ждёт."""
     nick = app.get('nick', '?')
     username = app.get('username', '')
-    who = f"👤 <code>{escape_html(nick)}</code>"
-    if username and not username.startswith('id'):
-        who += f" · @{escape_html(username)}"
-    lines = [f"📩 <b>{title}</b>", who]
+    lines = [f"📩 <b>{title}</b>", ""]
+    lines.append(f"Ник в игре: <code>{escape_html(nick)}</code>")
+    if app.get('tg_name'):
+        lines.append(f"Имя в Telegram: {escape_html(app['tg_name'])}")
+    lines.append("Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"))
+    lines.append(f"ID в Telegram: <code>{user_id}</code>")
+    waited = ago(app.get('date'), viewer) if live else ''
+    lines.append(f"Подал: {when(app.get('date'), viewer)}"
+                 + (f", ждёт {waited}" if waited and waited != 'только что' else ""))
+    if app.get('comment'):
+        c = app['comment']
+        lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
     if app.get('test_by'):
-        lines.append(f"🧪 Тестовая: {escape_html(staff_name(app['test_by']))} в режиме игрока")
+        lines.append(f"🧪 Тестовая заявка: {escape_html(staff_name(app['test_by']))} в режиме игрока")
     claimer = app_claims.get(str(user_id))
     if claimer and claimer != viewer:
         lines.append(f"⏳ Сейчас рассматривает: {escape_html(staff_name(claimer))}")
-    if app.get('comment'):
-        c = app['comment']
-        lines.append("💬 " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
+
     old = [n for n in previous_nicks(user_id) if n.lower() != nick.lower()]
     if old:
-        lines.append("⚠️ Уже подавал: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old[:5]))
-    short = auto_short(app, viewer)
-    if short:
-        lines.append(short)
+        lines.append("Прошлые ники: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old[:5]))
+
+    lines.append("")
+    lines.append("<b>Проверки</b>")
+    auto = app.get('auto') or {}
+    if auto:
+        flags = [('🔴', r) for r in auto.get('stop', [])] + [('🟡', r) for r in auto.get('minor', [])]
+    else:
+        flags = check_flags(user_id, nick, app=app)
+    lines.append(checks_text(flags))
+    verdict = auto_short(app, viewer)
+    if verdict:
+        lines.append(verdict)
     return "\n".join(lines)
+
 
 def app_details(user_id, app, viewer=None):
     """Подробная карточка: всё о человеке, досье, проверки, баны."""
     nick = app.get('nick', '?')
     username = app.get('username', '')
-    lines = [f"🧾 <b>Подробно</b> · <code>{escape_html(nick)}</code>",
-             f"🧑 {escape_html(app.get('tg_name') or '—')}"
-             + (f" · @{escape_html(username)}" if username and not username.startswith('id') else "")
-             + f" · ID <code>{user_id}</code>",
-             f"📅 Подана {fmt_time(app.get('date'), viewer)}"]
+    lines = [f"🧾 <b>Подробно</b>", "",
+             f"Ник в игре: <code>{escape_html(nick)}</code>",
+             f"Имя в Telegram: {escape_html(app.get('tg_name') or '—')}",
+             "Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"),
+             f"ID в Telegram: <code>{user_id}</code>",
+             f"Подал: {when(app.get('date'), viewer)}"]
     if app.get('comment'):
-        lines.append(f"💬 {escape_html(app['comment'])}")
+        lines.append(f"Комментарий игрока: {escape_html(app['comment'])}")
     old = [n for n in previous_nicks(user_id) if n.lower() != nick.lower()]
     if old:
-        lines.append("⚠️ Этот Telegram уже подавал заявки: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old))
+        lines.append("Этот Telegram уже подавал заявки с никами: "
+                     + ", ".join(f"<code>{escape_html(n)}</code>" for n in old))
     text = "\n".join(lines) + dossier(user_id, nick, viewer, app=app)[0] + ban_report(user_id, nick, viewer)
     return text if len(text) <= TG_MAX_LEN else text[:TG_MAX_LEN - 1] + '…'
 
@@ -1207,7 +1252,7 @@ def show_pending_applications(chat_id, page=0, edit_message=None, detailed=False
         if detailed:
             text = f"📋 Заявка {page + 1} из {total}\n\n" + app_details(user_id, app, chat_id)
         else:
-            text = app_compact(user_id, app, chat_id, title=f"Заявка {page + 1} из {total}")
+            text = app_compact(user_id, app, chat_id, title=f"Заявка {page + 1} из {total}", live=True)
         markup = types.InlineKeyboardMarkup()
         if total > 1:
             nav = []
@@ -1253,7 +1298,7 @@ def do_nick_search(chat_id, query):
                 'tg_name': app.get('tg_name', ''),
                 'username': app.get('username', ''),
                 'tg_id': str(app.get('user_id', app_id)),
-                'date': fmt_time(app.get('date'), chat_id, '%d.%m.%Y'),
+                'date': when(app.get('date'), chat_id),
                 'status': '⏳ Ожидает',
                 'comment': app.get('comment', ''),
             })
@@ -1270,7 +1315,7 @@ def do_nick_search(chat_id, query):
                 'tg_name': '',
                 'username': row[1],
                 'tg_id': row[2],
-                'date': fmt_time(row[0], chat_id, '%d.%m.%Y'),
+                'date': when(row[0], chat_id),
                 'status': f"{status_icon} {row[5]}",
                 'comment': row[6] if len(row) > 6 else '',
             })
@@ -1327,7 +1372,7 @@ def show_application_history(chat_id, page=0, edit_message=None):
         row = all_rows[i]
         icon = '✅' if len(row) > 5 and row[5] == 'Одобрено' else ('❌' if len(row) > 5 and row[5] == 'Отклонено' else '⏳')
         nick = row[3] if len(row) > 3 else '—'
-        markup.add(types.InlineKeyboardButton(f"{icon} {nick} · {fmt_time(row[0], chat_id, '%d.%m.%Y')}", callback_data=f"apphistory_view_{i}"))
+        markup.add(types.InlineKeyboardButton(f"{icon} {nick} · {when(row[0], chat_id)}", callback_data=f"apphistory_view_{i}"))
     nav = []
     if page > 0:
         nav.append(types.InlineKeyboardButton("◀️", callback_data=f"apphistory_page_{page - 1}"))
@@ -1355,7 +1400,7 @@ def show_application_card(chat_id, index, edit_message=None):
     index = max(0, min(index, total - 1))
     row = all_rows[index]  # [Дата, TG_Username, TG_ID, MC_Ник, Пароль, Статус, Комм_игрока, Комм_админа]
     num = total - index  # номер в списке «новые сверху»
-    date_s = fmt_time(row[0], chat_id)
+    date_s = when(row[0], chat_id)
     tg_uname = row[1] if len(row) > 1 else '—'
     tg_id = row[2] if len(row) > 2 else '—'
     mc_nick = row[3] if len(row) > 3 else '—'
@@ -1442,7 +1487,7 @@ def show_approved_list(chat_id, page=0, edit_message=None):
     per_page = 10
     pages = (len(approved) + per_page - 1) // per_page
     chunk = approved[page * per_page:(page + 1) * per_page]
-    lines = [f"• <code>{escape_html(r[3])}</code> | {fmt_time(r[0], chat_id, '%d.%m.%Y')} | @{escape_html(r[1])}" for r in chunk]
+    lines = [f"• <code>{escape_html(r[3])}</code> | {when(r[0], chat_id)} | @{escape_html(r[1])}" for r in chunk]
     text = f"✅ <b>Подтверждённые заявки</b> ({page+1}/{pages})\n" + "\n".join(lines)
     markup = types.InlineKeyboardMarkup(row_width=3)
     if page > 0: markup.add(types.InlineKeyboardButton("◀️", callback_data=f"approved_page_{page-1}"))
@@ -1465,7 +1510,7 @@ def show_rejected_list(chat_id, page=0, edit_message=None):
     per_page = 10
     pages = (len(rejected) + per_page - 1) // per_page
     chunk = rejected[page * per_page:(page + 1) * per_page]
-    lines = [f"• <code>{escape_html(r[3])}</code> | {fmt_time(r[0], chat_id, '%d.%m.%Y')} | @{escape_html(r[1])}" for r in chunk]
+    lines = [f"• <code>{escape_html(r[3])}</code> | {when(r[0], chat_id)} | @{escape_html(r[1])}" for r in chunk]
     text = f"❌ <b>Отклонённые заявки</b> ({page+1}/{pages})\n" + "\n".join(lines)
     markup = types.InlineKeyboardMarkup(row_width=3)
     if page > 0: markup.add(types.InlineKeyboardButton("◀️", callback_data=f"rejected_page_{page-1}"))
@@ -1567,95 +1612,112 @@ def show_messages_menu(message, page=0, edit_message=None, category='unanswered'
     else:
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
 
+def app_history(tg_id):
+    """История заявок игрока из базы: когда подал, когда и кем решена, с каким ником."""
+    return storage.query("SELECT created_at, decided_at, nick, status, decided_by_name FROM applications "
+                         "WHERE tg_id=? ORDER BY id", (int(tg_id),))
+
+
 def show_user_profile(admin_chat_id, target_uid, origin_msg):
-    """Показывает профиль пользователя, редактируя текущее сообщение (плашка профиля)."""
+    """Профиль игрока: кто это, что с заявкой, что на сервере, проверки. Редактирует текущее сообщение."""
     uid = int(target_uid)
-    # Собираем данные
     try:
         tchat = bot.get_chat(uid)
-        first = tchat.first_name or ""
-        last = tchat.last_name or ""
+        tg_name = " ".join(p for p in (tchat.first_name, tchat.last_name) if p).strip()
         tg_username = tchat.username or ""
-    except:
-        first = last = tg_username = ""
+    except Exception:
+        tg_name = tg_username = ""
 
-    tg_name = (first + " " + last).strip()
-    nick = ""
-    for app in pending.values():
-        if str(app.get('user_id')) == str(uid):
-            nick = app.get('nick', '')
-            break
-    # Если ника нет в pending — ищем в CSV
-    if not nick:
-        for row in read_approved_csv():
-            if len(row) >= 4 and str(row[2]) == str(uid) and row[5] == 'Одобрено':
-                nick = row[3]
-                break
+    app_now = next((a for a in pending.values() if str(a.get('user_id')) == str(uid)), None)
+    nick = (app_now or {}).get('nick') or player_nick(uid)
 
-    lines = [f"👤 <b>Профиль пользователя</b>"]
-    lines.append(f"🆔 ID: <code>{uid}</code>")
-    if tg_name:
-        lines.append(f"🧑 Имя TG: {escape_html(tg_name)}")
-    if tg_username:
-        lines.append(f"📛 Username: @{escape_html(tg_username)}")
+    lines = [f"👤 <b>{escape_html(nick or tg_name or f'ID {uid}')}</b>", ""]
     if nick:
-        lines.append(f"🎮 Игровой ник: <code>{escape_html(nick)}</code>")
+        lines.append(f"Ник в игре: <code>{escape_html(nick)}</code>")
+    if tg_name:
+        lines.append(f"Имя в Telegram: {escape_html(tg_name)}")
+    lines.append("Username: " + (f"@{escape_html(tg_username)}" if tg_username else "нет"))
+    lines.append(f"ID в Telegram: <code>{uid}</code>")
 
-    # Заявки игрока: сколько, с какими никами, кто рассмотрел последнюю
-    apps = [r for r in read_approved_csv() if len(r) >= 6 and str(r[2]) == str(uid)]
-    if apps:
-        ok_n = sum(1 for r in apps if r[5] == 'Одобрено')
-        nicks = ", ".join(dict.fromkeys(f"<code>{escape_html(r[3])}</code>" for r in apps))
-        lines.append(f"🗂 Заявок: {len(apps)} (✅ {ok_n}, ❌ {len(apps) - ok_n}), ники: {nicks}")
-        last = apps[-1]
-        decider = f", рассмотрел: {escape_html(last[8])}" if len(last) > 8 and last[8] else ""
-        lines.append(f"    последняя: {fmt_time(last[0], admin_chat_id, '%d.%m.%Y')}, {escape_html(last[5])}{decider}")
-    if str(uid) in pending:
-        lines.append("⏳ Сейчас есть заявка на рассмотрении")
+    # Заявки
+    rows = app_history(uid)
+    lines.append("\n<b>Заявка</b>")
+    if app_now:
+        lines.append(f"Статус: ждёт решения, подал {ago(app_now.get('date'), admin_chat_id)}")
+        lines.append(f"Подал: {when(app_now.get('date'), admin_chat_id)}")
+    elif rows:
+        created, decided, last_nick, status, by = rows[-1]
+        word = {'Одобрено': 'одобрена', 'Отклонено': 'отклонена'}.get(status, escape_html(str(status)).lower())
+        lines.append(f"Статус: {word} {when(decided or created, admin_chat_id)}")
+        lines.append(f"Подал: {when(created, admin_chat_id)}")
+        if by:
+            lines.append(f"Решил: {escape_html(by)}")
+    else:
+        lines.append("Статус: заявок не подавал")
+    if rows:
+        ok_n = sum(1 for r in rows if r[3] == 'Одобрено')
+        no_n = sum(1 for r in rows if r[3] == 'Отклонено')
+        lines.append(f"Всего заявок: {len(rows)} (одобрено {ok_n}, отклонено {no_n})")
+        old = [n for n in dict.fromkeys(r[2] for r in rows if r[2]) if n.lower() != (nick or '').lower()]
+        if old:
+            lines.append("Прошлые ники: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old[:5]))
 
-    # Статистика обращений
-    msgs = storage.get_messages(uid, 5)
-    lines.append(f"\n📨 Сообщений в истории: {storage.message_count(uid)}")
+    # Сервер
+    server = server_lines(uid, nick, admin_chat_id)
+    if server:
+        lines.append("\n<b>Аккаунт на сервере</b>")
+        lines += server
+
+    # Обращения
     ticket = get_ticket(uid)
-    if ticket:
-        lines.append(f"🎫 Тикет: #{ticket['id']} (открыт)")
     talker = dialog_admin(uid)
-    if talker:
-        lines.append(f"💬 Сейчас в диалоге с: <b>{escape_html(staff_name(talker))}</b>")
-    is_blocked = uid in blocked_users
-    if is_blocked:
-        lines.append("🚫 <b>Заблокирован в боте</b>")
+    msg_count = storage.message_count(uid)
+    if ticket or talker or msg_count:
+        lines.append("\n<b>Обращения</b>")
+        if ticket:
+            lines.append(f"Открытый тикет: #{ticket['id']}")
+        if talker:
+            lines.append(f"Сейчас отвечает: {escape_html(staff_name(talker))}")
+        lines.append(f"Сообщений в переписке: {msg_count}")
 
-    # Последние сообщения прямо в профиле, чтобы не открывать историю отдельно
-    if msgs:
-        lines.append("\n<b>Последние сообщения:</b>")
-        for x in msgs[-5:]:
-            who = '👤' if x['from'] == 'user' else f"👑 {escape_html(x.get('by', ''))}".rstrip()
-            text = x['text'] if len(x['text']) <= 300 else x['text'][:300] + '…'
-            lines.append(f"{who} <i>{fmt_time(x['time'], admin_chat_id, '%d.%m %H:%M')}</i>\n{escape_html(text)}")
+    # Проверки и блокировка
+    lines.append("\n<b>Проверки</b>")
+    lines.append(checks_text(check_flags(uid, nick, own_account=True)))
+    bans_text = ban_report(uid, nick, admin_chat_id)
+    if uid in blocked_users:
+        lines.append("\n🚫 <b>Заблокирован в боте</b>")
 
-    profile_text = "\n".join(lines) + dossier(uid, nick, admin_chat_id)[0] + ban_report(uid, nick, admin_chat_id)
+    # Свёрнутое: приметы аккаунта Telegram и последние сообщения
+    extra = tg_lines(uid, app_now)
+    msgs = storage.get_messages(uid, 5)
+    for x in msgs[-5:]:
+        who = 'Игрок' if x['from'] == 'user' else f"Команда ({escape_html(x.get('by', ''))})".replace(" ()", "")
+        text_line = x['text'] if len(x['text']) <= 300 else x['text'][:300] + '…'
+        extra.append(f"{who}, {when(x['time'], admin_chat_id)}:\n{escape_html(text_line)}")
+    if extra:
+        lines.append("\n<blockquote expandable><b>Ещё о человеке</b>\n" + "\n".join(extra) + "</blockquote>")
+
+    profile_text = "\n".join(lines) + bans_text
 
     B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup(row_width=2)
-    markup.row(B("💬 Ответить", callback_data=f"reply_{uid}"),
-               B("📜 Вся переписка", callback_data=f"hist_{uid}"))
-    if ticket or str(uid) in unread_messages:
-        markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"))
-    row = []
-    if can(admin_chat_id, 'block'):
-        row.append(B("🔓 Разблокировать", callback_data=f"unblock_{uid}") if is_blocked
-                   else B("🚫 Заблокировать", callback_data=f"block_{uid}"))
+    markup.row(B("💬 Написать игроку", callback_data=f"reply_{uid}"))
+    row = [B("📜 Вся переписка", callback_data=f"hist_{uid}")]
     if can(admin_chat_id, 'journal'):
         row.append(B("📒 Журнал", callback_data=f"jr_p_{uid}_0"))
-    if row:
-        markup.row(*row)
-    markup.row(B("🔙 К сообщениям", callback_data="admin_menu_messages"),
-               B("🏠 Меню", callback_data="admin_back"))
+    markup.row(*row)
+    if ticket or str(uid) in unread_messages:
+        markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"))
+    row = [B("🔙 К сообщениям", callback_data="admin_menu_messages"), B("🏠 Меню", callback_data="admin_back")]
+    markup.row(*row)
+    if can(admin_chat_id, 'block'):
+        markup.row(B("🔓 Разблокировать", callback_data=f"unblock_{uid}") if uid in blocked_users
+                   else B("🚫 Заблокировать", callback_data=f"block_{uid}"))
 
     if len(profile_text) > TG_MAX_LEN:
         profile_text = profile_text[:TG_MAX_LEN - 1] + '…'
     edit_message_safe(admin_chat_id, origin_msg.message_id, profile_text, parse_mode='HTML', reply_markup=markup)
+
 
 def show_blocked_users(chat_id, edit_message=None):
     if not blocked_users:
@@ -2136,8 +2198,8 @@ def auto_line(app, viewer=None, html=True):
         return "\n".join([f"примет сам через {a['delay']}"] + [f"• {r}" for r in a['minor']])
     if a['manual']:
         return f"✋ {b('Автопринятия не будет: только вручную')}"
-    when = fmt_time(a['due'], viewer, '%H:%M' if fmt_time(a['due'], viewer, '%d.%m') == fmt_time(timeutil.now_iso(), viewer, '%d.%m') else '%d.%m %H:%M')
-    head = f"{a['icon']} {b('Автопринятие через ' + a['delay'])} · в {when}"
+    due_txt = when(a['due'], viewer)
+    head = f"{a['icon']} {b('Автопринятие через ' + a['delay'])} · {due_txt}"
     # мелочи уже перечислены в «Проверках» над вердиктом, здесь только подписка
     details = "\n   ⚡ подписан на группу" if (app or {}).get('subscribed') else ""
     note = ""
@@ -3380,7 +3442,7 @@ def callback_handler(call):
         ticket = get_ticket(target)
         was_unread = str(target) in unread_messages
         clear_unread(target)  # закрытое обращение уходит из «Не отвеченных»
-        from_notification = bool(msg.text and msg.text.startswith("📬 Новое сообщение"))
+        from_notification = bool(msg.text and msg.text.startswith("📬 Обращение"))
         talker = dialog_admin(target)
         if talker is not None:
             dialogs.pop(talker, None)

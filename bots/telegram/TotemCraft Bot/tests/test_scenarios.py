@@ -61,7 +61,7 @@ bot.user_states[P1] = {'step': 'rules', 'nick': 'CrystalDisk', 'password': 'bana
 got = {c for c in (OWNER, ADMIN, HELPER) if sent_to(log, c)}
 check(got == {OWNER, ADMIN, HELPER}, f"уведомление о заявке у всех троих: {sorted(got)}")
 note = sent_to(log, OWNER)[0]
-check('Уже подавал' in note and 'jojo111' in note and '✋ Вручную' in note, "в коротком уведомлении прошлый ник и «вручную»")
+check('Прошлые ники' in note and 'jojo111' in note and 'Решает команда' in note, "в карточке прошлый ник и «решает команда»")
 check(bot.pending[str(P1)]['date'].endswith('+00:00'), "дата заявки в базе в UTC")
 press(ADMIN, f'approve_{P1}', text='📩 Заявка 1 из 1', mid=77)
 (t, alert), _ = press(HELPER, f'approve_{P1}')
@@ -104,7 +104,7 @@ check(any('Сообщение от администрации' in x and 'Вас�
 check(bot.dialogs.get(OWNER) == P2 and ADMIN not in bot.dialogs, "владелец забрал диалог")
 (t, _), log = press(OWNER, f'user_profile_{P2}')
 prof = edited(log)[-1][1]
-check('👑 Вася' in prof and 'сундук' in prof, "в профиле переписка и кто из админов писал")
+check('Вася' in prof and 'сундук' in prof, "в профиле переписка и кто из админов писал")
 press(OWNER, 'end_dialog')
 check(OWNER not in bot.dialogs, "диалог завершён")
 msgs = storage.get_messages(P2, 10)
@@ -170,7 +170,7 @@ check(not any('новый' in t for _, t in flags), "старый аккаунт
 text, flags = bot.dossier(9_900_000_000, 'CleanNick', OWNER)
 check(any(l == '🔴' and '2 месяцев' in t for l, t in flags), "Telegram моложе 2 месяцев: 🔴, как у автомата")
 text, flags = bot.dossier(1, 'oldtwink', OWNER)
-check('🎮 <code>oldtwink</code>: рег.' in text, "досье показывает аккаунт AuthMe")
+check('Аккаунт: <code>oldtwink</code>' in text and 'Регистрация:' in text, "досье показывает аккаунт AuthMe")
 saved = storage.query("SELECT id, decided_at FROM applications")
 storage.execute("UPDATE applications SET decided_at='2026-01-01T00:00:00+00:00'")  # все заявки «давние»
 bot._frontier_cache['at'] = 0

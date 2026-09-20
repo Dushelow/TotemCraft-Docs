@@ -77,6 +77,59 @@ def fmt(value, tz_name=None, pattern='%d.%m.%Y %H:%M'):
     return dt.strftime(pattern) if dt else '—'
 
 
+def plural(n, forms):
+    """Русское число со словом: (1, ('минуту','минуты','минут')) -> «1 минуту»."""
+    n = abs(int(n))
+    if n % 10 == 1 and n % 100 != 11:
+        word = forms[0]
+    elif n % 10 in (2, 3, 4) and n % 100 not in (12, 13, 14):
+        word = forms[1]
+    else:
+        word = forms[2]
+    return f"{n} {word}"
+
+
+def human(value, tz_name=None):
+    """Время для человека: «сегодня в 10:07», «вчера в 21:03», «12.09 в 10:07».
+    Для другого года добавляется год. Пусто -> «—»."""
+    dt = local(value, tz_name)
+    if not dt:
+        return '—'
+    today = datetime.now(zone(tz_name)).date()
+    days = (today - dt.date()).days
+    if days == 0:
+        return dt.strftime('сегодня в %H:%M')
+    if days == 1:
+        return dt.strftime('вчера в %H:%M')
+    if days == -1:
+        return dt.strftime('завтра в %H:%M')
+    pattern = '%d.%m в %H:%M' if dt.year == today.year else '%d.%m.%Y в %H:%M'
+    return dt.strftime(pattern)
+
+
+def ago(value, tz_name=None):
+    """Сколько прошло: «только что», «12 минут назад», «2 часа назад», «3 дня назад».
+    Только для экранов, которые бот рисует в момент открытия: в отправленном сообщении такое устареет."""
+    dt = parse(value)
+    if not dt:
+        return '—'
+    seconds = (now_utc() - dt).total_seconds()
+    if seconds < 0:
+        return human(value, tz_name)
+    if seconds < 90:
+        return 'только что'
+    minutes = seconds / 60
+    if minutes < 60:
+        return plural(round(minutes), ('минуту', 'минуты', 'минут')) + ' назад'
+    hours = minutes / 60
+    if hours < 24:
+        return plural(round(hours), ('час', 'часа', 'часов')) + ' назад'
+    days = hours / 24
+    if days < 31:
+        return plural(round(days), ('день', 'дня', 'дней')) + ' назад'
+    return human(value, tz_name)
+
+
 def from_ms(ms):
     return datetime.fromtimestamp(ms / 1000, timezone.utc)
 

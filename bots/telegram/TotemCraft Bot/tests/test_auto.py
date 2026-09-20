@@ -53,7 +53,7 @@ bot.user_states[P] = {'step': 'rules', 'nick': 'CleanNick', 'password': 'Str0ngP
 app = bot.pending[str(P)]
 check(app['auto']['icon'] == '🟢' and not app['auto']['manual'], f"вердикт: 🟢 ({app['auto']})")
 note = sent_to(log, OWNER)[0]
-check('Автопринятие через 1 ч' in note and 'выкл.' in note and '✅ Одобрить' in buttons(log, OWNER), "короткое уведомление: вердикт, «выкл.», кнопки решения")
+check('Автопринятие выключено' in note and '✅ Одобрить' in buttons(log, OWNER), "в уведомлении видно, что автомат выключен, и есть кнопки решения")
 pm = " ".join(sent_to(log, P))
 check('Автопринят' not in pm and 'мелоч' not in pm, "игрок критериев и сроков не видит")
 check('подпишитесь на нашу группу' in pm and '✅ Я подписался' in buttons(log, P), "игроку предложили подписаться на группу")
@@ -248,7 +248,7 @@ X = 6_500_000_001
 bot.user_states[X] = {'step': 'rules', 'nick': 'ShortCard', 'password': 'Str0ngPass1', 'comment': 'Привет'}
 (t, _), log = ctx.press(X, 'rules_agree')
 note = [p for m, p in log if m == 'sendMessage' and str(p.get('chat_id')) == str(ADMIN)][0]
-check(len(fakes.strip_tags(note['text']).splitlines()) <= 6 and 'Досье' not in note['text'], "уведомление короткое, без досье")
+check(len(fakes.strip_tags(note['text']).splitlines()) <= 14 and 'Досье' not in note['text'], "уведомление без досье, умещается в экран")
 check({'✅ Одобрить', '❌ Отклонить', '🧾 Подробнее'} <= set(buttons(log, ADMIN)), "в уведомлении сразу «Одобрить», «Отклонить», «Подробнее»")
 mid = ctx.messages and max(k[1] for k in ctx.messages if k[0] == ADMIN)
 (t, _), log = ctx.press(ADMIN, f'appv_{X}_d', text='📩 Новая заявка', mid=mid)
