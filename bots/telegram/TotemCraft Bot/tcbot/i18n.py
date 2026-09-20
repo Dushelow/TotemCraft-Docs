@@ -90,11 +90,11 @@ T = {
     'has_pending_short': {'ru': "⏳ У вас уже есть активная заявка.", 'uk': "⏳ У вас уже є активна заявка.",
                           'en': "⏳ You already have an active application."},
     'ask_nick': {
-        'ru': "📝 <b>Заявка · шаг 1 из 3</b>\nВведите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):\n"
+        'ru': "📝 <b>Заявка · шаг 1 из 2</b>\nВведите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):\n"
               "<i>Поменять ник потом нельзя.</i>",
-        'uk': "📝 <b>Заявка · крок 1 з 3</b>\nВведіть ваш нік у Minecraft (3–16 символів, A-Z, a-z, 0-9, _):\n"
+        'uk': "📝 <b>Заявка · крок 1 з 2</b>\nВведіть ваш нік у Minecraft (3–16 символів, A-Z, a-z, 0-9, _):\n"
               "<i>Змінити нік потім не можна.</i>",
-        'en': "📝 <b>Application · step 1 of 3</b>\nEnter your Minecraft nickname (3–16 characters, A-Z, a-z, 0-9, _):\n"
+        'en': "📝 <b>Application · step 1 of 2</b>\nEnter your Minecraft nickname (3–16 characters, A-Z, a-z, 0-9, _):\n"
               "<i>You will not be able to change it later.</i>"},
     'bad_nick': {'ru': "❌ Недопустимый ник.\n{reason}\nПожалуйста, введите другой ник:",
                  'uk': "❌ Недопустимий нік.\n{reason}\nБудь ласка, введіть інший нік:",
@@ -103,24 +103,22 @@ T = {
                    'uk': "❌ Цей нік уже використовується на сервері. Будь ласка, оберіть інший нік:",
                    'en': "❌ This nickname is already taken on the server. Please choose another one:"},
     'ask_password': {
-        'ru': "🔑 <b>Заявка · шаг 2 из 3</b>\nВведите пароль (6–30 символов, без пробелов):\n"
+        'ru': "🔑 <b>Заявка · шаг 2 из 2</b>\nВведите пароль (6–30 символов, без пробелов):\n"
               "<i>Он понадобится при каждом заходе на сервер.</i>",
-        'uk': "🔑 <b>Заявка · крок 2 з 3</b>\nВведіть пароль (6–30 символів, без пробілів):\n"
+        'uk': "🔑 <b>Заявка · крок 2 з 2</b>\nВведіть пароль (6–30 символів, без пробілів):\n"
               "<i>Він знадобиться під час кожного заходу на сервер.</i>",
-        'en': "🔑 <b>Application · step 2 of 3</b>\nEnter a password (6–30 characters, no spaces):\n"
+        'en': "🔑 <b>Application · step 2 of 2</b>\nEnter a password (6–30 characters, no spaces):\n"
               "<i>You will need it every time you join the server.</i>"},
     'bad_password': {'ru': "❌ Недопустимый пароль.\n{reason}\nПожалуйста, придумайте другой пароль:",
                      'uk': "❌ Недопустимий пароль.\n{reason}\nБудь ласка, придумайте інший пароль:",
                      'en': "❌ Invalid password.\n{reason}\nPlease choose another password:"},
+    # Комментарий шагом не считается: иначе игрок думает, что обязан что-то написать
     'ask_comment': {
-        'ru': "💬 <b>Заявка · шаг 3 из 3, необязательный</b>\n"
-              "Хотите оставить комментарий к заявке? Напишите сейчас или нажмите кнопку «{skip}».\n\n"
+        'ru': "💬 Хотите оставить комментарий к заявке? Напишите сейчас или нажмите кнопку «{skip}».\n\n"
               "<i>⚠️ Обращения с просьбами ускорить или осуществить регистрацию не рассматриваются и могут повлечь отклонение заявки.</i>",
-        'uk': "💬 <b>Заявка · крок 3 з 3, необов'язковий</b>\n"
-              "Бажаєте залишити коментар до заявки? Напишіть зараз або натисніть кнопку «{skip}».\n\n"
+        'uk': "💬 Бажаєте залишити коментар до заявки? Напишіть зараз або натисніть кнопку «{skip}».\n\n"
               "<i>⚠️ Прохання пришвидшити або провести реєстрацію не розглядаються і можуть призвести до відхилення заявки.</i>",
-        'en': "💬 <b>Application · step 3 of 3, optional</b>\n"
-              "Would you like to add a comment to your application? Write it now or press «{skip}».\n\n"
+        'en': "💬 Would you like to add a comment to your application? Write it now or press «{skip}».\n\n"
               "<i>⚠️ Requests to speed up or push through your registration are not considered and may get your application rejected.</i>"},
     'confirm_data': {'ru': "📋 <b>Проверьте данные:</b>\n\n👤 Ник: <code>{nick}</code>\n🔑 Пароль: <code>{password}</code>",
                      'uk': "📋 <b>Перевірте дані:</b>\n\n👤 Нік: <code>{nick}</code>\n🔑 Пароль: <code>{password}</code>",
