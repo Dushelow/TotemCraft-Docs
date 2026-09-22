@@ -53,7 +53,10 @@ bot.user_states[P] = {'step': 'rules', 'nick': 'CleanNick', 'password': 'Str0ngP
 app = bot.pending[str(P)]
 check(app['auto']['icon'] == '🟢' and not app['auto']['manual'], f"вердикт: 🟢 ({app['auto']})")
 note = sent_to(log, OWNER)[0]
-check('Автопринятие выключено' in note and '✅ Одобрить' in buttons(log, OWNER), "в уведомлении видно, что автомат выключен, и есть кнопки решения")
+check('Новая заявка!' in note and buttons(log, OWNER) == ['📋 Открыть заявки'], "уведомление короткое, одна кнопка «Открыть заявки»")
+(t, _), qlog = ctx.press(OWNER, 'admin_menu_applications_new')
+check(any('Автопринятие выключено' in x for x in sent_to(qlog, OWNER)) and '✅ Одобрить' in buttons(qlog, OWNER),
+      "в очереди видно, что автомат выключен, и есть кнопки решения")
 pm = " ".join(sent_to(log, P))
 check('Автопринят' not in pm and 'мелоч' not in pm, "игрок критериев и сроков не видит")
 check('подпишитесь на нашу группу' in pm and '✅ Я подписался' in buttons(log, P), "игроку предложили подписаться на группу")
@@ -239,14 +242,18 @@ storage.execute("INSERT INTO applications (created_at, decided_at, tg_id, tg_use
 v = aa.decide(bot.auto_facts(C, {'nick': 'SecondAcc'}))
 check('Твинк: с этого Telegram уже одобрен аккаунт CleanOld' in v['stop'], f"твинк без бана: просто ник, решает команда: {v['stop']}")
 
-print("\n=== 13. Короткое уведомление: подробнее, кратко, решение прямо из него ===")
+print("\n=== 13. Короткое уведомление, очередь отдельным сообщением, решение из неё ===")
 X = 6_500_000_001
 bot.user_states[X] = {'step': 'rules', 'nick': 'ShortCard', 'password': 'Str0ngPass1', 'comment': 'Привет'}
 (t, _), log = ctx.press(X, 'rules_agree')
 note = [p for m, p in log if m == 'sendMessage' and str(p.get('chat_id')) == str(ADMIN)][0]
-check(len(fakes.strip_tags(note['text']).splitlines()) <= 14 and 'Досье' not in note['text'], "уведомление без досье, умещается в экран")
-check({'✅ Одобрить', '❌ Отклонить', '🧾 Подробнее'} <= set(buttons(log, ADMIN)), "в уведомлении сразу «Одобрить», «Отклонить», «Подробнее»")
-mid = ctx.messages and max(k[1] for k in ctx.messages if k[0] == ADMIN)
+check(fakes.strip_tags(note['text']).startswith('📩 Новая заявка!') and buttons(log, ADMIN) == ['📋 Открыть заявки'],
+      "уведомление короткое, как раньше: одна кнопка «Открыть заявки»")
+note_mid = max(k[1] for k in ctx.messages if k[0] == ADMIN)
+(t, _), log = ctx.press(ADMIN, 'admin_menu_applications_new', text='📩 Новая заявка!', mid=note_mid)
+check(sent_to(log, ADMIN) and not edited(log), "очередь открылась отдельным сообщением, уведомление не тронуто")
+check({'✅ Одобрить', '❌ Отклонить', '🧾 Подробнее'} <= set(buttons(log, ADMIN)), "в очереди «Одобрить», «Отклонить», «Подробнее»")
+mid = max(k[1] for k in ctx.messages if k[0] == ADMIN)
 (t, _), log = ctx.press(ADMIN, f'appv_{X}_d', text='📩 Новая заявка', mid=mid)
 check(any('Досье' in x and 'Проверки' in x for _, x in edited(log)) and '🔙 Кратко' in buttons(log), "«Подробнее»: досье на месте, кнопка «Кратко»")
 (t, _), log = ctx.press(ADMIN, f'appv_{X}_s', text='🧾 Подробно', mid=mid)

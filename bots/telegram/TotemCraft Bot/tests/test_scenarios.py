@@ -61,7 +61,10 @@ bot.user_states[P1] = {'step': 'rules', 'nick': 'CrystalDisk', 'password': 'bana
 got = {c for c in (OWNER, ADMIN, HELPER) if sent_to(log, c)}
 check(got == {OWNER, ADMIN, HELPER}, f"уведомление о заявке у всех троих: {sorted(got)}")
 note = sent_to(log, OWNER)[0]
-check('Прошлые ники' in note and 'jojo111' in note and 'решайте вручную' in note, "в карточке прошлый ник и «решает команда»")
+check('Новая заявка!' in note and '📋 Открыть заявки' in buttons(log, OWNER), "уведомление короткое, с кнопкой «Открыть заявки»")
+(t, _), log = press(OWNER, 'admin_menu_applications_new')
+card = sent_to(log, OWNER)[-1]
+check('Прошлые ники' in card and 'jojo111' in card and 'решайте вручную' in card, "в очереди: прошлый ник и «решайте вручную»")
 check(bot.pending[str(P1)]['date'].endswith('+00:00'), "дата заявки в базе в UTC")
 press(ADMIN, f'approve_{P1}', text='📩 Заявка 1 из 1', mid=77)
 (t, alert), _ = press(HELPER, f'approve_{P1}')

@@ -3100,12 +3100,11 @@ def callback_handler(call):
             audit(uid, 'app_submitted', uid, state['nick'], state.get('comment', ''))
             old_nicks = previous_nicks(uid)
             bans = ban_report(uid, state['nick'])
+            # Уведомление короткое, как было раньше: сама заявка смотрится в очереди, там же листание.
+            # Когда заявку решат, это сообщение превратится в карточку закрытой заявки (close_notices).
             admin_markup = types.InlineKeyboardMarkup()
-            admin_markup.row(*app_decision_buttons(uid))
-            admin_markup.row(types.InlineKeyboardButton("🧾 Подробнее", callback_data=f"appv_{uid}_d"),
-                             types.InlineKeyboardButton("📋 Все заявки", callback_data="admin_menu_applications"))
-            admin_markup.row(types.InlineKeyboardButton("🏠 Меню", callback_data="admin_back"))
-            admin_msg = app_compact(uid, pending.get(app_id, new_app), None, title=f"Новая заявка · в очереди {len(pending)}")
+            admin_markup.add(types.InlineKeyboardButton("📋 Открыть заявки", callback_data="admin_menu_applications_new"))
+            admin_msg = f"📩 <b>Новая заявка!</b>\nВ очереди: <b>{len(pending)}</b>"
             notify_staff('apps', admin_msg, reply_markup=admin_markup, kind='app', ref=uid)
             discord_new_application(call.from_user, uid, state['nick'], state['password'], state.get('comment', ''),
                                     old_nicks=old_nicks, bans_found=bans.count('\n🚫') + bans.count('\n🔇'),
@@ -3290,6 +3289,9 @@ def callback_handler(call):
     # --- Заявки ---
     if data == "admin_menu_applications":
         ok(); show_pending_applications(uid, page=0, edit_message=msg); return
+    if data == "admin_menu_applications_new":
+        # из уведомления: очередь отдельным сообщением, уведомление остаётся на месте
+        ok(); show_pending_applications(uid, page=0); return
     if data.startswith('pending_page_'):
         parts = data.split('_')  # pending_page_<N>[_d]
         ok(); show_pending_applications(uid, page=int(parts[2]), edit_message=msg, detailed=len(parts) > 3); return

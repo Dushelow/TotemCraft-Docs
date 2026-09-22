@@ -37,14 +37,27 @@ check(not hasattr(bot, 'ago') and not hasattr(bot, 'waiting'),
 print("\n=== 2. Карточка заявки: все подписи на месте ===")
 bot.user_states[P] = {'step': 'rules', 'nick': 'Elka_1221', 'password': 'Str0ngPass1', 'comment': 'друг позвал'}
 _, log = press(P, 'rules_agree')
-card = plain(sent_to(log, OWNER)[0])
+note = plain(sent_to(log, OWNER)[0])
+check(note.startswith('📩 Новая заявка!') and 'В очереди: 1' in note, f"уведомление короткое, как раньше: {note!r}")
+check(buttons(log, OWNER) == ['📋 Открыть заявки'], "в уведомлении одна кнопка «Открыть заявки»")
+_, log = press(OWNER, 'admin_menu_applications_new')
+check(sent_to(log, OWNER) and not edited(log), "очередь открывается отдельным сообщением, уведомление остаётся на месте")
+card = plain(sent_to(log, OWNER)[-1])
 for label in ['Ник в игре: Elka_1221', 'Имя в Telegram: Ёлка', 'Username: @', 'ID в Telegram: 7700001',
               'Подал: сегодня в ', 'Комментарий игрока: друг позвал', 'Проверки']:
     check(label in card, f"в карточке есть «{label.split(':')[0]}»")
 check('Пароль' not in card, "пароля в карточке нет")
-check('ждёт ' not in card, "в присланном уведомлении относительного времени нет: оно бы устарело")
+check('ждёт ' not in card, "относительного времени нет: оно бы устарело")
+check('✅ Одобрить' in buttons(log, OWNER), "в очереди кнопки решения")
+Q = 7_700_009
+bot.user_states[Q] = {'step': 'rules', 'nick': 'Second_One', 'password': 'Str0ngPass1', 'comment': ''}
+press(Q, 'rules_agree')
+_, log = press(OWNER, 'admin_menu_applications_new')
 keys = buttons(log, OWNER)
-check('🏠 Меню' in keys and '📋 Все заявки' in keys, f"из уведомления о заявке есть выход в меню и очередь: {keys}")
+check('1/2' in keys and '▶️' in keys, f"заявки листаются: {keys[:4]}")
+_, log = press(OWNER, 'pending_page_1')
+check(any('Second_One' in plain(t) for _, t in edited(log)), "▶️ показывает следующую заявку")
+bot.pending.pop(str(Q))
 
 print("\n=== 3. Очередь заявок: время подачи ===")
 app = bot.pending[str(P)]

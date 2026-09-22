@@ -107,7 +107,7 @@ check(any('Server rules' in t for t in sent_to(log, EN)) and 'I agree' in button
 _, log = press(EN, 'rules_agree')
 check(any('Your application has been received' in t for t in sent_to(log, EN)), "заявка принята, ответ по-английски")
 note = sent_to(log, OWNER)
-check(any('JohnCraft' in x and 'Новая заявка' in x for x in note), f"админу уведомление по-русски: {note[:1]}")
+check(any('Новая заявка!' in x for x in note), f"админу уведомление по-русски: {note[:1]}")
 press(OWNER, f'approve_{EN}', mid=90)
 log = say(OWNER, '-')
 pm = sent_to(log, EN)

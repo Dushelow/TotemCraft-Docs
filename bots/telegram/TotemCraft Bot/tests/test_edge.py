@@ -80,7 +80,7 @@ press(P, 'confirm_yes')
 (t, _), log = press(P, 'rules_agree')
 check(str(P) in bot.pending, "заявка в очереди")
 note = sent_to(log, OWNER)
-check(note and 'Good_Nick1' in note[0], "уведомление о заявке дошло до владельца")
+check(note and 'Новая заявка!' in note[0], "уведомление о заявке дошло до владельца")
 check(not any(d for m, d in ctx.tg_errors if 'parse entities' in d), "нигде не сломана разметка (имя игрока с тегами)")
 
 print("\n=== 2. Повторные и лишние действия игрока ===")
