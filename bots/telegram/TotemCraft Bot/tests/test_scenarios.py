@@ -152,7 +152,8 @@ check('unbanned' not in bot.ban_report(1, 'unbanned', OWNER), "снятый ба
 check(bot.ban_report(1, 'expired1', OWNER).count('🚫') == 0, "истёкший бан не показывается как действующий")
 check('Раньше' in bot.ban_report(1, 'oldbad', OWNER), "прошлое наказание одной строкой «Раньше»")
 check(bot.ban_report(1, 'CleanPlayer', OWNER) == '', "у чистого игрока блока нет")
-check('IP 10.9.9.9' in bot.ban_report(1, 'oldtwink', OWNER), "бан по IP найден через AuthMe")
+check(bot.ban_report(1, 'oldtwink', OWNER) == '',
+      "бан по IP чужому игроку не приписывается: через прокси в России IP общий, ищем только по нику")
 bot.bans.ABX_DATA_DIR = '/нет/такой/папки'
 r = bot.ban_report(1, 'jojo111', OWNER)
 bot.bans.ABX_DATA_DIR = os.path.join(MC, 'plugins', 'AdvancedBanX', 'data')

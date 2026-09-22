@@ -1,4 +1,7 @@
-"""Поиск наказаний игрока на сервере: AdvancedBanX, ванильные списки банов, IP из AuthMe.
+"""Поиск наказаний игрока на сервере: AdvancedBanX и ванильный список банов, только по нику.
+
+По IP не ищем: через обратный прокси в России игровой сервер видит разных людей с одним IP,
+и бан одного оказался бы у всех. Записи IP-банов AdvancedBanX хранят только IP, ника в них нет.
 
 Только чтение файлов сервера. Каждый источник читается отдельно: сбой одного не мешает остальным.
 Время в результатах — datetime в UTC.
@@ -26,7 +29,6 @@ PUNISHMENT_NAMES = {
     'KICK': 'кик', 'NOTE': 'заметка',
 }
 BAN_TYPES = {'BAN', 'TEMP_BAN', 'IP_BAN', 'TEMP_IP_BAN'}
-IP_TYPES = {'IP_BAN', 'TEMP_IP_BAN'}
 
 _SQL_ROW = re.compile(r'^(?:/\*C\d+\*/)?INSERT INTO (PUNISHMENTS|PUNISHMENTHISTORY) VALUES\((.*)\)\s*$')
 _SQL_DEL = re.compile(r'^(?:/\*C\d+\*/)?DELETE FROM (PUNISHMENTS|PUNISHMENTHISTORY) WHERE ID=(\d+)\s*$')
@@ -104,26 +106,6 @@ def authme_accounts(nicks):
             return db.execute(q, args).fetchall()
 
 
-def authme_accounts_on_ips(ips, limit=20):
-    """Ники аккаунтов AuthMe, заходивших или зарегистрированных с этих IP."""
-    ips = [ip for ip in ips if ip]
-    if not ips:
-        return []
-    marks = ','.join('?' * len(ips))
-    q = f"SELECT username FROM authme WHERE ip IN ({marks}) OR regip IN ({marks}) LIMIT {int(limit)}"
-    try:
-        with closing(sqlite3.connect('file:' + AUTHME_DB + '?mode=ro', uri=True, timeout=5)) as db:
-            return [r[0] for r in db.execute(q, ips + ips).fetchall()]
-    except sqlite3.OperationalError:
-        with closing(sqlite3.connect('file:' + AUTHME_DB + '?immutable=1', uri=True, timeout=5)) as db:
-            return [r[0] for r in db.execute(q, ips + ips).fetchall()]
-
-
-def authme_ips(nicks):
-    """IP (последний и при регистрации) для ников из базы AuthMe."""
-    return {ip for row in authme_accounts(nicks) for ip in row[1:3] if ip and ip not in ('127.0.0.1', '0.0.0.0')}
-
-
 def _vanilla_dt(s):
     """Дата из banned-players.json ('2026-04-11 13:16:31 +0300') -> UTC; 'forever'/пусто -> None."""
     if not s or s == 'forever':
@@ -135,7 +117,7 @@ def _vanilla_dt(s):
 
 
 def find(nicks):
-    """Все наказания по никам и их IP.
+    """Все наказания по никам (без поиска по IP, см. начало файла).
     Возвращает (активные, прошлые, ошибки):
       активные — список словарей icon/who/kind/until/reason/operator/start/sources (until=None — навсегда);
       прошлые — {название наказания: сколько раз};
@@ -153,52 +135,43 @@ def find(nicks):
             items[key] = dict(icon=icon, who=who, kind=kind, until=until, reason=reason,
                               operator=operator, start=start, sources=[source])
 
-    ips = set()
-    try:
-        ips = authme_ips(sorted(lower))
-    except Exception as e:
-        log_error(e)
-        errors.append(f"базу AuthMe (IP игрока): {e}")
-
     past = defaultdict(int)
     try:
         active, history = read_advancedban()
         now_ms = time.time() * 1000
         active_ids = set()
         for p in active:
-            by_ip = p['type'] in IP_TYPES and (p['name'] in ips or p['uuid'] in ips)
-            if not (by_ip or p['name'].lower() in lower or p['uuid'].lower() in lower):
+            if not (p['name'].lower() in lower or p['uuid'].lower() in lower):
                 continue
             if isinstance(p['end'], int) and p['end'] != -1 and p['end'] < now_ms:
                 continue  # срок уже вышел, плагин просто ещё не убрал запись
             active_ids.add((p['name'], p['start']))
             icon = '🚫' if p['type'] in BAN_TYPES else ('🔇' if 'MUTE' in p['type'] else '⚠️')
-            add(icon, f"IP {p['name']}" if by_ip else p['name'], PUNISHMENT_NAMES.get(p['type'], p['type']),
+            add(icon, p['name'], PUNISHMENT_NAMES.get(p['type'], p['type']),
                 None if p['end'] in (-1, None) else timeutil.from_ms(p['end']),
                 p['reason'], p['operator'], timeutil.from_ms(p['start']) if p['start'] else None, 'AdvancedBanX')
         for p in history:
             if (p['name'], p['start']) in active_ids or p['type'] in ('NOTE', 'KICK'):
                 continue
-            if p['name'].lower() in lower or p['uuid'].lower() in lower or (p['type'] in IP_TYPES and p['name'] in ips):
+            if p['name'].lower() in lower or p['uuid'].lower() in lower:
                 past[PUNISHMENT_NAMES.get(p['type'], p['type'])] += 1
     except Exception as e:
         log_error(e)
         errors.append(f"AdvancedBanX: {e}")
 
     now = datetime.now(timezone.utc)
-    for fname, field in (('banned-players.json', 'name'), ('banned-ips.json', 'ip')):
+    for fname in ('banned-players.json',):  # banned-ips.json не читаем: там только IP, без ника
         try:
             with open(os.path.join(config.MC_SERVER_DIR, fname), 'r', encoding='utf-8') as f:
                 entries = json.load(f)
             for b in entries:
-                value = str(b.get(field, ''))
-                by_ip = value in ips
-                if not (by_ip or value.lower() in lower):
+                value = str(b.get('name', ''))
+                if value.lower() not in lower:
                     continue
                 until = _vanilla_dt(b.get('expires'))
                 if until and until < now:
                     continue
-                add('🚫', f"IP {value}" if by_ip else value, 'бан по IP' if by_ip else 'бан', until,
+                add('🚫', value, 'бан', until,
                     b.get('reason', ''), b.get('source', ''), _vanilla_dt(b.get('created')), fname)
         except Exception as e:
             log_error(e)
