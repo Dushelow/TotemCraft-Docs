@@ -958,7 +958,8 @@ def flush_admin_notifications(aid):
 
 def close_notices(kind, ref, footer, title=None, skip=None):
     """Дописывает итог к уведомлению у всех админов и убирает кнопки, чтобы дело не взяли дважды.
-    title — заменить текст уведомления коротким заголовком; skip — (chat_id, message_id), уже исправленное."""
+    title — заменить текст уведомления (строка или функция от chat_id: время в поясе того, кто смотрит);
+    skip — (chat_id, message_id), уже исправленное. {t} в footer — время итога словами: «сегодня в 17:43»."""
     try:
         rows = db_exec("SELECT chat_id, message_id, text FROM notices WHERE kind=? AND ref=?", (kind, str(ref)), fetch=True)
         db_exec("DELETE FROM notices WHERE kind=? AND ref=?", (kind, str(ref)))
@@ -970,8 +971,9 @@ def close_notices(kind, ref, footer, title=None, skip=None):
         for chat_id, message_id, text in rows:
             if skip and (chat_id, message_id) == tuple(skip):
                 continue
-            line = footer.replace('{t}', fmt_time(now, chat_id, '%H:%M'))
-            body = f"{title}\n{line}" if title else f"{text}\n\n{line}"
+            line = footer.replace('{t}', when(now, chat_id))
+            head = title(chat_id) if callable(title) else title
+            body = f"{head}\n\n{line}" if head else f"{text}\n\n{line}"
             try:
                 bot.edit_message_text(body[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
             except Exception:
@@ -1201,6 +1203,21 @@ def app_compact(user_id, app, viewer=None, title="Заявка"):
         lines.append(verdict)
     return "\n".join(lines)
 
+
+def app_closed_text(user_id, app, viewer=None):
+    """Закрытая заявка: те же сведения, что в карточке, без проверок и кнопок.
+    Раньше карточка сворачивалась до ника, и через день было не понять, что это была за заявка."""
+    username = app.get('username', '')
+    lines = ["📁 <b>Заявка закрыта</b>", "",
+             f"Ник в игре: <code>{escape_html(app.get('nick', '?'))}</code>",
+             "Имя в Telegram: " + (escape_html(app['tg_name']) if (app.get('tg_name') or '').strip() else "не указано"),
+             "Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"),
+             f"ID в Telegram: <code>{user_id}</code>",
+             f"Подал: {when(app.get('date'), viewer)}"]
+    if app.get('comment'):
+        c = app['comment']
+        lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
+    return "\n".join(lines)
 
 def app_details(user_id, app, viewer=None):
     """Подробная карточка: всё о человеке, досье, проверки, баны."""
@@ -2566,8 +2583,8 @@ def handle_all_messages(m):
             audit(uid, 'app_cancelled', uid, nick_cancelled)
             # Сбрасываем таймер чтобы игрок мог подать заново немедленно
             last_application.pop(str(uid), None)
-            close_notices('app', uid, "↩️ Игрок отозвал заявку [{t}]",
-                          title=f"📁 Заявка закрыта · <code>{escape_html(nick_cancelled)}</code>")
+            close_notices('app', uid, "↩️ Игрок отозвал заявку {t}",
+                          title=lambda chat_id: app_closed_text(uid, app, chat_id))
             # Если админ как раз пишет решение по этой заявке — прерываем
             claimer = app_claims.pop(str(uid), None)
             if claimer is not None and admin_states.get(claimer, {}).get('user_id') == str(uid):
@@ -3763,11 +3780,11 @@ def process_admin_decision(action, user_id_str, comment, state):
     # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
     action_label = "ОДОБРЕНО" if action == 'approve' else "ОТКЛОНЕНО"
-    decided_at = fmt_time(timeutil.now_iso(), actor, '%d.%m %H:%M')
-    closed_title = f"📁 Заявка закрыта · <code>{escape_html(app['nick'])}</code>"
+    decided_at = when(timeutil.now_iso(), actor)
+    closed_title = lambda chat_id: app_closed_text(user_id_str, app, chat_id)
     extra = ""
     if comment:
-        extra += f"\n💬 {escape_html(comment)}"
+        extra += f"\n💬 Комментарий администратора: {escape_html(comment)}"
     if test_by:
         extra += "\n🧪 тестовая, на сервере не регистрировалась"
     own = (state.get('app_msg_chat_id', actor), state.get('app_msg_message_id'))
@@ -3775,12 +3792,12 @@ def process_admin_decision(action, user_id_str, comment, state):
         try:
             bot.edit_message_text(
                 chat_id=own[0], message_id=own[1],
-                text=f"{closed_title}\n{action_icon} <b>{action_label}</b> {decided_at} · {escape_html(decider)}{extra}",
+                text=f"{closed_title(own[0])}\n\n{action_icon} <b>{action_label}</b> {decided_at} · {escape_html(decider)}{extra}",
                 parse_mode='HTML', reply_markup=None)
         except Exception:
             pass
-    # У коллег уведомление о заявке тоже сворачивается в две строки
-    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> [{{t}}] · {escape_html(decider)}{extra}",
+    # У коллег уведомление тоже закрывается: сведения о заявке остаются, кнопки уходят
+    close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> {{t}} · {escape_html(decider)}{extra}",
                   title=closed_title, skip=own)
 
     if state.get('prompt_msg_id') and actor is not None:

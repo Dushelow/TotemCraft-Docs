@@ -254,9 +254,14 @@ check(any('Досье' not in x for _, x in edited(log)) and '🧾 Подроб�
 ctx.press(ADMIN, f'approve_{X}', text='📩 Заявка', mid=mid)
 log = ctx.say(ADMIN, '-')
 closed = [x for c, x in edited(log) if c == ADMIN and 'Заявка закрыта' in x]
-check(closed and len(fakes.strip_tags(closed[0]).splitlines()) <= 2, f"закрытая заявка в две строки: {closed[:1]}")
+card = fakes.strip_tags(closed[0]) if closed else ''
+check(all(x in card for x in ('Ник в игре: ShortCard', 'ID в Telegram: 6500000001', 'Подал: ', 'ОДОБРЕНО сегодня в ', 'Вася')),
+      f"закрытая заявка хранит, кто это был, и кто когда решил: {closed[:1]}")
+closed_marks = [p.get('reply_markup') for m, p in log
+                if m == 'editMessageText' and 'Заявка закрыта' in p.get('text', '') and str(p.get('chat_id')) == str(ADMIN)]
+check('Проверки' not in card and closed_marks and not any(closed_marks), "в закрытой заявке нет проверок и кнопок")
 others = [x for c, x in edited(log) if c == OWNER and 'Заявка закрыта' in x]
-check(others and len(fakes.strip_tags(others[0]).splitlines()) <= 2, "у владельца уведомление тоже свернулось в две строки")
+check(others and 'ID в Telegram: 6500000001' in fakes.strip_tags(others[0]), "у владельца закрытая заявка с теми же сведениями")
 
 print("\n=== 11. Инструкция и статус на месте, с кнопкой назад ===")
 for data in ('admin_help', 'admin_status'):

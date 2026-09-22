@@ -57,7 +57,11 @@ check('ждёт' not in queue, "«ждёт N минут» не пишем: в с
 
 print("\n=== 4. Профиль: время решения с часами, подписи, свёрнутые подробности ===")
 press(OWNER, f'approve_{P}', mid=90)
-say(OWNER, '-')
+log = say(OWNER, '-')
+closed = [plain(t) for c, t in edited(log) if 'Заявка закрыта' in t]
+check(closed and all(x in closed[0] for x in ('Ник в игре: Elka_1221', 'Имя в Telegram: Ёлка', 'ID в Telegram: 7700001',
+                                             'Username: @', 'Подал: ', 'ОДОБРЕНО сегодня в ')),
+      f"закрытая заявка хранит, кто это был, и когда решили: {closed[:1]}")
 say(P, '/start')
 press(P, 'menu_support'); press(P, 'support_confirmed'); press(P, 'support_existing')
 say(P, 'Elka_1221')
