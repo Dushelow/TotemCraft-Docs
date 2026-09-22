@@ -582,9 +582,10 @@ def tg_lines(tg_id, app=None):
 
 
 def server_lines(tg_id, nick, viewer=None, compact=False):
-    """Строки об аккаунтах на сервере: регистрация, последний вход, страна, соседи по IP."""
+    """Строки об аккаунтах на сервере: регистрация, последний вход, страна.
+    Кто ещё заходил с того же IP, не показываем: через обратный прокси в России IP общий у разных игроков."""
     nicks = name_variants([n for n in [nick] + [n for n in previous_nicks(tg_id) if n.lower() != (nick or '').lower()] if n])
-    lines, ips, found_any = [], set(), False
+    lines, found_any = [], False
     try:
         for username, ip, regip, regdate, lastlogin in bans.authme_accounts(nicks):
             found_any = True
@@ -599,12 +600,6 @@ def server_lines(tg_id, nick, viewer=None, compact=False):
             lines.append("Последний вход: " + (when(login, viewer) if login else "ни разу не заходил"))
             if geo:
                 lines.append(f"Страна по IP: {_flag_country(geo[0])} {escape_html(geo[1])}")
-            ips.update(x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0'))
-        if not compact and ips:
-            others = [n for n in bans.authme_accounts_on_ips(sorted(ips)) if n.lower() not in {x.lower() for x in nicks}]
-            if others:
-                lines.append("С того же IP заходили: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in others[:10])
-                             + (f" и ещё {len(others) - 10}" if len(others) > 10 else ""))
     except Exception as e:
         log_error(e)
         lines.append(f"Сервер: не удалось прочитать AuthMe ({escape_html(e)})")
@@ -2134,21 +2129,22 @@ def auto_facts(uid, app):
     f['bad_nick'] = badwords.find(nick, words)
     f['bad_password'] = badwords.find(app.get('password', ''), words)
     f['bad_comment'] = badwords.find(app.get('comment', ''), words)
+    # Твинк определяется только по Telegram ID: тот же человек уже получил аккаунт.
+    # По IP не смотрим: через обратный прокси в России у разных игроков один IP.
     f['approved_before'] = [r[0] for r in storage.query(
         "SELECT nick FROM applications WHERE tg_id=? AND status='Одобрено'", (uid,))]
     f['rejected_before'] = storage.query("SELECT COUNT(*) FROM applications WHERE tg_id=? AND status='Отклонено'", (uid,))[0][0]
     found, past, errors = bans.find(nicks)
-    f['bans'] = ([f"{it['who']} ({it['kind']})" for it in found if 'бан' in it['kind'] or 'мут' in it['kind']]
+    banned_who = {it['who'].lower() for it in found if 'бан' in it['kind']}
+    f['approved_before_banned'] = [n for n in f['approved_before']
+                                   if any(v.lower() in banned_who for v in name_variants([n]))]
+    # бан прошлого аккаунта уже назван в строке про твинка, второй раз его не пишем
+    twin_names = {v.lower() for v in name_variants(f['approved_before_banned'])}
+    f['bans'] = ([f"{it['who']} ({it['kind']})" for it in found
+                  if ('бан' in it['kind'] or 'мут' in it['kind']) and it['who'].lower() not in twin_names]
                  + [f"раньше {k} ×{v}" for k, v in past.items() if 'бан' in k or 'мут' in k])
     if errors:
         f['bans'].append("не удалось проверить: " + "; ".join(errors))  # не прочитали баны — не рискуем
-    ips = set()
-    for username, ip, regip, _, _ in bans.authme_accounts(nicks):
-        ips.update(x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0'))
-    others = [n for n in bans.authme_accounts_on_ips(sorted(ips)) if n.lower() not in {x.lower() for x in nicks}] if ips else []
-    if others:
-        twin_found, twin_past, _ = bans.find(others)
-        f['ip_banned_twins'] = sorted({it['who'] for it in twin_found if 'бан' in it['kind']})
     return f
 
 def schedule_auto(uid, app, keep_due=False):
@@ -2338,55 +2334,6 @@ def show_words(chat_id, edit_message=None):
         edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
     else:
         safe_send(chat_id, text, parse_mode='HTML', reply_markup=markup)
-
-# ---------- Проверка после первого входа ----------
-WATCH_HOURS = 24  # через сколько после принятия один раз проверить вход
-first_login_watch = storage.PersistentDict('watch')  # ник -> {'tg': ID, 'check_at': UTC ISO}
-
-def watch_first_login(nick, tg_id):
-    """Принятый игрок: через сутки один раз смотрим, заходил ли он, и если да — сверяем IP с забаненными."""
-    first_login_watch[nick] = {'tg': int(tg_id),
-                               'check_at': (timeutil.now_utc() + timedelta(hours=WATCH_HOURS)).isoformat(timespec='seconds')}
-
-def first_login_job():
-    """Раз в час: у кого из принятых прошли сутки — одна проверка и сразу снятие из списка.
-    Если подошедших нет, в базу AuthMe не ходим."""
-    now = timeutil.now_utc()
-    due = [n for n, w in first_login_watch.items() if timeutil.parse(w.get('check_at') or w.get('until')) <= now]
-    if not due:
-        return
-    try:
-        seen = {}
-        for username, ip, regip, _, _ in bans.authme_accounts(name_variants(due)):
-            seen[username.lower()] = sorted({x for x in (ip, regip) if x and x not in ('127.0.0.1', '0.0.0.0')})
-        for nick in due:
-            w = first_login_watch.pop(nick, None) or {}
-            ips = sorted(set(seen.get(nick.lower(), [])) | set(seen.get(bedrock_name(nick).lower(), [])))
-            if ips:  # заходил — сверяем; не заходил за сутки — просто снимаем
-                check_twin_after_login(nick, w.get('tg'), ips)
-    except Exception as e:
-        log_error(e)
-
-def check_twin_after_login(nick, tg_id, ips):
-    """Сверка IP только что зашедшего игрока: бан по этому IP или забаненный аккаунт с того же IP."""
-    own = {v.lower() for v in name_variants([nick])}
-    others = [n for n in bans.authme_accounts_on_ips(ips) if n.lower() not in own]
-    found, _, _ = bans.find(name_variants([nick]) + others)
-    hits = sorted({f"{it['who']} ({it['kind']}: {it['reason']})" for it in found
-                   if 'бан' in it['kind'] and (it['who'].startswith('IP ') or it['who'].lower() not in own)})
-    if not hits:
-        return
-    audit(None, 'twin_suspect', tg_id, nick, "; ".join(hits)[:500])
-    text = (f"🔴 <b>Возможный твинк</b>: <code>{escape_html(nick)}</code> заходил на сервер с IP, связанного с баном:\n"
-            + "\n".join(f"   • {escape_html(h)}" for h in hits[:5])
-            + "\n\n<i>Один IP бывает у родственников и соседей, решение за вами.</i>")
-    markup = types.InlineKeyboardMarkup()
-    if tg_id:
-        markup.add(types.InlineKeyboardButton("👤 Профиль игрока", callback_data=f"user_profile_{tg_id}"))
-    notify_staff('block', text, reply_markup=markup)
-    post_discord({"embeds": [{"title": "🔴 Возможный твинк после первого входа", "color": 0xff0000,
-                              "description": f"**Ник:** `{nick}`\n" + "\n".join(hits[:5]),
-                              "timestamp": timeutil.now_iso()}]})
 
 def mark_asked(uid):
     """Игрок пытался обратиться, пока заявка ждёт: автомат такую заявку не примет."""
@@ -3789,7 +3736,6 @@ def process_admin_decision(action, user_id_str, comment, state):
     audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'], details)
     if action == 'approve' and not test_by:
         run_in_background(register_on_server, app['nick'], app['password'], actor, app['user_id'])
-        watch_first_login(app['nick'], app['user_id'])
 
     # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
@@ -3917,7 +3863,6 @@ def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
     schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
     schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима
-    schedule.every().hour.do(first_login_job)  # через сутки после принятия: один раз сверить IP с забаненными
     while True:
         schedule.run_pending()
         time.sleep(60)

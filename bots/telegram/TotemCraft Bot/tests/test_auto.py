@@ -39,7 +39,7 @@ check(aa.decide(dict(base, has_photo=False, subscribed=True))['delay'] == timede
 check(aa.decide(dict(base, tg_age_days=200))['minor'] == ['Аккаунту Telegram меньше года'], "Telegram моложе года: мелочь")
 check(aa.decide(dict(base, nick='Steve1234567'))['minor'] == ['В нике 6 и больше цифр подряд'], "6+ цифр в нике: мелочь")
 for key, value, what in [('bans', ['GoodNick (бан)'], 'бан'), ('approved_before', ['Old'], 'твинк по TG'),
-                         ('ip_banned_twins', ['Bad'], 'твинк по IP'), ('blocked', True, 'блок в боте'),
+                         ('blocked', True, 'блок в боте'),
                          ('bad_nick', [('мат', 'pidor')], 'брань в нике'), ('bad_password', [('символика', '14/88')], 'символика в пароле'),
                          ('bad_comment', [('мат', 'сука')], 'брань в комментарии'), ('rejected_before', 1, 'раньше отклоняли'),
                          ('tg_age_days', 40, 'Telegram моложе 2 месяцев'), ('asked_support', True, 'писал в поддержку')]:
@@ -209,39 +209,35 @@ submit(V, 'NoAdminCheck')
 check(t == 'Спасибо за подписку!' and not bot.pending[str(V)].get('subscribed'),
       "проверить подписку нельзя: игрок получает «спасибо», ускорения нет, бот не падает")
 
-print("\n=== 12. Проверка после первого входа ===")
+print("\n=== 12. Твинк только по Telegram ID, IP не учитываем ===")
 import sqlite3
 authme = sqlite3.connect(os.path.join(MC, 'plugins', 'AuthMe', 'authme.db'))
-W1, W2 = 6_400_000_001, 6_400_000_002
-for tg, nick in ((W1, 'TwinAfterBan'), (W2, 'HonestNew')):
-    bot.user_states[tg] = {'step': 'rules', 'nick': nick, 'password': 'Str0ngPass1', 'comment': ''}
-    ctx.press(tg, 'rules_agree')
-    ctx.press(OWNER, f'approve_{tg}', mid=950)
-    ctx.press(OWNER, 'skip_admin_comment')
-check({'TwinAfterBan', 'HonestNew'} <= set(bot.first_login_watch.keys()), "принятые игроки поставлены на слежку за первым входом")
-ctx.tg_log.clear()
-bot.first_login_job()
-check(len(bot.first_login_watch) >= 2 and not sent_to(ctx.tg_log, OWNER), "сутки не прошли: ничего не проверяет")
-# зашли: один с IP забаненного oldtwink (10.9.9.9), другой с чистого IP
+# artiom83 забанен; сосед с тем же IP (как бывает через обратный прокси в России) — другой человек
 authme.execute("INSERT INTO authme (id, username, realname, password, ip, lastlogin, regip, regdate) VALUES "
-               "(10,'twinafterban','TwinAfterBan','h','10.9.9.9',1789000000000,'',1789000000000),"
-               "(11,'honestnew','HonestNew','h','77.88.8.8',1789000000000,'',1789000000000)")
+               "(20,'artiom83','artiom83','h','55.55.55.55',1789000000000,'55.55.55.55',1789000000000),"
+               "(21,'neighbour','Neighbour','h','55.55.55.55',1789000000000,'55.55.55.55',1789000000000)")
 authme.commit()
-for n, w in bot.first_login_watch.items():  # прошли сутки
-    bot.first_login_watch[n] = dict(w, check_at=(tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds'))
-bot.first_login_job()
-alerts = [x for x in sent_to(ctx.tg_log, OWNER) if 'Возможный твинк' in x]
-check(len(alerts) == 1 and 'TwinAfterBan' in alerts[0] and '10.9.9.9' in alerts[0], "зашёл с IP забаненного: владельцу «Возможный твинк»")
-check(any('Возможный твинк' in x for x in sent_to(ctx.tg_log, ADMIN)) and not sent_to(ctx.tg_log, HELPER), "админу тоже, помощнику нет")
-check('TwinAfterBan' not in bot.first_login_watch and 'HonestNew' not in bot.first_login_watch, "оба проверены один раз и сняты со слежки")
-ctx.tg_log.clear()
-bot.first_login_job()
-check(not [x for x in sent_to(ctx.tg_log, OWNER) if 'Возможный твинк' in x], "повторно не шлёт")
-bot.first_login_watch['GhostNick'] = {'tg': 1, 'check_at': (tu.now_utc() - timedelta(minutes=1)).isoformat(timespec='seconds')}
-ctx.tg_log.clear()
-bot.first_login_job()
-check('GhostNick' not in bot.first_login_watch and not sent_to(ctx.tg_log, OWNER), "не заходил за сутки: просто снят, без сообщений")
-check(storage.query("SELECT COUNT(*) FROM audit WHERE action='twin_suspect'")[0][0] == 1, "в журнале запись о возможном твинке")
+N = 6_400_000_003
+f = bot.auto_facts(N, {'nick': 'Neighbour'})
+check('ip_banned_twins' not in f and not f['approved_before'], "игрок с тем же IP, что у забаненного, твинком не считается")
+check(not any('IP' in l for l in bot.server_lines(N, 'Neighbour', OWNER)), "в досье нет строки «С того же IP заходили»")
+check(not hasattr(bot, 'first_login_job') and not hasattr(bot, 'check_twin_after_login'),
+      "проверка по IP через сутки после принятия убрана")
+
+T = 6_400_000_004  # у этого Telegram уже был одобрен artiom83, и он в бане
+storage.execute("INSERT INTO applications (created_at, decided_at, tg_id, tg_username, nick, status) VALUES (?,?,?,?,?,?)",
+                ('2026-09-01T10:00:00+00:00', '2026-09-01T11:00:00+00:00', T, 'tw', 'artiom83', 'Одобрено'))
+v = aa.decide(bot.auto_facts(T, {'nick': 'FreshNick'}))
+twin = [r for r in v['stop'] if r.startswith('Твинк')]
+check(twin == ['Твинк: с этого Telegram уже одобрен аккаунт artiom83 (в бане)'], f"твинк по Telegram с пометкой бана: {twin}")
+check(not any(r.startswith('Наказания') and 'artiom83' in r for r in v['stop']),
+      f"бан прошлого аккаунта не повторяется отдельной строкой: {v['stop']}")
+
+C = 6_400_000_005  # у этого Telegram одобрен чистый аккаунт
+storage.execute("INSERT INTO applications (created_at, decided_at, tg_id, tg_username, nick, status) VALUES (?,?,?,?,?,?)",
+                ('2026-09-01T10:00:00+00:00', '2026-09-01T11:00:00+00:00', C, 'cl', 'CleanOld', 'Одобрено'))
+v = aa.decide(bot.auto_facts(C, {'nick': 'SecondAcc'}))
+check('Твинк: с этого Telegram уже одобрен аккаунт CleanOld' in v['stop'], f"твинк без бана: просто ник, решает команда: {v['stop']}")
 
 print("\n=== 13. Короткое уведомление: подробнее, кратко, решение прямо из него ===")
 X = 6_500_000_001
