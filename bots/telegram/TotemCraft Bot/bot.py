@@ -10,7 +10,8 @@ from tcbot.logs import log_error, log_warning
 from tcbot.rcon import rcon_command
 from tcbot import autoaccept, bans, badwords, mmdb, tgage, i18n
 
-bot = telebot.TeleBot(TOKEN)
+# 4 потока: одно медленное действие (профиль, досье, рассылка команде) не держит очередь нажатий
+bot = telebot.TeleBot(TOKEN, num_threads=4)
 
 # База: схема и разовый перенос старых файлов JSON/CSV
 storage.migrate()
@@ -69,6 +70,18 @@ def when(value, uid=None):
         return timeutil.human(value, tz_of(uid))
     except (TypeError, ValueError):
         return str(value or '—')
+
+def answer_cb(call_id, text=None, show_alert=None):
+    """Ответ на нажатие кнопки. Telegram ждёт его 15 секунд; если нажатие пролежало в очереди дольше,
+    Telegram отвечает ошибкой «query is too old». Раньше она обрывала всё действие: игрок нажимал кнопку,
+    и ничего не происходило. Теперь действие выполняется, просто без всплывающей подсказки."""
+    try:
+        return bot.answer_callback_query(call_id, text, show_alert=show_alert)
+    except telebot.apihelper.ApiTelegramException as e:
+        if 'query is too old' in str(e) or 'query ID is invalid' in str(e):
+            log_warning(f"ответ на кнопку опоздал, действие выполнено без подсказки: {text or ''}")
+            return None
+        raise
 
 def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     try:
@@ -2343,6 +2356,8 @@ def mark_asked(uid):
         schedule_auto(uid, app, keep_due=True)
 
 # ---------- Страховка обработчиков ----------
+SLOW_HANDLER_SEC = 5
+
 def guarded(handler):
     """Ошибка в обработчике не должна оставлять кнопку «крутиться» и теряться молча:
     нажавший получает понятный ответ, ошибка — в журнал."""
@@ -2353,10 +2368,11 @@ def guarded(handler):
         if chat is not None and chat.type != 'private':
             if hasattr(obj, 'data'):
                 try:
-                    bot.answer_callback_query(obj.id)
+                    answer_cb(obj.id)
                 except Exception:
                     pass
             return None
+        started = time.time()
         try:
             return handler(obj)
         except Exception as e:
@@ -2368,11 +2384,18 @@ def guarded(handler):
                 log_error(e)
             try:
                 if is_call:
-                    bot.answer_callback_query(obj.id, tr(obj.from_user.id, 'btn_outdated'), show_alert=True)
+                    answer_cb(obj.id, tr(obj.from_user.id, 'btn_outdated'), show_alert=True)
                 else:
                     safe_send(obj.chat.id, tr(obj.chat.id, 'something_wrong'))
             except Exception:
                 pass
+        finally:
+            spent = time.time() - started
+            if spent > SLOW_HANDLER_SEC:
+                # чтобы было видно, какое действие тормозит очередь нажатий
+                # текст сообщения не пишем: там может быть пароль из анкеты
+                what = getattr(obj, 'data', None) or 'сообщение'
+                log_warning(f"медленно: {handler.__name__} «{what}» {spent:.1f} с")
     wrapper.__name__ = handler.__name__
     wrapper.__doc__ = handler.__doc__
     return wrapper
@@ -2900,14 +2923,14 @@ def show_confirmation(uid, state):
 @guarded
 def callback_handler(call):
     if not check_rate_limit(call.from_user.id):
-        bot.answer_callback_query(call.id); return
+        answer_cb(call.id); return
     data, uid, msg = call.data, call.from_user.id, call.message
 
     # --- Поддержка ---
     if data == "support_confirmed":
         if get_ticket(uid):
             ticket = get_ticket(uid)
-            bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
+            answer_cb(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
             safe_send(uid, tr(uid, 'ticket_already', id=ticket['id']),
                       reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
@@ -2915,28 +2938,28 @@ def callback_handler(call):
         markup.add(types.InlineKeyboardButton(tr(uid, 'btn_have_account'), callback_data="support_existing"),
                    types.InlineKeyboardButton(tr(uid, 'btn_no_account'), callback_data="support_no_account"))
         safe_send(uid, tr(uid, 'q_have_account'), reply_markup=markup)
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data == "support_cancel":
         safe_send(uid, tr(uid, 'support_cancelled'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data == "support_existing":
         if get_ticket(uid):
             ticket = get_ticket(uid)
-            bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
+            answer_cb(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
             return
         user_states[uid] = {'step': 'support_nick'}
         safe_send(uid, tr(uid, 'ask_game_nick'), parse_mode='HTML',
                   reply_markup=cancel_keyboard(uid, 'btn_cancel'))
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data == "support_no_account":
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(tr(uid, 'btn_apply_short'), callback_data="support_new"),
                    types.InlineKeyboardButton(tr(uid, 'btn_just_message'), callback_data="support_guest"))
         safe_send(uid, tr(uid, 'q_want_apply'), reply_markup=markup)
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data == "support_new":
         if registration_paused:
@@ -2948,29 +2971,29 @@ def callback_handler(call):
         else:
             user_states[uid] = {'step': 'nick'}
             safe_send(uid, tr(uid, 'ask_nick'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data == "support_guest":
         if get_ticket(uid):
             ticket = get_ticket(uid)
-            bot.answer_callback_query(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
+            answer_cb(call.id, tr(uid, 'ticket_already_alert', id=ticket['id']), show_alert=True)
             return
         user_states[uid] = {'step': 'guest_message'}
         safe_send(uid, tr(uid, 'write_message'), reply_markup=cancel_keyboard(uid, 'btn_cancel'))
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
 
     # --- Выход из режима игрока (кнопку видит только админ в этом режиме) ---
     if data == "player_view_off" and uid in staff:
         player_view.discard(uid)
         user_states.pop(uid, None)
-        bot.answer_callback_query(call.id, "Вы снова в админке")
+        answer_cb(call.id, "Вы снова в админке")
         send_admin_menu(uid, edit_message=msg)
         return
 
     # --- Комментарий админа ---
     if data == "skip_admin_comment" and is_staff(uid) and uid in admin_states:
-        bot.answer_callback_query(call.id, "Пропущено")
+        answer_cb(call.id, "Пропущено")
         state = admin_states.pop(uid)
         try:
             bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
@@ -2987,7 +3010,7 @@ def callback_handler(call):
         state = admin_states.pop(uid, None)
         if state and app_claims.get(state.get('user_id')) == uid:
             app_claims.pop(state['user_id'], None)
-        bot.answer_callback_query(call.id, "Отменено")
+        answer_cb(call.id, "Отменено")
         flush_admin_notifications(uid)
         try:
             bot.delete_message(chat_id=msg.chat.id, message_id=msg.message_id)
@@ -2999,10 +3022,10 @@ def callback_handler(call):
     # --- Подтверждение заявки ---
     if data in ("confirm_yes", "confirm_no"):
         if uid not in user_states:
-            bot.answer_callback_query(call.id, tr(uid, 'app_outdated')); return
+            answer_cb(call.id, tr(uid, 'app_outdated')); return
         state = user_states[uid]
         if state.get('step') != 'confirm':
-            bot.answer_callback_query(call.id, tr(uid, 'already_done')); return
+            answer_cb(call.id, tr(uid, 'already_done')); return
         if data == "confirm_yes":
             last_time_str = None if uid in player_view else last_application.get(str(uid))
             if last_time_str:
@@ -3014,7 +3037,7 @@ def callback_handler(call):
                     safe_send(uid, tr(uid, 'wait_reapply', h=hours, m=minutes),
                               reply_markup=main_keyboard(is_admin=False, user_id=uid))
                     del user_states[uid]
-                    bot.answer_callback_query(call.id)
+                    answer_cb(call.id)
                     return
             # Показываем правила перед отправкой заявки
             state['step'] = 'rules'
@@ -3028,16 +3051,16 @@ def callback_handler(call):
         else:
             safe_send(uid, tr(uid, 'app_cancelled'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             del user_states[uid]
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
 
     # --- Правила сервера ---
     if data in ("rules_agree", "rules_disagree"):
         if uid not in user_states:
-            bot.answer_callback_query(call.id, tr(uid, 'app_outdated')); return
+            answer_cb(call.id, tr(uid, 'app_outdated')); return
         state = user_states[uid]
         if state.get('step') != 'rules':
-            bot.answer_callback_query(call.id, tr(uid, 'already_done')); return
+            answer_cb(call.id, tr(uid, 'already_done')); return
         if data == "rules_agree":
             app_id = str(uid)
             test_by = uid if uid in player_view else None
@@ -3084,12 +3107,12 @@ def callback_handler(call):
         else:
             safe_send(uid, tr(uid, 'rules_declined'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         del user_states[uid]
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
 
     # --- Главное меню пользователя (инлайн-кнопка) ---
     if data == "user_main_menu":
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         send_main_menu(uid, edit_message=msg)
         return
     if data == "menu_my_tickets" and not is_staff(uid):
@@ -3105,7 +3128,7 @@ def callback_handler(call):
             safe_send(uid, text_out, parse_mode='HTML', reply_markup=markup)
         else:
             safe_send(uid, tr(uid, 'no_tickets'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data == "close_ticket" and not is_staff(uid):
         ticket = get_ticket(uid)
@@ -3128,12 +3151,12 @@ def callback_handler(call):
             send_main_menu(uid)
         else:
             safe_send(uid, tr(uid, 'ticket_not_found'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
 
     # --- Кнопки главного меню ---
     if data == "menu_apply":
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         if registration_paused:
             safe_send(uid, tr(uid, 'reg_paused'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
             return
@@ -3157,7 +3180,7 @@ def callback_handler(call):
         safe_send(uid, tr(uid, 'ask_nick'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
         return
     if data == "menu_support":
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         if str(uid) in pending:
             mark_asked(uid)
             safe_send(uid, tr(uid, 'support_blocked_by_app'), parse_mode='HTML')
@@ -3168,35 +3191,35 @@ def callback_handler(call):
         safe_send(uid, tr(uid, 'support_info'), parse_mode='HTML', reply_markup=markup)
         return
     if data == "menu_handbook":
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         show_handbook_index(uid, edit_message=msg)
         return
     if data == "menu_subscribe":
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(tr(uid, 'btn_go_group'), url="https://t.me/totemcraftnet"))
         markup.add(types.InlineKeyboardButton(tr(uid, 'btn_main_menu'), callback_data="user_main_menu"))
         edit_message_safe(uid, msg.message_id, tr(uid, 'subscribe_text'), parse_mode='HTML', reply_markup=markup)
         return
     if data == "menu_lang":
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         send_lang_menu(uid, edit_message=msg)
         return
     if data.startswith("lang_") and data[5:] in i18n.LANGS:
         user_lang[str(uid)] = data[5:]
-        bot.answer_callback_query(call.id, i18n.LANG_BUTTONS[data[5:]])
+        answer_cb(call.id, i18n.LANG_BUTTONS[data[5:]])
         send_main_menu(uid, edit_message=msg)
         return
 
     # --- Справочник (доступен всем) ---
     if data == "hb_index":
         show_handbook_index(uid, edit_message=msg)
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
     if data.startswith("hb_"):
         chapter_key = data[3:]
         show_handbook_chapter(uid, chapter_key, edit_message=msg)
-        bot.answer_callback_query(call.id)
+        answer_cb(call.id)
         return
 
     # --- Подписка на группу (игрок): ускоряет только чистые заявки, игрок об этом не знает ---
@@ -3207,13 +3230,13 @@ def callback_handler(call):
             log_warning(f"не удалось проверить подписку на {SUBSCRIBE_CHAT}: {e}")
             member = None
         if member is False:
-            bot.answer_callback_query(call.id, tr(uid, 'sub_not_seen'), show_alert=True)
+            answer_cb(call.id, tr(uid, 'sub_not_seen'), show_alert=True)
             return
         app = pending.get(str(uid))
         if member and app and not app.get('subscribed'):
             app['subscribed'] = True
             schedule_auto(uid, app, keep_due=True)
-        bot.answer_callback_query(call.id, tr(uid, 'sub_thanks'))
+        answer_cb(call.id, tr(uid, 'sub_thanks'))
         try:
             bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
         except Exception:
@@ -3222,17 +3245,17 @@ def callback_handler(call):
 
     # --- Только команда ---
     if uid not in staff:
-        bot.answer_callback_query(call.id, tr(uid, 'no_access')); return
+        answer_cb(call.id, tr(uid, 'no_access')); return
     if uid in player_view:
-        bot.answer_callback_query(call.id, "Вы в режиме игрока. Нажмите «🛡 Вернуться в админку» в меню или /admin.", show_alert=True)
+        answer_cb(call.id, "Вы в режиме игрока. Нажмите «🛡 Вернуться в админку» в меню или /admin.", show_alert=True)
         return
     need = next((perm for prefix, perm in CALLBACK_PERMS if data.startswith(prefix)), None)
     if need and not can(uid, need):
-        bot.answer_callback_query(call.id, f"У роли «{ROLE_NAMES.get(staff[uid]['role'], '')}» нет доступа к этому разделу.", show_alert=True)
+        answer_cb(call.id, f"У роли «{ROLE_NAMES.get(staff[uid]['role'], '')}» нет доступа к этому разделу.", show_alert=True)
         return
 
     def ok(text=None, alert=False):
-        bot.answer_callback_query(call.id, text, show_alert=alert)
+        answer_cb(call.id, text, show_alert=alert)
 
     if data == "noop":
         ok(); return

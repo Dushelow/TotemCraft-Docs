@@ -120,6 +120,7 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
     ctx.no_photo = set()        # у кого нет аватарки
     ctx.members = set()         # кто подписан на группу
     ctx.bot_not_admin = False   # бот не админ группы: проверка подписки невозможна
+    ctx.too_old = False         # нажатие пролежало в очереди дольше 15 секунд: Telegram не принимает ответ
     ctx.tg_errors = []          # ошибки, которые вернул бы настоящий Telegram
     ctx.messages = {}           # (chat_id, message_id) -> (text, markup) — чтобы ловить «message is not modified»
 
@@ -132,6 +133,8 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
         params = params or {}
         ctx.tg_log.append((method_name, params))
         if method_name == 'answerCallbackQuery':
+            if ctx.too_old:
+                fail(method_name, 400, 'Bad Request: query is too old and response timeout expired or query ID is invalid')
             ctx.answers[params['callback_query_id']] = (params.get('text'), params.get('show_alert'))
             return True
         if method_name == 'getChat':

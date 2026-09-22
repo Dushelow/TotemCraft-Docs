@@ -119,4 +119,16 @@ log = say(M, '/start')
 menu = plain(sent_to(log, M)[-1])
 check('Вы играете под ником MenuGuy' in menu, f"после одобрения в меню ник игрока: {menu.splitlines()[-1:]}")
 
+print("\n=== 8. Нажатие пролежало в очереди дольше 15 секунд ===")
+L = 7_700_005
+say(L, '/start'); press(L, 'lang_ru')
+ctx.too_old = True
+_, log = press(L, 'menu_support')
+check(any('Важная информация' in plain(t) for t in sent_to(log, L)),
+      "Telegram не принял опоздавший ответ, но игрок всё равно получил экран обращения")
+_, log = press(OWNER, 'admin_menu_applications')
+check(edited(log) or sent_to(log, OWNER), "у админа очередь заявок тоже открылась")
+ctx.too_old = False
+check(bot.bot.worker_pool.num_threads == 4, "нажатия разбирают 4 потока")
+
 fakes.finish()
