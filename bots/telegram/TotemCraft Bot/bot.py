@@ -71,12 +71,25 @@ def when(value, uid=None):
     except (TypeError, ValueError):
         return str(value or '—')
 
+SLOW_API_SEC = 5
+
+def api(what, fn, *args, **kwargs):
+    """Вызов Telegram с замером: если ответ идёт дольше 5 секунд, пишем в журнал, какой это был вызов.
+    Так видно, когда очередь нажатий стоит из-за сети, а не из-за бота."""
+    started = time.time()
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        spent = time.time() - started
+        if spent > SLOW_API_SEC:
+            log_warning(f"медленно Telegram: {what} {spent:.1f} с")
+
 def answer_cb(call_id, text=None, show_alert=None):
     """Ответ на нажатие кнопки. Telegram ждёт его 15 секунд; если нажатие пролежало в очереди дольше,
     Telegram отвечает ошибкой «query is too old». Раньше она обрывала всё действие: игрок нажимал кнопку,
     и ничего не происходило. Теперь действие выполняется, просто без всплывающей подсказки."""
     try:
-        return bot.answer_callback_query(call_id, text, show_alert=show_alert)
+        return api('ответ на кнопку', bot.answer_callback_query, call_id, text, show_alert=show_alert)
     except telebot.apihelper.ApiTelegramException as e:
         if 'query is too old' in str(e) or 'query ID is invalid' in str(e):
             log_warning(f"ответ на кнопку опоздал, действие выполнено без подсказки: {text or ''}")
@@ -85,7 +98,8 @@ def answer_cb(call_id, text=None, show_alert=None):
 
 def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
     try:
-        return bot.send_message(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
+        return api('отправка сообщения', bot.send_message, chat_id, text,
+                   parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
     except Exception as e:
         if parse_mode:
             try:
@@ -129,7 +143,8 @@ def safe_send_long(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
 
 def edit_message_safe(chat_id, message_id, text, parse_mode=None, reply_markup=None):
     try:
-        bot.edit_message_text(text, chat_id, message_id, parse_mode=parse_mode, reply_markup=reply_markup)
+        api('правка сообщения', bot.edit_message_text, text, chat_id, message_id,
+            parse_mode=parse_mode, reply_markup=reply_markup)
     except Exception as e:
         log_error(e)
         safe_send(chat_id, text, parse_mode=parse_mode, reply_markup=reply_markup)
