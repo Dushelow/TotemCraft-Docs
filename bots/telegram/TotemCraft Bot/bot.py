@@ -518,10 +518,11 @@ def ban_report(tg_id, nick, viewer=None):
         return f"\n\n⚠️ Не удалось проверить блокировки: {escape_html(e)}"
     lines = []
     for it in found:
-        until = "навсегда" if it['until'] is None else f"до {fmt_time(it['until'], viewer)}"
-        lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])} ({until})\n"
+        until = "навсегда" if it['until'] is None else f"до {when(it['until'], viewer)}"
+        lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])}, {until}\n"
                      f"    причина: {escape_html(it['reason'])}\n"
-                     f"    выдал: {escape_html(it['operator'])}, {fmt_time(it['start'], viewer)} [{', '.join(it['sources'])}]")
+                     f"    выдал: {escape_html(it['operator'])}, {when(it['start'], viewer)}\n"
+                     f"    <i>источник: {', '.join(it['sources'])}</i>")
     for it in past[:5]:
         ended = f"истёк {when(it['until'], viewer)}" if it.get('expired') else "снят вручную"
         lines.append(f"🕘 <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])}, {ended}\n"
@@ -535,7 +536,7 @@ def ban_report(tg_id, nick, viewer=None):
         checked = ", ".join(f"<code>{escape_html(n)}</code>" for n in nicks)
         if len(lines) > 12:
             lines = lines[:12] + [f"…и ещё {len(lines) - 12}"]
-        text += f"\n\n🚨 <b>Блокировки</b> (проверены ники: {checked}):\n" + "\n".join(lines)
+        text += f"\n\n<b>🚨 Блокировки</b>\n<i>проверены ники: {checked}</i>\n" + "\n".join(lines)
     for err in errors:
         text += f"\n⚠️ Не удалось проверить {escape_html(err)}"
     return text
@@ -629,11 +630,9 @@ def server_lines(tg_id, nick, viewer=None, compact=False):
             except Exception as e:
                 log_error(e)
             login = _authme_time(lastlogin)
-            lines.append(f"Аккаунт: <code>{escape_html(username)}</code>")
-            lines.append(f"Регистрация: {when(_authme_time(regdate), viewer)}")
-            lines.append("Последний вход: " + (when(login, viewer) if login else "ни разу не заходил"))
-            if geo:
-                lines.append(f"Страна по IP: {_flag_country(geo[0])} {escape_html(geo[1])}")
+            where = f" · {_flag_country(geo[0])} {escape_html(geo[1])}" if geo else ""
+            lines.append(f"<code>{escape_html(username)}</code>: рег. {when(_authme_time(regdate), viewer)}"
+                         + (f" · вход {when(login, viewer)}" if login else " · ни разу не заходил") + where)
     except Exception as e:
         log_error(e)
         lines.append(f"Сервер: не удалось прочитать AuthMe ({escape_html(e)})")
@@ -673,11 +672,12 @@ def dossier(tg_id, nick, viewer=None, app=None, compact=False):
             lines.append(f"Заявки раньше: одобрено {counts.get('Одобрено', 0)}, отклонено {counts.get('Отклонено', 0)}")
     except Exception as e:
         log_error(e)
-    lines += server_lines(tg_id, nick, viewer, compact=compact)
+    server = server_lines(tg_id, nick, viewer, compact=compact)
     flags = check_flags(tg_id, nick, app=app, own_account=not app)
-    text = "\n\n🧾 <b>Досье</b>\n" + "\n".join(lines) + "\n\n🔍 <b>Проверки</b>\n" + checks_text(flags)
-    if app and app.get('auto'):
-        text += "\n\n" + auto_line(app, viewer)
+    body = "\n".join(lines) + ("\n\n<b>Аккаунты на сервере</b>\n" + "\n".join(server) if server else "")
+    text = ("\n\n<b>🔍 Проверки</b>\n" + checks_text(flags)
+            + ("\n" + auto_line(app, viewer) if app and app.get('auto') else "")
+            + "\n\n<blockquote expandable><b>🧾 Досье</b>\n" + body + "</blockquote>")
     return text, flags
 
 
@@ -1177,15 +1177,15 @@ def auto_short(app, viewer=None):
     if not a:
         return ""
     if a['manual']:
-        return "✋ Автомат такую заявку не принимает, решайте вручную"
+        return "Автопринятие: нет, решение вручную"
     due = when(a['due'], viewer)
     if not auto_enabled():
-        return "Автопринятие выключено, решайте вручную"
+        return "Автопринятие: выключено в настройках"
     if raid_active():
-        return "Рейд-режим: автопринятие на паузе, решайте вручную"
+        return "Автопринятие: на паузе, рейд-режим"
     if a.get('limit_wait'):
-        return f"{a['icon']} Автомат упёрся в лимит, примет позже, как освободится"
-    return f"{a['icon']} Автомат примет сам {due}, если команда не решит раньше"
+        return f"{a['icon']} Автопринятие: ждёт лимита, примет позже"
+    return f"{a['icon']} Автопринятие: {due}, если команда не решит раньше"
 
 def app_compact(user_id, app, viewer=None, title="Заявка"):
     """Карточка заявки для команды: кто подал, когда, что просил, проверки, вердикт автомата.
@@ -1243,23 +1243,26 @@ def app_closed_text(user_id, app, viewer=None):
     return "\n".join(lines)
 
 def app_details(user_id, app, viewer=None):
-    """Подробная карточка: всё о человеке, досье, проверки, баны."""
+    """Подробная карточка: кто подал, комментарий, проверки, блокировки, досье.
+    Длинное (комментарий игрока и досье) убрано в сворачиваемые цитаты, чтобы экран не превращался в простыню."""
     nick = app.get('nick', '?')
     username = app.get('username', '')
-    lines = [f"🧾 <b>Подробно</b>", "",
-             f"Ник в игре: <code>{escape_html(nick)}</code>",
+    lines = [f"🧾 <b>Подробно</b> · <code>{escape_html(nick)}</code>", "",
              "Имя в Telegram: " + (escape_html(app['tg_name']) if (app.get('tg_name') or '').strip() else "не указано"),
              "Username: " + (f"@{escape_html(username)}" if username and not username.startswith('id') else "нет"),
              f"ID в Telegram: <code>{user_id}</code>",
              f"Подал: {when(app.get('date'), viewer)}"]
-    if app.get('comment'):
-        lines.append(f"Комментарий игрока: {escape_html(app['comment'])}")
     old = [n for n in previous_nicks(user_id) if n.lower() != nick.lower()]
     if old:
-        lines.append("Этот Telegram уже подавал заявки с никами: "
-                     + ", ".join(f"<code>{escape_html(n)}</code>" for n in old))
+        lines.append("Прошлые ники: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old))
+    if app.get('comment'):
+        c = escape_html(app['comment'])
+        lines.append("")
+        lines.append("<b>Комментарий игрока</b>")
+        lines.append(f"<blockquote expandable>{c}</blockquote>")
     text = "\n".join(lines) + dossier(user_id, nick, viewer, app=app)[0] + ban_report(user_id, nick, viewer)
     return text if len(text) <= TG_MAX_LEN else text[:TG_MAX_LEN - 1] + '…'
+
 
 def app_decision_buttons(user_id):
     B = types.InlineKeyboardButton
@@ -1302,14 +1305,12 @@ def show_pending_applications(chat_id, page=0, edit_message=None, detailed=False
         if can(chat_id, 'messages'):
             row.append(B("💬 Написать", callback_data=f"reply_{user_id}"))
         markup.row(*row)
-        row = []
-        if can(chat_id, 'block'):
-            row.append(B("🚫 Заблокировать", callback_data=f"block_{user_id}"))
         if can(chat_id, 'journal'):
-            row.append(B("📒 Журнал", callback_data=f"jr_p_{user_id}_0"))
-        if row:
-            markup.row(*row)
+            markup.row(B("📒 Журнал", callback_data=f"jr_p_{user_id}_0"))
         markup.row(B("🏠 Меню", callback_data="admin_back"))
+        if can(chat_id, 'block'):
+            # опасное действие отдельной строкой внизу, подальше от «Одобрить» и навигации
+            markup.row(B("🚫 Заблокировать", callback_data=f"block_{user_id}"))
         if edit_message:
             edit_message_safe(chat_id, edit_message.message_id, text, parse_mode='HTML', reply_markup=markup)
         else:
@@ -2234,7 +2235,7 @@ def auto_line(app, viewer=None, html=True):
             return "\n".join(["только вручную"] + [f"• {r}" for r in a['stop']])
         return "\n".join([f"примет сам через {a['delay']}"] + [f"• {r}" for r in a['minor']])
     if a['manual']:
-        return f"✋ {b('Автопринятия не будет: только вручную')}"
+        return f"✋ {b('Автопринятие: нет, решение вручную')}"
     due_txt = when(a['due'], viewer)
     head = f"{a['icon']} {b('Автопринятие через ' + a['delay'])} · {due_txt}"
     # мелочи уже перечислены в «Проверках» над вердиктом, здесь только подписка

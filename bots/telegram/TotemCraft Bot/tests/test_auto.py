@@ -55,8 +55,8 @@ check(app['auto']['icon'] == '🟢' and not app['auto']['manual'], f"верди�
 note = sent_to(log, OWNER)[0]
 check('Новая заявка!' in note and buttons(log, OWNER) == ['📋 Открыть заявки'], "уведомление короткое, одна кнопка «Открыть заявки»")
 (t, _), qlog = ctx.press(OWNER, 'admin_menu_applications_new')
-check(any('Автопринятие выключено' in x for x in sent_to(qlog, OWNER)) and '✅ Одобрить' in buttons(qlog, OWNER),
-      "в очереди видно, что автомат выключен, и есть кнопки решения")
+check(any('Автопринятие: выключено' in x for x in sent_to(qlog, OWNER)) and '✅ Одобрить' in buttons(qlog, OWNER),
+      "в очереди видно, что автопринятие выключено, и есть кнопки решения")
 pm = " ".join(sent_to(log, P))
 check('Автопринят' not in pm and 'мелоч' not in pm, "игрок критериев и сроков не видит")
 check('подпишитесь на нашу группу' in pm and '✅ Я подписался' in buttons(log, P), "игроку предложили подписаться на группу")

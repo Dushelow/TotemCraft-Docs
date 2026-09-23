@@ -64,8 +64,8 @@ note = sent_to(log, OWNER)[0]
 check('Новая заявка!' in note and '📋 Открыть заявки' in buttons(log, OWNER), "уведомление короткое, с кнопкой «Открыть заявки»")
 (t, _), log = press(OWNER, 'admin_menu_applications_new')
 card = sent_to(log, OWNER)[-1]
-check('Замечаний:' in card and 'Подробнее' in card and 'решайте вручную' in card,
-      f"в очереди коротко: счёт замечаний и «решайте вручную» ({card[-120:]!r})")
+check('Замечаний:' in card and 'Подробнее' in card and 'Автопринятие: нет' in card,
+      f"в очереди коротко: счёт замечаний и вердикт автомата ({card[-120:]!r})")
 check('jojo111' not in card, "список причин и прошлые ники в карточку не лезут")
 mid_q = max(k[1] for k in ctx.messages if k[0] == OWNER)
 (t, _), dlog = press(OWNER, f'appv_{P1}_d', mid=mid_q)
@@ -182,7 +182,7 @@ check(not any('новый' in t for _, t in flags), "старый аккаунт
 text, flags = bot.dossier(9_900_000_000, 'CleanNick', OWNER)
 check(any(l == '🔴' and '2 месяцев' in t for l, t in flags), "Telegram моложе 2 месяцев: 🔴, как у автомата")
 text, flags = bot.dossier(1, 'oldtwink', OWNER)
-check('Аккаунт: <code>oldtwink</code>' in text and 'Регистрация:' in text, "досье показывает аккаунт AuthMe")
+check('<code>oldtwink</code>: рег.' in text, f"досье показывает аккаунт AuthMe одной строкой")
 saved = storage.query("SELECT id, decided_at FROM applications")
 storage.execute("UPDATE applications SET decided_at='2026-01-01T00:00:00+00:00'")  # все заявки «давние»
 bot._frontier_cache['at'] = 0
