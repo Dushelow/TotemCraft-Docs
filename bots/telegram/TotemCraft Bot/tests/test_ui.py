@@ -44,8 +44,10 @@ _, log = press(OWNER, 'admin_menu_applications_new')
 check(sent_to(log, OWNER) and not edited(log), "очередь открывается отдельным сообщением, уведомление остаётся на месте")
 card = plain(sent_to(log, OWNER)[-1])
 for label in ['Ник в игре: Elka_1221', 'Имя в Telegram: Ёлка', 'Username: @', 'ID в Telegram: 7700001',
-              'Подал: сегодня в ', 'Комментарий игрока: друг позвал', 'Проверки']:
+              'Подал: сегодня в ', 'Комментарий игрока: друг позвал']:
     check(label in card, f"в карточке есть «{label.split(':')[0]}»")
+check('Мелочей: 1' in card and 'Подробнее' in card, f"замечания не списком, а счётом со ссылкой на «Подробнее»: {card[-80:]!r}")
+check('Есть комментарий к заявке' not in card, "причины мелочей в карточку не лезут")
 check('Пароль' not in card, "пароля в карточке нет")
 check('ждёт ' not in card, "относительного времени нет: оно бы устарело")
 check('✅ Одобрить' in buttons(log, OWNER), "в очереди кнопки решения")

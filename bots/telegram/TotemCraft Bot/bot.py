@@ -1199,26 +1199,30 @@ def app_compact(user_id, app, viewer=None, title="Заявка"):
     lines.append(f"ID в Telegram: <code>{user_id}</code>")
     lines.append(f"Подал: {when(app.get('date'), viewer)}")
     if app.get('comment'):
-        c = app['comment']
-        lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
+        c = app['comment'].replace('\n', ' ')
+        lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 100 else c[:100] + '…'))
     if app.get('test_by'):
         lines.append(f"🧪 Тестовая заявка: {escape_html(staff_name(app['test_by']))} в режиме игрока")
     claimer = app_claims.get(str(user_id))
     if claimer and claimer != viewer:
         lines.append(f"⏳ Сейчас рассматривает: {escape_html(staff_name(claimer))}")
 
-    old = [n for n in previous_nicks(user_id) if n.lower() != nick.lower()]
-    if old:
-        lines.append("Прошлые ники: " + ", ".join(f"<code>{escape_html(n)}</code>" for n in old[:5]))
-
-    lines.append("")
-    lines.append("<b>Проверки</b>")
+    # В карточке только счёт замечаний: список причин, прошлые ники и досье показывает «🧾 Подробнее»
     auto = app.get('auto') or {}
     if auto:
-        flags = [('🔴', r) for r in auto.get('stop', [])] + [('🟡', r) for r in auto.get('minor', [])]
+        stop, minor = list(auto.get('stop', [])), list(auto.get('minor', []))
     else:
         flags = check_flags(user_id, nick, app=app)
-    lines.append(checks_text(flags))
+        stop = [t for lvl, t in flags if lvl == '🔴']
+        minor = [t for lvl, t in flags if lvl == '🟡']
+    lines.append("")
+    if stop:
+        lines.append(f"🔴 Замечаний: {len(stop)}"
+                     + (f", мелочей: {len(minor)}" if minor else "") + ". Нажмите «🧾 Подробнее»")
+    elif minor:
+        lines.append(f"🟡 Мелочей: {len(minor)}. Нажмите «🧾 Подробнее»")
+    else:
+        lines.append("✅ Проверки пройдены: наказаний нет, твинков нет, раньше не отклоняли")
     verdict = auto_short(app, viewer)
     if verdict:
         lines.append(verdict)

@@ -64,7 +64,13 @@ note = sent_to(log, OWNER)[0]
 check('Новая заявка!' in note and '📋 Открыть заявки' in buttons(log, OWNER), "уведомление короткое, с кнопкой «Открыть заявки»")
 (t, _), log = press(OWNER, 'admin_menu_applications_new')
 card = sent_to(log, OWNER)[-1]
-check('Прошлые ники' in card and 'jojo111' in card and 'решайте вручную' in card, "в очереди: прошлый ник и «решайте вручную»")
+check('Замечаний:' in card and 'Подробнее' in card and 'решайте вручную' in card,
+      f"в очереди коротко: счёт замечаний и «решайте вручную» ({card[-120:]!r})")
+check('jojo111' not in card, "список причин и прошлые ники в карточку не лезут")
+mid_q = max(k[1] for k in ctx.messages if k[0] == OWNER)
+(t, _), dlog = press(OWNER, f'appv_{P1}_d', mid=mid_q)
+det = edited(dlog)[-1][1]
+check('jojo111' in det and 'Проверки' in det, "«Подробнее»: прошлый ник и список проверок")
 check(bot.pending[str(P1)]['date'].endswith('+00:00'), "дата заявки в базе в UTC")
 press(ADMIN, f'approve_{P1}', text='📩 Заявка 1 из 1', mid=77)
 (t, alert), _ = press(HELPER, f'approve_{P1}')
