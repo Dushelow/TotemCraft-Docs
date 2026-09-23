@@ -507,8 +507,12 @@ def ban_report(tg_id, nick, viewer=None):
         lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])} ({until})\n"
                      f"    причина: {escape_html(it['reason'])}\n"
                      f"    выдал: {escape_html(it['operator'])}, {fmt_time(it['start'], viewer)} [{', '.join(it['sources'])}]")
-    if past:
-        lines.append("🕘 Раньше (сейчас сняты или истекли): " + ", ".join(f"{k}: {v}" for k, v in past.items()))
+    for it in past[:5]:
+        lines.append(f"🕘 <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])}, снят или истёк\n"
+                     f"    причина: {escape_html(it['reason'])}\n"
+                     f"    выдал: {escape_html(it['operator'])}, {when(it['start'], viewer)}")
+    if len(past) > 5:
+        lines.append(f"🕘 …и ещё {len(past) - 5} снятых или истёкших")
     text = ""
     if lines:
         checked = ", ".join(f"<code>{escape_html(n)}</code>" for n in nicks)
@@ -2172,7 +2176,9 @@ def auto_facts(uid, app):
     twin_names = {v.lower() for v in name_variants(f['approved_before_banned'])}
     f['bans'] = ([f"{it['who']} ({it['kind']})" for it in found
                   if ('бан' in it['kind'] or 'мут' in it['kind']) and it['who'].lower() not in twin_names]
-                 + [f"раньше {k} ×{v}" for k, v in past.items() if 'бан' in k or 'мут' in k])
+                 + [f"раньше {it['kind']} на нике {it['who']} ({when(it['start'])}, выдал {it['operator']}, "
+                    f"причина: {it['reason']}), сейчас снят"
+                    for it in past if 'бан' in it['kind'] or 'мут' in it['kind']])
     if errors:
         f['bans'].append("не удалось проверить: " + "; ".join(errors))  # не прочитали баны — не рискуем
     return f

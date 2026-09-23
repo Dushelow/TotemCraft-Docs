@@ -11,7 +11,6 @@ import os
 import re
 import sqlite3
 import time
-from collections import defaultdict
 from contextlib import closing
 from datetime import datetime, timezone
 
@@ -120,7 +119,7 @@ def find(nicks):
     """Все наказания по никам (без поиска по IP, см. начало файла).
     Возвращает (активные, прошлые, ошибки):
       активные — список словарей icon/who/kind/until/reason/operator/start/sources (until=None — навсегда);
-      прошлые — {название наказания: сколько раз};
+      прошлые (сняты или истекли) — такие же словари, чтобы было видно ник, причину и кто выдал;
       ошибки — список строк «что не прочиталось: причина»."""
     lower = {n.lower() for n in nicks if n}
     items, errors = {}, []
@@ -135,7 +134,7 @@ def find(nicks):
             items[key] = dict(icon=icon, who=who, kind=kind, until=until, reason=reason,
                               operator=operator, start=start, sources=[source])
 
-    past = defaultdict(int)
+    past = []
     try:
         active, history = read_advancedban()
         now_ms = time.time() * 1000
@@ -154,7 +153,11 @@ def find(nicks):
             if (p['name'], p['start']) in active_ids or p['type'] in ('NOTE', 'KICK'):
                 continue
             if p['name'].lower() in lower or p['uuid'].lower() in lower:
-                past[PUNISHMENT_NAMES.get(p['type'], p['type'])] += 1
+                past.append(dict(icon='🕘', who=p['name'], kind=PUNISHMENT_NAMES.get(p['type'], p['type']),
+                                 until=None if p['end'] in (-1, None) else timeutil.from_ms(p['end']),
+                                 reason=p['reason'], operator=p['operator'],
+                                 start=timeutil.from_ms(p['start']) if p['start'] else None,
+                                 sources=['AdvancedBanX']))
     except Exception as e:
         log_error(e)
         errors.append(f"AdvancedBanX: {e}")
@@ -177,4 +180,5 @@ def find(nicks):
             log_error(e)
             errors.append(f"{fname}: {e}")
 
-    return list(items.values()), dict(past), errors
+    past.sort(key=lambda it: it['start'] or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+    return list(items.values()), past, errors
