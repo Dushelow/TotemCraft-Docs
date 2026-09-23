@@ -1216,11 +1216,9 @@ def app_compact(user_id, app, viewer=None, title="Заявка"):
         stop = [t for lvl, t in flags if lvl == '🔴']
         minor = [t for lvl, t in flags if lvl == '🟡']
     lines.append("")
-    if stop:
-        lines.append(f"🔴 Замечаний: {len(stop)}"
-                     + (f", мелочей: {len(minor)}" if minor else "") + ". Нажмите «🧾 Подробнее»")
-    elif minor:
-        lines.append(f"🟡 Мелочей: {len(minor)}. Нажмите «🧾 Подробнее»")
+    if stop or minor:
+        # считаем все замечания вместе: серьёзные красным, одни мелочи жёлтым
+        lines.append(f"{'🔴' if stop else '🟡'} Замечаний: {len(stop) + len(minor)}. Нажмите «🧾 Подробнее»")
     else:
         lines.append("✅ Проверки пройдены: наказаний нет, твинков нет, раньше не отклоняли")
     verdict = auto_short(app, viewer)
