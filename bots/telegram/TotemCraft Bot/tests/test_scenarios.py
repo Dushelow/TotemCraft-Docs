@@ -154,7 +154,7 @@ check('временный бан' in report and 'Гриф' in report and 'Advanc
 check('unbanned' not in bot.ban_report(1, 'unbanned', OWNER), "снятый бан (DELETE в storage.log) не показывается")
 check(bot.ban_report(1, 'expired1', OWNER).count('🚫') == 0, "истёкший бан не показывается как действующий")
 r = bot.ban_report(1, 'oldbad', OWNER)
-check('снят или истёк' in r and 'причина:' in r and 'выдал:' in r,
+check(('истёк' in r or 'снят вручную' in r) and 'причина:' in r and 'выдал:' in r,
       f"снятое наказание показано подробно: на каком нике, за что и кто выдал ({r[:120]!r})")
 check(bot.ban_report(1, 'CleanPlayer', OWNER) == '', "у чистого игрока блока нет")
 check(bot.ban_report(1, 'oldtwink', OWNER) == '',

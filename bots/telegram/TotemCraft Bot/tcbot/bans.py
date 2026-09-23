@@ -153,9 +153,11 @@ def find(nicks):
             if (p['name'], p['start']) in active_ids or p['type'] in ('NOTE', 'KICK'):
                 continue
             if p['name'].lower() in lower or p['uuid'].lower() in lower:
+                # end в прошлом — срок вышел сам; иначе наказание сняли вручную (кто снял, плагин не пишет)
+                expired = isinstance(p['end'], int) and 0 < p['end'] < now_ms
                 past.append(dict(icon='🕘', who=p['name'], kind=PUNISHMENT_NAMES.get(p['type'], p['type']),
                                  until=None if p['end'] in (-1, None) else timeutil.from_ms(p['end']),
-                                 reason=p['reason'], operator=p['operator'],
+                                 reason=p['reason'], operator=p['operator'], expired=expired,
                                  start=timeutil.from_ms(p['start']) if p['start'] else None,
                                  sources=['AdvancedBanX']))
     except Exception as e:
