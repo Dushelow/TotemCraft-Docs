@@ -171,4 +171,19 @@ check(not bot.get_ticket(C), "после «Да, закрыть» тикет з�
 (t, alert), _ = press(OWNER, f'askclose_{C}')
 check(alert and 'уже закрыто' in (t or ''), "повторное нажатие отвечает, что обращение уже закрыто")
 
+D = 7_700_007
+say(D, '/start'); press(D, 'lang_ru')
+press(D, 'menu_support'); press(D, 'support_confirmed'); press(D, 'support_no_account'); press(D, 'support_guest')
+say(D, 'помогите с приватом')
+press(OWNER, f'reply_{D}')
+_, log = press(OWNER, 'end_dialog')
+check(any('не ответив' in plain(t) for t in sent_to(log, OWNER)) and bot.dialogs.get(OWNER) == D,
+      "закрыть диалог, ничего не написав: бот переспрашивает")
+press(OWNER, 'close_cancel')
+check(bot.dialogs.get(OWNER) == D, "после «Отмена» диалог остался открытым")
+say(OWNER, 'посмотрел, всё вернул')
+_, log = press(OWNER, 'end_dialog')
+check(OWNER not in bot.dialogs and not any('не ответив' in plain(t) for t in sent_to(log, OWNER)),
+      "если админ ответил, диалог закрывается без лишнего вопроса")
+
 fakes.finish()

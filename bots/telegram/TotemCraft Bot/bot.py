@@ -1850,7 +1850,8 @@ CALLBACK_PERMS = [
     ('approved_page_', 'stats'), ('rejected_page_', 'stats'),
     ('approve_', 'apps'), ('reject_', 'apps'), ('admin_menu_applications', 'apps'), ('pending_', 'apps'), ('appv_', 'apps'),
     ('admin_menu_messages', 'messages'), ('msg_', 'messages'), ('user_profile_', 'messages'),
-    ('admin_close_ticket_', 'messages'), ('askclose_', 'messages'), ('reply_', 'messages'), ('hist_', 'messages'),
+    ('admin_close_ticket_', 'messages'), ('askclose_', 'messages'), ('endclose_', 'messages'),
+    ('reply_', 'messages'), ('hist_', 'messages'),
     ('admin_menu_stats', 'stats'), ('back_to_stats', 'stats'), ('show_approved', 'stats'),
     ('show_rejected', 'stats'), ('show_apphistory', 'stats'), ('apphistory_', 'stats'),
     ('admin_search', 'search'),
@@ -3445,6 +3446,21 @@ def callback_handler(call):
     if data.startswith('user_profile_'):
         ok(); show_user_profile(uid, data.split('_')[2], msg); return
     if data in ("admin_end_dialog", "end_dialog"):
+        # если админ в этом диалоге ещё ничего не написал, переспрашиваем: закрытие игрок видит сразу
+        target = dialogs.get(uid)
+        msgs = storage.get_messages(target, 1) if target else []
+        answered = bool(msgs) and msgs[-1]['from'] != 'user'
+        if target and not answered:
+            keys = types.InlineKeyboardMarkup()
+            keys.row(types.InlineKeyboardButton("✅ Да, закрыть", callback_data=f"endclose_{target}"),
+                     types.InlineKeyboardButton("Отмена", callback_data="close_cancel"))
+            safe_send(uid, f"Закрыть диалог с {escape_html(enrich_user_label(target))}, не ответив?\n"
+                           f"<i>Игрок получит сообщение, что диалог завершён.</i>",
+                      parse_mode='HTML', reply_markup=keys)
+            ok()
+            return
+        ok(); end_dialog(admin_id=uid); return
+    if data.startswith('endclose_'):
         ok(); end_dialog(admin_id=uid); return
     if data == "pause_dialog":
         target = dialogs.pop(uid, None)
