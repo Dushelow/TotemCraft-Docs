@@ -77,6 +77,9 @@ closed = [plain(t) for c, t in edited(log) if 'Заявка закрыта' in t
 check(closed and all(x in closed[0] for x in ('Ник в игре: Elka_1221', 'Имя в Telegram: Ёлка', 'ID в Telegram: 7700001',
                                              'Username: @', 'Подал: ', 'ОДОБРЕНО сегодня в ')),
       f"закрытая заявка хранит, кто это был, и когда решили: {closed[:1]}")
+check('Комментарий игрока' not in closed[0] or '\n\nКомментарий игрока' in closed[0],
+      "комментарий игрока отделён пустой строкой")
+check('👤 Профиль игрока' in buttons(log, OWNER), f"под закрытой заявкой кнопка профиля: {buttons(log, OWNER)}")
 say(P, '/start')
 press(P, 'menu_support'); press(P, 'support_confirmed'); press(P, 'support_existing')
 say(P, 'Elka_1221')

@@ -977,9 +977,10 @@ def flush_admin_notifications(aid):
         for text, markup, kind, ref in items:
             _deliver(aid, text, markup, kind, ref)
 
-def close_notices(kind, ref, footer, title=None, skip=None):
+def close_notices(kind, ref, footer, title=None, skip=None, markup=None):
     """Дописывает итог к уведомлению у всех админов и убирает кнопки, чтобы дело не взяли дважды.
     title — заменить текст уведомления (строка или функция от chat_id: время в поясе того, кто смотрит);
+    markup — что оставить под закрытой карточкой (функция от chat_id: у ролей разные права);
     skip — (chat_id, message_id), уже исправленное. {t} в footer — время итога словами: «сегодня в 17:43»."""
     try:
         rows = db_exec("SELECT chat_id, message_id, text FROM notices WHERE kind=? AND ref=?", (kind, str(ref)), fetch=True)
@@ -996,7 +997,8 @@ def close_notices(kind, ref, footer, title=None, skip=None):
             head = title(chat_id) if callable(title) else title
             body = f"{head}\n\n{line}" if head else f"{text}\n\n{line}"
             try:
-                bot.edit_message_text(body[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=None)
+                keys = markup(chat_id) if callable(markup) else markup
+                bot.edit_message_text(body[:TG_MAX_LEN], chat_id, message_id, parse_mode='HTML', reply_markup=keys)
             except Exception:
                 pass
     run_in_background(edit_all)
@@ -1200,6 +1202,7 @@ def app_compact(user_id, app, viewer=None, title="Заявка"):
     lines.append(f"Подал: {when(app.get('date'), viewer)}")
     if app.get('comment'):
         c = app['comment'].replace('\n', ' ')
+        lines.append("")  # чтобы комментарий не слипался с данными выше
         lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 100 else c[:100] + '…'))
     if app.get('test_by'):
         lines.append(f"🧪 Тестовая заявка: {escape_html(staff_name(app['test_by']))} в режиме игрока")
@@ -1227,6 +1230,14 @@ def app_compact(user_id, app, viewer=None, title="Заявка"):
     return "\n".join(lines)
 
 
+def closed_markup(chat_id, user_id):
+    """Под закрытой заявкой одна кнопка: открыть профиль игрока со всеми подробностями.
+    Помощнику её не показываем: профиль ему по правам не положен."""
+    if not can(chat_id, 'messages'):
+        return None
+    return types.InlineKeyboardMarkup().add(
+        types.InlineKeyboardButton("👤 Профиль игрока", callback_data=f"user_profile_{user_id}"))
+
 def app_closed_text(user_id, app, viewer=None):
     """Закрытая заявка: те же сведения, что в карточке, без проверок и кнопок.
     Раньше карточка сворачивалась до ника, и через день было не понять, что это была за заявка."""
@@ -1239,6 +1250,7 @@ def app_closed_text(user_id, app, viewer=None):
              f"Подал: {when(app.get('date'), viewer)}"]
     if app.get('comment'):
         c = app['comment']
+        lines.append("")  # чтобы комментарий не слипался с данными выше
         lines.append("Комментарий игрока: " + escape_html(c if len(c) <= 200 else c[:200] + '…'))
     return "\n".join(lines)
 
@@ -2610,7 +2622,8 @@ def handle_all_messages(m):
             # Сбрасываем таймер чтобы игрок мог подать заново немедленно
             last_application.pop(str(uid), None)
             close_notices('app', uid, "↩️ Игрок отозвал заявку {t}",
-                          title=lambda chat_id: app_closed_text(uid, app, chat_id))
+                          title=lambda chat_id: app_closed_text(uid, app, chat_id),
+                          markup=lambda cid: closed_markup(cid, uid))
             # Если админ как раз пишет решение по этой заявке — прерываем
             claimer = app_claims.pop(str(uid), None)
             if claimer is not None and admin_states.get(claimer, {}).get('user_id') == str(uid):
@@ -3821,12 +3834,12 @@ def process_admin_decision(action, user_id_str, comment, state):
             bot.edit_message_text(
                 chat_id=own[0], message_id=own[1],
                 text=f"{closed_title(own[0])}\n\n{action_icon} <b>{action_label}</b> {decided_at} · {escape_html(decider)}{extra}",
-                parse_mode='HTML', reply_markup=None)
+                parse_mode='HTML', reply_markup=closed_markup(own[0], user_id_str))
         except Exception:
             pass
     # У коллег уведомление тоже закрывается: сведения о заявке остаются, кнопки уходят
     close_notices('app', user_id_str, f"{action_icon} <b>{action_label}</b> {{t}} · {escape_html(decider)}{extra}",
-                  title=closed_title, skip=own)
+                  title=closed_title, skip=own, markup=lambda cid: closed_markup(cid, user_id_str))
 
     if state.get('prompt_msg_id') and actor is not None:
         try:

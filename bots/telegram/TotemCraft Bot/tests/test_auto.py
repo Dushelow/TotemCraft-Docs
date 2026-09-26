@@ -264,9 +264,11 @@ closed = [x for c, x in edited(log) if c == ADMIN and 'Заявка закрыт
 card = fakes.strip_tags(closed[0]) if closed else ''
 check(all(x in card for x in ('Ник в игре: ShortCard', 'ID в Telegram: 6500000001', 'Подал: ', 'ОДОБРЕНО сегодня в ', 'Вася')),
       f"закрытая заявка хранит, кто это был, и кто когда решил: {closed[:1]}")
-closed_marks = [p.get('reply_markup') for m, p in log
-                if m == 'editMessageText' and 'Заявка закрыта' in p.get('text', '') and str(p.get('chat_id')) == str(ADMIN)]
-check('Проверки' not in card and closed_marks and not any(closed_marks), "в закрытой заявке нет проверок и кнопок")
+closed_keys = [b['text'] for m, p in log
+               if m == 'editMessageText' and 'Заявка закрыта' in p.get('text', '') and str(p.get('chat_id')) == str(ADMIN)
+               for row in __import__('json').loads(p['reply_markup'])['inline_keyboard'] for b in row]
+check('Проверки' not in card and set(closed_keys) == {'👤 Профиль игрока'},
+      f"в закрытой заявке нет проверок, а из кнопок только профиль игрока: {closed_keys}")
 others = [x for c, x in edited(log) if c == OWNER and 'Заявка закрыта' in x]
 check(others and 'ID в Telegram: 6500000001' in fakes.strip_tags(others[0]), "у владельца закрытая заявка с теми же сведениями")
 
