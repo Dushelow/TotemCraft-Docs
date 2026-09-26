@@ -756,7 +756,7 @@ def notify_new_ticket(user, text_msg, tid, nick=''):
     markup = types.InlineKeyboardMarkup()
     markup.row(B("💬 Ответить", callback_data=f"reply_{uid}"))
     markup.row(B("👤 Профиль игрока", callback_data=f"user_profile_{uid}"), B("📜 Переписка", callback_data=f"hist_{uid}"))
-    markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"),
+    markup.row(B("🔒 Закрыть без ответа", callback_data=f"askclose_{uid}"),
                B("🚫 Заблокировать", callback_data=f"block_{uid}"))
     markup.row(B("🏠 Меню", callback_data="admin_back"))
     audit(uid, 'ticket_opened', uid, nick, text_msg)
@@ -768,7 +768,7 @@ def notify_ticket_followup(user, text_msg, tid):
     B = types.InlineKeyboardButton
     markup = types.InlineKeyboardMarkup()
     markup.row(B("💬 Ответить", callback_data=f"reply_{user.id}"), B("📜 Переписка", callback_data=f"hist_{user.id}"))
-    markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{user.id}"),
+    markup.row(B("🔒 Закрыть без ответа", callback_data=f"askclose_{user.id}"),
                B("🏠 Меню", callback_data="admin_back"))
     notify_staff('messages', notify, reply_markup=markup, kind='ticket', ref=user.id)
 
@@ -1754,7 +1754,7 @@ def show_user_profile(admin_chat_id, target_uid, origin_msg):
         row.append(B("📒 Журнал", callback_data=f"jr_p_{uid}_0"))
     markup.row(*row)
     if ticket or str(uid) in unread_messages:
-        markup.row(B("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{uid}"))
+        markup.row(B("🔒 Закрыть без ответа", callback_data=f"askclose_{uid}"))
     row = [B("🔙 К сообщениям", callback_data="admin_menu_messages"), B("🏠 Меню", callback_data="admin_back")]
     markup.row(*row)
     if can(admin_chat_id, 'block'):
@@ -1850,7 +1850,7 @@ CALLBACK_PERMS = [
     ('approved_page_', 'stats'), ('rejected_page_', 'stats'),
     ('approve_', 'apps'), ('reject_', 'apps'), ('admin_menu_applications', 'apps'), ('pending_', 'apps'), ('appv_', 'apps'),
     ('admin_menu_messages', 'messages'), ('msg_', 'messages'), ('user_profile_', 'messages'),
-    ('admin_close_ticket_', 'messages'), ('reply_', 'messages'), ('hist_', 'messages'),
+    ('admin_close_ticket_', 'messages'), ('askclose_', 'messages'), ('reply_', 'messages'), ('hist_', 'messages'),
     ('admin_menu_stats', 'stats'), ('back_to_stats', 'stats'), ('show_approved', 'stats'),
     ('show_rejected', 'stats'), ('show_apphistory', 'stats'), ('apphistory_', 'stats'),
     ('admin_search', 'search'),
@@ -3458,6 +3458,27 @@ def callback_handler(call):
                        f"с кнопкой «💬 Ответить». Ваши сообщения игроку больше не уходят.", parse_mode='HTML')
         send_admin_menu(uid)
         return
+    if data.startswith('askclose_'):
+        # спрашиваем, потому что закрытие обращения игрок видит сразу и вернуть тикет нельзя
+        target = int(data.split('_')[1])
+        ticket = get_ticket(target)
+        if not ticket:
+            ok("Обращение уже закрыто.", alert=True)
+            return
+        keys = types.InlineKeyboardMarkup()
+        keys.row(types.InlineKeyboardButton("🔒 Да, закрыть", callback_data=f"admin_close_ticket_{target}"),
+                 types.InlineKeyboardButton("Отмена", callback_data="close_cancel"))
+        safe_send(uid, f"Закрыть обращение #{ticket['id']} от {escape_html(enrich_user_label(target))} без ответа?\n"
+                       f"<i>Игрок получит сообщение, что тикет закрыт.</i>", parse_mode='HTML', reply_markup=keys)
+        ok()
+        return
+    if data == "close_cancel":
+        ok("Отменено")
+        try:
+            bot.delete_message(msg.chat.id, msg.message_id)
+        except Exception:
+            pass
+        return
     if data.startswith('admin_close_ticket_'):
         target = int(data.split('_')[3])
         ticket = get_ticket(target)
@@ -3503,7 +3524,7 @@ def callback_handler(call):
         i_markup = types.InlineKeyboardMarkup()
         i_markup.row(types.InlineKeyboardButton("✅ Ответил, закрыть", callback_data="end_dialog"),
                      types.InlineKeyboardButton("⏸ Отойти", callback_data="pause_dialog"))
-        row = [types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"admin_close_ticket_{target}")]
+        row = [types.InlineKeyboardButton("🔒 Закрыть без ответа", callback_data=f"askclose_{target}")]
         if can(uid, 'block'):
             row.append(types.InlineKeyboardButton("🚫 Заблокировать", callback_data=f"block_{target}"))
         i_markup.row(*row)

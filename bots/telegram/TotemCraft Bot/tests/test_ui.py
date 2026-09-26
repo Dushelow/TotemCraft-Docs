@@ -153,4 +153,22 @@ check(edited(log) or sent_to(log, OWNER), "у админа очередь зая
 ctx.too_old = False
 check(bot.bot.worker_pool.num_threads == 4, "нажатия разбирают 4 потока")
 
+print("\n=== 9. Опасное действие спрашивает подтверждение ===")
+C = 7_700_006
+say(C, '/start'); press(C, 'lang_ru')
+press(C, 'menu_support'); press(C, 'support_confirmed'); press(C, 'support_no_account'); press(C, 'support_guest')
+log = say(C, 'вопрос по привату')
+keys = buttons(log, OWNER)
+check('🔒 Закрыть без ответа' in keys, f"в уведомлении есть «Закрыть без ответа»: {keys}")
+_, log = press(OWNER, f'askclose_{C}')
+ask = [plain(t) for t in sent_to(log, OWNER) if 'Закрыть обращение' in t]
+check(ask and bot.get_ticket(C), f"одно нажатие тикет не закрывает, бот спрашивает: {ask[:1]}")
+check('🔒 Да, закрыть' in buttons(log, OWNER) and 'Отмена' in buttons(log, OWNER), "в вопросе кнопки «Да, закрыть» и «Отмена»")
+press(OWNER, 'close_cancel')
+check(bot.get_ticket(C), "после «Отмена» тикет остался открытым")
+press(OWNER, f'admin_close_ticket_{C}')
+check(not bot.get_ticket(C), "после «Да, закрыть» тикет закрыт")
+(t, alert), _ = press(OWNER, f'askclose_{C}')
+check(alert and 'уже закрыто' in (t or ''), "повторное нажатие отвечает, что обращение уже закрыто")
+
 fakes.finish()
