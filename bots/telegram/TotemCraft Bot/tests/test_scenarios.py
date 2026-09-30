@@ -125,7 +125,7 @@ j = edited(log)[-1][1]
 check('одобрил заявку' in j and 'написал игроку' in j, "в журнале одобрение и сообщение игроку")
 ts = db("SELECT ts FROM audit WHERE action='approved'")[0][0]
 check(ts.endswith('+00:00'), f"журнал хранит UTC: {ts}")
-from datetime import datetime
+from datetime import datetime, timedelta
 utc = datetime.fromisoformat(ts)
 msk = utc.hour + 3
 (t, _), log = press(OWNER, 'jr_a_0_0')
@@ -155,12 +155,14 @@ press(OWNER, 'player_view_off')
 
 print("\n=== 7. Баны в карточке ===")
 report = bot.ban_report(P1, 'artiom83', OWNER)
-check('временный бан' in report and 'Гриф' in report and 'AdvancedBanX, banned-players.json' in report,
-      "временный бан склеен из AdvancedBanX и ванильного списка")
+check('artiom83</code>: бан ' in report and report.count('Гриф') == 1 and ', осталось ' in report and 'источник' not in report,
+      f"временный бан склеен из AdvancedBanX и ванильного списка, одной строкой со сроком ({report!r})")
+check(bot.ban_span(timedelta(days=364, hours=23, minutes=59, seconds=59)) == '365 дн.' and
+      bot.ban_span(timedelta(hours=3, minutes=30)) == '3 ч. 30 мин.', "срок как у плагина: дни, часы, минуты")
 check('unbanned' not in bot.ban_report(1, 'unbanned', OWNER), "снятый бан (DELETE в storage.log) не показывается")
 check(bot.ban_report(1, 'expired1', OWNER).count('🚫') == 0, "истёкший бан не показывается как действующий")
 r = bot.ban_report(1, 'oldbad', OWNER)
-check(('истёк' in r or 'снят вручную' in r) and 'причина:' in r and 'выдал:' in r,
+check(('истёк' in r or 'снят' in r) and ' за ' in r and 'выдан ' in r,
       f"снятое наказание показано подробно: на каком нике, за что и кто выдал ({r[:120]!r})")
 check(bot.ban_report(1, 'CleanPlayer', OWNER) == '', "у чистого игрока блока нет")
 check(bot.ban_report(1, 'oldtwink', OWNER) == '',

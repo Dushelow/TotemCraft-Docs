@@ -507,6 +507,22 @@ def previous_nicks(tg_id):
     return [r[0] for r in rows]
 
 # ---------- Проверка блокировок на сервере (данные — tcbot/bans.py) ----------
+def ban_span(td, parts=2):
+    """Длительность как у AdvancedBanX: «365 дн.», «3 ч. 30 мин.». parts — сколько крупных единиц оставить."""
+    minutes = max(0, round(td.total_seconds() / 60))
+    units = [(minutes // 1440, 'дн.'), (minutes // 60 % 24, 'ч.'), (minutes % 60, 'мин.')]
+    shown = [f"{n} {u}" for n, u in units if n][:parts]
+    return " ".join(shown) or "меньше минуты"
+
+def ban_line(it, viewer=None):
+    """Наказание одной строкой: «Gromada32: бан 365 дн. за Grief, выдан Steve 09.09.2026»."""
+    kind = it['kind'].replace('временный ', '').replace('временное ', '')
+    term = "навсегда" if it['until'] is None or it['start'] is None else ban_span(it['until'] - it['start'])
+    issued = {'предупреждение': 'выдано', 'заметка': 'выдана'}.get(kind, 'выдан')
+    date = f" {fmt_time(it['start'], viewer, '%d.%m.%Y')}" if it['start'] else ""
+    return (f"<code>{escape_html(it['who'])}</code>: {escape_html(kind)} {term} за {escape_html(it['reason'] or '?')}, "
+            f"{issued} {escape_html(it['operator'] or '?')}{date}")
+
 def ban_report(tg_id, nick, viewer=None):
     """Блок для карточки заявки: наказания по нику заявки и по прошлым никам этого TG ID. Пусто, если ничего нет.
     Время показывается в поясе того, кто смотрит (viewer)."""
@@ -518,17 +534,10 @@ def ban_report(tg_id, nick, viewer=None):
         return f"\n\n⚠️ Не удалось проверить блокировки: {escape_html(e)}"
     lines = []
     for it in found:
-        until = "навсегда" if it['until'] is None else f"до {when(it['until'], viewer)}"
-        lines.append(f"{it['icon']} <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])}, {until}\n"
-                     f"    причина: {escape_html(it['reason'])}\n"
-                     f"    выдал: {escape_html(it['operator'])}, {when(it['start'], viewer)}\n"
-                     f"    <i>источник: {', '.join(it['sources'])}</i>")
+        lines.append(f"{it['icon']} {ban_line(it, viewer)}"
+                     + ("" if it['until'] is None else f", осталось {ban_span(it['until'] - timeutil.now_utc(), 1)}"))
     for it in past[:5]:
-        ended = f"истёк {when(it['until'], viewer)}" if it.get('expired') else "снят вручную"
-        lines.append(f"🕘 <code>{escape_html(it['who'])}</code>: {escape_html(it['kind'])}, {ended}\n"
-                     f"    причина: {escape_html(it['reason'])}\n"
-                     f"    выдал: {escape_html(it['operator'])}, {when(it['start'], viewer)}"
-                     + ("" if it.get('expired') else "\n    кто снял: плагин наказаний это не записывает"))
+        lines.append(f"🕘 {ban_line(it, viewer)}, " + ("истёк" if it.get('expired') else "снят"))
     if len(past) > 5:
         lines.append(f"🕘 …и ещё {len(past) - 5} снятых или истёкших")
     text = ""
