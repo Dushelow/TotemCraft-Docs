@@ -48,15 +48,18 @@ while true; do
     sleep 15
 
     # Ждём, пока сессия существует
-    while screen -list | grep -q "$SCREEN_NAME"; do
+    # Совпадение только с настоящей сессией "12345.minecraft".
+    # Просто grep "minecraft" ловит и фразу "No Sockets found in /run/screen/S-minecraft"
+    # и считает, что сервер жив, из-за чего он не перезапускался после падения.
+    while screen -list | grep -q "\.${SCREEN_NAME}[[:space:]]"; do
         sleep 10
     done
 
     echo "=== [$(date '+%Y-%m-%d %H:%M:%S')] СЕРВЕР ОСТАНОВЛЕН. Перезапуск через ${DELAY} сек... ===" >> restart.log
     echo "Для отмены авторестарта нажмите Enter в течение ${DELAY} секунд..."
 
-    read -t $DELAY || true
-    if [ $? -eq 0 ]; then
+    # read завершается успешно только если нажали Enter; по таймауту возвращает ошибку
+    if read -t $DELAY; then
         echo "=== [$(date '+%Y-%m-%d %H:%M:%S')] Авторестарт отменён ===" >> restart.log
         break
     fi

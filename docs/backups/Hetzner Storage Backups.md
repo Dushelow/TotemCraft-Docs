@@ -2,260 +2,113 @@
 
 ## 1. Схема бэкапа
 
-Используем `rsync + hardlinks`.
+Используем **borg** (BorgBackup 1.2). С октября 2026 вместо `rsync + hardlinks`.
 
-- Бэкапится весь сервер: мир, плагины, конфиги.
-- Каждый день в 5:00 МСК создаётся папка `daily-YYYY-MM-DD`.
-- Благодаря `--link-dest` почти все файлы **не копируются заново**, а ссылаются (hardlinks) на предыдущий бэкап. Ежедневный бэкап занимает **очень мало** дополнительного места (обычно 100–800 МБ вместо 22+ ГБ).
-- Хранятся **3 последних ежедневных** бэкапа — старые удаляются автоматически.
-- 1-го числа каждого месяца создаётся **вечный** `monthly-YYYY-MM`, который никогда не удаляется автоматически.
-- Скрипт запускается от пользователя `minecraft` — он же владеет screen-сессией сервера.
+- Бэкапится: миры `2025`, `2025_nether`, `2025_the_end`, `plugins`, а также `*.yml`, `*.properties`, `*.json` из корня сервера.
+- Каждый день в 5:00 МСК создаётся архив `daily-YYYY-MM-DD_HHMM` в репозитории `borg-totemcraft` на Storage Box.
+- Borg режет файлы на куски и хранит только новые куски. Поэтому даже 15 ГБ база CoreProtect, которая меняется каждый день, не копируется каждый раз заново. Первая копия: 50 ГБ превратились в 25 ГБ (сжатие lz4).
+- Хранится: 7 ежедневных, 4 еженедельных, 6 ежемесячных архивов. Старые удаляет `borg prune` в конце того же скрипта.
+- Шифрования нет (`-e none`): хранилище приватное, зато нет риска потерять пароль.
+- Скрипт запускается от пользователя `minecraft` — он же владеет screen-сессией сервера. Скрипт: `/home/minecraft/backup.sh`, пример в `system/scripts/backup.sh.example`.
+
+### Почему перешли с rsync
+
+Старый скрипт был сломан двумя способами (из-за этого хранилище заполнилось на 100%, и бэкапы падали с «Disk quota exceeded»):
+
+1. Оболочка Storage Box **не понимает конвейер `|`**. Команды `ls | sort | head` и `ls | tail | xargs rm` там не работали: удаление старых копий не удаляло ничего (накопилось 72 папки), а «предыдущая копия» определялась неверно, и каждая папка сравнивалась с `monthly-2026-07`, храня все изменения с июля.
+2. Файл CoreProtect меняется целиком каждый день, hardlink-дедупликация по файлам для него бесполезна.
+
+Из этого правило: **на Storage Box не использовать `|`, `;`, `xargs` в ssh-командах**. Считать на стороне сервера.
+
+### Защита от зависания
+
+- Перед копией выполняется `save-off` + `save-all flush`, после копии `save-on`.
+- `borg create` ограничен `timeout 3h`, а `save-on` отправляется и по сигналу выхода скрипта. Раньше зависший rsync оставлял сохранение мира выключенным на сутки: память заполнялась несохранёнными чанками, и сервер падал (случай 9–10 октября 2026).
+- Одновременно работает только один бэкап (`flock`).
+- Если сервер не запущен, сохранение не трогается.
 
 ---
 
-## 2. Пошаговая настройка
+## 2. Первичная настройка
 
 ### Шаг 0: Подготовка Storage Box
 
-1. Зайди в Hetzner Console → Storage Boxes → свой бокс.
+1. Hetzner Console → Storage Boxes → свой бокс.
 2. Включи **SSH-Support** (порт 23).
-3. Сбрось пароль (Reset password) и сохрани его — понадобится один раз при настройке ключа.
+3. Сбрось пароль (Reset password) и сохрани его — понадобится один раз для ключа.
 
----
-
-### Шаг 1: Настройка SSH-ключа
-
-Все команды выполняй **от пользователя `minecraft`**.
+### Шаг 1: SSH-ключ (от пользователя `minecraft`)
 
 ```bash
 su - minecraft
-
-# Генерация ключа (если ещё нет)
 ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
-
-# Отправь публичный ключ на Storage Box (введи пароль от бокса один раз)
 cat ~/.ssh/id_ed25519.pub | ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de install-ssh-key
 ```
 
-Проверка — Storage Box использует ограниченный shell, поэтому вместо `echo OK` просто проверяем что подключение проходит без пароля:
+### Шаг 2: Установка borg и репозиторий
+
+На сервере от root:
 
 ```bash
-ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de
-# Должно подключиться без запроса пароля. Выйти: exit
+apt-get install -y borgbackup
+su -s /bin/bash minecraft -c "borg init -e none --remote-path=borg-1.2 ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./borg-totemcraft"
 ```
 
----
+`--remote-path=borg-1.2` обязателен: на Storage Box borg лежит под этим именем.
 
-### Шаг 2: Создай скрипт бэкапа
+### Шаг 3: Скрипт и cron
 
-```bash
-nano /home/minecraft/backup.sh
-```
-
-Вставь весь этот код:
-
-```bash
-#!/bin/bash
-# Скрипт бэкапов
-# Ежедневные бэкапы с hardlink-дедупликацией, ежемесячный снапшот 1-го числа.
-# Зависимости: rsync, ssh, screen (сессия называется "minecraft")
-
-set -uo pipefail
-
-# Конфигурация
-SERVER_DIR="/home/minecraft/server"
-BACKUP_HOST="uXXXXXX@uXXXXXX.your-storagebox.de"
-BACKUP_PORT=23
-BACKUP_DIR="minecraft-backups"
-LOG="/home/minecraft/backup.log"
-
-DATE=$(date +%Y-%m-%d)
-MONTHLY_DATE=$(date +%Y-%m)
-
-RSYNC_BASE_OPTS=(-aAX --delete --stats --ignore-errors \
-  -e "ssh -p ${BACKUP_PORT} -o ServerAliveInterval=60 -o ServerAliveCountMax=3")
-
-RSYNC_SOURCES=(
-  "$SERVER_DIR/2025"
-  "$SERVER_DIR/2025_nether"
-  "$SERVER_DIR/2025_the_end"
-  "$SERVER_DIR/plugins"
-  "$SERVER_DIR"/*.yml
-  "$SERVER_DIR"/*.properties
-)
-
-# Логирование
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"
-}
-
-# Управление автосохранением
-mc_cmd() {
-  screen -r minecraft -X stuff "$1$(printf '\r')" 2>/dev/null || true
-}
-
-save_off() {
-  mc_cmd "save-off"
-  sleep 4
-  mc_cmd "save-all flush"
-  sleep 10
-}
-
-save_on() {
-  mc_cmd "save-on"
-  sleep 2
-}
-
-# Флаг нужен: trap выставляется до save-off,
-# чтобы не вызвать save-on если save-off ещё не отправлялся
-SAVE_OFF_DONE=false
-
-on_exit() {
-  local exit_code=$?
-  if $SAVE_OFF_DONE; then
-    save_on
-    log "save-on (cleanup)"
-  fi
-  if [ $exit_code -ne 0 ]; then
-    log "=== БЭКАП ЗАВЕРШЁН С ОШИБКОЙ (код $exit_code) ==="
-  fi
-  echo "" >> "$LOG"
-}
-
-trap on_exit EXIT
-
-# Утилита для rsync с разбором кода возврата
-run_rsync() {
-  local dest="$1"
-  shift
-  local extra_opts=("$@")
-
-  rsync "${RSYNC_BASE_OPTS[@]}" "${extra_opts[@]}" \
-    "${RSYNC_SOURCES[@]}" \
-    "${BACKUP_HOST}:${BACKUP_DIR}/${dest}/" >> "$LOG" 2>&1
-}
-
-log "=== БЭКАП НАЧАТ ==="
-
-# Находим предыдущий бэкап для --link-dest (hardlink-дедупликация)
-PREV_BACKUP=$(ssh -p "$BACKUP_PORT" "$BACKUP_HOST" \
-  "ls -1d ${BACKUP_DIR}/daily-* ${BACKUP_DIR}/monthly-* 2>/dev/null | sort -r | head -n 1" \
-  2>/dev/null || true)
-
-declare -a HARDLINK_OPT=()
-if [ -n "$PREV_BACKUP" ]; then
-  PREV_NAME=$(basename "$PREV_BACKUP")
-  HARDLINK_OPT=(--link-dest="../${PREV_NAME}")
-  log "Hardlink от: $PREV_NAME"
-else
-  log "Первый бэкап — полный"
-fi
-
-# Временно отключаем автосохранение
-log "Отключаем автосохранение (save-off / save-all flush)..."
-save_off
-SAVE_OFF_DONE=true
-
-# Ежедневный бэкап
-log "Создаём daily-${DATE}..."
-rsync_exit=0
-run_rsync "daily-${DATE}" "${HARDLINK_OPT[@]}" || rsync_exit=$?
-
-if [ $rsync_exit -eq 0 ]; then
-  log "daily-${DATE} успешно создан"
-elif [ $rsync_exit -eq 23 ]; then
-  # Код 23 — часть файлов не передана (обычно из-за блокировки JVM). Не фатально.
-  log "daily-${DATE} создан (rsync код 23: часть файлов заблокирована — ожидаемо)"
-else
-  log "ОШИБКА: rsync завершился с кодом $rsync_exit"
-  exit $rsync_exit
-fi
-
-# Ежемесячный бэкап (только 1-го числа)
-if [ "$(date +%d)" -eq 1 ]; then
-  log "Создаём monthly-${MONTHLY_DATE} (hardlink от daily-${DATE})..."
-  monthly_exit=0
-  run_rsync "monthly-${MONTHLY_DATE}" --link-dest="../daily-${DATE}" || monthly_exit=$?
-
-  if [ $monthly_exit -eq 0 ] || [ $monthly_exit -eq 23 ]; then
-    log "monthly-${MONTHLY_DATE} успешно создан"
-  else
-    log "ПРЕДУПРЕЖДЕНИЕ: monthly rsync завершился с кодом $monthly_exit"
-  fi
-fi
-
-# Включаем автосохранение обратно
-log "Включаем автосохранение..."
-save_on
-SAVE_OFF_DONE=false
-
-# Удаляем старые daily, оставляем 3 последних
-log "Удаляем старые daily-бэкапы (оставляем 3)..."
-ssh -p "$BACKUP_PORT" "$BACKUP_HOST" \
-  "ls -1d ${BACKUP_DIR}/daily-* 2>/dev/null | sort -r | tail -n +4 | xargs -r rm -rf" \
-  >> "$LOG" 2>&1 || true
-
-log "=== БЭКАП ЗАВЕРШЁН УСПЕШНО ==="
-```
-
-Сохрани и сделай исполняемым:
+Скопируй `system/scripts/backup.sh.example` в `/home/minecraft/backup.sh`, замени `uXXXXXX`, затем:
 
 ```bash
 chmod +x /home/minecraft/backup.sh
-```
-
----
-
-### Шаг 3: Добавь в cron
-
-Cron должен быть настроен от пользователя `minecraft` — он же владеет screen-сессией сервера. Root не видит чужие screen-сессии.
-
-```bash
-su - minecraft
-crontab -e
-```
-
-Добавь строку:
-
-```
+su - minecraft -c "crontab -e"
+# добавить строку:
 0 5 * * * /home/minecraft/backup.sh
 ```
 
-Скрипт сам определяет 1-е число и создаёт monthly. Вторая cron-запись не нужна.
-
----
-
 ### Шаг 4: Первый запуск
 
-Первый бэкап полный (~22 ГБ), займёт 10–20 минут:
-
 ```bash
-su - minecraft
-/home/minecraft/backup.sh & tail -f /home/minecraft/backup.log
+su - minecraft -c "/home/minecraft/backup.sh"
+tail -f /home/minecraft/backup.log
 ```
 
 ---
 
 ## 3. Восстановление из бэкапа
 
-```bash
-mkdir -p /home/minecraft/restore-test
+Все команды от пользователя `minecraft`. Задай переменные:
 
-rsync -aAXv --info=progress2 \
-  -e "ssh -p 23" \
-  uXXXXXX@uXXXXXX.your-storagebox.de:minecraft-backups/daily-2026-05-14/ \
-  /home/minecraft/restore-test/
+```bash
+export BORG_REPO="ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./borg-totemcraft"
+export BORG_REMOTE_PATH=borg-1.2
 ```
 
-Затем вручную замени нужные папки в `/home/minecraft/server/`.
+Список архивов:
+
+```bash
+borg list
+```
+
+Восстановить в отдельную папку (рабочий сервер не трогается):
+
+```bash
+mkdir -p /home/minecraft/restore-test && cd /home/minecraft/restore-test
+borg extract --progress ::daily-2026-10-10_0928
+# только один мир:
+borg extract --progress ::daily-2026-10-10_0928 2025_nether
+```
+
+Затем вручную замени нужные папки в `/home/minecraft/server/` при **остановленном** сервере.
 
 ---
 
 ## 4. Полезные команды
 
 ```bash
-# Размер всех бэкапов
-ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de "du -sh minecraft-backups/*"
+# Размер репозитория и дедупликация (от minecraft, с переменными выше)
+borg info
 
 # Последние строки лога
 tail -n 50 /home/minecraft/backup.log
@@ -263,26 +116,28 @@ tail -n 50 /home/minecraft/backup.log
 # Лог в реальном времени
 tail -f /home/minecraft/backup.log
 
-# Посмотреть cron текущего пользователя
-crontab -l
-
-# Screen-сессии (от кого запущен сервер)
-ps aux | grep '[Ss]creen'
+# Свободное место на Storage Box
+su - minecraft -c "ssh -p 23 uXXXXXX@uXXXXXX.your-storagebox.de df -h"
 
 # Запустить бэкап вручную
 su - minecraft -c "/home/minecraft/backup.sh"
+
+# Проверить целостность репозитория (долго, не во время бэкапа)
+borg check
 ```
 
 ---
 
 ## 5. Частые проблемы
 
-**"No screen session found"** — скрипт запущен не от того пользователя. Screen-сессия сервера принадлежит `minecraft`, поэтому скрипт всегда должен выполняться от него. Проверить: `ps aux | grep screen`.
+**«Disk quota exceeded»** — Storage Box заполнен. Проверь `df -h` выше. `borg prune`/`borg compact` в скрипте освобождают место, но если уже 100%, сначала освободи место вручную и запусти бэкап заново.
 
-**rsync код 23** — часть файлов заблокирована JVM во время бэкапа. Это нормально, скрипт это учитывает и не считает ошибкой.
+**`Repository ... is already locked`** — предыдущий borg был прерван. Если других borg-процессов нет (`pgrep -a borg`), снять замок: `borg break-lock`.
 
-**rsync код 255** — SSH-соединение оборвалось во время передачи. Характерно для Hetzner Storage Box: при долгом молчании (первый полный бэкап ~22 ГБ) сервер закрывает соединение по таймауту. Решение — `ServerAliveInterval=60` в SSH-опциях rsync, уже включено в скрипт.
+**borg код возврата 1** — предупреждение (файл менялся, пока читался). Для живого мира нормально, скрипт это учитывает.
 
-**rsync код 20 (SIGINT/SIGTERM)** — бэкап был прерван вручную (Ctrl+C) или внешним сигналом. Не ошибка скрипта, просто неполный бэкап. Незавершённая папка на Storage Box останется — можно удалить вручную или она перезапишется при следующем запуске.
+**borg код 2** — ошибка. Смотри конец `backup.log`. Скрипт всё равно включит `save-on`.
 
-**Storage Box не принимает обычные команды по SSH** — Storage Box использует ограниченный shell. `echo`, `ls` и другие стандартные команды там не работают напрямую. Это нормально; rsync и `install-ssh-key` работают корректно.
+**«No screen session found» в логе** — скрипт запущен не от пользователя `minecraft` (screen-сессия сервера принадлежит ему).
+
+**Старые rsync-копии** — `monthly-2026-06`, `monthly-2026-07` и `daily-2026-10-08` в `totemcraft-backups/` оставлены как резерв. Когда borg накопит несколько недель архивов, их можно удалить с хранилища.

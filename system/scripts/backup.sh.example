@@ -1,140 +1,94 @@
 #!/bin/bash
-# Скрипт инкрементальных бэкапов TotemCraft
-# Ежедневные бэкапы, ежемесячный снапшот 1-го числа.
+# Бэкап TotemCraft через borg на Hetzner Storage Box.
+# Запускать от пользователя minecraft (cron: 0 5 * * *).
+# Borg режет файлы на куски и хранит только новые, поэтому ежедневный
+# прирост небольшой даже для больших изменяющихся файлов (CoreProtect).
+#
+# ВАЖНО: на Storage Box урезанная оболочка, команды с | там НЕ работают.
+# Всё, что надо посчитать, считаем здесь, а не в ssh-команде.
 
 set -uo pipefail
 
-# Конфигурация
 SERVER_DIR="/home/minecraft/server"
-BACKUP_HOST="uXXXXXX@uXXXXXX.your-storagebox.de"
-BACKUP_PORT=23
-BACKUP_DIR="minecraft-backups"
 LOG="/home/minecraft/backup.log"
+LOCK="/home/minecraft/backup.lock"
 
-DATE=$(date +%Y-%m-%d)
-MONTHLY_DATE=$(date +%Y-%m)
+export BORG_REPO="ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./borg-totemcraft"
+export BORG_REMOTE_PATH="borg-1.2"
+export BORG_RSH="ssh -o BatchMode=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3"
+export BORG_RELOCATED_REPO_ACCESS_IS_OK=no
+export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes
 
-RSYNC_BASE_OPTS=(-aAX --delete --stats --ignore-errors \
-  -e "ssh -p ${BACKUP_PORT} -o ServerAliveInterval=60 -o ServerAliveCountMax=3")
+# Максимум на всю копию: если дольше, считаем зависанием и сохранение включаем обратно
+BACKUP_TIMEOUT="3h"
 
-RSYNC_SOURCES=(
-  "$SERVER_DIR/2025"
-  "$SERVER_DIR/2025_nether"
-  "$SERVER_DIR/2025_the_end"
-  "$SERVER_DIR/plugins"
-  "$SERVER_DIR"/*.yml
-  "$SERVER_DIR"/*.properties
-)
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
 
-# Логирование
-log() {
-  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"
-}
+# Одновременно только один бэкап
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  log "Другой бэкап ещё идёт, выходим"
+  exit 0
+fi
 
-# Управление автосохранением
-mc_cmd() {
-  screen -r minecraft -X stuff "$1$(printf '\r')" 2>/dev/null || true
-}
+server_alive() { screen -ls | grep -q "\.minecraft[[:space:]]"; }
 
-save_off() {
-  mc_cmd "save-off"
-  sleep 4
-  mc_cmd "save-all flush"
-  sleep 10
-}
+mc_cmd() { screen -S minecraft -X stuff "$1$(printf '\r')" 2>/dev/null || true; }
 
-save_on() {
-  mc_cmd "save-on"
-  sleep 2
-}
-
-# Нужен флаг — trap выставляется до save-off,
-# чтобы не включить save-on если мы его ещё не выключали
 SAVE_OFF_DONE=false
-
 on_exit() {
-  local exit_code=$?
-  if $SAVE_OFF_DONE; then
-    save_on
+  local code=$?
+  if $SAVE_OFF_DONE && server_alive; then
+    mc_cmd "save-on"
     log "save-on (cleanup)"
   fi
-  if [ $exit_code -ne 0 ]; then
-    log "=== БЭКАП ЗАВЕРШЁН С ОШИБКОЙ (код $exit_code) ==="
-  fi
-  echo "" >> "$LOG"
+  [ $code -ne 0 ] && log "=== БЭКАП ЗАВЕРШЁН С ОШИБКОЙ (код $code) ==="
+  exit $code
 }
-
 trap on_exit EXIT
-
-# Утилита для rsync с разбором кода возврата
-run_rsync() {
-  local dest="$1"
-  shift
-  local extra_opts=("$@")
-
-  rsync "${RSYNC_BASE_OPTS[@]}" "${extra_opts[@]}" \
-    "${RSYNC_SOURCES[@]}" \
-    "${BACKUP_HOST}:${BACKUP_DIR}/${dest}/" >> "$LOG" 2>&1
-}
 
 log "=== БЭКАП НАЧАТ ==="
 
-# Находим предыдущий бэкап для --link-dest (hardlink-дедупликация)
-PREV_BACKUP=$(ssh -p "$BACKUP_PORT" "$BACKUP_HOST" \
-  "ls -1d ${BACKUP_DIR}/daily-* ${BACKUP_DIR}/monthly-* 2>/dev/null | sort -r | head -n 1" \
-  2>/dev/null || true)
-
-declare -a HARDLINK_OPT=()
-if [ -n "$PREV_BACKUP" ]; then
-  PREV_NAME=$(basename "$PREV_BACKUP")
-  HARDLINK_OPT=(--link-dest="../${PREV_NAME}")
-  log "Hardlink от: $PREV_NAME"
+if server_alive; then
+  log "save-off + save-all flush"
+  mc_cmd "save-off"
+  SAVE_OFF_DONE=true
+  sleep 4
+  mc_cmd "save-all flush"
+  sleep 20
 else
-  log "Первый бэкап — полный"
+  log "Сервер не запущен, сохранение не трогаем"
 fi
 
-# Временно отключаем автосохранение
-log "Отключаем автосохранение (save-off / save-all flush)..."
-save_off
-SAVE_OFF_DONE=true
+ARCHIVE="daily-$(date +%Y-%m-%d_%H%M)"
+cd "$SERVER_DIR" || exit 1
 
-# Ежедневный бэкап
-log "Создаём daily-${DATE}..."
-rsync_exit=0
-run_rsync "daily-${DATE}" "${HARDLINK_OPT[@]}" || rsync_exit=$?
+# --exclude-caches не нужен, исключаем только то, что не бэкапим
+timeout "$BACKUP_TIMEOUT" borg create \
+  --stats --compression lz4 \
+  --exclude '*/session.lock' --exclude '*.tmp' \
+  "::${ARCHIVE}" \
+  2025 2025_nether 2025_the_end plugins \
+  *.yml *.properties *.json >> "$LOG" 2>&1
+rc=$?
 
-if [ $rsync_exit -eq 0 ]; then
-  log "daily-${DATE} успешно создан"
-elif [ $rsync_exit -eq 23 ]; then
-  # Код 23 — часть файлов не передана (обычно из-за блокировки JVM). Не фатально.
-  log "daily-${DATE} создан (rsync код 23: часть файлов заблокирована — ожидаемо)"
-else
-  log "ОШИБКА: rsync завершился с кодом $rsync_exit"
-  exit $rsync_exit
+# rc 0 = успех, 1 = предупреждения (файл менялся во время чтения): для живого мира нормально
+if [ $rc -ne 0 ] && [ $rc -ne 1 ]; then
+  log "ОШИБКА: borg create код $rc"
+  exit $rc
+fi
+log "Архив $ARCHIVE создан (код $rc)"
+
+# Сразу включаем сохранение, не ждём чистки
+if $SAVE_OFF_DONE && server_alive; then
+  mc_cmd "save-on"
+  SAVE_OFF_DONE=false
+  log "save-on"
 fi
 
-# Ежемесячный бэкап (только 1-го числа)
-if [ "$(date +%d)" -eq 1 ]; then
-  log "Создаём monthly-${MONTHLY_DATE} (hardlink от daily-${DATE})..."
-  monthly_exit=0
-  run_rsync "monthly-${MONTHLY_DATE}" --link-dest="../daily-${DATE}" || monthly_exit=$?
-
-  if [ $monthly_exit -eq 0 ] || [ $monthly_exit -eq 23 ]; then
-    log "monthly-${MONTHLY_DATE} успешно создан"
-  else
-    log "ПРЕДУПРЕЖДЕНИЕ: monthly rsync завершился с кодом $monthly_exit"
-  fi
-fi
-
-# Включаем автосохранение обратно
-log "Включаем автосохранение..."
-save_on
-SAVE_OFF_DONE=false
-
-# Удаляем старые daily, оставляем 3 последних
-log "Удаляем старые daily-бэкапы (оставляем 3)..."
-ssh -p "$BACKUP_PORT" "$BACKUP_HOST" \
-  "ls -1d ${BACKUP_DIR}/daily-* 2>/dev/null | sort -r | tail -n +4 | xargs -r rm -rf" \
-  >> "$LOG" 2>&1 || true
+# Хранить: 7 дней, 4 недели, 6 месяцев
+borg prune --list --keep-daily 7 --keep-weekly 4 --keep-monthly 6 >> "$LOG" 2>&1 \
+  || log "ПРЕДУПРЕЖДЕНИЕ: prune завершился с ошибкой"
+borg compact >> "$LOG" 2>&1 || log "ПРЕДУПРЕЖДЕНИЕ: compact завершился с ошибкой"
 
 log "=== БЭКАП ЗАВЕРШЁН УСПЕШНО ==="
