@@ -190,6 +190,19 @@ nginx -t && systemctl reload nginx
 
 frpc сам повторяет попытку каждые ~30 секунд и занимает порт после `reload`.
 
+
+### 7. Сертификат ru.totemcraft.net (Let's Encrypt)
+
+Сертификат на `ru.totemcraft.net` и `ru.wiki.totemcraft.net` выпущен certbot с плагином nginx (`authenticator = nginx` в `/etc/letsencrypt/renewal/ru.totemcraft.net.conf`) и продлевается сам по `certbot.timer`. Для этого на русском VPS должен стоять пакет `python3-certbot-nginx`:
+
+```bash
+apt install -y python3-certbot-nginx
+certbot renew
+certbot certificates   # срок действия
+```
+
+**Случай 02.07-12.10.2026.** Плагина nginx на сервере не было, продление падало каждую ночь (`journalctl -u certbot`: `All renewals failed`), и с 02.07.2026 сертификат был просрочен: браузеры показывали предупреждение на ru-сайте и ru-вики. 12.10.2026 плагин поставлен, сертификат продлён до 10.01.2027, копия старых настроек в `/root/letsencrypt.bak-2026-10-12`.
+
 ___
 Примечание:
 
