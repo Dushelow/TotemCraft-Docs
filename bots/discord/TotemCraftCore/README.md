@@ -1,4 +1,6 @@
-# CoreHelper
+# TotemCraftCore
+
+Программа работает под ботом Discord «TotemCraft | Core», служба на VPS `totemcraftcore`.
 
 Бот-помощник Discord-сервера TotemCraft. Заменяет закрывшуюся Лакуну (последняя запись в журнале 31.08.2026). Поведение повторяет то, что Лакуна делала на сервере по её журналу с 27.02 по 31.08.2026.
 
@@ -14,7 +16,7 @@
 
 ## Права бота
 
-Отдельное приложение, не «TotemCraft | Core». Без Administrator, только:
+Работает под ботом «TotemCraft | Core» (права Administrator). Если когда-нибудь вынести на отдельное приложение, ему хватит:
 View Channels, Send Messages, Embed Links, Read Message History, Add Reactions, Create Public Threads, Send Messages in Threads, Manage Roles, Manage Channels, Move Members, View Audit Log.
 Privileged intents: Server Members, Message Content.
 
@@ -22,7 +24,7 @@ Privileged intents: Server Members, Message Content.
 
 ## Настройка
 
-Номера каналов и ролей в `.env.example`. Токен только в `/home/corehelper/.env`, в репозиторий не коммитится.
+Номера каналов и ролей в `.env.example`. Токен только в `/home/totemcraftcore/.env`, в репозиторий не коммитится.
 
 ## Тесты
 

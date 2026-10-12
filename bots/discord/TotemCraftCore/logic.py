@@ -1,4 +1,4 @@
-"""Чистая логика CoreHelper без зависимости от discord.py: её проверяют тесты."""
+"""Чистая логика TotemCraftCore без зависимости от discord.py: её проверяют тесты."""
 import re
 from datetime import datetime
 

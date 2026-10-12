@@ -1,0 +1,14 @@
+[Unit]
+Description=TotemCraftCore Discord bot (TotemCraft | Core)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=totemcraftcore
+WorkingDirectory=/home/totemcraftcore/TotemCraftCore
+ExecStart=/home/totemcraftcore/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

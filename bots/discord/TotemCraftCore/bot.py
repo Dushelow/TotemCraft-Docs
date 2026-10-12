@@ -1,4 +1,4 @@
-"""CoreHelper: замена закрывшейся Лакуны на сервере TotemCraft.
+"""TotemCraftCore: замена закрывшейся Лакуны на сервере TotemCraft.
 
 Пять задач:
 1. Галочка в «регистрации» выдаёт роли Verified и «Игрок сервера».
@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 import logic
 from storage import Storage
 
-load_dotenv(os.getenv("COREHELPER_ENV", "/home/corehelper/.env"))
+load_dotenv(os.getenv("TOTEMCRAFTCORE_ENV", "/home/totemcraftcore/.env"))
 
 
 def _id(name: str) -> int:
@@ -36,7 +36,7 @@ GALLERY_REACTION   = os.getenv("GALLERY_REACTION", "👍")
 EVENTS_CHANNEL_ID  = _id("EVENTS_CHANNEL_ID")
 VOICE_HUB_ID       = _id("VOICE_HUB_CHANNEL_ID")
 VOICE_CATEGORY_ID  = _id("VOICE_CATEGORY_ID")
-DB_PATH            = os.getenv("DB_PATH", "/home/corehelper/corehelper.db")
+DB_PATH            = os.getenv("DB_PATH", "/home/totemcraftcore/totemcraftcore.db")
 MESSAGE_KEEP_DAYS  = int(os.getenv("MESSAGE_KEEP_DAYS", "30"))
 
 GREEN, RED, ORANGE = 0x43B581, 0xF04747, 0xFAA61A
@@ -47,7 +47,7 @@ intents.message_content = True
 
 
 def log(text: str):
-    print(f"[CoreHelper] {text}", flush=True)
+    print(f"[TotemCraftCore] {text}", flush=True)
 
 
 def who(user) -> str:
@@ -67,7 +67,7 @@ def embed(title: str, color: int, description: str | None = None,
     return e
 
 
-class CoreHelper(discord.Client):
+class TotemCraftCore(discord.Client):
     def __init__(self):
         super().__init__(intents=intents)
         self.store = Storage(DB_PATH)
@@ -434,4 +434,4 @@ class CoreHelper(discord.Client):
 
 
 if __name__ == "__main__":
-    CoreHelper().run(BOT_TOKEN)
+    TotemCraftCore().run(BOT_TOKEN)
