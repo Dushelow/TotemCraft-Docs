@@ -171,6 +171,24 @@ nginx -t && systemctl restart nginx
 - https://ru.totemcraft.net/
 - https://ru.wiki.totemcraft.net/
 - Minecraft: `IP_РУ_сервера:20098`
+- Туннель на основном сервере: `journalctl -u frpc --since "-5 min"` должен показывать `[minecraft-java] start proxy success`, а не `port unavailable`.
+- На русском VPS порт 20098 должен держать frps: `ss -ltnp | grep 20098` показывает `frps`, а не `nginx`.
+
+### 6. Порт 20098 только для frp
+
+nginx на русском VPS обслуживает **только** сайт и вики (порты 80 и 443). Никаких блоков `stream` с `listen 20098` в nginx быть не должно: если nginx займёт игровой порт, frp не сможет его открыть, и вход для РФ сломается.
+
+**Случай 02.10.2026.** На русском VPS был файл `/etc/nginx/stream.conf` (подключён в `nginx.conf` строкой `include /etc/nginx/stream.conf;`). Он слушал 20098 и пересылал игроков на `IP_сервера_сайта:20098`, то есть на сервер сайта, где Minecraft нет. Пока порт держал frp, файл ничем не мешал. 02.10.2026 в 04:52 связь frpc с frps на секунду оборвалась, frp отпустил порт, и его занял nginx. С этого момента frpc писал `[minecraft-java] start error: port unavailable`, а игроки по `ru.totemcraft.net` не могли зайти. Перезапуск frpc не помогает: порт держит nginx.
+
+Починка (12.10.2026): все строки `stream.conf` закомментированы, копия лежит в `/root/stream.conf.bak-2026-10-12`.
+
+```bash
+cp /etc/nginx/stream.conf /root/stream.conf.bak-2026-10-12
+sed -i 's/^/#/' /etc/nginx/stream.conf
+nginx -t && systemctl reload nginx
+```
+
+frpc сам повторяет попытку каждые ~30 секунд и занимает порт после `reload`.
 
 ___
 Примечание:
