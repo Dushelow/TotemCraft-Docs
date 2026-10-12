@@ -1,0 +1,14 @@
+[Unit]
+Description=TotemCraft CoreHelper Discord bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=corehelper
+WorkingDirectory=/home/corehelper/CoreHelper
+ExecStart=/home/corehelper/venv/bin/python bot.py
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
