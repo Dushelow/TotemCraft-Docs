@@ -2520,7 +2520,9 @@ def outbox_refusal(tg_id, text, close=False):
         return "пустой текст"
     if len(text) > OUTBOX_MAX_LEN:
         return f"текст длиннее {OUTBOX_MAX_LEN} знаков"
-    if not storage.query("SELECT 1 FROM messages WHERE tg_id=? AND sender='user' LIMIT 1", (tg_id,)):
+    # заявка тоже считается: игрок сам открыл чат с ботом, и бот ему уже писал о решении
+    if not storage.query("SELECT 1 FROM messages WHERE tg_id=? AND sender='user' "
+                         "UNION SELECT 1 FROM applications WHERE tg_id=? LIMIT 1", (tg_id, tg_id)):
         return "игрок не писал боту"
     talker = dialog_admin(tg_id)
     if talker is not None:

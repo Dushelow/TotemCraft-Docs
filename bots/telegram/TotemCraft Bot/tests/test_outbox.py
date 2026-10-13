@@ -82,6 +82,13 @@ for r, t, what in ids:
 del bot.dialogs[ADMIN]
 bot.blocked_users.discard(P3)
 
+APPLICANT = 9001  # подал заявку, но в обращения не писал
+storage.execute("INSERT INTO applications (created_at, tg_id, nick, status) VALUES (?,?,?,?)",
+                ('2026-10-13T08:00:00+00:00', APPLICANT, 'Kufirix', 'Одобрено'))
+r = queue(APPLICANT, "Зайдите под ником Kufirix.")
+log = run_job()
+check(row(r)[0] == 'sent' and len(sent_to(log, APPLICANT)) == 1, "тому, кто подавал заявку, писать можно")
+
 print("\n=== 4. Игрок заблокировал бота ===")
 ctx.blocked_chats.add(P3)
 r = queue(P3, "ответ")
