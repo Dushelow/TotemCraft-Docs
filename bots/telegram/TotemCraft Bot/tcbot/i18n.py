@@ -91,11 +91,11 @@ T = {
                           'en': "⏳ You already have an active application."},
     'ask_nick': {
         'ru': "📝 <b>Заявка · шаг 1 из 2</b>\nВведите ваш Minecraft ник (3–16 символов, A-Z, a-z, 0-9, _):\n"
-              "<i>Поменять ник потом нельзя.</i>",
+              "<i>Пишите как в игре: Steve и steve — разные ники. Поменять ник потом нельзя.</i>",
         'uk': "📝 <b>Заявка · крок 1 з 2</b>\nВведіть ваш нік у Minecraft (3–16 символів, A-Z, a-z, 0-9, _):\n"
-              "<i>Змінити нік потім не можна.</i>",
+              "<i>Пишіть як у грі: Steve і steve — різні ніки. Змінити нік потім не можна.</i>",
         'en': "📝 <b>Application · step 1 of 2</b>\nEnter your Minecraft nickname (3–16 characters, A-Z, a-z, 0-9, _):\n"
-              "<i>You will not be able to change it later.</i>"},
+              "<i>Type it exactly as in the game: Steve and steve are different names. You will not be able to change it later.</i>"},
     'bad_nick': {'ru': "❌ Недопустимый ник.\n{reason}\nПожалуйста, введите другой ник:",
                  'uk': "❌ Недопустимий нік.\n{reason}\nБудь ласка, введіть інший нік:",
                  'en': "❌ Invalid nickname.\n{reason}\nPlease enter another nickname:"},
