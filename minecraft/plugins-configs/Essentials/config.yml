@@ -990,7 +990,7 @@ chat:
   # Note: The {DISPLAYNAME} placeholder includes {PREFIX} and {SUFFIX} by default.
   # Using these together may result in double prefixes/suffixes in chat.
 
-  format: '<{DISPLAYNAME}> {MESSAGE}'
+  format: '{clan}&f<{DISPLAYNAME}> {MESSAGE}'
   #format: '&7[{GROUP}]&r {DISPLAYNAME}&7:&r {MESSAGE}'
   #format: '&7{PREFIX}&r {NICKNAME}&r &7{SUFFIX}&r: {MESSAGE}'
 
@@ -1032,7 +1032,7 @@ chat:
   # This is required for modern chat features such as hover events and click events.
   # If you're experiencing issues with other plugins that use the chat event system, you can disable this.
   # You must restart your server after changing this setting.
-  paper-chat-events: true
+  paper-chat-events: false
 
 ############################################################
 # +------------------------------------------------------+ #
