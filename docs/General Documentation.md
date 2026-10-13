@@ -50,7 +50,7 @@
 | Голосовой чат       | PlasmoVoice                               | -                                 |
 | Кросс-платформа     | Geyser + Floodgate                        | -                                 |
 | Anti-Xray           | Engine-mode 3 (Overworld + Nether)        | Выключен в Энде                   |
-| Бэкапы              | rsync + hardlinks (Storage Box) + Mega.nz | Ежедневные + Ежемесячные          |
+| Бэкапы              | borg (Storage Box) + Mega.nz              | Ежедневные + Ежемесячные          |
 | Регистрация         | Telegram-бот + динамический вайтлист      | Включается по графику             |
 
 **MOTD:** `§bВанильный сервер §f\| §aБез доната §f\| §eБез вайпов`
@@ -82,18 +82,27 @@ graph TD
     subgraph "Основной сервер\nHetzner\nYOUR_MAIN_IP"
         MC[Purpur 1.21.11\nPort 20098]
         BOT[Telegram Bot\nWhitelist + Тикеты]
+        DBOT[Discord-боты\nTotemCraft Core + Fish Bot]
+    end
+
+    subgraph "Сервер сайта\nYOUR_WEBSITE_IP"
         WEB[nginx + PHP + wiki.js]
     end
 
     subgraph "Хранение"
-        ST[Hetzner Storage Box\n1 ТБ\nrsync + hardlinks]
+        ST[Hetzner Storage Box\n1 ТБ\nborg]
         MEGA[Mega.nz\nРучные архивы]
     end
+
+    DC[Discord]
 
     A & B --> CF
     CF --> FRP & MC & WEB
     FRP --> MC
     BOT <--> MC
+    BOT --> DC
+    MC <-->|DiscordSRV| DC
+    DBOT --> DC
     MC <--> ST & MEGA
 ```
 
@@ -161,7 +170,7 @@ sequenceDiagram
 - Все feature-seeds полностью рандомизированы.
 
 #### 3.6 Система резервного копирования
-- **Автоматическая:** `backup.sh` (rsync + hardlinks) на Hetzner Storage Box (3 daily + monthly).
+- **Автоматическая:** `backup.sh` (borg) на Hetzner Storage Box, каждый день в 5:00 МСК, хранится 7 ежедневных, 4 еженедельных и 6 ежемесячных архивов.
 - **Ручная:** При необходимости создаются архивы на Mega.nz.
 - Подробные инструкции - **Приложение D**.
 
@@ -224,7 +233,7 @@ sequenceDiagram
 | **A** | `Конфигурация механик.md` | Полная конфигурация всех конфигов ядра | Самый важный технический документ. Содержит таблицы **server.properties**, `bukkit.yml`, `spigot.yml`, `purpur.yml`, `paper-world-defaults.yml`, `paper-global.yml` с текущими значениями, дефолтами и пояснениями. |
 | **B** | `Список плагинов.md` | Инвентаризация всех установленных плагинов | Полный список из **47 плагинов** с краткими описаниями. |
 | **C** | `Оптимизация.md` | Подробное описание всех уровней оптимизации | Конфиги плагинов (`ChunkSpawnerLimiter`, `ClearLag`), Java-флаги Aikar's, системные настройки (zRAM, sysctl, limits). |
-| **D** | `Бекапы на сервере Hetzner Storage.md` + `Ручной бекап Mega.nz.md` | Система резервного копирования | Автоматический скрипт `backup.sh` (rsync + hardlinks), cron, инструкции по восстановлению и ручным бэкапам. |
+| **D** | `Бекапы на сервере Hetzner Storage.md` + `Ручной бекап Mega.nz.md` | Система резервного копирования | Автоматический скрипт `backup.sh` (borg), cron, инструкции по восстановлению и ручным бэкапам. |
 | **E** | `Прокси - ru.totemcraft.net и ru.wiki.totemcraft.net.md` + `Основной сайт - totemcraft.net.md` + `Вики - wiki.totemcraft.net.md` | Конфигурация веб-проксирования | Все nginx-конфиги (`ru.conf`, `default`, `wiki.totemcraft.net`). |
 | **F** | `Деплой на VPS хост Hetzner.md` | Полный гайд по развертыванию сервера | Пошаговая инструкция от установки ОС до запуска systemd-сервиса. |
 | **G** | `Скрипт на автовключение реги AuthMe.md` + `Шпаргалка по командам терминала скрипта.md` | Управление вайтлистом | Скрипт `toggle-authme.sh`, cron-расписание, логи и диагностика. |
