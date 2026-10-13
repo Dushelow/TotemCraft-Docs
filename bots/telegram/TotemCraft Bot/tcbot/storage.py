@@ -16,7 +16,7 @@ from datetime import datetime
 from . import config, timeutil
 from .logs import log_error, log_warning
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 LEGACY_DIR = 'legacy_files'  # сюда переезжают старые файлы после переноса в базу
 
 _lock = threading.RLock()
@@ -102,7 +102,21 @@ def _v2(c):
     _import_legacy_files(c)
 
 
-MIGRATIONS = {1: _v1, 2: _v2}
+def _v3(c):
+    """Очередь ответов игрокам от Claude (бот сам отправляет и пишет в переписку)
+    и журнал групп, где бот состоит: бот там молчит, только запоминает."""
+    c.execute("""CREATE TABLE IF NOT EXISTS outbox (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, tg_id INTEGER NOT NULL,
+                 text TEXT NOT NULL, close INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'new',
+                 done_at TEXT, note TEXT)""")
+    c.execute("""CREATE TABLE IF NOT EXISTS group_log (
+                 id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, chat_id INTEGER NOT NULL, chat_title TEXT,
+                 message_id INTEGER, from_id INTEGER, from_name TEXT, from_username TEXT, reply_to INTEGER,
+                 text TEXT, photo TEXT)""")
+    c.execute("CREATE INDEX IF NOT EXISTS group_log_ts ON group_log(chat_id, ts)")
+
+
+MIGRATIONS = {1: _v1, 2: _v2, 3: _v3}
 
 
 def migrate():

@@ -925,14 +925,16 @@ ACTION_NAMES = {
     'raid_auto_on': '🛡 включил автовключение рейд-режима', 'raid_auto_off': '🛡 выключил автовключение рейд-режима',
     'word_added': '📖 добавил слово в словарь', 'word_removed': '📖 убрал слово из словаря',
     'twin_suspect': '🔴 возможный твинк: IP связан с баном',
+    'ticket_answered': '✅ ответил и закрыл обращение', 'outbox_refused': '⛔ ответ не отправлен',
 }
 
-def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None):
-    """Запись в журнал: кто, что и с кем сделал. actor_id=None — действие самого бота."""
+def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None, actor_name=None):
+    """Запись в журнал: кто, что и с кем сделал. actor_id=None — действие самого бота
+    (actor_name — от чьего имени, например Claude через очередь ответов)."""
     try:
         if actor_role is None:
             actor_role = staff[actor_id]['role'] if actor_id in staff else ('system' if actor_id is None else 'player')
-        name = 'бот' if actor_id is None else (staff_name(actor_id) if actor_role != 'player' else '')
+        name = actor_name or ('бот' if actor_id is None else (staff_name(actor_id) if actor_role != 'player' else ''))
         db_exec("INSERT INTO audit (ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details) "
                 "VALUES (?,?,?,?,?,?,?,?)",
                 (timeutil.now_iso(), actor_id, name, actor_role, action,
@@ -1939,7 +1941,7 @@ def resolve_player(query):
 def _journal_line(viewer, ts, actor_id, actor_name, actor_role, action, target_id, target_nick, details):
     when = fmt_time(ts, viewer, '%d.%m %H:%M')
     if actor_role == 'system':
-        who = "🤖 Бот"
+        who = f"🤖 {escape_html(actor_name)}" if actor_name and actor_name != 'бот' else "🤖 Бот"
     elif actor_role == 'player':
         who = "👤 Игрок"
     else:
@@ -2436,6 +2438,8 @@ def guarded(handler):
                     answer_cb(obj.id)
                 except Exception:
                     pass
+            else:
+                log_group_message(obj)  # только запоминаем, в группу ничего не пишем
             return None
         started = time.time()
         try:
@@ -2464,6 +2468,102 @@ def guarded(handler):
     wrapper.__name__ = handler.__name__
     wrapper.__doc__ = handler.__doc__
     return wrapper
+
+# ---------- Журнал групп ----------
+GROUP_LOG_KEEP_DAYS = 60
+
+def log_group_message(m):
+    """Сообщение из группы в group_log, чтобы администрация (и Claude) могла прочитать общий чат.
+    Бот в группе ничего не отправляет: эта функция только пишет в базу."""
+    try:
+        u = m.from_user
+        name = " ".join(x for x in (getattr(u, 'first_name', None), getattr(u, 'last_name', None)) if x) if u else ''
+        photo = m.photo[-1].file_id if getattr(m, 'photo', None) else None
+        reply = m.reply_to_message.message_id if getattr(m, 'reply_to_message', None) else None
+        storage.execute("INSERT INTO group_log (ts, chat_id, chat_title, message_id, from_id, from_name, from_username, "
+                        "reply_to, text, photo) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        (timeutil.now_iso(), m.chat.id, getattr(m.chat, 'title', None), m.message_id,
+                         u.id if u else None, name, getattr(u, 'username', None) if u else None, reply,
+                         (m.text or m.caption or '')[:4000], photo))
+    except Exception as e:
+        log_error(e)
+
+def group_log_cleanup():
+    try:
+        border = (timeutil.now_utc() - timedelta(days=GROUP_LOG_KEEP_DAYS)).isoformat(timespec="seconds")
+        storage.execute("DELETE FROM group_log WHERE ts < ?", (border,))
+    except Exception as e:
+        log_error(e)
+
+# ---------- Очередь ответов от Claude ----------
+# Claude кладёт ответ в таблицу outbox (tcbot/outbox_cli.py на сервере), бот раз в 10 секунд отправляет.
+# Игрок видит то же «Сообщение от администрации», что и от админов; в переписке и журнале подпись Claude.
+OUTBOX_NAME = 'Claude'
+OUTBOX_MAX_LEN = 3500
+
+def outbox_refusal(tg_id, text):
+    """Почему этот ответ отправлять нельзя, или None. Писать можно только в личку тому,
+    кто сам писал боту: никаких групп, команды, заблокированных и чужих диалогов."""
+    if tg_id <= 0:
+        return "не личный чат (группа или канал)"
+    if tg_id in staff:
+        return "это член команды"
+    if tg_id in blocked_users:
+        return "игрок заблокирован в боте"
+    if not text.strip():
+        return "пустой текст"
+    if len(text) > OUTBOX_MAX_LEN:
+        return f"текст длиннее {OUTBOX_MAX_LEN} знаков"
+    if not storage.query("SELECT 1 FROM messages WHERE tg_id=? AND sender='user' LIMIT 1", (tg_id,)):
+        return "игрок не писал боту"
+    talker = dialog_admin(tg_id)
+    if talker is not None:
+        return f"с игроком сейчас ведёт диалог {staff_name(talker)}"
+    return None
+
+def outbox_job():
+    try:
+        rows = storage.query("SELECT id, tg_id, text, close FROM outbox WHERE status='new' ORDER BY id")
+    except Exception as e:
+        log_error(e)
+        return
+    for row_id, tg_id, text, close in rows:
+        try:
+            outbox_send(row_id, int(tg_id), text or '', bool(close))
+        except Exception as e:
+            log_error(e)
+
+def outbox_send(row_id, tg_id, text, close):
+    # сначала помечаем, потом шлём: при сбое посередине ответ не уйдёт игроку дважды
+    storage.execute("UPDATE outbox SET status='sending' WHERE id=? AND status='new'", (row_id,))
+    refusal = outbox_refusal(tg_id, text)
+    if refusal:
+        storage.execute("UPDATE outbox SET status='refused', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), refusal, row_id))
+        audit(None, 'outbox_refused', tg_id, player_nick(tg_id), refusal, actor_name=OUTBOX_NAME)
+        return
+    sent = safe_send(tg_id, tr(tg_id, 'msg_from_admins', text=escape_html(text)), parse_mode='HTML')
+    if not sent:
+        storage.execute("UPDATE outbox SET status='failed', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), "Telegram не принял: игрок заблокировал бота или удалил чат", row_id))
+        return
+    storage.add_message(tg_id, 'admin', text, staff_name=OUTBOX_NAME)
+    clear_unread(tg_id)
+    audit(None, 'msg_to_player', tg_id, player_nick(tg_id), text, actor_name=OUTBOX_NAME)
+    note = ''
+    if close:
+        ticket = get_ticket(tg_id)
+        close_ticket(tg_id)
+        if ticket:
+            safe_send(tg_id, tr(tg_id, 'ticket_closed_by_admin', id=ticket['id']),
+                      reply_markup=main_keyboard(is_admin=False, user_id=tg_id))
+            note = f"тикет #{ticket['id']} закрыт"
+        audit(None, 'ticket_answered', tg_id, player_nick(tg_id), note, actor_name=OUTBOX_NAME)
+        close_notices('ticket', tg_id, f"✅ <b>Ответил и закрыл:</b> {OUTBOX_NAME} {{t}}")
+    else:
+        close_notices('ticket', tg_id, f"💬 <b>Ответил:</b> {OUTBOX_NAME} {{t}}")
+    storage.execute("UPDATE outbox SET status='sent', done_at=?, note=? WHERE id=?",
+                    (timeutil.now_iso(), note, row_id))
 
 # ---------- Команды ----------
 def set_paused(actor, value):
@@ -3990,9 +4090,11 @@ def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
     schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
     schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима
+    schedule.every(10).seconds.do(outbox_job)  # ответы игрокам от Claude
+    schedule.every().day.at("04:10", "Europe/Moscow").do(group_log_cleanup)
     while True:
         schedule.run_pending()
-        time.sleep(60)
+        time.sleep(5)
 
 if __name__ == '__main__':
     # Владелец в списке команды под своим именем из Telegram
