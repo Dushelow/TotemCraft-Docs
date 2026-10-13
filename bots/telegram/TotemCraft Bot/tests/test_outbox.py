@@ -113,6 +113,18 @@ check(storage.query("SELECT COUNT(*) FROM group_log")[0][0] == 5, "старые 
 (t, _), log = press(P1, 'menu_apply')  # нажатие в личке работает как раньше
 check(any(m == 'answerCallbackQuery' or m.startswith('send') or m.startswith('edit') for m, _ in log), "личка не сломана")
 
+print("\n=== 5а. Закрыть старое обращение молча ===")
+bot.open_ticket(P3, 'давно'); bot.add_unread(P3); bot.blocked_users.add(P3)
+r = queue(P3, "", close=True)
+log = run_job()
+check(not [m for m, _ in log if m.startswith('send')] and row(r)[0] == 'sent', "игроку ничего не пришло, статус sent")
+check(bot.get_ticket(P3) is None and str(P3) not in bot.unread_messages, "обращение закрыто даже у заблокированного")
+r = queue(P3, "", close=True); run_job()
+check(row(r) == ('refused', 'открытого обращения нет'), f"повторно закрывать нечего: {row(r)}")
+r = queue(GROUP, "", close=True); run_job()
+check(row(r)[0] == 'refused', "группу «закрыть» тоже нельзя")
+bot.blocked_users.discard(P3)
+
 print("\n=== 6. Команда send с сервера ===")
 env = dict(os.environ, PYTHONPATH=fakes.BOT_DIR, PYTHONIOENCODING='utf-8')
 proc = subprocess.Popen([sys.executable, '-m', 'tcbot.outbox_cli', 'send', str(P2), '--close'], cwd=os.getcwd(),

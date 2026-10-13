@@ -1,6 +1,7 @@
 """Ответы игрокам от Claude через бота и чтение журнала группы. Запуск на сервере из папки бота:
 
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli send <tg_id> [--close] < ответ.txt
+  sudo -u totembot venv/bin/python -m tcbot.outbox_cli close <tg_id>       (закрыть молча, без сообщения)
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli status [N]
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli photo <file_id> <файл.jpg>
 
@@ -24,12 +25,12 @@ def db():
     return sqlite3.connect(DB_FILE, timeout=10)
 
 
-def send(argv):
+def send(argv, silent=False):
     if not argv or not argv[0].lstrip('-').isdigit():
         sys.exit("нужен tg_id игрока")
-    tg_id, close = int(argv[0]), '--close' in argv[1:]
-    text = sys.stdin.buffer.read().decode('utf-8').strip()
-    if not text:
+    tg_id, close = int(argv[0]), silent or '--close' in argv[1:]
+    text = '' if silent else sys.stdin.buffer.read().decode('utf-8').strip()
+    if not text and not silent:
         sys.exit("пустой текст")
     with db() as c:
         cur = c.execute("INSERT INTO outbox (created_at, tg_id, text, close) VALUES (?,?,?,?)",
@@ -74,4 +75,4 @@ def photo(argv):
 
 if __name__ == '__main__':
     cmd, rest = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ('', [])
-    {'send': send, 'status': status, 'photo': photo}.get(cmd, lambda _: sys.exit(__doc__))(rest)
+    {'send': send, 'close': lambda a: send(a, silent=True), 'status': status, 'photo': photo}.get(cmd, lambda _: sys.exit(__doc__))(rest)

@@ -2501,13 +2501,19 @@ def group_log_cleanup():
 OUTBOX_NAME = 'Claude'
 OUTBOX_MAX_LEN = 3500
 
-def outbox_refusal(tg_id, text):
+def outbox_refusal(tg_id, text, close=False):
     """Почему этот ответ отправлять нельзя, или None. Писать можно только в личку тому,
-    кто сам писал боту: никаких групп, команды, заблокированных и чужих диалогов."""
+    кто сам писал боту: никаких групп, команды, заблокированных и чужих диалогов.
+    Пустой текст с close — закрыть обращение молча (можно и у заблокированного)."""
     if tg_id <= 0:
         return "не личный чат (группа или канал)"
     if tg_id in staff:
         return "это член команды"
+    if close and not text.strip():
+        if get_ticket(tg_id) is None and str(tg_id) not in unread_messages:
+            return "открытого обращения нет"
+        talker = dialog_admin(tg_id)
+        return f"с игроком сейчас ведёт диалог {staff_name(talker)}" if talker is not None else None
     if tg_id in blocked_users:
         return "игрок заблокирован в боте"
     if not text.strip():
@@ -2536,11 +2542,22 @@ def outbox_job():
 def outbox_send(row_id, tg_id, text, close):
     # сначала помечаем, потом шлём: при сбое посередине ответ не уйдёт игроку дважды
     storage.execute("UPDATE outbox SET status='sending' WHERE id=? AND status='new'", (row_id,))
-    refusal = outbox_refusal(tg_id, text)
+    refusal = outbox_refusal(tg_id, text, close)
     if refusal:
         storage.execute("UPDATE outbox SET status='refused', done_at=?, note=? WHERE id=?",
                         (timeutil.now_iso(), refusal, row_id))
         audit(None, 'outbox_refused', tg_id, player_nick(tg_id), refusal, actor_name=OUTBOX_NAME)
+        return
+    if not text.strip():
+        # старое, давно решённое обращение: закрыть без сообщения игроку
+        ticket = get_ticket(tg_id)
+        close_ticket(tg_id)
+        clear_unread(tg_id)
+        note = f"тикет #{ticket['id']} закрыт" if ticket else "отмечено прочитанным"
+        audit(None, 'ticket_closed', tg_id, player_nick(tg_id), note, actor_name=OUTBOX_NAME)
+        close_notices('ticket', tg_id, f"🔒 <b>Закрыто без ответа</b> · {OUTBOX_NAME}")
+        storage.execute("UPDATE outbox SET status='sent', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), note, row_id))
         return
     sent = safe_send(tg_id, tr(tg_id, 'msg_from_admins', text=escape_html(text)), parse_mode='HTML')
     if not sent:
