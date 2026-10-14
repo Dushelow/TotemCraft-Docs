@@ -2725,7 +2725,7 @@ checks:
           decay: 0.275
       c:
         enabled: true
-        punishable: true
+        punishable: false
         discord-alert-interval: 5
         setback: false
         min-vl-to-setback: 1
