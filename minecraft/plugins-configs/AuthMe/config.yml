@@ -344,7 +344,7 @@ settings:
             # Show a 'Forgot Password?' button in the post-join login dialog.
             # When clicked, executes /email recover using the email entered in the recovery field.
             # Requires an email provider to be configured to be useful.
-            showForgotPasswordButton: true
+            showForgotPasswordButton: false
             # Show a short description body in login, register, and two-factor dialogs.
             # The body text helps players understand what the dialog is asking them to do.
             showBody: true
