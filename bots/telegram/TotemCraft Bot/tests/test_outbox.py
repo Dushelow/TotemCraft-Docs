@@ -132,6 +132,28 @@ r = queue(GROUP, "", close=True); run_job()
 check(row(r)[0] == 'refused', "группу «закрыть» тоже нельзя")
 bot.blocked_users.discard(P3)
 
+print("\n=== 5б. Ответ в группе только через очередь и только ответом ===")
+bot._group_chat_id = GROUP
+storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, reply_to) VALUES (?,?,?,?,?)",
+                ('2026-10-14T12:00:00+00:00', 0, 'Обновите игру, порт 19132.', 0, 266720))
+r = storage.query("SELECT max(id) FROM outbox")[0][0]
+log = run_job()
+sends = [p for m, p in log if m == 'sendMessage']
+check(len(sends) == 1 and str(sends[0]['chat_id']) == str(GROUP) and '266720' in str(sends[0].get('reply_parameters')),
+      f"в группу ушёл один ответ на сообщение 266720: {sends}")
+check(row(r)[0] == 'sent', f"в очереди sent: {row(r)}")
+check(storage.query("SELECT from_name, reply_to FROM group_log ORDER BY id DESC LIMIT 1")[0] == ('Claude', 266720),
+      "ответ записан в журнал группы")
+storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, reply_to) VALUES (?,?,?,?,?)",
+                ('2026-10-14T12:00:00+00:00', 0, 'Просто сообщение в группу', 0, None))
+r = storage.query("SELECT max(id) FROM outbox")[0][0]
+log = run_job()
+check(not [m for m, _ in log if m.startswith('send')] and row(r)[0] == 'refused',
+      f"без ответа на сообщение в группу не пишет: {row(r)}")
+for text in ("бот, ответь", "/start"):
+    log = say(P1, text, chat_id=GROUP, chat_type='supergroup')
+    check(not [m for m, _ in log if m.startswith('send')], f"на «{text}» в группе по-прежнему тишина")
+
 print("\n=== 6. Команда send с сервера ===")
 env = dict(os.environ, PYTHONPATH=fakes.BOT_DIR, PYTHONIOENCODING='utf-8')
 proc = subprocess.Popen([sys.executable, '-m', 'tcbot.outbox_cli', 'send', str(P2), '--close'], cwd=os.getcwd(),

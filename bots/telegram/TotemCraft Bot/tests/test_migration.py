@@ -53,8 +53,8 @@ print("=== Перенос ===")
 ctx = fakes.start(BOT_WORK, MC, owner=1000)
 bot = ctx.bot
 q = bot.storage.query
-check(q("SELECT value FROM meta WHERE key='schema_version'")[0][0] == '3', "база обновлена до версии 3")
-check(os.path.exists(os.path.join('backups', 'bot-before-v3.db')), "перед обновлением сделана копия старой базы")
+check(q("SELECT value FROM meta WHERE key='schema_version'")[0][0] == '4', "база обновлена до версии 4")
+check(os.path.exists(os.path.join('backups', 'bot-before-v4.db')), "перед обновлением сделана копия старой базы")
 apps = q("SELECT tg_id, nick, status, player_comment, decided_at, decided_by_name FROM applications ORDER BY id")
 check(len(apps) == 3, f"перенесены 3 заявки истории: {len(apps)}")
 check(apps[0][4] == '2026-04-27T07:52:00+00:00', f"10:52 по Москве стало 07:52 UTC: {apps[0][4]}")

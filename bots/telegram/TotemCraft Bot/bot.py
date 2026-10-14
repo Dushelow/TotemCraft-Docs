@@ -926,6 +926,7 @@ ACTION_NAMES = {
     'word_added': '📖 добавил слово в словарь', 'word_removed': '📖 убрал слово из словаря',
     'twin_suspect': '🔴 возможный твинк: IP связан с баном',
     'ticket_answered': '✅ ответил и закрыл обращение', 'outbox_refused': '⛔ ответ не отправлен',
+    'group_reply': '💬 ответил в группе',
 }
 
 def audit(actor_id, action, target_id=None, target_nick='', details='', actor_role=None, actor_name=None):
@@ -2531,15 +2532,58 @@ def outbox_refusal(tg_id, text, close=False):
 
 def outbox_job():
     try:
-        rows = storage.query("SELECT id, tg_id, text, close FROM outbox WHERE status='new' ORDER BY id")
+        rows = storage.query("SELECT id, tg_id, text, close, reply_to FROM outbox WHERE status='new' ORDER BY id")
     except Exception as e:
         log_error(e)
         return
-    for row_id, tg_id, text, close in rows:
+    for row_id, tg_id, text, close, reply_to in rows:
         try:
-            outbox_send(row_id, int(tg_id), text or '', bool(close))
+            if int(tg_id) == 0:
+                outbox_group_reply(row_id, reply_to, text or '')
+            else:
+                outbox_send(row_id, int(tg_id), text or '', bool(close))
         except Exception as e:
             log_error(e)
+
+# Ответ в группе (tg_id=0 в очереди): только в группу проверки подписки и только ответом на сообщение.
+# Сам бот на сообщения группы по-прежнему не реагирует: пишет туда только то, что положил Claude.
+_group_chat_id = None
+
+def group_chat_id():
+    global _group_chat_id
+    if _group_chat_id is None:
+        _group_chat_id = bot.get_chat(SUBSCRIBE_CHAT).id
+    return _group_chat_id
+
+def outbox_group_reply(row_id, reply_to, text):
+    storage.execute("UPDATE outbox SET status='sending' WHERE id=? AND status='new'", (row_id,))
+    refusal = None
+    if not reply_to:
+        refusal = "в группе можно только ответом на сообщение"
+    elif not text.strip():
+        refusal = "пустой текст"
+    elif len(text) > OUTBOX_MAX_LEN:
+        refusal = f"текст длиннее {OUTBOX_MAX_LEN} знаков"
+    if refusal:
+        storage.execute("UPDATE outbox SET status='refused', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), refusal, row_id))
+        audit(None, 'outbox_refused', None, '', refusal, actor_name=OUTBOX_NAME)
+        return
+    try:
+        chat = group_chat_id()
+        sent = bot.send_message(chat, text, reply_parameters=types.ReplyParameters(
+            message_id=int(reply_to), allow_sending_without_reply=False))
+    except Exception as e:
+        storage.execute("UPDATE outbox SET status='failed', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), f"Telegram не принял: {e}"[:300], row_id))
+        return
+    storage.execute("INSERT INTO group_log (ts, chat_id, chat_title, message_id, from_id, from_name, from_username, "
+                    "reply_to, text, photo) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (timeutil.now_iso(), chat, None, getattr(sent, 'message_id', None), None, OUTBOX_NAME, None,
+                     int(reply_to), text, None))
+    audit(None, 'group_reply', None, '', text, actor_name=OUTBOX_NAME)
+    storage.execute("UPDATE outbox SET status='sent', done_at=?, note=? WHERE id=?",
+                    (timeutil.now_iso(), f"ответ на сообщение {reply_to}", row_id))
 
 def outbox_send(row_id, tg_id, text, close):
     # сначала помечаем, потом шлём: при сбое посередине ответ не уйдёт игроку дважды

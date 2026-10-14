@@ -2,6 +2,7 @@
 
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli send <tg_id> [--close] < ответ.txt
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli close <tg_id>       (закрыть молча, без сообщения)
+  sudo -u totembot venv/bin/python -m tcbot.outbox_cli group <message_id> < ответ.txt   (ответ в группе на сообщение)
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli status [N]
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli photo <file_id> <файл.jpg>
 
@@ -25,16 +26,19 @@ def db():
     return sqlite3.connect(DB_FILE, timeout=10)
 
 
-def send(argv, silent=False):
+def send(argv, silent=False, group=False):
     if not argv or not argv[0].lstrip('-').isdigit():
-        sys.exit("нужен tg_id игрока")
+        sys.exit("нужен номер сообщения группы" if group else "нужен tg_id игрока")
     tg_id, close = int(argv[0]), silent or '--close' in argv[1:]
+    reply_to = None
+    if group:  # tg_id=0 — группа, номер сообщения идёт в reply_to
+        tg_id, reply_to, close = 0, int(argv[0]), False
     text = '' if silent else sys.stdin.buffer.read().decode('utf-8').strip()
     if not text and not silent:
         sys.exit("пустой текст")
     with db() as c:
-        cur = c.execute("INSERT INTO outbox (created_at, tg_id, text, close) VALUES (?,?,?,?)",
-                        (datetime.now(timezone.utc).isoformat(timespec='seconds'), tg_id, text, int(close)))
+        cur = c.execute("INSERT INTO outbox (created_at, tg_id, text, close, reply_to) VALUES (?,?,?,?,?)",
+                        (datetime.now(timezone.utc).isoformat(timespec='seconds'), tg_id, text, int(close), reply_to))
         row_id = cur.lastrowid
     # ждём, пока бот заберёт: так сразу видно, ушло или отказано и почему
     for _ in range(30):
@@ -75,4 +79,5 @@ def photo(argv):
 
 if __name__ == '__main__':
     cmd, rest = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ('', [])
-    {'send': send, 'close': lambda a: send(a, silent=True), 'status': status, 'photo': photo}.get(cmd, lambda _: sys.exit(__doc__))(rest)
+    {'send': send, 'close': lambda a: send(a, silent=True), 'group': lambda a: send(a, group=True),
+     'status': status, 'photo': photo}.get(cmd, lambda _: sys.exit(__doc__))(rest)

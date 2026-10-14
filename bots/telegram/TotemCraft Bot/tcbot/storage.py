@@ -16,7 +16,7 @@ from datetime import datetime
 from . import config, timeutil
 from .logs import log_error, log_warning
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 LEGACY_DIR = 'legacy_files'  # сюда переезжают старые файлы после переноса в базу
 
 _lock = threading.RLock()
@@ -116,7 +116,14 @@ def _v3(c):
     c.execute("CREATE INDEX IF NOT EXISTS group_log_ts ON group_log(chat_id, ts)")
 
 
-MIGRATIONS = {1: _v1, 2: _v2, 3: _v3}
+def _v4(c):
+    """Ответ в группу через очередь: на какое сообщение группы отвечаем."""
+    cols = [r[1] for r in c.execute("PRAGMA table_info(outbox)")]
+    if 'reply_to' not in cols:
+        c.execute("ALTER TABLE outbox ADD COLUMN reply_to INTEGER")
+
+
+MIGRATIONS = {1: _v1, 2: _v2, 3: _v3, 4: _v4}
 
 
 def migrate():
