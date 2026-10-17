@@ -408,6 +408,9 @@ T = {
     'pw_digits': {'ru': "Пароль не может состоять только из цифр. Добавьте буквы или спецсимволы.",
                   'uk': "Пароль не може складатися лише з цифр. Додайте літери або спецсимволи.",
                   'en': "Password cannot be digits only. Add letters or symbols."},
+    'pw_badword': {'ru': "В пароле есть «{word}»: это {cat}. Такие пароли не принимаем, придумайте другой.",
+                   'uk': "У паролі є «{word}»: це {cat}. Такі паролі не приймаємо, придумайте інший.",
+                   'en': "The password contains «{word}» ({cat}). Such passwords are not accepted, please choose another."},
 }
 
 

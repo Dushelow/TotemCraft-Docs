@@ -482,6 +482,12 @@ def validate_password_authme(password, nick=None, lang=i18n.DEFAULT):
         return False, i18n.text(lang, 'pw_sequence')
     if re.fullmatch(r'\d+', password):
         return False, i18n.text(lang, 'pw_digits')
+    # тот же словарь, что у автомата в очереди: игрок сразу видит, что не так, и заявка не застревает
+    hits = badwords.find(password, owner_words())
+    if hits:
+        cat, word = hits[0]
+        cat = {'символика': 'запрещённая символика', 'словарь владельца': 'запрещённое слово'}.get(cat, cat)
+        return False, i18n.text(lang, 'pw_badword', word=word, cat=cat)
     return True, ''
 
 def check_nick_already_approved(nick):

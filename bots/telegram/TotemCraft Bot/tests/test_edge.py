@@ -316,4 +316,9 @@ for l in errs[:5]:
     print("      ", l.strip()[:150])
 check(not crashes, f"обработчики не падали ({crashes[:3]})")
 
+print("\n=== Пароль с запрещённым словом отбивается сразу, с причиной ===")
+ok, why = bot.validate_password_authme('kocty1488x')
+check(not ok and '14/88' in why and 'символика' in why, f"символика в пароле: {why}")
+ok, why = bot.validate_password_authme('Str0ngPass1')
+check(ok, "обычный пароль проходит")
 fakes.finish()
