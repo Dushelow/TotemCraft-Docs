@@ -69,10 +69,23 @@ print("\n=== 3. Подписка ускоряет чистую заявку ==="
 (t, _), _ = ctx.press(P, 'sub_check')
 check('Пока не вижу' in (t or ''), "без подписки: «пока не вижу подписки»")
 ctx.members.add(P)
-(t, _), _ = ctx.press(P, 'sub_check')
+(t, _), log = ctx.press(P, 'sub_check')
 due = tu.parse(bot.pending[str(P)]['auto']['due'])
-check(t == 'Спасибо за подписку!' and due - tu.parse(bot.pending[str(P)]['date']) == timedelta(minutes=5),
+check(t and 'засчитана' in t and due - tu.parse(bot.pending[str(P)]['date']) == timedelta(minutes=5),
       "подписался: срок 5 минут")
+check(any('засчитана' in x for _, x in edited(log)), "сообщение с кнопками сменилось на «Подписка засчитана»")
+
+print("\n=== 3а. Подписан ещё до заявки: ускорение сразу, без кнопки ===")
+SUB = 6_200_000_001
+ctx.members.add(SUB)
+bot.user_states[SUB] = {'step': 'rules', 'nick': 'AlreadySub', 'password': 'Str0ngPass1', 'comment': ''}
+(_, _), log = ctx.press(SUB, 'rules_agree')
+check(bot.pending[str(SUB)].get('subscribed') and
+      tu.parse(bot.pending[str(SUB)]['auto']['due']) - tu.parse(bot.pending[str(SUB)]['date']) == timedelta(minutes=5),
+      "бот сам увидел подписку: срок 5 минут")
+pm = " ".join(sent_to(log, SUB))
+check('Вы подписаны' in pm and '✅ Я подписался' not in buttons(log, SUB), "кнопку «Я подписался» не показали")
+bot.pending.pop(str(SUB), None)
 
 print("\n=== 4. Автомат выключен — ничего не принимает; включён — принимает ===")
 bot.pending[str(P)] = dict(bot.pending[str(P)], date=(tu.now_utc() - timedelta(hours=2)).isoformat(timespec='seconds'))

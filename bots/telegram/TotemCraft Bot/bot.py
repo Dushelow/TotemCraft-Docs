@@ -2137,6 +2137,14 @@ def show_handbook_chapter(chat_id, chapter_key, edit_message=None):
 # ---------- Автопринятие заявок и рейд-режим (правила — tcbot/autoaccept.py) ----------
 SUBSCRIBE_CHAT = os.environ.get('SUBSCRIBE_CHAT', '@totemcraftnet')
 SUBSCRIBE_URL = 'https://t.me/' + SUBSCRIBE_CHAT.lstrip('@')
+
+def group_member(uid):
+    """Подписан ли игрок на группу: True, False или None, если проверить нельзя (бот не админ, сбой Telegram)."""
+    try:
+        return bot.get_chat_member(SUBSCRIBE_CHAT, uid).status in ('member', 'administrator', 'creator')
+    except Exception as e:
+        log_warning(f"не удалось проверить подписку на {SUBSCRIBE_CHAT}: {e}")
+        return None
 RAID_DURATION_MIN = 60
 decision_lock = threading.RLock()   # одна заявка не может быть решена дважды (админ и автомат одновременно)
 
@@ -3306,6 +3314,8 @@ def callback_handler(call):
             if test_by:
                 new_app['test_by'] = test_by  # заявка из режима игрока: на сервере не регистрируется
             pending[app_id] = new_app
+            if group_member(uid):
+                new_app['subscribed'] = True  # подписан ещё до заявки: кнопку жать незачем
             schedule_auto(uid, new_app)
             if not test_by:
                 last_application[str(uid)] = timeutil.now_iso()
@@ -3327,11 +3337,14 @@ def callback_handler(call):
             safe_send(uid, tr(uid, 'app_submitted'),
                 parse_mode='HTML',
                 reply_markup=main_keyboard(is_admin=False, user_id=uid))
-            sub = types.InlineKeyboardMarkup()
-            sub.row(types.InlineKeyboardButton(tr(uid, 'btn_go_group'), url=SUBSCRIBE_URL),
-                    types.InlineKeyboardButton(tr(uid, 'btn_subscribed'), callback_data="sub_check"))
-            safe_send(uid, tr(uid, 'sub_wait'),
-                      reply_markup=sub)
+            if new_app.get('subscribed'):
+                safe_send(uid, tr(uid, 'sub_already'))
+            else:
+                sub = types.InlineKeyboardMarkup()
+                sub.row(types.InlineKeyboardButton(tr(uid, 'btn_go_group'), url=SUBSCRIBE_URL),
+                        types.InlineKeyboardButton(tr(uid, 'btn_subscribed'), callback_data="sub_check"))
+                safe_send(uid, tr(uid, 'sub_wait'),
+                          reply_markup=sub)
         else:
             safe_send(uid, tr(uid, 'rules_declined'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
         del user_states[uid]
@@ -3452,23 +3465,18 @@ def callback_handler(call):
 
     # --- Подписка на группу (игрок): ускоряет только чистые заявки, игрок об этом не знает ---
     if data == "sub_check":
-        try:
-            member = bot.get_chat_member(SUBSCRIBE_CHAT, uid).status in ('member', 'administrator', 'creator')
-        except Exception as e:
-            log_warning(f"не удалось проверить подписку на {SUBSCRIBE_CHAT}: {e}")
-            member = None
+        member = group_member(uid)
         if member is False:
             answer_cb(call.id, tr(uid, 'sub_not_seen'), show_alert=True)
             return
         app = pending.get(str(uid))
-        if member and app and not app.get('subscribed'):
+        counted = bool(member and app)
+        if counted and not app.get('subscribed'):
             app['subscribed'] = True
             schedule_auto(uid, app, keep_due=True)
-        answer_cb(call.id, tr(uid, 'sub_thanks'))
-        try:
-            bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
-        except Exception:
-            pass
+        result = tr(uid, 'sub_counted' if counted else 'sub_thanks')
+        answer_cb(call.id, result)
+        edit_message_safe(uid, msg.message_id, result)  # видно и тогда, когда всплывашка опоздала
         return
 
     # --- Только команда ---

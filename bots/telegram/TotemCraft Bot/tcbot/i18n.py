@@ -174,16 +174,28 @@ T = {
         'en': "✅ <b>Your application has been received and sent for review.</b>\n\n"
               "📋 Applications are reviewed in order. It <b>usually takes up to 24 hours</b>.\n\n"
               "You will get the result here automatically."},
-    'sub_wait': {'ru': "📢 Пока ждёте, подпишитесь на нашу группу TotemCraft: там новости и анонсы сервера.",
-                 'uk': "📢 Поки чекаєте, підпишіться на нашу групу TotemCraft: там новини та анонси сервера.",
-                 'en': "📢 While you wait, join our TotemCraft group: server news and announcements are posted there."},
+    'sub_wait': {'ru': "📢 Пока ждёте, подпишитесь на нашу группу TotemCraft: там новости и анонсы сервера.\n"
+                       "⚡ Подписчикам группы заявку рассматривают быстрее.",
+                 'uk': "📢 Поки чекаєте, підпишіться на нашу групу TotemCraft: там новини та анонси сервера.\n"
+                       "⚡ Підписникам групи заявку розглядають швидше.",
+                 'en': "📢 While you wait, join our TotemCraft group: server news and announcements are posted there.\n"
+                       "⚡ Group members get their application reviewed faster."},
+    'sub_counted': {'ru': "✅ Подписка засчитана: заявку рассмотрят быстрее.",
+                    'uk': "✅ Підписку зараховано: заявку розглянуть швидше.",
+                    'en': "✅ Subscription counted: your application will be reviewed faster."},
+    'sub_already': {'ru': "⚡ Вы подписаны на нашу группу TotemCraft: заявку рассмотрят быстрее.",
+                    'uk': "⚡ Ви підписані на нашу групу TotemCraft: заявку розглянуть швидше.",
+                    'en': "⚡ You're in our TotemCraft group: your application will be reviewed faster."},
     'sub_not_seen': {'ru': "Пока не вижу подписки. Подпишитесь и нажмите ещё раз.",
                      'uk': "Поки не бачу підписки. Підпишіться й натисніть ще раз.",
                      'en': "I can't see your subscription yet. Join the group and press again."},
     'sub_thanks': {'ru': "Спасибо за подписку!", 'uk': "Дякуємо за підписку!", 'en': "Thanks for joining!"},
-    'subscribe_text': {'ru': "📢 <b>TotemCraft – игровое сообщество</b>\nПрисоединяйтесь к нашей группе!",
-                       'uk': "📢 <b>TotemCraft – ігрова спільнота</b>\nПриєднуйтеся до нашої групи!",
-                       'en': "📢 <b>TotemCraft – gaming community</b>\nJoin our group!"},
+    'subscribe_text': {'ru': "📢 <b>TotemCraft – игровое сообщество</b>\nПрисоединяйтесь к нашей группе!\n"
+                             "⚡ Подписчикам группы заявку рассматривают быстрее.",
+                       'uk': "📢 <b>TotemCraft – ігрова спільнота</b>\nПриєднуйтеся до нашої групи!\n"
+                             "⚡ Підписникам групи заявку розглядають швидше.",
+                       'en': "📢 <b>TotemCraft – gaming community</b>\nJoin our group!\n"
+                             "⚡ Group members get their application reviewed faster."},
 
     # ---------- Решение по заявке ----------
     'approved': {
