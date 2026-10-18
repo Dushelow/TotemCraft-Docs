@@ -119,12 +119,13 @@ class TotemCraftCore(discord.Client):
             return
         task_id = self.store.add_task(user.id, user.display_name, interaction.channel_id, задача)
         waiting = self.store.open_tasks()
-        # видит только автор: всё по делу отвечает бот «TotemCraft | Ванильный сервер»
         await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
-        if logic.is_urgent(задача):
-            duty = os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
-            who = logic.author_label(user.id, interaction.guild.owner_id)
-            await self._as_server(interaction.channel, embed=logic.urgent_card(task_id, who, задача, duty))
+        # саму задачу видят все в админ-чате: карточка от «TotemCraft | Ванильный сервер»
+        urgent = logic.is_urgent(задача)
+        duty = urgent and os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
+        who = logic.author_label(user.id, interaction.guild.owner_id)
+        await self._as_server(interaction.channel, embed=logic.task_card(task_id, who, задача, duty))
+        if urgent:
             if duty:
                 try:
                     await self._to_duty(task_id, user, задача, interaction.channel)

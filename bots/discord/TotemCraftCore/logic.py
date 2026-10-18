@@ -30,14 +30,11 @@ def is_urgent(text: str) -> bool:
 
 
 def task_ack(task_id: int, text: str, waiting: int) -> str:
-    """Ответ автору команды (видит только он)."""
-    when = ("Срочная: разберу первой." if is_urgent(text)
-            else "Разберу на ближайшем обходе: утром после рестарта или вечером.")
-    return (f"📥 Задача #{task_id} записана. {when}\n"
-            f"Ответ придёт в этот чат от «TotemCraft | Ванильный сервер» с упоминанием автора. Открытых задач: {waiting}.")
+    """Короткое подтверждение автору; саму задачу все видят карточкой в чате."""
+    return f"📥 Задача #{task_id} записана, карточка в чате. Открытых задач: {waiting}."
 
 
-ORANGE, GREEN, RED = 0xFAA61A, 0x43B581, 0xF04747
+ORANGE, GREEN, RED, BLUE = 0xFAA61A, 0x43B581, 0xF04747, 0x5865F2
 EMBED_TEXT = 4000  # Дискорд: описание карточки до 4096 знаков
 
 
@@ -50,11 +47,20 @@ def quote(text: str) -> str:
     return "\n".join("> " + line if line.strip() else ">" for line in (text or "").strip().splitlines())
 
 
-def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
-    """Карточка сразу в админ-чат: все видят срочную задачу и кто её дал."""
-    tail = "Дежурный уже разбирает, ответ придёт сюда." if duty else "Записана, разберу первой."
-    return {"title": f"⚡ Срочная задача #{task_id}", "color": ORANGE,
+def task_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
+    """Карточка сразу в админ-чат: все видят задачу и кто её дал. Срочная оранжевая, обычная синяя."""
+    if is_urgent(text):
+        title, color = f"⚡ Срочная задача #{task_id}", ORANGE
+        tail = "Дежурный уже разбирает, ответ придёт сюда." if duty else "Записана, разберу первой."
+    else:
+        title, color = f"📥 Задача #{task_id}", BLUE
+        tail = "Разберу на ближайшем обходе: утром после рестарта или вечером."
+    return {"title": title, "color": color,
             "description": f"**От:** {author}\n\n{quote(truncate(text, 1500))}\n\n*{tail}*"}
+
+
+def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
+    return task_card(task_id, author, text if is_urgent(text) else "срочно " + text, duty)
 
 
 _NOISE = re.compile(r"^\s*(\**\s*ответ( в админ-чат)?\s*:?\s*\**\s*|<@!?\d+>[\s,:]*)+", re.IGNORECASE)
