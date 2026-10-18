@@ -26,6 +26,8 @@ class TaskInbox(unittest.TestCase):
         self.assertFalse(logic.is_urgent("проверь жалобу"))
         self.assertIn("первой", logic.task_ack(3, "Срочно!", 1))
         self.assertIn("обходе", logic.task_ack(3, "посмотри форум", 1))
+        n = logic.urgent_notice(7, "<@5>", "СРОЧНО гриф у спавна")
+        self.assertTrue(n.startswith("⚡ Срочная задача #7 от <@5>") and "гриф у спавна" in n)
 
     def test_store(self):
         with tempfile.TemporaryDirectory() as d:

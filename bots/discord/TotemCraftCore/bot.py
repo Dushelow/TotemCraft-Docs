@@ -43,6 +43,8 @@ VOICE_CATEGORY_ID  = _id("VOICE_CATEGORY_ID")
 DB_PATH            = os.getenv("DB_PATH", "/home/totemcraftcore/totemcraftcore.db")
 MESSAGE_KEEP_DAYS  = int(os.getenv("MESSAGE_KEEP_DAYS", "30"))
 ADMIN_CHAT_ID      = int(os.getenv("ADMIN_CHAT_ID", "1454170538095153252"))
+SERVER_BOT_ID      = int(os.getenv("SERVER_BOT_ID", "1559465125055037540"))  # «TotemCraft | Ванильный сервер»
+SERVER_BOT_NAME    = "TotemCraft | Ванильный сервер"
 
 GREEN, RED, ORANGE = 0x43B581, 0xF04747, 0xFAA61A
 
@@ -115,6 +117,20 @@ class TotemCraftCore(discord.Client):
         waiting = self.store.open_tasks()
         # видит только автор: всё по делу отвечает бот «TotemCraft | Ванильный сервер»
         await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
+        if logic.is_urgent(задача):
+            await self._as_server(interaction.channel, logic.urgent_notice(task_id, user.mention, задача))
+
+    async def _as_server(self, channel, text: str):
+        """Сообщение в канал под именем и аватаркой бота «TotemCraft | Ванильный сервер» (вебхук Core)."""
+        try:
+            hook = next((h for h in await channel.webhooks() if h.name == SERVER_BOT_NAME and h.user == self.user), None)
+            if hook is None:
+                server_bot = await self.fetch_user(SERVER_BOT_ID)
+                hook = await channel.create_webhook(name=SERVER_BOT_NAME, avatar=await server_bot.display_avatar.read(),
+                                                    reason="Ответы ящика задач от имени бота сервера")
+            await hook.send(text, allowed_mentions=discord.AllowedMentions.none())
+        except discord.HTTPException as ex:
+            log(f"Не удалось написать от имени бота сервера: {ex}")
 
     def _ours(self, guild) -> bool:
         return guild is not None and guild.id == GUILD_ID

@@ -37,6 +37,12 @@ def task_ack(task_id: int, text: str, waiting: int) -> str:
             f"Ответ придёт в этот чат от «TotemCraft | Ванильный сервер» с упоминанием автора. Открытых задач: {waiting}.")
 
 
+def urgent_notice(task_id: int, author_mention: str, text: str) -> str:
+    """Сразу в админ-чат, чтобы все видели срочную задачу и кто её дал."""
+    return (f"⚡ Срочная задача #{task_id} от {author_mention}:\n{truncate(text, 1500)}\n"
+            f"Записана, разберу первой.")
+
+
 def may_give_task(role_ids, user_id: int, owner_id: int) -> bool:
     """Модератор и выше или владелец сервера."""
     return user_id == owner_id or bool(TASK_ROLE_IDS & set(role_ids))
