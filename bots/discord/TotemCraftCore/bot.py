@@ -123,7 +123,8 @@ class TotemCraftCore(discord.Client):
         await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
         if logic.is_urgent(задача):
             duty = os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
-            await self._as_server(interaction.channel, logic.urgent_notice(task_id, user.mention, задача, duty))
+            who = logic.author_label(user.id, interaction.guild.owner_id)
+            await self._as_server(interaction.channel, embed=logic.urgent_card(task_id, who, задача, duty))
             if duty:
                 try:
                     await self._to_duty(task_id, user, задача, interaction.channel)
@@ -173,10 +174,11 @@ class TotemCraftCore(discord.Client):
                 with open(path, encoding="utf-8") as f:
                     res = json.load(f)
                 task = self.store.get_task(int(res["id"])) or {}
-                mention = f"<@{task['author_id']}>" if task.get("author_id") else "автора"
+                guild = self.get_guild(GUILD_ID)
+                who = logic.author_label(task["author_id"], guild.owner_id if guild else 0) if task.get("author_id") else "?"
                 channel = self.get_channel(ADMIN_CHAT_ID)
                 if channel is not None:
-                    await self._as_server(channel, logic.duty_answer(int(res["id"]), mention, res.get("ok"), res.get("answer")))
+                    await self._as_server(channel, embed=logic.answer_card(int(res["id"]), who, res.get("ok"), res.get("answer")))
                 if res.get("ok"):
                     self.store.set_task_status(int(res["id"]), "done")
             except Exception as ex:
@@ -188,7 +190,7 @@ class TotemCraftCore(discord.Client):
     async def _before_duty_loop(self):
         await self.wait_until_ready()
 
-    async def _as_server(self, channel, text: str):
+    async def _as_server(self, channel, text: str | None = None, embed: dict | None = None):
         """Сообщение в канал под именем и аватаркой бота «TotemCraft | Ванильный сервер» (вебхук Core)."""
         try:
             hook = next((h for h in await channel.webhooks() if h.name == SERVER_BOT_NAME and h.user == self.user), None)
@@ -196,7 +198,8 @@ class TotemCraftCore(discord.Client):
                 server_bot = await self.fetch_user(SERVER_BOT_ID)
                 hook = await channel.create_webhook(name=SERVER_BOT_NAME, avatar=await server_bot.display_avatar.read(),
                                                     reason="Ответы ящика задач от имени бота сервера")
-            await hook.send(text, allowed_mentions=discord.AllowedMentions.none())
+            await hook.send(text or discord.utils.MISSING, embed=discord.Embed.from_dict(embed) if embed else discord.utils.MISSING,
+                            allowed_mentions=discord.AllowedMentions.none())
         except discord.HTTPException as ex:
             log(f"Не удалось написать от имени бота сервера: {ex}")
 

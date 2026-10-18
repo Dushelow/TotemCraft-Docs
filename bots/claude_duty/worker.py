@@ -19,6 +19,7 @@ INBOX, OUTBOX, FILES, WORK = BASE + '/inbox', BASE + '/outbox', BASE + '/files',
 HERE = os.path.dirname(os.path.realpath(__file__))
 CLAUDE = os.path.expanduser('~/.local/bin/claude')
 TIMEOUT = 20 * 60
+MODEL = os.environ.get('DUTY_MODEL', 'sonnet')
 
 PROMPT = """Ты дежурный администратор сервера Minecraft TotemCraft (Claude). Срочная задача из админ-чата Discord.
 От: {author}, {when} МСК.
@@ -48,8 +49,9 @@ def run(task):
         for name in os.listdir(pics):
             shutil.copy(os.path.join(pics, name), folder)
     prompt = PROMPT.format(author=task.get('author_name', '?'), when=task.get('when', ''), text=task['text'],
-                           context=(task.get('context') or '')[:60000], folder=folder)
-    cmd = [CLAUDE, '-p', prompt, '--output-format', 'json', '--max-turns', '40',
+                           context=(task.get('context') or '')[-30000:], folder=folder)
+    # Sonnet со средним усилием: дешевле Opus, но рассуждает; модель и усилие в ~/.claude/settings.json
+    cmd = [CLAUDE, '-p', prompt, '--output-format', 'json', '--max-turns', '40', '--model', MODEL,
            '--allowedTools', 'Bash(sudo -n /opt/tcclaude/tc *)', f'Read({folder}/**)']
     p = subprocess.run(cmd, cwd=folder, capture_output=True, text=True, timeout=TIMEOUT)
     try:

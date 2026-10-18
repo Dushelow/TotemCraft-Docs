@@ -37,16 +37,40 @@ def task_ack(task_id: int, text: str, waiting: int) -> str:
             f"Ответ придёт в этот чат от «TotemCraft | Ванильный сервер» с упоминанием автора. Открытых задач: {waiting}.")
 
 
-def urgent_notice(task_id: int, author_mention: str, text: str, duty: bool = False) -> str:
-    """Сразу в админ-чат, чтобы все видели срочную задачу и кто её дал."""
+ORANGE, GREEN, RED = 0xFAA61A, 0x43B581, 0xF04747
+EMBED_TEXT = 4000  # Дискорд: описание карточки до 4096 знаков
+
+
+def author_label(user_id: int, owner_id: int) -> str:
+    """Кто дал задачу. Владельца не упоминаем (он так попросил), остальных упоминанием."""
+    return "владелец" if user_id == owner_id else f"<@{user_id}>"
+
+
+def quote(text: str) -> str:
+    return "\n".join("> " + line if line.strip() else ">" for line in (text or "").strip().splitlines())
+
+
+def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
+    """Карточка сразу в админ-чат: все видят срочную задачу и кто её дал."""
     tail = "Дежурный уже разбирает, ответ придёт сюда." if duty else "Записана, разберу первой."
-    return f"⚡ Срочная задача #{task_id} от {author_mention}:\n{truncate(text, 1500)}\n{tail}"
+    return {"title": f"⚡ Срочная задача #{task_id}", "color": ORANGE,
+            "description": f"**От:** {author}\n\n{quote(truncate(text, 1500))}\n\n*{tail}*"}
 
 
-def duty_answer(task_id: int, author_mention: str, ok: bool, answer: str) -> str:
-    """Ответ дежурного: с упоминанием автора, чтобы было видно, кому отвечаем."""
-    head = f"{'✅' if ok else '❌'} Задача #{task_id} от {author_mention}:\n"
-    return head + truncate((answer or "").strip() or "(пустой ответ)", 1990 - len(head))
+_NOISE = re.compile(r"^\s*(\**\s*ответ( в админ-чат)?\s*:?\s*\**\s*|<@!?\d+>[\s,:]*)+", re.IGNORECASE)
+
+
+def clean_answer(answer: str) -> str:
+    """Убирает то, что дежурный иногда дописывает сам: «Ответ в админ-чат:» и упоминание в начале."""
+    return _NOISE.sub("", (answer or "").strip()).strip() or "(пустой ответ)"
+
+
+def answer_card(task_id: int, author: str, ok: bool, answer: str) -> dict:
+    """Карточка ответа дежурного: зелёная готово, красная не вышло."""
+    head = f"**От:** {author}\n\n"
+    return {"title": f"{'✅' if ok else '❌'} Задача #{task_id}" + ("" if ok else ": не вышло"),
+            "color": GREEN if ok else RED, "footer": {"text": "Дежурный Claude"},
+            "description": head + truncate(clean_answer(answer), EMBED_TEXT - len(head))}
 
 
 _LINK = re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)")

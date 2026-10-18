@@ -12,7 +12,8 @@ usermod -aG tcclaude totemcraftcore
 # 2. Инструмент и обработчик: владелец root, claudebot менять не может
 install -d -o root -g root -m 755 /opt/tcclaude
 install -o root -g root -m 755 "$SRC/tc.py" /opt/tcclaude/tc
-install -o root -g root -m 644 "$SRC/abx_history.py" "$SRC/worker.py" "$SRC/RULES.md" /opt/tcclaude/
+install -o root -g root -m 644 "$SRC/abx_history.py" "$SRC/worker.py" "$SRC/RULES.md" "$SRC/templates.txt" /opt/tcclaude/
+install -d -o root -g root -m 700 /var/lib/tcclaude-root
 install -d -o root -g root -m 755 /var/log/tcclaude
 
 # 3. Очередь: inbox и files пишет Core, outbox и work пишет claudebot
@@ -32,6 +33,12 @@ if [ ! -x /home/claudebot/.local/bin/claude ]; then
   sudo -u claudebot -H bash -c 'curl -fsSL https://claude.ai/install.sh | bash'
 fi
 sudo -u claudebot -H /home/claudebot/.local/bin/claude --version
+
+# 5б. Модель и усилие дежурного: Sonnet, среднее усилие (дешевле, но не тупой)
+install -d -o claudebot -g tcclaude -m 700 /home/claudebot/.claude
+printf '%s
+' '{"model": "sonnet", "effortLevel": "medium"}' > /home/claudebot/.claude/settings.json
+chown claudebot:tcclaude /home/claudebot/.claude/settings.json
 
 # 6. Ключ Claude кладёт владелец: /etc/tcclaude/token.env (CLAUDE_CODE_OAUTH_TOKEN=...), права 600 root
 install -d -o root -g root -m 700 /etc/tcclaude
