@@ -39,7 +39,7 @@ def task_ack(task_id: int, text: str, waiting: int) -> str:
 AMBER, GREEN, RED, BLUE, SLATE = 0xD89614, 0x2D9D78, 0xD64545, 0x3B6FD8, 0x4F5D75
 EMBED_TEXT = 4000   # описание карточки до 4096 знаков
 FIELD_TEXT = 1000   # поле до 1024 знаков
-FOOTER = {"text": "TotemCraft · Дежурный администратор"}
+FOOTER = {"text": "TotemCraft"}
 FIELD_NAMES = {"владельцу": "Требует решения владельца"}
 
 
