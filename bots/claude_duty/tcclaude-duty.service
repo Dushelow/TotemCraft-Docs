@@ -1,0 +1,21 @@
+[Unit]
+Description=TotemCraft duty Claude (срочные задачи админ-чата)
+After=network-online.target totemcraftcore.service
+Wants=network-online.target
+ConditionPathExists=/etc/tcclaude/token.env
+
+[Service]
+User=claudebot
+Group=tcclaude
+WorkingDirectory=/var/lib/tcclaude/work
+EnvironmentFile=/etc/tcclaude/token.env
+Environment=HOME=/home/claudebot
+ExecStart=/usr/bin/python3 /opt/tcclaude/worker.py
+Restart=always
+RestartSec=15
+UMask=0007
+MemoryMax=1G
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

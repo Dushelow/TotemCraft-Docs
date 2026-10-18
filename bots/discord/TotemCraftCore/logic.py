@@ -37,10 +37,28 @@ def task_ack(task_id: int, text: str, waiting: int) -> str:
             f"Ответ придёт в этот чат от «TotemCraft | Ванильный сервер» с упоминанием автора. Открытых задач: {waiting}.")
 
 
-def urgent_notice(task_id: int, author_mention: str, text: str) -> str:
+def urgent_notice(task_id: int, author_mention: str, text: str, duty: bool = False) -> str:
     """Сразу в админ-чат, чтобы все видели срочную задачу и кто её дал."""
-    return (f"⚡ Срочная задача #{task_id} от {author_mention}:\n{truncate(text, 1500)}\n"
-            f"Записана, разберу первой.")
+    tail = "Дежурный уже разбирает, ответ придёт сюда." if duty else "Записана, разберу первой."
+    return f"⚡ Срочная задача #{task_id} от {author_mention}:\n{truncate(text, 1500)}\n{tail}"
+
+
+def duty_answer(task_id: int, author_mention: str, ok: bool, answer: str) -> str:
+    """Ответ дежурного: с упоминанием автора, чтобы было видно, кому отвечаем."""
+    head = f"{'✅' if ok else '❌'} Задача #{task_id} от {author_mention}:\n"
+    return head + truncate((answer or "").strip() or "(пустой ответ)", 1990 - len(head))
+
+
+_LINK = re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)")
+
+
+def linked_channels(text: str, guild_id: int):
+    """Каналы и ветки нашего сервера по ссылкам в задаче, не больше трёх."""
+    out = []
+    for g, ch in _LINK.findall(text or ""):
+        if int(g) == guild_id and int(ch) not in out:
+            out.append(int(ch))
+    return out[:3]
 
 
 def may_give_task(role_ids, user_id: int, owner_id: int) -> bool:

@@ -29,6 +29,15 @@ class TaskInbox(unittest.TestCase):
         n = logic.urgent_notice(7, "<@5>", "СРОЧНО гриф у спавна")
         self.assertTrue(n.startswith("⚡ Срочная задача #7 от <@5>") and "гриф у спавна" in n)
 
+    def test_duty_texts(self):
+        self.assertIn("Дежурный уже разбирает", logic.urgent_notice(1, "<@5>", "срочно", True))
+        a = logic.duty_answer(4, "<@5>", True, "Замутил X на 24h")
+        self.assertTrue(a.startswith("✅ Задача #4 от <@5>:") and "Замутил" in a)
+        self.assertLessEqual(len(logic.duty_answer(4, "<@5>", False, "я" * 5000)), 2000)
+        links = logic.linked_channels("см https://discord.com/channels/9/111/222 и https://discord.com/channels/9/333 "
+                                      "и чужой https://discord.com/channels/8/444", 9)
+        self.assertEqual(links, [111, 333])
+
     def test_store(self):
         with tempfile.TemporaryDirectory() as d:
             s = Storage(os.path.join(d, "x.db"))
@@ -37,6 +46,9 @@ class TaskInbox(unittest.TestCase):
             self.assertEqual(s.open_tasks(), 1)
             self.assertEqual(s.db.execute("SELECT text, message_id, status FROM inbox").fetchone(),
                              ("проверь жалобу", 12345, "new"))
+            s.set_task_status(t, "done")
+            self.assertEqual(s.get_task(t)["status"], "done")
+            self.assertEqual(s.open_tasks(), 0)
             s.db.close()
 
 

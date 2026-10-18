@@ -11,6 +11,7 @@
    Задачи разбирает Claude на утреннем и вечернем обходе и отвечает в админ-чат.
 """
 import asyncio
+import json
 import os
 from datetime import datetime, timezone
 
@@ -45,6 +46,7 @@ MESSAGE_KEEP_DAYS  = int(os.getenv("MESSAGE_KEEP_DAYS", "30"))
 ADMIN_CHAT_ID      = int(os.getenv("ADMIN_CHAT_ID", "1454170538095153252"))
 SERVER_BOT_ID      = int(os.getenv("SERVER_BOT_ID", "1559465125055037540"))  # «TotemCraft | Ванильный сервер»
 SERVER_BOT_NAME    = "TotemCraft | Ванильный сервер"
+DUTY_DIR           = os.getenv("DUTY_DIR", "/var/lib/tcclaude")  # дежурный Claude (служба tcclaude-duty)
 
 GREEN, RED, ORANGE = 0x43B581, 0xF04747, 0xFAA61A
 
@@ -84,6 +86,8 @@ class TotemCraftCore(discord.Client):
     # ── служебное ────────────────────────────────────────────────
     async def setup_hook(self):
         self._prune_loop.start()
+        if os.path.isdir(os.path.join(DUTY_DIR, "outbox")):
+            self._duty_loop.start()
         for name in logic.TASK_COMMANDS:
             cmd = app_commands.Command(name=name, description="Задача для Claude: разберёт на ближайшем обходе",
                                        callback=self._task_command)
@@ -118,7 +122,71 @@ class TotemCraftCore(discord.Client):
         # видит только автор: всё по делу отвечает бот «TotemCraft | Ванильный сервер»
         await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
         if logic.is_urgent(задача):
-            await self._as_server(interaction.channel, logic.urgent_notice(task_id, user.mention, задача))
+            duty = os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
+            await self._as_server(interaction.channel, logic.urgent_notice(task_id, user.mention, задача, duty))
+            if duty:
+                try:
+                    await self._to_duty(task_id, user, задача, interaction.channel)
+                except Exception as ex:  # дежурный недоступен: задача остаётся в ящике на обход
+                    log(f"Срочная задача #{task_id} дежурному не передана: {ex}")
+
+    async def _to_duty(self, task_id, user, text, channel):
+        """Задача дежурному: текст, последние сообщения админ-чата и темы по ссылкам (картинки отдельно)."""
+        pics = os.path.join(DUTY_DIR, "files", str(task_id))
+        os.makedirs(pics, exist_ok=True)
+        parts, saved = [], 0
+
+        async def dump(ch, limit, title):
+            nonlocal saved
+            lines = []
+            async for m in ch.history(limit=limit):
+                line = f"[{m.created_at:%Y-%m-%d %H:%M} UTC] {m.author.display_name}: {m.content}"
+                for a in m.attachments:
+                    if a.filename.lower().endswith((".png", ".jpg", ".jpeg", ".webp")) and saved < 6 and a.size < 8_000_000:
+                        saved += 1
+                        name = f"{saved}_{os.path.basename(a.filename)}"
+                        await a.save(os.path.join(pics, name))
+                        line += f" [картинка {name}]"
+                    else:
+                        line += f" [вложение {a.filename}]"
+                lines.append(line)
+            parts.append(f"== {title}\n" + "\n".join(reversed(lines)))
+
+        await dump(channel, 10, "последние сообщения админ-чата")
+        for ch_id in logic.linked_channels(text, GUILD_ID):
+            ch = self.get_channel(ch_id) or await self.fetch_channel(ch_id)
+            await dump(ch, 100, f"#{getattr(ch, 'name', ch_id)}")
+        task = {"id": task_id, "author_id": user.id, "author_name": user.display_name, "text": text,
+                "when": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M"), "context": "\n\n".join(parts)}
+        tmp = os.path.join(DUTY_DIR, "inbox", f".{task_id}.json")
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(task, f, ensure_ascii=False)
+        os.replace(tmp, os.path.join(DUTY_DIR, "inbox", f"{task_id}.json"))
+
+    @tasks.loop(seconds=10)
+    async def _duty_loop(self):
+        """Готовые ответы дежурного: публикуем в админ-чат от имени бота сервера и закрываем задачу."""
+        folder = os.path.join(DUTY_DIR, "outbox")
+        for name in sorted(n for n in os.listdir(folder) if n.endswith(".json") and not n.startswith(".")):
+            path = os.path.join(folder, name)
+            try:
+                with open(path, encoding="utf-8") as f:
+                    res = json.load(f)
+                task = self.store.get_task(int(res["id"])) or {}
+                mention = f"<@{task['author_id']}>" if task.get("author_id") else "автора"
+                channel = self.get_channel(ADMIN_CHAT_ID)
+                if channel is not None:
+                    await self._as_server(channel, logic.duty_answer(int(res["id"]), mention, res.get("ok"), res.get("answer")))
+                if res.get("ok"):
+                    self.store.set_task_status(int(res["id"]), "done")
+            except Exception as ex:
+                log(f"Ответ дежурного {name} не опубликован: {ex}")
+            finally:
+                os.remove(path)
+
+    @_duty_loop.before_loop
+    async def _before_duty_loop(self):
+        await self.wait_until_ready()
 
     async def _as_server(self, channel, text: str):
         """Сообщение в канал под именем и аватаркой бота «TotemCraft | Ванильный сервер» (вебхук Core)."""

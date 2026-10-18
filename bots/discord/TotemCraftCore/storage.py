@@ -78,6 +78,14 @@ class Storage:
         self.db.execute("UPDATE inbox SET message_id = ? WHERE id = ?", (message_id, task_id))
         self.db.commit()
 
+    def get_task(self, task_id):
+        row = self.db.execute("SELECT author_id, author_name, text, status FROM inbox WHERE id = ?", (task_id,)).fetchone()
+        return dict(zip(("author_id", "author_name", "text", "status"), row)) if row else None
+
+    def set_task_status(self, task_id, status):
+        self.db.execute("UPDATE inbox SET status = ? WHERE id = ?", (status, task_id))
+        self.db.commit()
+
     def open_tasks(self) -> int:
         return self.db.execute("SELECT COUNT(*) FROM inbox WHERE status = 'new'").fetchone()[0]
 
