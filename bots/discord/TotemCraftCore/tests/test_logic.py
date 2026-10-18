@@ -32,7 +32,7 @@ class TaskInbox(unittest.TestCase):
         self.assertIn("> СРОЧНО гриф у спавна", n["description"])
         self.assertEqual(logic.author_label(1, 1), "владелец")
         self.assertEqual(logic.app_card("Burrito", "Не решил: ник похож на забаненного")["title"],
-                         "📋 Заявка Burrito: нужно решение команды")
+                         "📋 Заявки ждут решения команды: Burrito")
         c = logic.task_card(8, "<@5>", "посмотри тему про гриф")
         self.assertEqual(c["title"], "📥 Задача #8")
         self.assertIn("> посмотри тему про гриф", c["description"])

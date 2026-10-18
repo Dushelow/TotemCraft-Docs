@@ -7,10 +7,10 @@
 в /var/lib/tcclaude/outbox/<id>.json. Core публикует ответ в админ-чате от имени «TotemCraft | Ванильный сервер».
 Задач нет: служба спит, токены не тратятся. Одна задача за раз, не дольше 20 минут.
 
-Заявки Telegram: дежурный решает их наравне с админами. Раз в минуту служба без Claude смотрит
-`tc tg-pending`; на каждую новую заявку запускает Claude один раз. Решение видно команде как обычно
-(карточка в Telegram и уведомление в Discord с подписью Claude). Если заявка после разбора осталась
-нерешённой (сомнительная), Core пишет об этом карточкой в админ-чат.
+Заявки Telegram: дежурный решает их наравне с админами, два раза в день (APP_TIMES, МСК): утром после
+рестарта и вечером. Одним запуском Claude на все заявки сразу; заявок нет — Claude не запускается.
+Решение видно команде как обычно (карточка в Telegram и уведомление в Discord с подписью Claude).
+Сомнительные заявки дежурный оставляет людям, Core пишет о них карточкой в админ-чат.
 """
 import json
 import os
@@ -18,14 +18,16 @@ import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timedelta
 
 BASE = '/var/lib/tcclaude'
 INBOX, OUTBOX, FILES, WORK = BASE + '/inbox', BASE + '/outbox', BASE + '/files', BASE + '/work'
 HERE = os.path.dirname(os.path.realpath(__file__))
 CLAUDE = os.path.expanduser('~/.local/bin/claude')
 TIMEOUT = 20 * 60
-APPS_SEEN = WORK + '/apps_seen.json'
-APPS_EVERY = 60
+APP_TIMES = ('06:00', '21:00')  # МСК: после рестарта 04:30 и вечером, до обходов на компьютере владельца
+APPS_LAST = WORK + '/apps_last.txt'
+APPS_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
 TC = ['sudo', '-n', '/opt/tcclaude/tc']
 MODEL = os.environ.get('DUTY_MODEL', 'sonnet')
 
@@ -47,14 +49,14 @@ PROMPT = """Ты дежурный администратор сервера Mine
 """
 
 
-APP_TASK = """Новая заявка в Telegram на вход на сервер. Ты член команды и решаешь заявки наравне с админами.
-Строка из tg-pending (tg_id | ник | дата UTC | вердикт автомата | срок автопринятия | стоп-причины | замечания | подписка | комментарий):
-{line}
+APP_TASK = """Разбор заявок в Telegram на вход на сервер ({slot} МСК). Ты член команды и решаешь заявки наравне с админами.
+Заявки из tg-pending (tg_id | ник | дата UTC | вердикт автомата | срок автопринятия | стоп-причины | замечания | подписка | комментарий):
+{lines}
 
-Разбери её по разделу «Telegram: заявки и обращения» в RULES.md. Сначала `tc tg-pending`: если заявки уже нет,
-её решил кто-то из команды, ничего не делай. Чистая заявка: проверь `abx` по нику и прошлые заявки этого tg_id,
-затем `tg-approve`. Нарушение: `tg-reject` с понятной игроку причиной. Сомнение: не решай, объясни людям почему.
-Ответ: одна-три строки, что решил и почему, с цифрами."""
+Разбери каждую по разделу «Telegram: заявки и обращения» в RULES.md. Если заявки уже нет в `tg-pending`, её решил
+кто-то из команды. Чистая: проверь `abx` по нику и прошлые заявки tg_id, затем `tg-approve`. Нарушение: `tg-reject`
+с понятной игроку причиной. Сомнение: не решай, объясни людям почему.
+Ответ: по строке на заявку, что решил и почему, с цифрами."""
 
 
 def pending_apps():
@@ -67,25 +69,36 @@ def pending_apps():
     return apps
 
 
-def check_apps(seen):
-    """Новые заявки превращаем в задачи дежурному. Возвращает задачу или None."""
+def due_slot(now=None):
+    """Последнее наступившее время разбора заявок, строкой «ГГГГ-ММ-ДД ЧЧ:ММ»."""
+    now = now or datetime.now()
+    slots = [datetime.combine(now.date() - timedelta(days=d), datetime.strptime(t, '%H:%M').time())
+             for d in (0, 1) for t in APP_TIMES]
+    return max(x for x in slots if x <= now).strftime('%Y-%m-%d %H:%M')
+
+
+def check_apps():
+    """Наступило время разбора и есть заявки: задача дежурному. Иначе None (Claude не запускается)."""
+    slot = due_slot()
+    try:
+        last = open(APPS_LAST).read().strip()
+    except OSError:
+        last = ''
+    if slot == last:
+        return None
+    open(APPS_LAST, 'w').write(slot)
     try:
         apps = pending_apps()
     except Exception as e:
         print(f'tg-pending не прочитан: {e}', flush=True)
         return None
-    for key in list(seen):
-        if key not in apps:
-            del seen[key]  # решена: если игрок подаст снова, разберём заново
-    for key, line in sorted(apps.items()):
-        if key not in seen:
-            seen[key] = int(time.time())
-            json.dump(seen, open(APPS_SEEN, 'w'))
-            nick = line.split(' | ')[1]
-            return {'id': f'app-{key}', 'kind': 'app', 'tg_id': key, 'nick': nick, 'author_name': 'новая заявка',
-                    'when': time.strftime('%Y-%m-%d %H:%M'), 'text': APP_TASK.format(line=line), 'context': ''}
-    json.dump(seen, open(APPS_SEEN, 'w'))
-    return None
+    print(f'разбор заявок {slot}: {len(apps)}', flush=True)
+    if not apps:
+        return None
+    nicks = {k: line.split(' | ')[1] for k, line in apps.items()}
+    return {'id': 'apps-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'app', 'nicks': nicks,
+            'author_name': 'разбор заявок', 'when': slot, 'context': '',
+            'text': APP_TASK.format(slot=slot, lines='\n'.join(apps[k] for k in sorted(apps)))}
 
 
 def run(task):
@@ -113,10 +126,6 @@ def run(task):
 def main():
     for d in (INBOX, OUTBOX, WORK):
         os.makedirs(d, exist_ok=True)
-    try:
-        seen = json.load(open(APPS_SEEN))
-    except Exception:
-        seen = {}
     last_apps = 0
     while True:
         names = sorted(f for f in os.listdir(INBOX) if f.endswith('.json'))
@@ -126,7 +135,7 @@ def main():
                 time.sleep(5)
                 continue
             last_apps = time.time()
-            task = check_apps(seen)
+            task = check_apps()
             if not task:
                 continue
         path = os.path.join(INBOX, names[0]) if names else None
@@ -143,12 +152,14 @@ def main():
         if task and task.get('kind') == 'app':
             # решена (Claude или человеком): команда и так видит решение в Telegram и Discord
             try:
-                still = task['tg_id'] in pending_apps()
+                left = pending_apps()
             except Exception:
-                still = True
-            print(f"заявка {task['tg_id']} {task['nick']}: {'осталась людям' if still else 'решена'}", flush=True)
+                left = task['nicks']
+            still = [nick for k, nick in task['nicks'].items() if k in left]
+            print(f"заявки: решено {len(task['nicks']) - len(still)}, людям {len(still)}", flush=True)
             if not still:
                 continue
+            task['nick'] = ', '.join(still)
         tmp = os.path.join(OUTBOX, f'.{task_id}.json')
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump({'id': task_id, 'ok': ok, 'answer': answer or '(пустой ответ)', 'kind': (task or {}).get('kind', 'task'),

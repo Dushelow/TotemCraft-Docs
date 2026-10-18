@@ -100,7 +100,7 @@ def clean_answer(answer: str) -> str:
 
 def app_card(nick: str, answer: str) -> dict:
     """Заявку Telegram дежурный оставил людям: просим команду решить."""
-    return {"title": f"📋 Заявка {nick}: нужно решение команды", "color": ORANGE, "footer": {"text": "Дежурный Claude"},
+    return {"title": f"📋 Заявки ждут решения команды: {nick}", "color": ORANGE, "footer": {"text": "Дежурный Claude"},
             "description": truncate(clean_answer(answer), EMBED_TEXT)}
 
 
