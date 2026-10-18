@@ -24,7 +24,7 @@ class TaskInbox(unittest.TestCase):
         self.assertTrue(logic.is_urgent("СРОЧНО гриф у спавна"))
         self.assertTrue(logic.is_urgent("срочная проверка"))
         self.assertFalse(logic.is_urgent("проверь жалобу"))
-        self.assertIn("15 минут", logic.task_ack(3, "Срочно!", 1))
+        self.assertIn("первой", logic.task_ack(3, "Срочно!", 1))
         self.assertIn("обходе", logic.task_ack(3, "посмотри форум", 1))
 
     def test_store(self):
