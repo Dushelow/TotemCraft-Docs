@@ -33,8 +33,14 @@
   report      (текст на вход)               отчёт о наказании в «📜┃отчёты»
   general     (текст на вход)               сообщение в «📝┃общий-чат» (упоминания игроков <@id> работают)
   discord-mute <id участника> <срок до 7d> <причина>   мут в Discord
-Действия в Telegram:
-  tg-send <tg_id>    (текст на вход)    личное сообщение игроку через очередь бота
+Telegram (заявки и обращения видны только здесь: в botdb их нет, они лежат рядом с паролями):
+  tg-pending                            заявки, ждущие решения: tg_id | ник | дата UTC | вердикт автомата | срок |
+                                        стоп-причины | мелкие замечания | подписан | комментарий игрока
+  tg-tickets                            открытые обращения (тикеты) и непрочитанные переписки
+  tg-approve <tg_id> (комментарий на вход, можно пустой)   одобрить заявку
+  tg-reject <tg_id>  (причина на вход, обязательна)        отклонить заявку
+  tg-send <tg_id> [--close] (текст на вход)   личное сообщение игроку; --close закрывает его обращение
+  tg-close <tg_id>                      закрыть решённое обращение молча
   tg-group <номер>   (текст на вход)    ответ в общем чате Telegram на сообщение с этим номером
 """
 import base64
@@ -395,8 +401,24 @@ def main(argv):
         if not args or not args[0].isdigit():
             die(f'нужно: {cmd} <число>')
         text = stdin_text(3500)
+        close = ['--close'] if cmd == 'tg-send' and '--close' in args[1:] else []
+        record(cmd, f'{args[0]} {" ".join(close)} {json.dumps(text[:200], ensure_ascii=False)}')
+        sys.exit(outbox(['send' if cmd == 'tg-send' else 'group', args[0], *close], text))
+    elif cmd == 'tg-pending':
+        sys.exit(outbox(['pending'], ''))
+    elif cmd == 'tg-tickets':
+        query(BOT + '/bot.db', "SELECT 'тикет' AS что, key AS tg_id, json_extract(value,'$.nick') AS ник, "
+                               "json_extract(value,'$.date') AS дата, substr(json_extract(value,'$.message'),1,300) AS текст "
+                               "FROM kv WHERE space='tickets' UNION ALL "
+                               "SELECT 'непрочитано', key, '', '', '' FROM kv WHERE space='unread'")
+    elif cmd in ('tg-approve', 'tg-reject', 'tg-close'):
+        if not args or not args[0].isdigit():
+            die(f'нужно: {cmd} <tg_id>')
+        text = '' if cmd == 'tg-close' else sys.stdin.read().strip()
+        if cmd == 'tg-reject' and not 3 <= len(text) <= 1000:
+            die('причина отказа обязательна: 3-1000 знаков, её увидит игрок')
         record(cmd, f'{args[0]} {json.dumps(text[:200], ensure_ascii=False)}')
-        sys.exit(outbox(['send' if cmd == 'tg-send' else 'group', args[0]], text))
+        sys.exit(outbox([cmd[3:], args[0]], text))
     else:
         die(f'нет такого действия: {cmd}. Список: tc help')
 
