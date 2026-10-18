@@ -3,6 +3,9 @@
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli send <tg_id> [--close] < ответ.txt
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli close <tg_id>       (закрыть молча, без сообщения)
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli group <message_id> < ответ.txt   (ответ в группе на сообщение)
+  sudo -u totembot venv/bin/python -m tcbot.outbox_cli approve <tg_id> [< комментарий.txt]   (одобрить заявку)
+  sudo -u totembot venv/bin/python -m tcbot.outbox_cli reject <tg_id> < причина.txt          (отклонить, причина обязательна)
+  sudo -u totembot venv/bin/python -m tcbot.outbox_cli pending              (заявки в очереди без паролей)
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli status [N]
   sudo -u totembot venv/bin/python -m tcbot.outbox_cli photo <file_id> <файл.jpg>
 
@@ -24,6 +27,36 @@ DB_FILE = 'bot.db'
 
 def db():
     return sqlite3.connect(DB_FILE, timeout=10)
+
+
+def decide(argv, action):
+    if not argv or not argv[0].isdigit():
+        sys.exit("нужен tg_id игрока")
+    text = '' if sys.stdin.isatty() else sys.stdin.buffer.read().decode('utf-8').strip()
+    with db() as c:
+        row_id = c.execute("INSERT INTO outbox (created_at, tg_id, text, close, action) VALUES (?,?,?,?,?)",
+                           (datetime.now(timezone.utc).isoformat(timespec='seconds'), int(argv[0]), text, 0, action)).lastrowid
+    wait(row_id)
+
+
+def pending(argv):
+    """Заявки в очереди: tg_id, ник, когда подана, вердикт автомата. Пароли не печатаются."""
+    for key, value in db().execute("SELECT key, value FROM kv WHERE space='pending' ORDER BY key"):
+        a = json.loads(value)
+        auto = a.get('auto') or {}
+        print(" | ".join(str(x) for x in (key, a.get('nick'), a.get('date'), auto.get('icon'), auto.get('delay'),
+                                           '; '.join(auto.get('stop') or []), '; '.join(auto.get('minor') or []),
+                                           'подписан' if a.get('subscribed') else '', (a.get('comment') or '')[:200])))
+
+
+def wait(row_id):
+    for _ in range(40):
+        time.sleep(1)
+        status, note = db().execute("SELECT status, note FROM outbox WHERE id=?", (row_id,)).fetchone()
+        if status not in ('new', 'sending'):
+            break
+    print(f"#{row_id} {status}" + (f": {note}" if note else ''))
+    sys.exit(0 if status == 'sent' else 1)
 
 
 def send(argv, silent=False, group=False):
@@ -80,4 +113,5 @@ def photo(argv):
 if __name__ == '__main__':
     cmd, rest = (sys.argv[1], sys.argv[2:]) if len(sys.argv) > 1 else ('', [])
     {'send': send, 'close': lambda a: send(a, silent=True), 'group': lambda a: send(a, group=True),
+     'approve': lambda a: decide(a, 'approve'), 'reject': lambda a: decide(a, 'reject'), 'pending': pending,
      'status': status, 'photo': photo}.get(cmd, lambda _: sys.exit(__doc__))(rest)

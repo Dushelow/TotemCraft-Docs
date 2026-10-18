@@ -160,6 +160,43 @@ for text in ("бот, ответь", "/start"):
     log = say(P1, text, chat_id=GROUP, chat_type='supergroup')
     check(not [m for m, _ in log if m.startswith('send')], f"на «{text}» в группе по-прежнему тишина")
 
+print("\n=== 5в. Решение по заявке через очередь ===")
+DEC = 9003
+bot.pending[str(DEC)] = {'user_id': DEC, 'username': 'dec', 'tg_name': 'Dec', 'nick': 'DecNick', 'password': 'Str0ngPass1',
+                         'comment': '', 'date': '2026-10-18T05:00:00+00:00'}
+storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, action) VALUES (?,?,?,?,?)",
+                ('2026-10-18T06:00:00+00:00', DEC, '', 0, 'approve'))
+r = storage.query("SELECT max(id) FROM outbox")[0][0]
+ctx.rcon_log.clear()
+log = run_job()
+time.sleep(0.5)
+check(row(r)[0] == 'sent' and str(DEC) not in bot.pending, f"заявка одобрена и ушла из очереди: {row(r)}")
+check(storage.query("SELECT status, decided_by_name FROM applications WHERE tg_id=?", (DEC,))[0] == ('Одобрено', 'Claude'),
+      "в истории: одобрено, решил Claude")
+check(any('DecNick' in c for c in ctx.rcon_log), f"игрок зарегистрирован на сервере: {ctx.rcon_log}")
+check(storage.query("SELECT actor_name FROM audit WHERE action='approved' AND target_id=?", (DEC,))[0][0] == 'Claude',
+      "в журнале одобрение подписано Claude")
+REJ = 9004
+bot.pending[str(REJ)] = {'user_id': REJ, 'username': 'rej', 'tg_name': 'Rej', 'nick': 'RejNick', 'password': 'Str0ngPass1',
+                         'comment': '', 'date': '2026-10-18T05:00:00+00:00'}
+storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, action) VALUES (?,?,?,?,?)",
+                ('2026-10-18T06:00:00+00:00', REJ, '', 0, 'reject'))
+r = storage.query("SELECT max(id) FROM outbox")[0][0]
+run_job()
+check(row(r)[0] == 'refused' and str(REJ) in bot.pending, "отказ без причины не проходит")
+storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, action) VALUES (?,?,?,?,?)",
+                ('2026-10-18T06:00:00+00:00', REJ, 'Ник с запрещённым словом', 0, 'reject'))
+r = storage.query("SELECT max(id) FROM outbox")[0][0]
+log = run_job()
+time.sleep(0.5)
+check(row(r)[0] == 'sent' and storage.query("SELECT status FROM applications WHERE tg_id=?", (REJ,))[0][0] == 'Отклонено',
+      "отказ с причиной: заявка отклонена")
+storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, action) VALUES (?,?,?,?,?)",
+                ('2026-10-18T06:00:00+00:00', 777777, '', 0, 'approve'))
+r = storage.query("SELECT max(id) FROM outbox")[0][0]
+run_job()
+check(row(r) == ('refused', 'заявки нет в очереди'), "нет заявки: отказ")
+
 print("\n=== 6. Команда send с сервера ===")
 env = dict(os.environ, PYTHONPATH=fakes.BOT_DIR, PYTHONIOENCODING='utf-8')
 proc = subprocess.Popen([sys.executable, '-m', 'tcbot.outbox_cli', 'send', str(P2), '--close'], cwd=os.getcwd(),

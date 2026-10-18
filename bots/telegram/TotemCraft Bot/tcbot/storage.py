@@ -16,7 +16,7 @@ from datetime import datetime
 from . import config, timeutil
 from .logs import log_error, log_warning
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 LEGACY_DIR = 'legacy_files'  # сюда переезжают старые файлы после переноса в базу
 
 _lock = threading.RLock()
@@ -123,7 +123,14 @@ def _v4(c):
         c.execute("ALTER TABLE outbox ADD COLUMN reply_to INTEGER")
 
 
-MIGRATIONS = {1: _v1, 2: _v2, 3: _v3, 4: _v4}
+def _v5(c):
+    """Решение по заявке через очередь: action = approve или reject."""
+    cols = [r[1] for r in c.execute("PRAGMA table_info(outbox)")]
+    if 'action' not in cols:
+        c.execute("ALTER TABLE outbox ADD COLUMN action TEXT")
+
+
+MIGRATIONS = {1: _v1, 2: _v2, 3: _v3, 4: _v4, 5: _v5}
 
 
 def migrate():

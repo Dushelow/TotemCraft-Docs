@@ -2546,18 +2546,37 @@ def outbox_refusal(tg_id, text, close=False):
 
 def outbox_job():
     try:
-        rows = storage.query("SELECT id, tg_id, text, close, reply_to FROM outbox WHERE status='new' ORDER BY id")
+        rows = storage.query("SELECT id, tg_id, text, close, reply_to, action FROM outbox WHERE status='new' ORDER BY id")
     except Exception as e:
         log_error(e)
         return
-    for row_id, tg_id, text, close, reply_to in rows:
+    for row_id, tg_id, text, close, reply_to, action in rows:
         try:
-            if int(tg_id) == 0:
+            if action in ('approve', 'reject'):
+                outbox_decision(row_id, int(tg_id), action, text or '')
+            elif int(tg_id) == 0:
                 outbox_group_reply(row_id, reply_to, text or '')
             else:
                 outbox_send(row_id, int(tg_id), text or '', bool(close))
         except Exception as e:
             log_error(e)
+
+def outbox_decision(row_id, tg_id, action, comment):
+    """Решение по заявке от Claude: то же, что кнопки «Одобрить»/«Отклонить» у админа, подпись Claude."""
+    storage.execute("UPDATE outbox SET status='sending' WHERE id=? AND status='new'", (row_id,))
+    app = pending.get(str(tg_id))
+    if not app:
+        storage.execute("UPDATE outbox SET status='refused', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), "заявки нет в очереди", row_id))
+        return
+    if action == 'reject' and not comment.strip():
+        storage.execute("UPDATE outbox SET status='refused', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), "отказ без причины не отправляем", row_id))
+        return
+    nick = app.get('nick', '')
+    process_admin_decision(action, str(tg_id), comment.strip(), {'actor': None, 'decider_name': OUTBOX_NAME})
+    storage.execute("UPDATE outbox SET status='sent', done_at=?, note=? WHERE id=?",
+                    (timeutil.now_iso(), f"{'одобрена' if action == 'approve' else 'отклонена'} заявка {nick}", row_id))
 
 # Ответ в группе (tg_id=0 в очереди): только в группу проверки подписки и только ответом на сообщение.
 # Сам бот на сообщения группы по-прежнему не реагирует: пишет туда только то, что положил Claude.
@@ -4020,7 +4039,7 @@ def callback_handler(call):
 def process_admin_decision(action, user_id_str, comment, state):
     """Решение по заявке. state['actor'] — кто решил; None — автомат (автопринятие)."""
     actor = state['actor'] if 'actor' in state else ADMIN_ID
-    decider = staff_name(actor) if actor is not None else "🤖 автоматически"
+    decider = state.get('decider_name') or (staff_name(actor) if actor is not None else "🤖 автоматически")
     with decision_lock:
         app_claims.pop(user_id_str, None)
         app = pending.get(user_id_str)
@@ -4035,9 +4054,10 @@ def process_admin_decision(action, user_id_str, comment, state):
             storage.add_application(app, status, comment, actor, decider)
         del pending[user_id_str]
     details = (comment or '') + (' [тестовая заявка]' if test_by else '')
-    if actor is None:
+    if actor is None and not state.get('decider_name'):
         details = "автоматически: " + state.get('auto_desc', '') + details
-    audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'], details)
+    audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'], details,
+          actor_name=state.get('decider_name'))
     if action == 'approve' and not test_by:
         run_in_background(register_on_server, app['nick'], app['password'], actor, app['user_id'])
 
