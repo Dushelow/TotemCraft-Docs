@@ -39,6 +39,9 @@ class TaskInbox(unittest.TestCase):
         self.assertEqual(a["title"], "✅ Задача #4")
         self.assertTrue(a["description"].startswith("**От:** <@5>\n\nЗамутил"))
         self.assertLessEqual(len(logic.answer_card(4, "<@5>", False, "я" * 9000)["description"]), 4096)
+        self.assertEqual(logic.clean_answer("Итог.\n- раз\n- два\n**Что сделали:**\n- бан\n**Владельцу:** откат"),
+                         "Итог.\n\n- раз\n- два\n\n**Что сделали:**\n- бан\n\n**Владельцу:** откат")
+        self.assertEqual(logic.clean_answer("А\n\n\n\nБ\n```\nx\n- y\n```"), "А\n\nБ\n```\nx\n- y\n```")
         links = logic.linked_channels("см https://discord.com/channels/9/111/222 и https://discord.com/channels/9/333 "
                                       "и чужой https://discord.com/channels/8/444", 9)
         self.assertEqual(links, [111, 333])

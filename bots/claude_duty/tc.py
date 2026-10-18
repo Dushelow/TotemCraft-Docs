@@ -4,7 +4,8 @@
 Дежурный (учётная запись claudebot, без root) может вызывать только `sudo -n /opt/tcclaude/tc <действие> ...`.
 Здесь перечислено всё, что ему можно; каждый аргумент проверяется, каждое действие пишется в журнал
 /var/log/tcclaude/actions.log. Ключи ботов инструмент берёт сам и не печатает. Чего тут нет, того дежурный
-сделать не может: бессрочных банов, разбана, откатов, произвольных команд консоли, правки файлов, ролей.
+сделать не может: разбана, откатов, произвольных команд консоли, правки файлов, ролей. Бессрочный бан только за
+читы и только со ссылкой на доказательство; бан до 365 дней только за гриф.
 
 Чтение:
   logs "<регулярка>" [дней<=7]      поиск по логам сервера (время МСК)
@@ -13,14 +14,17 @@
   botdb "SELECT ..."                база Telegram-бота без таблицы kv (там пароли заявок)
   authme <ник>                      регистрация и последний вход, без пароля и IP
   abx <ник> [ник...]                история наказаний AdvancedBanX
+  vulcan <ник>                      срабатывания античита Vulcan по проверкам (сводка и последние 15)
   online                            входы и выходы за сутки
   forum                             открытые темы форума Discord
   thread <id> [сообщений<=100]      переписка темы или канала Discord (время UTC)
 Действия в игре:
   mute <ник> <срок до 7d> <причина>     мут
   unmute <ник>                          снять мут
-  tempban <ник> <срок до 30d> <причина> бан в экстренном случае; причина начинается с одного из:
-                                        Читы, Реклама, Взлом, Гриф, Обход бана, Оскорбление администрации
+  tempban <ник> <срок> <причина>        временный бан; причина начинается с одного из:
+                                        Читы, Реклама, Взлом, Гриф, Обход бана, Оскорбление администрации.
+                                        Срок до 30d, за Гриф до 365d
+  ban <ник> <ссылка на доказательство> Читы ...   бессрочный бан, только за читы, только при 100% доказательствах
   kick <ник> <причина>                  кик
 Действия в Discord (от имени «TotemCraft | Ванильный сервер»):
   forum-reply <id темы>   (текст на вход)   ответ в теме форума
@@ -70,6 +74,8 @@ DURATION = re.compile(r'^([1-9][0-9]{0,2})([mhd])$')
 REASON = re.compile(r'^[\w .,()«»№:+-]{3,100}$')  # без кавычек, слэшей, ^ и переводов строки: идёт в консоль
 BAN_REASONS = ('Читы', 'Реклама', 'Взлом', 'Гриф', 'Обход бана', 'Оскорбление администрации')
 SNOWFLAKE = re.compile(r'^\d{15,21}$')
+PROOF = re.compile(r'^https://\S{10,300}$')
+VULCAN = MC + '/plugins/Vulcan/violations.txt'
 
 
 def die(msg):
@@ -283,6 +289,23 @@ def main(argv):
         if not nicks:
             die('нужно: abx <ник> [ник...]')
         subprocess.run([sys.executable, os.path.join(HERE, 'abx_history.py'), *nicks], timeout=60)
+    elif cmd == 'vulcan':
+        nick = need_nick(args, 'нужно: vulcan <ник>')
+        rx = re.compile(r'^\[([\d-]+)\] \[([\d:]+)\] ' + re.escape(nick) + r' failed (.+?) \[VL: (\d+)\] \[Ping: (\d+)\]', re.IGNORECASE)
+        checks, last = {}, []
+        for line in open(VULCAN, encoding='utf-8', errors='replace'):
+            m = rx.match(line)
+            if m:
+                c = checks.setdefault(m.group(3), [0, 0, m.group(1), m.group(1)])
+                c[0] += 1
+                c[1] = max(c[1], int(m.group(4)))
+                c[3] = m.group(1)
+                last = (last + [line.rstrip()[:220]])[-15:]
+        if not checks:
+            print('срабатываний нет')
+        for name, (n, vl, first, final) in sorted(checks.items(), key=lambda x: -x[1][0]):
+            print(f'{name}: {n} раз, макс. VL {vl}, с {first} по {final}')
+        print('\n'.join(last))
     elif cmd == 'online':
         grep_logs(r'(joined the game|left the game)', 1)
     elif cmd == 'forum':
@@ -341,16 +364,27 @@ def main(argv):
         record('unmute', nick)
         print(f'мут с {nick} снят')
     elif cmd == 'tempban':
-        nick = need_nick(args, 'нужно: tempban <ник> <срок до 30d> <причина>')
+        nick = need_nick(args, 'нужно: tempban <ник> <срок> <причина>')
         mins = minutes(args[1] if len(args) > 1 else '')
-        if not mins or mins > 30 * 1440:
-            die('срок от 1h до 30d; дольше и навсегда банит только владелец')
         reason = need_reason(args[2:])
         if not reason.startswith(BAN_REASONS):
             die('причина бана начинается с одного из: ' + ', '.join(BAN_REASONS))
+        limit = 365 if reason.startswith('Гриф') else 30
+        if not mins or mins > limit * 1440:
+            die(f'срок от 1m до {limit}d; дольше банит только владелец')
         console(f'tempban {nick} {args[1]} {reason}')
         record('tempban', f'{nick} {args[1]} {reason}')
         print(f'бан {nick} на {args[1]} отправлен в консоль. Проверка: tc abx {nick}')
+    elif cmd == 'ban':
+        nick = need_nick(args, 'нужно: ban <ник> <ссылка на доказательство> Читы ...')
+        if len(args) < 2 or not PROOF.match(args[1]):
+            die('нужна ссылка на доказательство (видео, сообщение Discord со скриншотами), начинается с https://')
+        reason = need_reason(args[2:])
+        if not reason.startswith('Читы'):
+            die('навсегда дежурный банит только за читы; остальное временно или через владельца')
+        console(f'ban {nick} {reason}')
+        record('ban', f'{nick} {reason} доказательство: {args[1]}')
+        print(f'бессрочный бан {nick} отправлен в консоль. Проверка: tc abx {nick}')
     elif cmd == 'kick':
         nick = need_nick(args, 'нужно: kick <ник> <причина>')
         reason = need_reason(args[1:])

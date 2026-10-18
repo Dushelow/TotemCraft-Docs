@@ -60,9 +60,36 @@ def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dic
 _NOISE = re.compile(r"^\s*(\**\s*ответ( в админ-чат)?\s*:?\s*\**\s*|<@!?\d+>[\s,:]*)+", re.IGNORECASE)
 
 
+def _kind(line: str) -> str:
+    s = line.lstrip()
+    if s.startswith("#"):
+        return "head"
+    if s.startswith(">"):
+        return "quote"
+    if re.match(r"([-•*]|\d+[.)])\s", s):
+        return "list"
+    if s.startswith("**") and ":**" in s[:60]:
+        return "label"
+    return "text"
+
+
+def airy(text: str) -> str:
+    """Пустые строки между блоками (абзац, список, цитата, подпись **Что:**), чтобы текст не слипался."""
+    out, code = [], False
+    for line in text.splitlines():
+        if line.startswith("```"):
+            code = not code
+        elif not code and out and out[-1].strip() and line.strip():
+            prev, cur = _kind(out[-1]), _kind(line)
+            if cur in ("head", "label") or prev == "head" or (cur != prev and prev != "label"):
+                out.append("")
+        out.append(line.rstrip())
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
 def clean_answer(answer: str) -> str:
-    """Убирает то, что дежурный иногда дописывает сам: «Ответ в админ-чат:» и упоминание в начале."""
-    return _NOISE.sub("", (answer or "").strip()).strip() or "(пустой ответ)"
+    """Убирает то, что дежурный иногда дописывает сам («Ответ в админ-чат:», упоминание в начале), и разрежает текст."""
+    return airy(_NOISE.sub("", (answer or "").strip()).strip()) or "(пустой ответ)"
 
 
 def answer_card(task_id: int, author: str, ok: bool, answer: str) -> dict:
