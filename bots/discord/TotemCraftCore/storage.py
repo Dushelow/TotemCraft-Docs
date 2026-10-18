@@ -13,6 +13,16 @@ CREATE TABLE IF NOT EXISTS messages (
     created     REAL NOT NULL
 );
 CREATE INDEX IF NOT EXISTS messages_created ON messages(created);
+CREATE TABLE IF NOT EXISTS inbox (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    created     REAL NOT NULL,
+    author_id   INTEGER NOT NULL,
+    author_name TEXT NOT NULL,
+    channel_id  INTEGER NOT NULL,
+    message_id  INTEGER,
+    text        TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'new'
+);
 CREATE TABLE IF NOT EXISTS rooms (
     channel_id INTEGER PRIMARY KEY,
     owner_id   INTEGER NOT NULL,
@@ -56,6 +66,20 @@ class Storage:
         cur = self.db.execute("DELETE FROM messages WHERE created < ?", (time.time() - max_age_days * 86400,))
         self.db.commit()
         return cur.rowcount
+
+    # ── ящик задач (/dushelow, /totemcraft, /adminbot) ──────────
+    def add_task(self, author_id, author_name, channel_id, text) -> int:
+        cur = self.db.execute("INSERT INTO inbox (created, author_id, author_name, channel_id, text) VALUES (?, ?, ?, ?, ?)",
+                              (time.time(), author_id, author_name, channel_id, text))
+        self.db.commit()
+        return cur.lastrowid
+
+    def set_task_message(self, task_id, message_id):
+        self.db.execute("UPDATE inbox SET message_id = ? WHERE id = ?", (message_id, task_id))
+        self.db.commit()
+
+    def open_tasks(self) -> int:
+        return self.db.execute("SELECT COUNT(*) FROM inbox WHERE status = 'new'").fetchone()[0]
 
     # ── голосовые комнаты ────────────────────────────────────────
     def add_room(self, channel_id, owner_id, number):

@@ -13,6 +13,22 @@ _MENTION = re.compile(r"<(@[!&]?|#)\d+>|<a?:\w+:\d+>")
 _URL = re.compile(r"https?://\S+")
 
 
+# Ящик задач: три имени одной команды; писать могут модератор и выше и владелец сервера
+TASK_COMMANDS = ("dushelow", "totemcraft", "adminbot")
+TASK_ROLE_IDS = {
+    1454170537113681967,  # Модератор
+    1454170537113681968,  # Администратор
+    1454170537113681969,  # Главный администратор
+    1454170537130590210,  # Заместитель основателя проекта
+    1454170537130590211,  # Основатель проекта
+}
+
+
+def may_give_task(role_ids, user_id: int, owner_id: int) -> bool:
+    """Модератор и выше или владелец сервера."""
+    return user_id == owner_id or bool(TASK_ROLE_IDS & set(role_ids))
+
+
 def truncate(text: str, limit: int) -> str:
     text = text or ""
     if len(text) <= limit:

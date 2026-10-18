@@ -10,6 +10,27 @@ import logic
 from storage import Storage
 
 
+class TaskInbox(unittest.TestCase):
+    def test_roles(self):
+        self.assertTrue(logic.may_give_task([1454170537113681967], 5, 1))   # модератор
+        self.assertTrue(logic.may_give_task([], 1, 1))                      # владелец сервера
+        self.assertFalse(logic.may_give_task([1454170537113681965], 5, 1))  # игровой помощник
+        self.assertFalse(logic.may_give_task([1454170536765558916], 5, 1))  # игрок
+
+    def test_three_names(self):
+        self.assertEqual(logic.TASK_COMMANDS, ("dushelow", "totemcraft", "adminbot"))
+
+    def test_store(self):
+        with tempfile.TemporaryDirectory() as d:
+            s = Storage(os.path.join(d, "x.db"))
+            t = s.add_task(7, "Dark", 99, "проверь жалобу")
+            s.set_task_message(t, 12345)
+            self.assertEqual(s.open_tasks(), 1)
+            self.assertEqual(s.db.execute("SELECT text, message_id, status FROM inbox").fetchone(),
+                             ("проверь жалобу", 12345, "new"))
+            s.db.close()
+
+
 class ThreadTitle(unittest.TestCase):
     def test_first_line(self):
         self.assertEqual(logic.thread_title("хаммам\nвторая строка", "Комментарии"), "хаммам")

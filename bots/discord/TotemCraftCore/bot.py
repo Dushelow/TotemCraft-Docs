@@ -6,12 +6,16 @@
 3. Личные голосовые комнаты: заход в «войсчат» создаёт комнату игрока.
 4. Галерея: тред под постом и реакция 👍.
 5. Ивенты: тред под анонсом.
+6. Ящик задач: /dushelow, /totemcraft, /adminbot (одно и то же) в админ-чате записывают задачу в базу.
+   Команды скрыты от всех без права «Отправка в тайм-аут», писать могут модератор и выше и владелец.
+   Задачи разбирает Claude на утреннем и вечернем обходе и отвечает в админ-чат.
 """
 import asyncio
 import os
 from datetime import datetime, timezone
 
 import discord
+from discord import app_commands
 from discord.ext import tasks
 from dotenv import load_dotenv
 
@@ -38,6 +42,7 @@ VOICE_HUB_ID       = _id("VOICE_HUB_CHANNEL_ID")
 VOICE_CATEGORY_ID  = _id("VOICE_CATEGORY_ID")
 DB_PATH            = os.getenv("DB_PATH", "/home/totemcraftcore/totemcraftcore.db")
 MESSAGE_KEEP_DAYS  = int(os.getenv("MESSAGE_KEEP_DAYS", "30"))
+ADMIN_CHAT_ID      = int(os.getenv("ADMIN_CHAT_ID", "1454170538095153252"))
 
 GREEN, RED, ORANGE = 0x43B581, 0xF04747, 0xFAA61A
 
@@ -72,10 +77,18 @@ class TotemCraftCore(discord.Client):
         super().__init__(intents=intents)
         self.store = Storage(DB_PATH)
         self._room_lock = asyncio.Lock()
+        self.tree = app_commands.CommandTree(self)
 
     # ── служебное ────────────────────────────────────────────────
     async def setup_hook(self):
         self._prune_loop.start()
+        for name in logic.TASK_COMMANDS:
+            cmd = app_commands.Command(name=name, description="Задача для Claude: разберёт на ближайшем обходе",
+                                       callback=self._task_command)
+            cmd.default_permissions = discord.Permissions(moderate_members=True)  # игрокам команды не видны
+            cmd.guild_only = True
+            self.tree.add_command(cmd, guild=discord.Object(id=GUILD_ID))
+        await self.tree.sync(guild=discord.Object(id=GUILD_ID))
 
     async def on_ready(self):
         log(f"Запущен как {self.user}")
@@ -86,6 +99,29 @@ class TotemCraftCore(discord.Client):
         removed = self.store.prune_messages(MESSAGE_KEEP_DAYS)
         if removed:
             log(f"Забыто старых сообщений: {removed}")
+
+    # ── 6. ящик задач ────────────────────────────────────────────
+    @app_commands.describe(задача="Что сделать; можно ссылки на темы и сообщения")
+    async def _task_command(self, interaction: discord.Interaction, задача: str):
+        user = interaction.user
+        role_ids = [r.id for r in getattr(user, "roles", [])]
+        if not logic.may_give_task(role_ids, user.id, interaction.guild.owner_id if interaction.guild else 0):
+            await interaction.response.send_message("Команда для модераторов, администрации и владельца.", ephemeral=True)
+            return
+        if interaction.channel_id != ADMIN_CHAT_ID:
+            await interaction.response.send_message(f"Команда работает только в <#{ADMIN_CHAT_ID}>.", ephemeral=True)
+            return
+        task_id = self.store.add_task(user.id, user.display_name, interaction.channel_id, задача)
+        waiting = self.store.open_tasks()
+        await interaction.response.send_message(
+            f"📥 Задача #{task_id} записана: {logic.truncate(задача, 300)}\n"
+            f"Разберу на ближайшем обходе (утром и вечером). Открытых задач: {waiting}.",
+            allowed_mentions=discord.AllowedMentions.none())
+        try:
+            msg = await interaction.original_response()
+            self.store.set_task_message(task_id, msg.id)
+        except discord.HTTPException as ex:
+            log(f"Не удалось запомнить сообщение задачи #{task_id}: {ex}")
 
     def _ours(self, guild) -> bool:
         return guild is not None and guild.id == GUILD_ID
