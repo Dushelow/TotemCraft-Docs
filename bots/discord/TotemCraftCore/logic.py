@@ -98,6 +98,12 @@ def clean_answer(answer: str) -> str:
     return airy(_NOISE.sub("", (answer or "").strip()).strip()) or "(пустой ответ)"
 
 
+def app_card(nick: str, answer: str) -> dict:
+    """Заявку Telegram дежурный оставил людям: просим команду решить."""
+    return {"title": f"📋 Заявка {nick}: нужно решение команды", "color": ORANGE, "footer": {"text": "Дежурный Claude"},
+            "description": truncate(clean_answer(answer), EMBED_TEXT)}
+
+
 def answer_card(task_id: int, author: str, ok: bool, answer: str) -> dict:
     """Карточка ответа дежурного: зелёная готово, красная не вышло."""
     head = f"**От:** {author}\n\n"

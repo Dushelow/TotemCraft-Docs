@@ -174,6 +174,11 @@ class TotemCraftCore(discord.Client):
             try:
                 with open(path, encoding="utf-8") as f:
                     res = json.load(f)
+                if res.get("kind") == "app":  # заявка Telegram, которую дежурный оставил людям
+                    channel = self.get_channel(ADMIN_CHAT_ID)
+                    if channel is not None:
+                        await self._as_server(channel, embed=logic.app_card(res.get("nick") or "?", res.get("answer")))
+                    continue
                 task = self.store.get_task(int(res["id"])) or {}
                 guild = self.get_guild(GUILD_ID)
                 who = logic.author_label(task["author_id"], guild.owner_id if guild else 0) if task.get("author_id") else "?"
