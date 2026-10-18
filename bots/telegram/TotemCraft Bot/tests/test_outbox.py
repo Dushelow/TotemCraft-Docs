@@ -88,6 +88,12 @@ storage.execute("INSERT INTO applications (created_at, tg_id, nick, status) VALU
 r = queue(APPLICANT, "Зайдите под ником Kufirix.")
 log = run_job()
 check(row(r)[0] == 'sent' and len(sent_to(log, APPLICANT)) == 1, "тому, кто подавал заявку, писать можно")
+WAITING = 9002  # заявка ещё в очереди, решённых заявок и переписки нет
+bot.pending[str(WAITING)] = {'user_id': WAITING, 'nick': 'Waiting1', 'date': '2026-10-17T14:05:25+00:00'}
+r = queue(WAITING, "В пароле запрещённое число, подайте заявку заново.")
+log = run_job()
+check(row(r)[0] == 'sent' and len(sent_to(log, WAITING)) == 1, "тому, чья заявка ждёт, писать можно")
+bot.pending.pop(str(WAITING), None)
 
 print("\n=== 4. Игрок заблокировал бота ===")
 ctx.blocked_chats.add(P3)
