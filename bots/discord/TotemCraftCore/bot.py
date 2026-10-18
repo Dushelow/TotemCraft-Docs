@@ -121,7 +121,7 @@ class TotemCraftCore(discord.Client):
         waiting = self.store.open_tasks()
         await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
         # саму задачу видят все в админ-чате: карточка от «TotemCraft | Ванильный сервер»
-        urgent = logic.is_urgent(задача)
+        urgent = logic.is_urgent(задача) or logic.is_summary(задача)  # сводку по запросу дежурный начинает сразу
         duty = urgent and os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
         who = logic.author_label(user.id, interaction.guild.owner_id)
         await self._as_server(interaction.channel, embed=logic.task_card(task_id, who, задача, duty))

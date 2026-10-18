@@ -13,6 +13,7 @@
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -24,7 +25,9 @@ INBOX, OUTBOX, FILES, WORK = BASE + '/inbox', BASE + '/outbox', BASE + '/files',
 HERE = os.path.dirname(os.path.realpath(__file__))
 CLAUDE = os.path.expanduser('~/.local/bin/claude')
 TIMEOUT = 20 * 60
-ROUTINES = {'06:00': ('morning', 'Утренний отчёт'), '21:00': ('evening', 'Вечерний отчёт')}
+ROUTINES = {'06:00': ('morning', 'Утренняя сводка'), '21:00': ('evening', 'Вечерняя сводка')}
+# Сводка по запросу из админ-чата: весь текст задачи только «проведи / пришли / собери / сделай [утреннюю|вечернюю] сводку»
+SUMMARY = re.compile(r"^\s*(?:срочно[\s,:!]*)?(?:проведи|пришли|собери|сделай)\s+(?:(утреннюю|вечернюю)\s+)?сводку\s*[.!]*\s*$", re.IGNORECASE)
 ROUTINE_LAST = WORK + '/apps_last.txt'  # последний сделанный обход, «ГГГГ-ММ-ДД ЧЧ:ММ»
 ROUTINE_TURNS, ROUTINE_TIMEOUT = 150, 50 * 60
 CLOCK_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
@@ -117,6 +120,13 @@ def main():
         try:
             if task is None:
                 task = json.load(open(path, encoding='utf-8'))
+                m = SUMMARY.match(task.get('text', ''))
+                if m:  # полная сводка по запросу, по той же инструкции, что и по расписанию
+                    which = (m.group(1) or '').lower()
+                    kind = 'morning' if which == 'утреннюю' or (not which and datetime.now().hour < 14) else 'evening'
+                    task['text'] = (f"Сводка по запросу из админ-чата. Проведи её полностью по инструкции ниже.\n\n"
+                                    + open(os.path.join(HERE, f'routine_{kind}.md'), encoding='utf-8').read())
+                    task['max_turns'], task['timeout'] = ROUTINE_TURNS, ROUTINE_TIMEOUT
             task_id = task['id']
             ok, answer = run(task)
         except subprocess.TimeoutExpired:

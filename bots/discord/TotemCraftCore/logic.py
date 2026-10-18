@@ -24,6 +24,14 @@ TASK_ROLE_IDS = {
 }
 
 
+# Сводка по запросу: весь текст задачи только «проведи / пришли / собери / сделай [утреннюю|вечернюю] сводку»
+SUMMARY = re.compile(r"^\s*(?:срочно[\s,:!]*)?(?:проведи|пришли|собери|сделай)\s+(?:(утреннюю|вечернюю)\s+)?сводку\s*[.!]*\s*$", re.IGNORECASE)
+
+
+def is_summary(text: str) -> bool:
+    return bool(SUMMARY.match(text or ""))
+
+
 def is_urgent(text: str) -> bool:
     """Слово «срочно» в любом регистре: такую задачу Claude разбирает первой."""
     return "срочн" in (text or "").lower()
@@ -69,7 +77,10 @@ def _card(title: str, color: int, description: str = "", fields=()) -> dict:
 
 def task_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
     """Карточка сразу в админ-чат: все видят задачу и кто её дал."""
-    if is_urgent(text):
+    if is_summary(text):
+        title, color = f"Запрос сводки № {task_id}", SLATE
+        status = "Дежурный собирает сводку, итог придёт сюда" if duty else "Соберём первой"
+    elif is_urgent(text):
         title, color = f"Срочная задача № {task_id}", AMBER
         status = "Дежурный разбирает, ответ придёт сюда" if duty else "Разберём первой"
     else:
