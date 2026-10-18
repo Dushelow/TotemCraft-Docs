@@ -1,6 +1,6 @@
 """Чистая логика TotemCraftCore без зависимости от discord.py: её проверяют тесты."""
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 
 THREAD_NAME_MAX = 100
 CHANNEL_NAME_MAX = 100
@@ -34,8 +34,13 @@ def task_ack(task_id: int, text: str, waiting: int) -> str:
     return f"📥 Задача #{task_id} записана, карточка в чате. Открытых задач: {waiting}."
 
 
-ORANGE, GREEN, RED, BLUE = 0xFAA61A, 0x43B581, 0xF04747, 0x5865F2
-EMBED_TEXT = 4000  # Дискорд: описание карточки до 4096 знаков
+# Карточки в админ-чате: строгий вид, без эмодзи; разделы ответа идут полями карточки,
+# Discord сам ставит между ними отступы, поэтому текст не слипается.
+AMBER, GREEN, RED, BLUE, SLATE = 0xD89614, 0x2D9D78, 0xD64545, 0x3B6FD8, 0x4F5D75
+EMBED_TEXT = 4000   # описание карточки до 4096 знаков
+FIELD_TEXT = 1000   # поле до 1024 знаков
+FOOTER = {"text": "TotemCraft · Дежурный администратор"}
+FIELD_NAMES = {"владельцу": "Требует решения владельца"}
 
 
 def author_label(user_id: int, owner_id: int) -> str:
@@ -47,16 +52,31 @@ def quote(text: str) -> str:
     return "\n".join("> " + line if line.strip() else ">" for line in (text or "").strip().splitlines())
 
 
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _field(name: str, value: str, inline: bool = False) -> dict:
+    return {"name": name, "value": truncate(value.strip() or "нет", FIELD_TEXT), "inline": inline}
+
+
+def _card(title: str, color: int, description: str = "", fields=()) -> dict:
+    card = {"title": title, "color": color, "footer": FOOTER, "timestamp": _now(), "fields": list(fields)[:25]}
+    if description:
+        card["description"] = truncate(description, EMBED_TEXT)
+    return card
+
+
 def task_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
-    """Карточка сразу в админ-чат: все видят задачу и кто её дал. Срочная оранжевая, обычная синяя."""
+    """Карточка сразу в админ-чат: все видят задачу и кто её дал."""
     if is_urgent(text):
-        title, color = f"⚡ Срочная задача #{task_id}", ORANGE
-        tail = "Дежурный уже разбирает, ответ придёт сюда." if duty else "Записана, разберу первой."
+        title, color = f"Срочная задача № {task_id}", AMBER
+        status = "Дежурный разбирает, ответ придёт сюда" if duty else "Разберём первой"
     else:
-        title, color = f"📥 Задача #{task_id}", BLUE
-        tail = "Разберу на ближайшем обходе: утром после рестарта или вечером."
-    return {"title": title, "color": color,
-            "description": f"**От:** {author}\n\n{quote(truncate(text, 1500))}\n\n*{tail}*"}
+        title, color = f"Задача № {task_id}", BLUE
+        status = "Разберём на ближайшем обходе (06:00 или 21:00 МСК)"
+    return _card(title, color, quote(truncate(text, 1500)),
+                 [_field("Автор", author, True), _field("Статус", status, True)])
 
 
 def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
@@ -98,24 +118,44 @@ def clean_answer(answer: str) -> str:
     return airy(_NOISE.sub("", (answer or "").strip()).strip()) or "(пустой ответ)"
 
 
+_LABEL = re.compile(r"^\s*\*\*([^*\n]{1,60}?):\*\*\s*(.*)$")
+
+
+def sections(answer: str):
+    """Ответ дежурного: вступление и разделы «**Название:** ...» отдельно, чтобы показать их полями карточки."""
+    text = _NOISE.sub("", (answer or "").strip()).strip()
+    intro, fields, current = [], [], None
+    for line in text.splitlines():
+        m = _LABEL.match(line)
+        if m:
+            current = [FIELD_NAMES.get(m.group(1).strip().lower(), m.group(1).strip()), [m.group(2)] if m.group(2) else []]
+            fields.append(current)
+        elif current is not None:
+            current[1].append(line)
+        else:
+            intro.append(line)
+    summary = airy("\n".join(intro)) or ("" if fields else "(пустой ответ)")
+    return summary, [_field(name, airy("\n".join(lines))) for name, lines in fields]
+
+
 def routine_card(title: str, ok: bool, answer: str) -> dict:
     """Итог утреннего или вечернего обхода дежурного."""
-    return {"title": (title or "Обход") + ("" if ok else ": не доделан"), "color": BLUE if ok else RED,
-            "footer": {"text": "Дежурный Claude"}, "description": truncate(clean_answer(answer), EMBED_TEXT)}
+    summary, fields = sections(answer)
+    title = f"{title or 'Отчёт'} · {datetime.now():%d.%m.%Y}" + ("" if ok else " · не завершён")
+    return _card(title, SLATE if ok else RED, summary, fields)
 
 
 def app_card(nick: str, answer: str) -> dict:
-    """Заявку Telegram дежурный оставил людям: просим команду решить."""
-    return {"title": f"📋 Заявки ждут решения команды: {nick}", "color": ORANGE, "footer": {"text": "Дежурный Claude"},
-            "description": truncate(clean_answer(answer), EMBED_TEXT)}
+    """Заявки Telegram, которые дежурный оставил людям."""
+    summary, fields = sections(answer)
+    return _card("Заявки ждут решения команды", AMBER, summary, [_field("Заявки", nick, True)] + fields)
 
 
 def answer_card(task_id: int, author: str, ok: bool, answer: str) -> dict:
-    """Карточка ответа дежурного: зелёная готово, красная не вышло."""
-    head = f"**От:** {author}\n\n"
-    return {"title": f"{'✅' if ok else '❌'} Задача #{task_id}" + ("" if ok else ": не вышло"),
-            "color": GREEN if ok else RED, "footer": {"text": "Дежурный Claude"},
-            "description": head + truncate(clean_answer(answer), EMBED_TEXT - len(head))}
+    """Ответ дежурного на задачу из ящика."""
+    summary, fields = sections(answer)
+    return _card(f"Задача № {task_id} · " + ("выполнена" if ok else "не выполнена"), GREEN if ok else RED,
+                 summary, [_field("Автор задачи", author, True)] + fields)
 
 
 _LINK = re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)")
