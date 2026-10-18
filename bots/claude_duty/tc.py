@@ -18,6 +18,14 @@
   online                            входы и выходы за сутки
   forum                             открытые темы форума Discord
   thread <id> [сообщений<=100]      переписка темы или канала Discord (время UTC)
+  snapshot                          сводка для обхода: службы, рестарт, ошибки, туннель, заявки, обращения,
+                                    переписка и общий чат Telegram за 26 ч, ящик задач, входы, наказания за 26 ч
+  inbox                             задачи из ящика админ-чата, ещё не сделанные
+  reports [дней<=7]                 отчёты прошлых обходов (что уже сделано), по умолчанию 2 дня
+Ящик и отчёты:
+  task-answer <номер> (текст на вход)  ответ на задачу из ящика: Core покажет его карточкой в админ-чате
+                                       с автором задачи и пометит задачу сделанной
+  day-report (текст на вход)           дописать раздел в отчёт за сегодня (что сделано, что открыто)
 Действия в игре:
   mute <ник> <срок до 7d> <причина>     мут
   unmute <ник>                          снять мут
@@ -65,6 +73,9 @@ CORE_ENV = '/home/totemcraftcore/.env'
 HERE = os.path.dirname(os.path.realpath(__file__))
 STATE = '/var/lib/tcclaude-root'          # вебхуки; только root
 ACTIONS_LOG = '/var/log/tcclaude/actions.log'
+CORE_DB = '/home/totemcraftcore/totemcraftcore.db'
+DUTY_OUTBOX = '/var/lib/tcclaude/outbox'
+REPORTS_DIR = '/var/lib/tcclaude/reports'
 MAX_LINES = 300
 
 GUILD = '1454170536765558911'
@@ -312,6 +323,43 @@ def main(argv):
         for name, (n, vl, first, final) in sorted(checks.items(), key=lambda x: -x[1][0]):
             print(f'{name}: {n} раз, макс. VL {vl}, с {first} по {final}')
         print('\n'.join(last))
+    elif cmd == 'snapshot':
+        p = subprocess.run(['bash', os.path.join(HERE, 'snapshot.sh')], capture_output=True, timeout=180)
+        print(p.stdout.decode('utf-8', 'replace')[-60000:])
+    elif cmd == 'inbox':
+        query(CORE_DB, "SELECT id, datetime(created,'unixepoch','+3 hours') AS msk, author_name, text FROM inbox "
+                       "WHERE status='new' ORDER BY id")
+    elif cmd == 'reports':
+        days = max(1, min(int(args[0]) if args and args[0].isdigit() else 2, 7))
+        for i in range(days - 1, -1, -1):
+            day = (datetime.date.today() - datetime.timedelta(days=i)).isoformat()
+            path = os.path.join(REPORTS_DIR, day + '.md')
+            if os.path.exists(path):
+                print(f'##### {day}')
+                print(open(path, encoding='utf-8').read()[-15000:])
+    elif cmd == 'task-answer':
+        if not args or not args[0].isdigit():
+            die('нужно: task-answer <номер задачи>')
+        db = sqlite3.connect(f'file:{CORE_DB}?mode=ro', uri=True, timeout=10)
+        row = db.execute("SELECT status FROM inbox WHERE id=?", (int(args[0]),)).fetchone()
+        if not row or row[0] != 'new':
+            die(f'задачи #{args[0]} нет в ящике или она уже сделана')
+        text = stdin_text(3500)
+        tmp = os.path.join(DUTY_OUTBOX, f'.{args[0]}.json')
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump({'id': int(args[0]), 'ok': True, 'answer': text}, f, ensure_ascii=False)
+        os.chmod(tmp, 0o660)
+        os.replace(tmp, os.path.join(DUTY_OUTBOX, f'{args[0]}.json'))
+        record('task-answer', f'{args[0]} {json.dumps(text[:200], ensure_ascii=False)}')
+        print(f'ответ на задачу #{args[0]} передан, Core опубликует его в админ-чате')
+    elif cmd == 'day-report':
+        text = stdin_text(8000)
+        os.makedirs(REPORTS_DIR, mode=0o750, exist_ok=True)
+        path = os.path.join(REPORTS_DIR, datetime.date.today().isoformat() + '.md')
+        with open(path, 'a', encoding='utf-8') as f:
+            f.write(f"\n## {datetime.datetime.now():%H:%M} МСК\n\n{text}\n")
+        record('day-report', path)
+        print(f'записано в отчёт {os.path.basename(path)}')
     elif cmd == 'online':
         grep_logs(r'(joined the game|left the game)', 1)
     elif cmd == 'forum':

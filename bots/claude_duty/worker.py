@@ -7,10 +7,9 @@
 в /var/lib/tcclaude/outbox/<id>.json. Core публикует ответ в админ-чате от имени «TotemCraft | Ванильный сервер».
 Задач нет: служба спит, токены не тратятся. Одна задача за раз, не дольше 20 минут.
 
-Заявки Telegram: дежурный решает их наравне с админами, два раза в день (APP_TIMES, МСК): утром после
-рестарта и вечером. Одним запуском Claude на все заявки сразу; заявок нет — Claude не запускается.
-Решение видно команде как обычно (карточка в Telegram и уведомление в Discord с подписью Claude).
-Сомнительные заявки дежурный оставляет людям, Core пишет о них карточкой в админ-чат.
+Обходы по расписанию (ROUTINES, МСК): утром после рестарта и вечером дежурный сам проходит весь обход
+по routine_morning.md / routine_evening.md: заявки Telegram, форум, наказания, обращения, ящик задач, отчёт
+за день. Итог Core публикует карточкой в админ-чате. Между обходами раз в минуту только сверяются часы.
 """
 import json
 import os
@@ -25,9 +24,10 @@ INBOX, OUTBOX, FILES, WORK = BASE + '/inbox', BASE + '/outbox', BASE + '/files',
 HERE = os.path.dirname(os.path.realpath(__file__))
 CLAUDE = os.path.expanduser('~/.local/bin/claude')
 TIMEOUT = 20 * 60
-APP_TIMES = ('06:00', '21:00')  # МСК: после рестарта 04:30 и вечером, до обходов на компьютере владельца
-APPS_LAST = WORK + '/apps_last.txt'
-APPS_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
+ROUTINES = {'06:00': ('morning', '🌅 Утренний обход'), '21:00': ('evening', '🌙 Вечерний обход')}
+ROUTINE_LAST = WORK + '/apps_last.txt'  # последний сделанный обход, «ГГГГ-ММ-ДД ЧЧ:ММ»
+ROUTINE_TURNS, ROUTINE_TIMEOUT = 150, 50 * 60
+CLOCK_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
 TC = ['sudo', '-n', '/opt/tcclaude/tc']
 MODEL = os.environ.get('DUTY_MODEL', 'sonnet')
 
@@ -49,56 +49,30 @@ PROMPT = """Ты дежурный администратор сервера Mine
 """
 
 
-APP_TASK = """Разбор заявок в Telegram на вход на сервер ({slot} МСК). Ты член команды и решаешь заявки наравне с админами.
-Заявки из tg-pending (tg_id | ник | дата UTC | вердикт автомата | срок автопринятия | стоп-причины | замечания | подписка | комментарий):
-{lines}
-
-Разбери каждую по разделу «Telegram: заявки и обращения» в RULES.md. Если заявки уже нет в `tg-pending`, её решил
-кто-то из команды. Чистая: проверь `abx` по нику и прошлые заявки tg_id, затем `tg-approve`. Нарушение: `tg-reject`
-с понятной игроку причиной. Сомнение: не решай, объясни людям почему.
-Ответ: по строке на заявку, что решил и почему, с цифрами."""
-
-
-def pending_apps():
-    p = subprocess.run(TC + ['tg-pending'], capture_output=True, text=True, timeout=90)
-    apps = {}
-    for line in p.stdout.splitlines():
-        parts = line.split(' | ')
-        if len(parts) >= 2 and parts[0].isdigit():
-            apps[parts[0]] = line
-    return apps
-
-
 def due_slot(now=None):
     """Последнее наступившее время разбора заявок, строкой «ГГГГ-ММ-ДД ЧЧ:ММ»."""
     now = now or datetime.now()
     slots = [datetime.combine(now.date() - timedelta(days=d), datetime.strptime(t, '%H:%M').time())
-             for d in (0, 1) for t in APP_TIMES]
+             for d in (0, 1) for t in ROUTINES]
     return max(x for x in slots if x <= now).strftime('%Y-%m-%d %H:%M')
 
 
-def check_apps():
-    """Наступило время разбора и есть заявки: задача дежурному. Иначе None (Claude не запускается)."""
+def check_routine():
+    """Наступило время обхода, который ещё не сделан: задача дежурному. Иначе None."""
     slot = due_slot()
     try:
-        last = open(APPS_LAST).read().strip()
+        last = open(ROUTINE_LAST).read().strip()
     except OSError:
         last = ''
     if slot == last:
         return None
-    open(APPS_LAST, 'w').write(slot)
-    try:
-        apps = pending_apps()
-    except Exception as e:
-        print(f'tg-pending не прочитан: {e}', flush=True)
-        return None
-    print(f'разбор заявок {slot}: {len(apps)}', flush=True)
-    if not apps:
-        return None
-    nicks = {k: line.split(' | ')[1] for k, line in apps.items()}
-    return {'id': 'apps-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'app', 'nicks': nicks,
-            'author_name': 'разбор заявок', 'when': slot, 'context': '',
-            'text': APP_TASK.format(slot=slot, lines='\n'.join(apps[k] for k in sorted(apps)))}
+    open(ROUTINE_LAST, 'w').write(slot)
+    kind, title = ROUTINES[slot[-5:]]
+    print(f'{title} {slot}', flush=True)
+    return {'id': 'routine-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'routine', 'title': title,
+            'author_name': 'расписание', 'when': slot, 'context': '',
+            'text': open(os.path.join(HERE, f'routine_{kind}.md'), encoding='utf-8').read(),
+            'max_turns': ROUTINE_TURNS, 'timeout': ROUTINE_TIMEOUT}
 
 
 def run(task):
@@ -113,9 +87,9 @@ def run(task):
     prompt = PROMPT.format(author=task.get('author_name', '?'), when=task.get('when', ''), text=task['text'],
                            context=(task.get('context') or '')[-30000:], folder=folder)
     # Sonnet со средним усилием: дешевле Opus, но рассуждает; модель и усилие в ~/.claude/settings.json
-    cmd = [CLAUDE, '-p', prompt, '--output-format', 'json', '--max-turns', '40', '--model', MODEL,
+    cmd = [CLAUDE, '-p', prompt, '--output-format', 'json', '--max-turns', str(task.get('max_turns', 40)), '--model', MODEL,
            '--allowedTools', 'Bash(sudo -n /opt/tcclaude/tc *)', f'Read({folder}/**)']
-    p = subprocess.run(cmd, cwd=folder, capture_output=True, text=True, timeout=TIMEOUT)
+    p = subprocess.run(cmd, cwd=folder, capture_output=True, text=True, timeout=task.get('timeout', TIMEOUT))
     try:
         res = json.loads(p.stdout)
         return (not res.get('is_error')), (res.get('result') or '').strip()
@@ -131,11 +105,11 @@ def main():
         names = sorted(f for f in os.listdir(INBOX) if f.endswith('.json'))
         task = None
         if not names:
-            if time.time() - last_apps < APPS_EVERY:
+            if time.time() - last_apps < CLOCK_EVERY:
                 time.sleep(5)
                 continue
             last_apps = time.time()
-            task = check_apps()
+            task = check_routine()
             if not task:
                 continue
         path = os.path.join(INBOX, names[0]) if names else None
@@ -146,24 +120,13 @@ def main():
             task_id = task['id']
             ok, answer = run(task)
         except subprocess.TimeoutExpired:
-            ok, answer = False, 'Не уложился в 20 минут: задача останется на вечерний обход.'
+            ok, answer = False, 'Не уложился по времени: что не успел, разберёт следующий обход.'
         except Exception as e:
             ok, answer = False, f'Дежурный не смог выполнить задачу: {type(e).__name__}: {e}'
-        if task and task.get('kind') == 'app':
-            # решена (Claude или человеком): команда и так видит решение в Telegram и Discord
-            try:
-                left = pending_apps()
-            except Exception:
-                left = task['nicks']
-            still = [nick for k, nick in task['nicks'].items() if k in left]
-            print(f"заявки: решено {len(task['nicks']) - len(still)}, людям {len(still)}", flush=True)
-            if not still:
-                continue
-            task['nick'] = ', '.join(still)
         tmp = os.path.join(OUTBOX, f'.{task_id}.json')
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump({'id': task_id, 'ok': ok, 'answer': answer or '(пустой ответ)', 'kind': (task or {}).get('kind', 'task'),
-                       'nick': (task or {}).get('nick', '')}, f, ensure_ascii=False)
+                       'title': (task or {}).get('title', '')}, f, ensure_ascii=False)
         os.replace(tmp, os.path.join(OUTBOX, f'{task_id}.json'))
         if path:
             os.remove(path)

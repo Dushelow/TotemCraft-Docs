@@ -174,6 +174,11 @@ class TotemCraftCore(discord.Client):
             try:
                 with open(path, encoding="utf-8") as f:
                     res = json.load(f)
+                if res.get("kind") == "routine":  # итог обхода по расписанию
+                    channel = self.get_channel(ADMIN_CHAT_ID)
+                    if channel is not None:
+                        await self._as_server(channel, embed=logic.routine_card(res.get("title"), res.get("ok"), res.get("answer")))
+                    continue
                 if res.get("kind") == "app":  # заявка Telegram, которую дежурный оставил людям
                     channel = self.get_channel(ADMIN_CHAT_ID)
                     if channel is not None:
