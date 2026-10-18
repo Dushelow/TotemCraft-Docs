@@ -8,7 +8,7 @@
 Задач нет: служба спит, токены не тратятся. Одна задача за раз, не дольше 20 минут.
 
 Обходы по расписанию (ROUTINES, МСК): утром после рестарта и вечером дежурный сам проходит весь обход
-по routine_morning.md / routine_evening.md: заявки Telegram, форум, наказания, обращения, ящик задач, отчёт
+по routine.md: заявки Telegram, форум, наказания, обращения, ящик задач, отчёт
 за день. Итог Core публикует карточкой в админ-чате. Между обходами раз в минуту только сверяются часы.
 """
 import json
@@ -25,9 +25,10 @@ INBOX, OUTBOX, FILES, WORK = BASE + '/inbox', BASE + '/outbox', BASE + '/files',
 HERE = os.path.dirname(os.path.realpath(__file__))
 CLAUDE = os.path.expanduser('~/.local/bin/claude')
 TIMEOUT = 20 * 60
-ROUTINES = {'06:00': ('morning', 'Утренняя сводка'), '21:00': ('evening', 'Вечерняя сводка')}
-# Сводка по запросу из админ-чата: весь текст задачи только «проведи / пришли / собери / сделай [утреннюю|вечернюю] сводку»
-SUMMARY = re.compile(r"^\s*(?:срочно[\s,:!]*)?(?:проведи|пришли|собери|сделай)\s+(?:(утреннюю|вечернюю)\s+)?сводку\s*[.!]*\s*$", re.IGNORECASE)
+ROUTINES = ('06:00', '21:00')  # МСК; утром и вечером одна и та же сводка по routine.md
+ROUTINE_FILE = os.path.join(HERE, 'routine.md')
+# Сводка по запросу из админ-чата: весь текст задачи только «проведи / пришли / собери / сделай сводку»
+SUMMARY = re.compile(r"^\s*(?:срочно[\s,:!]*)?(?:проведи|пришли|собери|сделай)\s+сводку\s*[.!]*\s*$", re.IGNORECASE)
 ROUTINE_LAST = WORK + '/apps_last.txt'  # последний сделанный обход, «ГГГГ-ММ-ДД ЧЧ:ММ»
 ROUTINE_TURNS, ROUTINE_TIMEOUT = 150, 50 * 60
 CLOCK_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
@@ -70,11 +71,10 @@ def check_routine():
     if slot == last:
         return None
     open(ROUTINE_LAST, 'w').write(slot)
-    kind, title = ROUTINES[slot[-5:]]
-    print(f'{title} {slot}', flush=True)
-    return {'id': 'routine-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'routine', 'title': title,
+    print(f'сводка {slot}', flush=True)
+    return {'id': 'routine-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'routine', 'title': 'Сводка',
             'author_name': 'расписание', 'when': slot, 'context': '',
-            'text': open(os.path.join(HERE, f'routine_{kind}.md'), encoding='utf-8').read(),
+            'text': open(ROUTINE_FILE, encoding='utf-8').read(),
             'max_turns': ROUTINE_TURNS, 'timeout': ROUTINE_TIMEOUT}
 
 
@@ -122,10 +122,8 @@ def main():
                 task = json.load(open(path, encoding='utf-8'))
                 m = SUMMARY.match(task.get('text', ''))
                 if m:  # полная сводка по запросу, по той же инструкции, что и по расписанию
-                    which = (m.group(1) or '').lower()
-                    kind = 'morning' if which == 'утреннюю' or (not which and datetime.now().hour < 14) else 'evening'
-                    task['text'] = (f"Сводка по запросу из админ-чата. Проведи её полностью по инструкции ниже.\n\n"
-                                    + open(os.path.join(HERE, f'routine_{kind}.md'), encoding='utf-8').read())
+                    task['text'] = ("Сводка по запросу из админ-чата. Проведи её полностью по инструкции ниже.\n\n"
+                                    + open(ROUTINE_FILE, encoding='utf-8').read())
                     task['max_turns'], task['timeout'] = ROUTINE_TURNS, ROUTINE_TIMEOUT
             task_id = task['id']
             ok, answer = run(task)

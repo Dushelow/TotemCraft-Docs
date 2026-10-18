@@ -12,7 +12,7 @@ usermod -aG tcclaude totemcraftcore
 # 2. Инструмент и обработчик: владелец root, claudebot менять не может
 install -d -o root -g root -m 755 /opt/tcclaude
 install -o root -g root -m 755 "$SRC/tc.py" /opt/tcclaude/tc
-install -o root -g root -m 644 "$SRC/abx_history.py" "$SRC/worker.py" "$SRC/RULES.md" "$SRC/templates.txt" "$SRC/snapshot.sh" "$SRC/routine_morning.md" "$SRC/routine_evening.md" /opt/tcclaude/
+install -o root -g root -m 644 "$SRC/abx_history.py" "$SRC/worker.py" "$SRC/RULES.md" "$SRC/templates.txt" "$SRC/snapshot.sh" "$SRC/routine.md" /opt/tcclaude/
 install -d -o root -g root -m 700 /var/lib/tcclaude-root
 install -d -o root -g root -m 755 /var/log/tcclaude
 

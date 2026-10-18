@@ -39,9 +39,9 @@ class TaskInbox(unittest.TestCase):
         self.assertEqual(r["description"], "Итог дня.")
         self.assertEqual(fields(r), {"Форум": "- закрыто 2\n- ответ 1", "Требует решения владельца": "откат у спавна"})
         self.assertTrue(logic.routine_card("Утренний отчёт", False, "x")["title"].endswith("· не завершён"))
-        for t in ("проведи сводку", "Пришли сводку.", "собери вечернюю сводку", "срочно сделай утреннюю сводку!"):
+        for t in ("проведи сводку", "Пришли сводку.", "собери сводку", "срочно сделай сводку!"):
             self.assertTrue(logic.is_summary(t), t)
-        for t in ("что было в сводке?", "после сводки проверь форум", "сводка", "проведи сводку по форуму"):
+        for t in ("что было в сводке?", "после сводки проверь форум", "сводка", "проведи сводку по форуму", "собери вечернюю сводку"):
             self.assertFalse(logic.is_summary(t), t)
         self.assertEqual(logic.task_card(9, "<@5>", "собери сводку", True)["title"], "Запрос сводки № 9")
         c = logic.task_card(8, "<@5>", "посмотри тему про гриф")
