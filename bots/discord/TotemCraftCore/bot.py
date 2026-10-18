@@ -15,6 +15,7 @@ import json
 import os
 from datetime import datetime, timezone
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import tasks
@@ -31,6 +32,7 @@ def _id(name: str) -> int:
 
 
 BOT_TOKEN          = os.environ["BOT_TOKEN"]
+SERVER_BOT_TOKEN   = os.getenv("SERVER_BOT_TOKEN", "")  # настоящий бот «TotemCraft | Ванильный сервер», с ролями
 GUILD_ID           = _id("GUILD_ID")
 LOG_CHANNEL_ID     = _id("LOG_CHANNEL_ID")
 VERIFY_CHANNEL_ID  = _id("VERIFY_CHANNEL_ID")
@@ -202,7 +204,23 @@ class TotemCraftCore(discord.Client):
         await self.wait_until_ready()
 
     async def _as_server(self, channel, text: str | None = None, embed: dict | None = None):
-        """Сообщение в канал под именем и аватаркой бота «TotemCraft | Ванильный сервер» (вебхук Core)."""
+        """Сообщение в канал от бота «TotemCraft | Ванильный сервер»: сам бот (с ролями), если есть его ключ,
+        иначе вебхук Core с его именем и аватаркой."""
+        if SERVER_BOT_TOKEN:
+            body = {"allowed_mentions": {"parse": []}}
+            if text:
+                body["content"] = text
+            if embed:
+                body["embeds"] = [embed]
+            try:
+                async with aiohttp.ClientSession() as http:
+                    async with http.post(f"https://discord.com/api/v10/channels/{channel.id}/messages", json=body,
+                                         headers={"Authorization": "Bot " + SERVER_BOT_TOKEN}) as r:
+                        if r.status < 300:
+                            return
+                        log(f"Бот сервера не смог написать: {r.status} {(await r.text())[:200]}")
+            except Exception as ex:
+                log(f"Бот сервера не смог написать: {ex}")
         try:
             hook = next((h for h in await channel.webhooks() if h.name == SERVER_BOT_NAME and h.user == self.user), None)
             if hook is None:

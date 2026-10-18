@@ -171,18 +171,23 @@ def query(path, sql, deny_tables=(), deny_columns=()):
 
 
 # ── Discord ──────────────────────────────────────────────────────
-def core_token():
+def env_value(name):
     for line in open(CORE_ENV, encoding='utf-8'):
-        if line.startswith('BOT_TOKEN='):
+        if line.startswith(name + '='):
             return line.split('=', 1)[1].strip()
-    die('нет ключа бота Core')
+    return ''
+
+
+def core_token():
+    return env_value('BOT_TOKEN') or die('нет ключа бота Core')
 
 
 def discord(method, path, body=None, reason=None, raw=False, token=True):
+    """token: True — бот Core, строка — этот ключ, False — без ключа (вебхук, картинки)."""
     url = path if path.startswith('https://') else API + path
     headers = {'User-Agent': 'TotemCraftDuty (https://totemcraft.net, 1.0)', 'Content-Type': 'application/json'}
     if token:
-        headers['Authorization'] = 'Bot ' + core_token()
+        headers['Authorization'] = 'Bot ' + (token if isinstance(token, str) else core_token())
     if reason:
         headers['X-Audit-Log-Reason'] = urllib.parse.quote(reason)
     data = json.dumps(body).encode() if body is not None else None
@@ -219,6 +224,12 @@ def webhook(channel_id):
 
 
 def say(channel_id, text, thread_id=None, users=False):
+    """Пишет бот «TotemCraft | Ванильный сервер» сам (с ролями); нет его ключа — вебхук с его именем."""
+    server = env_value('SERVER_BOT_TOKEN')
+    if server:
+        msg = discord('POST', f'/channels/{thread_id or channel_id}/messages',
+                      {'content': text, 'allowed_mentions': {'parse': ['users'] if users else []}}, token=server)
+        return msg.get('id')
     hook = webhook(channel_id)
     q = '?wait=true' + (f'&thread_id={thread_id}' if thread_id else '')
     msg = discord('POST', f"/webhooks/{hook['id']}/{hook['token']}{q}",
