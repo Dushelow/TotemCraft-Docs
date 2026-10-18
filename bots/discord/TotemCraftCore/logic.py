@@ -14,7 +14,7 @@ _URL = re.compile(r"https?://\S+")
 
 
 # Ящик задач: три имени одной команды; писать могут модератор и выше и владелец сервера
-TASK_COMMANDS = ("dushelow", "totemcraft", "adminbot")
+TASK_COMMANDS = ("dushelow", "totemcraft", "adminbot", "admin")
 TASK_ROLE_IDS = {
     1454170537113681967,  # Модератор
     1454170537113681968,  # Администратор
@@ -22,6 +22,19 @@ TASK_ROLE_IDS = {
     1454170537130590210,  # Заместитель основателя проекта
     1454170537130590211,  # Основатель проекта
 }
+
+
+def is_urgent(text: str) -> bool:
+    """Слово «срочно» в любом регистре: такую задачу Claude берёт в течение 15 минут, а не на обходе."""
+    return "срочн" in (text or "").lower()
+
+
+def task_ack(task_id: int, text: str, waiting: int) -> str:
+    """Ответ автору команды (видит только он)."""
+    when = ("Срочная: возьму в течение 15 минут." if is_urgent(text)
+            else "Разберу на ближайшем обходе: утром после рестарта или вечером.")
+    return (f"📥 Задача #{task_id} записана. {when}\n"
+            f"Ответ придёт в этот чат от «TotemCraft | Ванильный сервер». Открытых задач: {waiting}.")
 
 
 def may_give_task(role_ids, user_id: int, owner_id: int) -> bool:

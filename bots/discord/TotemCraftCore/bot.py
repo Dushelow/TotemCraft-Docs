@@ -6,7 +6,7 @@
 3. Личные голосовые комнаты: заход в «войсчат» создаёт комнату игрока.
 4. Галерея: тред под постом и реакция 👍.
 5. Ивенты: тред под анонсом.
-6. Ящик задач: /dushelow, /totemcraft, /adminbot (одно и то же) в админ-чате записывают задачу в базу.
+6. Ящик задач: /dushelow, /totemcraft, /adminbot, /admin (одно и то же) в админ-чате записывают задачу в базу.
    Команды скрыты от всех без права «Отправка в тайм-аут», писать могут модератор и выше и владелец.
    Задачи разбирает Claude на утреннем и вечернем обходе и отвечает в админ-чат.
 """
@@ -113,15 +113,8 @@ class TotemCraftCore(discord.Client):
             return
         task_id = self.store.add_task(user.id, user.display_name, interaction.channel_id, задача)
         waiting = self.store.open_tasks()
-        await interaction.response.send_message(
-            f"📥 Задача #{task_id} записана: {logic.truncate(задача, 300)}\n"
-            f"Разберу на ближайшем обходе (утром и вечером). Открытых задач: {waiting}.",
-            allowed_mentions=discord.AllowedMentions.none())
-        try:
-            msg = await interaction.original_response()
-            self.store.set_task_message(task_id, msg.id)
-        except discord.HTTPException as ex:
-            log(f"Не удалось запомнить сообщение задачи #{task_id}: {ex}")
+        # видит только автор: всё по делу отвечает бот «TotemCraft | Ванильный сервер»
+        await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
 
     def _ours(self, guild) -> bool:
         return guild is not None and guild.id == GUILD_ID

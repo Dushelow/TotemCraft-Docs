@@ -17,8 +17,15 @@ class TaskInbox(unittest.TestCase):
         self.assertFalse(logic.may_give_task([1454170537113681965], 5, 1))  # игровой помощник
         self.assertFalse(logic.may_give_task([1454170536765558916], 5, 1))  # игрок
 
-    def test_three_names(self):
-        self.assertEqual(logic.TASK_COMMANDS, ("dushelow", "totemcraft", "adminbot"))
+    def test_names(self):
+        self.assertEqual(logic.TASK_COMMANDS, ("dushelow", "totemcraft", "adminbot", "admin"))
+
+    def test_urgent(self):
+        self.assertTrue(logic.is_urgent("СРОЧНО гриф у спавна"))
+        self.assertTrue(logic.is_urgent("срочная проверка"))
+        self.assertFalse(logic.is_urgent("проверь жалобу"))
+        self.assertIn("15 минут", logic.task_ack(3, "Срочно!", 1))
+        self.assertIn("обходе", logic.task_ack(3, "посмотри форум", 1))
 
     def test_store(self):
         with tempfile.TemporaryDirectory() as d:
