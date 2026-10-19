@@ -24,33 +24,46 @@ class TaskInbox(unittest.TestCase):
         self.assertTrue(logic.is_urgent("СРОЧНО гриф у спавна"))
         self.assertTrue(logic.is_urgent("срочная проверка"))
         self.assertFalse(logic.is_urgent("проверь жалобу"))
-        self.assertIn("#3 записана", logic.task_ack(3, "Срочно!", 1))
+        from datetime import datetime as D
+        self.assertIn("№ 3 принята", logic.task_ack(3, "Срочно!", 1))
         fields = lambda card: {f["name"]: f["value"] for f in card["fields"]}
-        self.assertIn("первой", fields(logic.task_card(3, "<@5>", "Срочно!"))["Статус"])
+        self.assertEqual(fields(logic.task_card(3, "<@5>", "Срочно!", True))["Ответ"], "сейчас")
         n = logic.urgent_card(7, "<@5>", "СРОЧНО гриф у спавна")
         self.assertEqual(n["title"], "Срочная задача № 7")
         self.assertEqual(fields(n)["Автор"], "<@5>")
         self.assertEqual(n["description"], "> СРОЧНО гриф у спавна")
         self.assertEqual(logic.author_label(1, 1), "владелец")
         self.assertEqual(logic.author_label(5, 1), "<@5>")
-        self.assertEqual(logic.app_card("Burrito", "Не решил: ник похож на забаненного")["title"], "Заявки ждут решения команды")
-        r = logic.routine_card("Вечерний отчёт", True, "Итог дня.\n**Форум:**\n- закрыто 2\n- ответ 1\n**Владельцу:** откат у спавна")
-        self.assertTrue(r["title"].startswith("Вечерний отчёт · "))
-        self.assertEqual(r["description"], "Итог дня.")
-        self.assertEqual(fields(r), {"Форум": "- закрыто 2\n- ответ 1", "Требует решения владельца": "откат у спавна"})
-        self.assertTrue(logic.routine_card("Утренний отчёт", False, "x")["title"].endswith("· не завершён"))
+        self.assertEqual(logic.next_slot_label(D(2026, 10, 19, 5, 0)), "сегодня в 06:00")
+        self.assertEqual(logic.next_slot_label(D(2026, 10, 19, 12, 0)), "сегодня в 21:00")
+        self.assertEqual(logic.next_slot_label(D(2026, 10, 19, 22, 0)), "завтра в 06:00")
+        self.assertEqual(logic.day_label(D(2026, 10, 19)), "19 октября")
+        c = logic.task_card(8, "<@5>", "посмотри тему про гриф", now=D(2026, 10, 19, 12, 0))
+        self.assertEqual((c["title"], fields(c)["Ответ"]), ("Задача № 8", "сегодня в 21:00"))
         for t in ("проведи сводку", "Пришли сводку.", "собери сводку", "срочно сделай сводку!"):
             self.assertTrue(logic.is_summary(t), t)
         for t in ("что было в сводке?", "после сводки проверь форум", "сводка", "проведи сводку по форуму", "собери вечернюю сводку"):
             self.assertFalse(logic.is_summary(t), t)
         self.assertEqual(logic.task_card(9, "<@5>", "собери сводку", True)["title"], "Запрос сводки № 9")
-        c = logic.task_card(8, "<@5>", "посмотри тему про гриф")
-        self.assertEqual(c["title"], "Задача № 8")
-        self.assertIn("обходе", fields(c)["Статус"])
+        self.assertEqual(logic.app_card("Burrito", "Не решил: ник похож на забаненного")["title"], "Заявки ждут решения команды")
+
+    def test_report_card(self):
+        answer = ("Статус: внимание\nИтог: День прошёл спокойно, одна заявка ждёт решения.\n"
+                  "**Показатели:**\nЗаявки: 5 принято, 1 ждёт\nФорум: 3 темы закрыто\nНаказания: 1\n"
+                  "**Форум:**\n- Жалоба на X: мут 24 часа.\n**Владельцу:** решить заявку Kira_X.")
+        r = logic.routine_card("Сводка", True, answer)
+        self.assertTrue(r["title"].startswith("Сводка за "))
+        self.assertEqual(r["color"], logic.AMBER)
+        self.assertEqual(r["description"], "День прошёл спокойно, одна заявка ждёт решения.")
+        names = [(f["name"], f["inline"]) for f in r["fields"]]
+        self.assertEqual(names, [("Заявки", True), ("Форум", True), ("Наказания", True),
+                                 ("Требует решения владельца", False), ("Форум", False)])
+        self.assertEqual(logic.routine_card("Сводка", True, "Статус: норма\nИтог: Всё спокойно.")["color"], logic.SLATE)
+        self.assertTrue(logic.routine_card("Требует внимания", True, "Итог: сервер не поднялся")["title"].startswith("Требует внимания · "))
+        self.assertTrue(logic.routine_card("Сводка", False, "x")["title"].endswith("· не завершена"))
 
     def test_duty_texts(self):
         fields = lambda card: {f["name"]: f["value"] for f in card["fields"]}
-        self.assertIn("Дежурный разбирает", fields(logic.urgent_card(1, "<@5>", "срочно", True))["Статус"])
         a = logic.answer_card(4, "<@5>", True, "Ответ в админ-чат:\n\n<@5> Замутил X на 24h")
         self.assertEqual(a["title"], "Задача № 4 · выполнена")
         self.assertEqual(a["description"], "Замутил X на 24h")

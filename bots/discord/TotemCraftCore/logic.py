@@ -13,7 +13,7 @@ _MENTION = re.compile(r"<(@[!&]?|#)\d+>|<a?:\w+:\d+>")
 _URL = re.compile(r"https?://\S+")
 
 
-# Ящик задач: три имени одной команды; писать могут модератор и выше и владелец сервера
+# Задачи админ-чата: несколько имён одной команды; писать могут модератор и выше и владелец сервера
 TASK_COMMANDS = ("dushelow", "totemcraft", "adminbot", "admin")
 TASK_ROLE_IDS = {
     1454170537113681967,  # Модератор
@@ -39,7 +39,7 @@ def is_urgent(text: str) -> bool:
 
 def task_ack(task_id: int, text: str, waiting: int) -> str:
     """Короткое подтверждение автору; саму задачу все видят карточкой в чате."""
-    return f"📥 Задача #{task_id} записана, карточка в чате. Открытых задач: {waiting}."
+    return f"Задача № {task_id} принята. Ответ придёт в этот чат ответом на карточку задачи. Открытых задач: {waiting}."
 
 
 # Карточки в админ-чате: строгий вид, без эмодзи; разделы ответа идут полями карточки,
@@ -48,7 +48,26 @@ AMBER, GREEN, RED, BLUE, SLATE = 0xD89614, 0x2D9D78, 0xD64545, 0x3B6FD8, 0x4F5D7
 EMBED_TEXT = 4000   # описание карточки до 4096 знаков
 FIELD_TEXT = 1000   # поле до 1024 знаков
 FOOTER = {"text": "TotemCraft"}
-FIELD_NAMES = {"владельцу": "Требует решения владельца"}
+FIELD_NAMES = {"владельцу": "Требует решения владельца", "команде": "Требует внимания команды"}
+FIRST_FIELDS = ("Требует решения владельца", "Требует внимания команды")  # то, что требует действий, наверх
+STATUS_COLORS = {"норма": SLATE, "внимание": AMBER, "проблема": RED}
+MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября",
+          "ноября", "декабря")
+SLOTS = ((6, 0), (21, 0))  # время дежурного, МСК (часы сервера)
+
+
+def day_label(day=None) -> str:
+    day = day or datetime.now()
+    return f"{day.day} {MONTHS[day.month - 1]}"
+
+
+def next_slot_label(now=None) -> str:
+    """Когда дежурный возьмёт обычную задачу: «сегодня в 21:00» или «завтра в 06:00»."""
+    now = now or datetime.now()
+    for h, m in SLOTS:
+        if (now.hour, now.minute) < (h, m):
+            return f"сегодня в {h:02d}:{m:02d}"
+    return f"завтра в {SLOTS[0][0]:02d}:{SLOTS[0][1]:02d}"
 
 
 def author_label(user_id: int, owner_id: int) -> str:
@@ -75,19 +94,16 @@ def _card(title: str, color: int, description: str = "", fields=()) -> dict:
     return card
 
 
-def task_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
-    """Карточка сразу в админ-чат: все видят задачу и кто её дал."""
+def task_card(task_id: int, author: str, text: str, duty: bool = False, now=None) -> dict:
+    """Карточка задачи сразу в админ-чат: что, кто поставил, когда будет ответ."""
     if is_summary(text):
-        title, color = f"Запрос сводки № {task_id}", SLATE
-        status = "Дежурный собирает сводку, итог придёт сюда" if duty else "Соберём первой"
+        title, color, when = f"Запрос сводки № {task_id}", SLATE, "сейчас" if duty else next_slot_label(now)
     elif is_urgent(text):
-        title, color = f"Срочная задача № {task_id}", AMBER
-        status = "Дежурный разбирает, ответ придёт сюда" if duty else "Разберём первой"
+        title, color, when = f"Срочная задача № {task_id}", AMBER, "сейчас" if duty else next_slot_label(now)
     else:
-        title, color = f"Задача № {task_id}", BLUE
-        status = "Разберём на ближайшем обходе (06:00 или 21:00 МСК)"
+        title, color, when = f"Задача № {task_id}", BLUE, next_slot_label(now)
     return _card(title, color, quote(truncate(text, 1500)),
-                 [_field("Автор", author, True), _field("Статус", status, True)])
+                 [_field("Автор", author, True), _field("Ответ", when, True)])
 
 
 def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
@@ -130,30 +146,57 @@ def clean_answer(answer: str) -> str:
 
 
 _LABEL = re.compile(r"^\s*\*\*([^*\n]{1,60}?):\*\*\s*(.*)$")
+_META = re.compile(r"^\s*(статус|итог)\s*:\s*(.+)$", re.IGNORECASE)
+_KPI = re.compile(r"^\s*[-•]?\s*([^:\n]{1,30}):\s*(.{1,60})$")
 
 
-def sections(answer: str):
-    """Ответ дежурного: вступление и разделы «**Название:** ...» отдельно, чтобы показать их полями карточки."""
+def parse_report(answer: str):
+    """Ответ дежурного → (статус, вступление, показатели, разделы).
+
+    Договор с дежурным (RULES.md, routine.md): строки «Статус: норма|внимание|проблема» и «Итог: ...»,
+    раздел «**Показатели:**» из строк «Название: значение» (станут плитками в ряд) и разделы «**Название:**»."""
     text = _NOISE.sub("", (answer or "").strip()).strip()
-    intro, fields, current = [], [], None
+    status, intro, sections_, current = "", [], [], None
     for line in text.splitlines():
-        m = _LABEL.match(line)
-        if m:
-            current = [FIELD_NAMES.get(m.group(1).strip().lower(), m.group(1).strip()), [m.group(2)] if m.group(2) else []]
-            fields.append(current)
+        label, meta = _LABEL.match(line), _META.match(line)
+        if label:
+            name = label.group(1).strip()
+            current = [FIELD_NAMES.get(name.lower(), name), [label.group(2)] if label.group(2) else []]
+            sections_.append(current)
+        elif current is None and meta:
+            if meta.group(1).lower() == "статус":
+                status = meta.group(2).strip().lower().rstrip(".")
+            else:
+                intro.append(meta.group(2).strip())
         elif current is not None:
             current[1].append(line)
         else:
             intro.append(line)
-    summary = airy("\n".join(intro)) or ("" if fields else "(пустой ответ)")
-    return summary, [_field(name, airy("\n".join(lines))) for name, lines in fields]
+    kpis, fields = [], []
+    for name, lines in sections_:
+        if name.lower() == "показатели":
+            kpis += [_field(m.group(1).strip(), m.group(2).strip(), True) for m in map(_KPI.match, lines) if m][:6]
+        else:
+            fields.append(_field(name, airy("\n".join(lines))))
+    fields.sort(key=lambda f: 0 if f["name"] in FIRST_FIELDS else 1)
+    summary = airy("\n".join(intro)) or ("" if fields or kpis else "(пустой ответ)")
+    return status, summary, kpis, fields
+
+
+def sections(answer: str):
+    """Вступление и разделы без показателей (для ответов на задачи)."""
+    _, summary, kpis, fields = parse_report(answer)
+    return summary, kpis + fields
 
 
 def routine_card(title: str, ok: bool, answer: str) -> dict:
-    """Итог утреннего или вечернего обхода дежурного."""
-    summary, fields = sections(answer)
-    title = f"{title or 'Отчёт'} · {datetime.now():%d.%m.%Y}" + ("" if ok else " · не завершён")
-    return _card(title, SLATE if ok else RED, summary, fields)
+    """Сводка дежурного: «Сводка за 18 октября» или «Требует внимания · 19 октября»."""
+    status, summary, kpis, fields = parse_report(answer)
+    head = f"Сводка за {day_label()}" if (title or "Сводка") == "Сводка" else f"{title} · {day_label()}"
+    color = STATUS_COLORS.get(status, AMBER if title != "Сводка" else SLATE)
+    if not ok:
+        head, color = head + " · не завершена", RED
+    return _card(head, color, summary, kpis + fields)
 
 
 def app_card(nick: str, answer: str) -> dict:
@@ -163,7 +206,7 @@ def app_card(nick: str, answer: str) -> dict:
 
 
 def answer_card(task_id: int, author: str, ok: bool, answer: str) -> dict:
-    """Ответ дежурного на задачу из ящика."""
+    """Ответ дежурного на задачу (уходит ответом на карточку задачи)."""
     summary, fields = sections(answer)
     return _card(f"Задача № {task_id} · " + ("выполнена" if ok else "не выполнена"), GREEN if ok else RED,
                  summary, [_field("Автор задачи", author, True)] + fields)

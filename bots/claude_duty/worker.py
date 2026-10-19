@@ -8,7 +8,7 @@
 Задач нет: служба спит, токены не тратятся. Одна задача за раз, не дольше 20 минут.
 
 Обходы по расписанию (ROUTINES, МСК): утром после рестарта и вечером дежурный сам проходит весь обход
-по routine.md: заявки Telegram, форум, наказания, обращения, ящик задач, отчёт
+по routine.md: заявки Telegram, форум, наказания, обращения, задачи админ-чата, отчёт
 за день. Итог Core публикует карточкой в админ-чате. Между обходами раз в минуту только сверяются часы.
 """
 import json
@@ -25,8 +25,23 @@ INBOX, OUTBOX, FILES, WORK = BASE + '/inbox', BASE + '/outbox', BASE + '/files',
 HERE = os.path.dirname(os.path.realpath(__file__))
 CLAUDE = os.path.expanduser('~/.local/bin/claude')
 TIMEOUT = 20 * 60
-ROUTINES = ('06:00', '21:00')  # МСК; утром и вечером одна и та же сводка по routine.md
+ROUTINES = ('06:00', '21:00')  # МСК; работа по routine.md, утром молча, вечером со сводкой за день
 ROUTINE_FILE = os.path.join(HERE, 'routine.md')
+QUIET = 'ТИХО'  # утренний ответ, когда людям сообщать нечего: в админ-чат ничего не уходит
+MODES = {
+    'morning': ("Режим: утро, без сводки. Сделай всю работу по инструкции. Если людям сообщать нечего, последнее "
+                f"сообщение ровно одно слово {QUIET}. Если есть то, что требует людей (сервер не поднялся, сомнительная "
+                "заявка, решение владельца), последнее сообщение только об этом, в формате сводки из шага 10.",
+                'Требует внимания'),
+    'evening': ("Режим: вечер, сводка за день. Сделай работу по инструкции, затем сводку за весь день: "
+                "`tc reports 1` покажет, что сделано утром, его тоже включи в показатели и итог.", 'Сводка'),
+    'request': ("Режим: сводка по запросу из админ-чата. Сделай работу по инструкции, затем сводку за сегодня "
+                "на этот момент (утро из `tc reports 1` тоже включи).", 'Сводка'),
+}
+
+
+def routine_text(mode):
+    return MODES[mode][0] + '\n\n' + open(ROUTINE_FILE, encoding='utf-8').read()
 # Сводка по запросу из админ-чата: весь текст задачи только «проведи / пришли / собери / сделай сводку»
 SUMMARY = re.compile(r"^\s*(?:срочно[\s,:!]*)?(?:проведи|пришли|собери|сделай)\s+сводку\s*[.!]*\s*$", re.IGNORECASE)
 ROUTINE_LAST = WORK + '/apps_last.txt'  # последний сделанный обход, «ГГГГ-ММ-ДД ЧЧ:ММ»
@@ -71,10 +86,11 @@ def check_routine():
     if slot == last:
         return None
     open(ROUTINE_LAST, 'w').write(slot)
-    print(f'сводка {slot}', flush=True)
-    return {'id': 'routine-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'routine', 'title': 'Сводка',
-            'author_name': 'расписание', 'when': slot, 'context': '',
-            'text': open(ROUTINE_FILE, encoding='utf-8').read(),
+    mode = 'morning' if slot.endswith(ROUTINES[0]) else 'evening'
+    print(f'{mode} {slot}', flush=True)
+    return {'id': 'routine-' + slot.replace(' ', '_').replace(':', ''), 'kind': 'routine', 'title': MODES[mode][1],
+            'quiet': mode == 'morning', 'author_name': 'расписание', 'when': slot, 'context': '',
+            'text': routine_text(mode),
             'max_turns': ROUTINE_TURNS, 'timeout': ROUTINE_TIMEOUT}
 
 
@@ -122,15 +138,17 @@ def main():
                 task = json.load(open(path, encoding='utf-8'))
                 m = SUMMARY.match(task.get('text', ''))
                 if m:  # полная сводка по запросу, по той же инструкции, что и по расписанию
-                    task['text'] = ("Сводка по запросу из админ-чата. Проведи её полностью по инструкции ниже.\n\n"
-                                    + open(ROUTINE_FILE, encoding='utf-8').read())
-                    task['max_turns'], task['timeout'] = ROUTINE_TURNS, ROUTINE_TIMEOUT
+                    task.update(text=routine_text('request'), kind='routine', title=MODES['request'][1],
+                                max_turns=ROUTINE_TURNS, timeout=ROUTINE_TIMEOUT)
             task_id = task['id']
             ok, answer = run(task)
         except subprocess.TimeoutExpired:
             ok, answer = False, 'Не уложился по времени: что не успел, разберёт следующий обход.'
         except Exception as e:
             ok, answer = False, f'Дежурный не смог выполнить задачу: {type(e).__name__}: {e}'
+        if task and task.get('quiet') and ok and (answer or '').strip().strip('.').upper() == QUIET:
+            print(f'задача {task_id}: готово, людям сообщать нечего', flush=True)
+            continue
         tmp = os.path.join(OUTBOX, f'.{task_id}.json')
         with open(tmp, 'w', encoding='utf-8') as f:
             json.dump({'id': task_id, 'ok': ok, 'answer': answer or '(пустой ответ)', 'kind': (task or {}).get('kind', 'task'),

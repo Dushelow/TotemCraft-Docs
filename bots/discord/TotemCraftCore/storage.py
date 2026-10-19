@@ -79,8 +79,9 @@ class Storage:
         self.db.commit()
 
     def get_task(self, task_id):
-        row = self.db.execute("SELECT author_id, author_name, text, status FROM inbox WHERE id = ?", (task_id,)).fetchone()
-        return dict(zip(("author_id", "author_name", "text", "status"), row)) if row else None
+        row = self.db.execute("SELECT author_id, author_name, text, status, message_id FROM inbox WHERE id = ?",
+                              (task_id,)).fetchone()
+        return dict(zip(("author_id", "author_name", "text", "status", "message_id"), row)) if row else None
 
     def set_task_status(self, task_id, status):
         self.db.execute("UPDATE inbox SET status = ? WHERE id = ?", (status, task_id))

@@ -6,9 +6,9 @@
 3. Личные голосовые комнаты: заход в «войсчат» создаёт комнату игрока.
 4. Галерея: тред под постом и реакция 👍.
 5. Ивенты: тред под анонсом.
-6. Ящик задач: /dushelow, /totemcraft, /adminbot, /admin (одно и то же) в админ-чате записывают задачу в базу.
+6. Задачи админ-чата: /dushelow, /totemcraft, /adminbot, /admin (одно и то же) записывают задачу в базу.
    Команды скрыты от всех без права «Отправка в тайм-аут», писать могут модератор и выше и владелец.
-   Задачи разбирает Claude на утреннем и вечернем обходе и отвечает в админ-чат.
+   Задачи разбирает дежурный Claude в 06:00 и 21:00 (срочные сразу) и отвечает в админ-чат.
 """
 import asyncio
 import json
@@ -91,7 +91,7 @@ class TotemCraftCore(discord.Client):
         if os.path.isdir(os.path.join(DUTY_DIR, "outbox")):
             self._duty_loop.start()
         for name in logic.TASK_COMMANDS:
-            cmd = app_commands.Command(name=name, description="Задача для Claude: разберёт на ближайшем обходе",
+            cmd = app_commands.Command(name=name, description="Поставить задачу дежурному администратору",
                                        callback=self._task_command)
             cmd.default_permissions = discord.Permissions(moderate_members=True)  # игрокам команды не видны
             cmd.guild_only = True
@@ -108,7 +108,7 @@ class TotemCraftCore(discord.Client):
         if removed:
             log(f"Забыто старых сообщений: {removed}")
 
-    # ── 6. ящик задач ────────────────────────────────────────────
+    # ── 6. задачи админ-чата ─────────────────────────────────────
     @app_commands.describe(задача="Что сделать; можно ссылки на темы и сообщения")
     async def _task_command(self, interaction: discord.Interaction, задача: str):
         user = interaction.user
@@ -126,12 +126,14 @@ class TotemCraftCore(discord.Client):
         urgent = logic.is_urgent(задача) or logic.is_summary(задача)  # сводку по запросу дежурный начинает сразу
         duty = urgent and os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
         who = logic.author_label(user.id, interaction.guild.owner_id)
-        await self._as_server(interaction.channel, embed=logic.task_card(task_id, who, задача, duty))
+        card_id = await self._as_server(interaction.channel, embed=logic.task_card(task_id, who, задача, duty))
+        if card_id:
+            self.store.set_task_message(task_id, int(card_id))  # ответ дежурного придёт ответом на эту карточку
         if urgent:
             if duty:
                 try:
                     await self._to_duty(task_id, user, задача, interaction.channel)
-                except Exception as ex:  # дежурный недоступен: задача остаётся в ящике на обход
+                except Exception as ex:  # дежурный недоступен: задача остаётся до ближайшего разбора
                     log(f"Срочная задача #{task_id} дежурному не передана: {ex}")
 
     async def _to_duty(self, task_id, user, text, channel):
@@ -176,10 +178,14 @@ class TotemCraftCore(discord.Client):
             try:
                 with open(path, encoding="utf-8") as f:
                     res = json.load(f)
-                if res.get("kind") == "routine":  # итог обхода по расписанию
+                if res.get("kind") == "routine":  # сводка: по расписанию или по запросу (тогда id — номер задачи)
+                    asked = self.store.get_task(res["id"]) if isinstance(res.get("id"), int) else None
                     channel = self.get_channel(ADMIN_CHAT_ID)
                     if channel is not None:
-                        await self._as_server(channel, embed=logic.routine_card(res.get("title"), res.get("ok"), res.get("answer")))
+                        await self._as_server(channel, embed=logic.routine_card(res.get("title"), res.get("ok"), res.get("answer")),
+                                              reply_to=(asked or {}).get("message_id"))
+                    if asked and res.get("ok"):
+                        self.store.set_task_status(res["id"], "done")
                     continue
                 if res.get("kind") == "app":  # заявка Telegram, которую дежурный оставил людям
                     channel = self.get_channel(ADMIN_CHAT_ID)
@@ -191,7 +197,8 @@ class TotemCraftCore(discord.Client):
                 who = logic.author_label(task["author_id"], guild.owner_id if guild else 0) if task.get("author_id") else "?"
                 channel = self.get_channel(ADMIN_CHAT_ID)
                 if channel is not None:
-                    await self._as_server(channel, embed=logic.answer_card(int(res["id"]), who, res.get("ok"), res.get("answer")))
+                    await self._as_server(channel, embed=logic.answer_card(int(res["id"]), who, res.get("ok"), res.get("answer")),
+                                          reply_to=task.get("message_id"))
                 if res.get("ok"):
                     self.store.set_task_status(int(res["id"]), "done")
             except Exception as ex:
@@ -203,11 +210,13 @@ class TotemCraftCore(discord.Client):
     async def _before_duty_loop(self):
         await self.wait_until_ready()
 
-    async def _as_server(self, channel, text: str | None = None, embed: dict | None = None):
+    async def _as_server(self, channel, text: str | None = None, embed: dict | None = None, reply_to: int | None = None):
         """Сообщение в канал от бота «TotemCraft | Ванильный сервер»: сам бот (с ролями), если есть его ключ,
-        иначе вебхук Core с его именем и аватаркой."""
+        иначе вебхук Core с его именем и аватаркой. reply_to — ответом на это сообщение. Возвращает id сообщения."""
         if SERVER_BOT_TOKEN:
             body = {"allowed_mentions": {"parse": []}}
+            if reply_to:
+                body["message_reference"] = {"message_id": str(reply_to), "fail_if_not_exists": False}
             if text:
                 body["content"] = text
             if embed:
@@ -217,7 +226,7 @@ class TotemCraftCore(discord.Client):
                     async with http.post(f"https://discord.com/api/v10/channels/{channel.id}/messages", json=body,
                                          headers={"Authorization": "Bot " + SERVER_BOT_TOKEN}) as r:
                         if r.status < 300:
-                            return
+                            return (await r.json()).get("id")
                         log(f"Бот сервера не смог написать: {r.status} {(await r.text())[:200]}")
             except Exception as ex:
                 log(f"Бот сервера не смог написать: {ex}")
@@ -226,9 +235,10 @@ class TotemCraftCore(discord.Client):
             if hook is None:
                 server_bot = await self.fetch_user(SERVER_BOT_ID)
                 hook = await channel.create_webhook(name=SERVER_BOT_NAME, avatar=await server_bot.display_avatar.read(),
-                                                    reason="Ответы ящика задач от имени бота сервера")
-            await hook.send(text or discord.utils.MISSING, embed=discord.Embed.from_dict(embed) if embed else discord.utils.MISSING,
-                            allowed_mentions=discord.AllowedMentions.none())
+                                                    reason="Ответы на задачи админ-чата от имени бота сервера")
+            msg = await hook.send(text or discord.utils.MISSING, embed=discord.Embed.from_dict(embed) if embed else discord.utils.MISSING,
+                                  allowed_mentions=discord.AllowedMentions.none(), wait=True)
+            return msg.id
         except discord.HTTPException as ex:
             log(f"Не удалось написать от имени бота сервера: {ex}")
 
