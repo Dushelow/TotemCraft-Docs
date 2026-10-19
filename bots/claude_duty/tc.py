@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""tc: единственная дверь дежурного Claude на сервер TotemCraft.
+"""tc: единственная дверь ИИ-ассистента на сервер TotemCraft.
 
-Дежурный (учётная запись claudebot, без root) может вызывать только `sudo -n /opt/tcclaude/tc <действие> ...`.
+Ассистент (учётная запись claudebot, без root) может вызывать только `sudo -n /opt/tcclaude/tc <действие> ...`.
 Здесь перечислено всё, что ему можно; каждый аргумент проверяется, каждое действие пишется в журнал
-/var/log/tcclaude/actions.log. Ключи ботов инструмент берёт сам и не печатает. Чего тут нет, того дежурный
+/var/log/tcclaude/actions.log. Ключи ботов инструмент берёт сам и не печатает. Чего тут нет, того ассистент
 сделать не может: разбана, откатов, произвольных команд консоли, правки файлов, ролей. Бессрочный бан только за
 читы и только со ссылкой на доказательство; бан до 365 дней только за гриф.
 
@@ -18,10 +18,10 @@
   online                            входы и выходы за сутки
   forum                             открытые темы форума Discord
   thread <id> [сообщений<=100]      переписка темы или канала Discord (время UTC)
-  snapshot                          данные для работы дежурного: службы, рестарт, ошибки, туннель, заявки, обращения,
+  snapshot                          данные для работы ассистента: службы, рестарт, ошибки, туннель, заявки, обращения,
                                     переписка и общий чат Telegram за 26 ч, задачи админ-чата, входы, наказания за 26 ч
   inbox                             задачи админ-чата, ещё не сделанные
-  reports [дней<=7]                 отчёты прошлых смен дежурного (что уже сделано), по умолчанию 2 дня
+  reports [дней<=7]                 отчёты прошлых проверок (что уже сделано), по умолчанию 2 дня
 Ящик и отчёты:
   task-answer <номер> (текст на вход)  ответ на задачу админ-чата: Core покажет его карточкой в админ-чате
                                        с автором задачи и пометит задачу сделанной
@@ -216,7 +216,7 @@ def webhook(channel_id):
             png = discord('GET', f"https://cdn.discordapp.com/avatars/{SERVER_BOT}/{user['avatar']}.png?size=256", raw=True, token=False)
             avatar = 'data:image/png;base64,' + base64.b64encode(png).decode()
         hook = discord('POST', f'/channels/{channel_id}/webhooks', {'name': SERVER_NAME, 'avatar': avatar},
-                       reason='Ответы дежурного Claude от имени бота сервера')
+                       reason='Ответы ИИ-ассистента от имени бота сервера')
     fd = os.open(cache, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, 'w') as f:
         json.dump({'id': hook['id'], 'token': hook['token']}, f)
@@ -387,7 +387,7 @@ def main(argv):
         th = forum_thread(args[0] if args else '')
         text = stdin_text()
         if th['thread_metadata'].get('archived'):
-            discord('PATCH', f"/channels/{th['id']}", {'archived': False}, reason='Ответ дежурного')
+            discord('PATCH', f"/channels/{th['id']}", {'archived': False}, reason='Ответ ассистента')
         mid = say(FORUM, text, thread_id=th['id'])
         record('forum-reply', f"{th['id']} {json.dumps(text[:200], ensure_ascii=False)}")
         print(f'ответ отправлен в тему «{th["name"]}», сообщение {mid}')
@@ -395,7 +395,7 @@ def main(argv):
         th = forum_thread(args[0] if args else '')
         close = cmd == 'forum-close'
         discord('PATCH', f"/channels/{th['id']}", {'archived': close, 'locked': close},
-                reason='Тема закрыта дежурным' if close else 'Тема открыта дежурным')
+                reason='Тема закрыта ассистентом' if close else 'Тема открыта ассистентом')
         record(cmd, th['id'])
         print(f'тема «{th["name"]}» {"закрыта" if close else "открыта"}')
     elif cmd in ('report', 'general'):
@@ -446,7 +446,7 @@ def main(argv):
             die('нужна ссылка на доказательство (видео, сообщение Discord со скриншотами), начинается с https://')
         reason = need_reason(args[2:])
         if not reason.startswith('Читы'):
-            die('навсегда дежурный банит только за читы; остальное временно или через владельца')
+            die('навсегда ассистент банит только за читы; остальное временно или через владельца')
         console(f'ban {nick} {reason}')
         record('ban', f'{nick} {reason} доказательство: {args[1]}')
         print(f'бессрочный бан {nick} отправлен в консоль. Проверка: tc abx {nick}')

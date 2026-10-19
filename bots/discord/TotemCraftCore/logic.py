@@ -53,7 +53,7 @@ FIRST_FIELDS = ("Требует решения владельца", "Требу�
 STATUS_COLORS = {"норма": SLATE, "внимание": AMBER, "проблема": RED}
 MONTHS = ("января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября",
           "ноября", "декабря")
-SLOTS = ((6, 0), (21, 0))  # время дежурного, МСК (часы сервера)
+SLOTS = ((6, 0), (21, 0))  # время ассистента, МСК (часы сервера)
 
 
 def day_label(day=None) -> str:
@@ -62,7 +62,7 @@ def day_label(day=None) -> str:
 
 
 def next_slot_label(now=None) -> str:
-    """Когда дежурный возьмёт обычную задачу: «сегодня в 21:00» или «завтра в 06:00»."""
+    """Когда ассистент возьмёт обычную задачу: «сегодня в 21:00» или «завтра в 06:00»."""
     now = now or datetime.now()
     for h, m in SLOTS:
         if (now.hour, now.minute) < (h, m):
@@ -103,7 +103,7 @@ def task_card(task_id: int, author: str, text: str, duty: bool = False, now=None
     else:
         title, color, when = f"Задача № {task_id}", BLUE, next_slot_label(now)
     return _card(title, color, quote(truncate(text, 1500)),
-                 [_field("Автор", author, True), _field("Ответ", when, True)])
+                 [_field("Автор", author, True), _field("Срок", when, True)])
 
 
 def urgent_card(task_id: int, author: str, text: str, duty: bool = False) -> dict:
@@ -141,7 +141,7 @@ def airy(text: str) -> str:
 
 
 def clean_answer(answer: str) -> str:
-    """Убирает то, что дежурный иногда дописывает сам («Ответ в админ-чат:», упоминание в начале), и разрежает текст."""
+    """Убирает то, что ассистент иногда дописывает сам («Ответ в админ-чат:», упоминание в начале), и разрежает текст."""
     return airy(_NOISE.sub("", (answer or "").strip()).strip()) or "(пустой ответ)"
 
 
@@ -151,9 +151,9 @@ _KPI = re.compile(r"^\s*[-•]?\s*([^:\n]{1,30}):\s*(.{1,60})$")
 
 
 def parse_report(answer: str):
-    """Ответ дежурного → (статус, вступление, показатели, разделы).
+    """Ответ ассистента → (статус, вступление, показатели, разделы).
 
-    Договор с дежурным (RULES.md, routine.md): строки «Статус: норма|внимание|проблема» и «Итог: ...»,
+    Договор с ассистентом (RULES.md, routine.md): строки «Статус: норма|внимание|проблема» и «Итог: ...»,
     раздел «**Показатели:**» из строк «Название: значение» (станут плитками в ряд) и разделы «**Название:**»."""
     text = _NOISE.sub("", (answer or "").strip()).strip()
     status, intro, sections_, current = "", [], [], None
@@ -190,23 +190,24 @@ def sections(answer: str):
 
 
 def routine_card(title: str, ok: bool, answer: str) -> dict:
-    """Сводка дежурного: «Сводка за 18 октября» или «Требует внимания · 19 октября»."""
+    """Сводка ассистента: «Ежедневная сводка · 19 октября», «Сводка на 14:30 · 19 октября», «Требует внимания · 19 октября»."""
     status, summary, kpis, fields = parse_report(answer)
-    head = f"Сводка за {day_label()}" if (title or "Сводка") == "Сводка" else f"{title} · {day_label()}"
-    color = STATUS_COLORS.get(status, AMBER if title != "Сводка" else SLATE)
+    title = title or "Ежедневная сводка"
+    head = (f"Сводка на {datetime.now():%H:%M}" if title == "Сводка на" else title) + f" · {day_label()}"
+    color = STATUS_COLORS.get(status, AMBER if title == "Требует внимания" else SLATE)
     if not ok:
         head, color = head + " · не завершена", RED
     return _card(head, color, summary, kpis + fields)
 
 
 def app_card(nick: str, answer: str) -> dict:
-    """Заявки Telegram, которые дежурный оставил людям."""
+    """Заявки Telegram, которые ассистент оставил людям."""
     summary, fields = sections(answer)
     return _card("Заявки ждут решения команды", AMBER, summary, [_field("Заявки", nick, True)] + fields)
 
 
 def answer_card(task_id: int, author: str, ok: bool, answer: str) -> dict:
-    """Ответ дежурного на задачу (уходит ответом на карточку задачи)."""
+    """Ответ ассистента на задачу (уходит ответом на карточку задачи)."""
     summary, fields = sections(answer)
     return _card(f"Задача № {task_id} · " + ("выполнена" if ok else "не выполнена"), GREEN if ok else RED,
                  summary, [_field("Автор задачи", author, True)] + fields)

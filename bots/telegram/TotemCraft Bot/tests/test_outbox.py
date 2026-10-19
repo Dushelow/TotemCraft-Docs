@@ -53,10 +53,10 @@ check(f"#{ticket_id}" in texts[1], "игроку сказано, что обра
 check(row(r)[0] == 'sent' and bot.get_ticket(P1) is None and str(P1) not in bot.unread_messages,
       "в очереди «sent», обращение закрыто, из непрочитанных убрано")
 hist = storage.query("SELECT sender, staff_name, text FROM messages WHERE tg_id=? ORDER BY id", (P1,))
-check(hist[-1][:2] == ('admin', 'Claude') and 'Сбросили пароль' in hist[-1][2], "ответ в переписке с подписью Claude")
+check(hist[-1][:2] == ('admin', 'ИИ-ассистент') and 'Сбросили пароль' in hist[-1][2], "ответ в переписке с подписью ИИ-ассистента")
 acts = [a for a, n in storage.query("SELECT action, actor_name FROM audit WHERE target_id=? ORDER BY id", (P1,))]
 check(acts[-2:] == ['msg_to_player', 'ticket_answered'], f"в журнале: написал и закрыл ({acts})")
-check(storage.query("SELECT actor_name FROM audit WHERE target_id=? ORDER BY id DESC LIMIT 1", (P1,))[0][0] == 'Claude',
+check(storage.query("SELECT actor_name FROM audit WHERE target_id=? ORDER BY id DESC LIMIT 1", (P1,))[0][0] == 'ИИ-ассистент',
       "в журнале действие подписано Claude")
 check(run_job() == [], "второй проход ничего не шлёт повторно")
 
@@ -148,7 +148,7 @@ sends = [p for m, p in log if m == 'sendMessage']
 check(len(sends) == 1 and str(sends[0]['chat_id']) == str(GROUP) and '266720' in str(sends[0].get('reply_parameters')),
       f"в группу ушёл один ответ на сообщение 266720: {sends}")
 check(row(r)[0] == 'sent', f"в очереди sent: {row(r)}")
-check(storage.query("SELECT from_name, reply_to FROM group_log ORDER BY id DESC LIMIT 1")[0] == ('Claude', 266720),
+check(storage.query("SELECT from_name, reply_to FROM group_log ORDER BY id DESC LIMIT 1")[0] == ('ИИ-ассистент', 266720),
       "ответ записан в журнал группы")
 storage.execute("INSERT INTO outbox (created_at, tg_id, text, close, reply_to) VALUES (?,?,?,?,?)",
                 ('2026-10-14T12:00:00+00:00', 0, 'Просто сообщение в группу', 0, None))
@@ -171,10 +171,10 @@ ctx.rcon_log.clear()
 log = run_job()
 time.sleep(0.5)
 check(row(r)[0] == 'sent' and str(DEC) not in bot.pending, f"заявка одобрена и ушла из очереди: {row(r)}")
-check(storage.query("SELECT status, decided_by_name FROM applications WHERE tg_id=?", (DEC,))[0] == ('Одобрено', 'Claude'),
+check(storage.query("SELECT status, decided_by_name FROM applications WHERE tg_id=?", (DEC,))[0] == ('Одобрено', 'ИИ-ассистент'),
       "в истории: одобрено, решил Claude")
 check(any('DecNick' in c for c in ctx.rcon_log), f"игрок зарегистрирован на сервере: {ctx.rcon_log}")
-check(storage.query("SELECT actor_name FROM audit WHERE action='approved' AND target_id=?", (DEC,))[0][0] == 'Claude',
+check(storage.query("SELECT actor_name FROM audit WHERE action='approved' AND target_id=?", (DEC,))[0][0] == 'ИИ-ассистент',
       "в журнале одобрение подписано Claude")
 REJ = 9004
 bot.pending[str(REJ)] = {'user_id': REJ, 'username': 'rej', 'tg_name': 'Rej', 'nick': 'RejNick', 'password': 'Str0ngPass1',

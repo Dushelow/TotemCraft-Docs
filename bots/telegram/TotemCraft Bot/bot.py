@@ -2513,7 +2513,7 @@ def group_log_cleanup():
 # ---------- Очередь ответов от Claude ----------
 # Claude кладёт ответ в таблицу outbox (tcbot/outbox_cli.py на сервере), бот раз в 10 секунд отправляет.
 # Игрок видит то же «Сообщение от администрации», что и от админов; в переписке и журнале подпись Claude.
-OUTBOX_NAME = 'Claude'
+OUTBOX_NAME = 'ИИ-ассистент'
 OUTBOX_MAX_LEN = 3500
 
 def outbox_refusal(tg_id, text, close=False):

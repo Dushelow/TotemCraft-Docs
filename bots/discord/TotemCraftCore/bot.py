@@ -8,7 +8,7 @@
 5. Ивенты: тред под анонсом.
 6. Задачи админ-чата: /dushelow, /totemcraft, /adminbot, /admin (одно и то же) записывают задачу в базу.
    Команды скрыты от всех без права «Отправка в тайм-аут», писать могут модератор и выше и владелец.
-   Задачи разбирает дежурный Claude в 06:00 и 21:00 (срочные сразу) и отвечает в админ-чат.
+   Задачи разбирает ИИ-ассистент в 06:00 и 21:00 (срочные сразу) и отвечает в админ-чат.
 """
 import asyncio
 import json
@@ -48,7 +48,7 @@ MESSAGE_KEEP_DAYS  = int(os.getenv("MESSAGE_KEEP_DAYS", "30"))
 ADMIN_CHAT_ID      = int(os.getenv("ADMIN_CHAT_ID", "1454170538095153252"))
 SERVER_BOT_ID      = int(os.getenv("SERVER_BOT_ID", "1559465125055037540"))  # «TotemCraft | Ванильный сервер»
 SERVER_BOT_NAME    = "TotemCraft | Ванильный сервер"
-DUTY_DIR           = os.getenv("DUTY_DIR", "/var/lib/tcclaude")  # дежурный Claude (служба tcclaude-duty)
+DUTY_DIR           = os.getenv("DUTY_DIR", "/var/lib/tcclaude")  # ИИ-ассистент (служба tcclaude-duty)
 
 GREEN, RED, ORANGE = 0x43B581, 0xF04747, 0xFAA61A
 
@@ -91,7 +91,7 @@ class TotemCraftCore(discord.Client):
         if os.path.isdir(os.path.join(DUTY_DIR, "outbox")):
             self._duty_loop.start()
         for name in logic.TASK_COMMANDS:
-            cmd = app_commands.Command(name=name, description="Поставить задачу дежурному администратору",
+            cmd = app_commands.Command(name=name, description="Поставить задачу ИИ-ассистенту",
                                        callback=self._task_command)
             cmd.default_permissions = discord.Permissions(moderate_members=True)  # игрокам команды не видны
             cmd.guild_only = True
@@ -123,21 +123,21 @@ class TotemCraftCore(discord.Client):
         waiting = self.store.open_tasks()
         await interaction.response.send_message(logic.task_ack(task_id, задача, waiting), ephemeral=True)
         # саму задачу видят все в админ-чате: карточка от «TotemCraft | Ванильный сервер»
-        urgent = logic.is_urgent(задача) or logic.is_summary(задача)  # сводку по запросу дежурный начинает сразу
+        urgent = logic.is_urgent(задача) or logic.is_summary(задача)  # сводку по запросу ассистент начинает сразу
         duty = urgent and os.path.isdir(os.path.join(DUTY_DIR, "inbox"))
         who = logic.author_label(user.id, interaction.guild.owner_id)
         card_id = await self._as_server(interaction.channel, embed=logic.task_card(task_id, who, задача, duty))
         if card_id:
-            self.store.set_task_message(task_id, int(card_id))  # ответ дежурного придёт ответом на эту карточку
+            self.store.set_task_message(task_id, int(card_id))  # ответ ассистента придёт ответом на эту карточку
         if urgent:
             if duty:
                 try:
                     await self._to_duty(task_id, user, задача, interaction.channel)
-                except Exception as ex:  # дежурный недоступен: задача остаётся до ближайшего разбора
-                    log(f"Срочная задача #{task_id} дежурному не передана: {ex}")
+                except Exception as ex:  # ассистент недоступен: задача остаётся до ближайшего разбора
+                    log(f"Срочная задача #{task_id} ассистенту не передана: {ex}")
 
     async def _to_duty(self, task_id, user, text, channel):
-        """Задача дежурному: текст, последние сообщения админ-чата и темы по ссылкам (картинки отдельно)."""
+        """Задача ассистенту: текст, последние сообщения админ-чата и темы по ссылкам (картинки отдельно)."""
         pics = os.path.join(DUTY_DIR, "files", str(task_id))
         os.makedirs(pics, exist_ok=True)
         parts, saved = [], 0
@@ -171,7 +171,7 @@ class TotemCraftCore(discord.Client):
 
     @tasks.loop(seconds=10)
     async def _duty_loop(self):
-        """Готовые ответы дежурного: публикуем в админ-чат от имени бота сервера и закрываем задачу."""
+        """Готовые ответы ассистента: публикуем в админ-чат от имени бота сервера и закрываем задачу."""
         folder = os.path.join(DUTY_DIR, "outbox")
         for name in sorted(n for n in os.listdir(folder) if n.endswith(".json") and not n.startswith(".")):
             path = os.path.join(folder, name)
@@ -187,7 +187,7 @@ class TotemCraftCore(discord.Client):
                     if asked and res.get("ok"):
                         self.store.set_task_status(res["id"], "done")
                     continue
-                if res.get("kind") == "app":  # заявка Telegram, которую дежурный оставил людям
+                if res.get("kind") == "app":  # заявка Telegram, которую ассистент оставил людям
                     channel = self.get_channel(ADMIN_CHAT_ID)
                     if channel is not None:
                         await self._as_server(channel, embed=logic.app_card(res.get("nick") or "?", res.get("answer")))
@@ -202,7 +202,7 @@ class TotemCraftCore(discord.Client):
                 if res.get("ok"):
                     self.store.set_task_status(int(res["id"]), "done")
             except Exception as ex:
-                log(f"Ответ дежурного {name} не опубликован: {ex}")
+                log(f"Ответ ассистента {name} не опубликован: {ex}")
             finally:
                 os.remove(path)
 
