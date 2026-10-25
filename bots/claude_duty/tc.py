@@ -35,7 +35,7 @@
   ban <ник> <ссылка на доказательство> Читы ...   бессрочный бан, только за читы, только при 100% доказательствах
   kick <ник> <причина>                  кик
 Действия в Discord (от имени «TotemCraft | Ванильный сервер»):
-  forum-reply <id темы>   (текст на вход)   ответ в теме форума
+  forum-reply <id темы>   (текст на вход)   ответ в теме форума (<@id> в тексте тегает человека)
   forum-close <id темы>                     закрыть тему (архив и замок)
   forum-open <id темы>                      открыть закрытую тему
   report      (текст на вход)               отчёт о наказании в «📜┃отчёты»
@@ -388,7 +388,7 @@ def main(argv):
         text = stdin_text()
         if th['thread_metadata'].get('archived'):
             discord('PATCH', f"/channels/{th['id']}", {'archived': False}, reason='Ответ ассистента')
-        mid = say(FORUM, text, thread_id=th['id'])
+        mid = say(FORUM, text, thread_id=th['id'], users=True)  # <@id> игрока в ответе тегает его
         record('forum-reply', f"{th['id']} {json.dumps(text[:200], ensure_ascii=False)}")
         print(f'ответ отправлен в тему «{th["name"]}», сообщение {mid}')
     elif cmd in ('forum-close', 'forum-open'):

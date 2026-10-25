@@ -197,8 +197,10 @@ class TotemCraftCore(discord.Client):
                 who = logic.author_label(task["author_id"], guild.owner_id if guild else 0) if task.get("author_id") else "?"
                 channel = self.get_channel(ADMIN_CHAT_ID)
                 if channel is not None:
-                    await self._as_server(channel, embed=logic.answer_card(int(res["id"]), who, res.get("ok"), res.get("answer")),
-                                          reply_to=task.get("message_id"))
+                    # автора тегаем текстом над карточкой (упоминание внутри карточки уведомления не даёт); владельца не тегаем
+                    await self._as_server(channel, text=who if who.startswith("<@") else None,
+                                          embed=logic.answer_card(int(res["id"]), who, res.get("ok"), res.get("answer")),
+                                          reply_to=task.get("message_id"), ping=True)
                 if res.get("ok"):
                     self.store.set_task_status(int(res["id"]), "done")
             except Exception as ex:
@@ -210,11 +212,12 @@ class TotemCraftCore(discord.Client):
     async def _before_duty_loop(self):
         await self.wait_until_ready()
 
-    async def _as_server(self, channel, text: str | None = None, embed: dict | None = None, reply_to: int | None = None):
+    async def _as_server(self, channel, text: str | None = None, embed: dict | None = None, reply_to: int | None = None,
+                         ping: bool = False):
         """Сообщение в канал от бота «TotemCraft | Ванильный сервер»: сам бот (с ролями), если есть его ключ,
         иначе вебхук Core с его именем и аватаркой. reply_to — ответом на это сообщение. Возвращает id сообщения."""
         if SERVER_BOT_TOKEN:
-            body = {"allowed_mentions": {"parse": []}}
+            body = {"allowed_mentions": {"parse": ["users"] if ping else []}}  # ping: тегать людей из text
             if reply_to:
                 body["message_reference"] = {"message_id": str(reply_to), "fail_if_not_exists": False}
             if text:
@@ -237,7 +240,7 @@ class TotemCraftCore(discord.Client):
                 hook = await channel.create_webhook(name=SERVER_BOT_NAME, avatar=await server_bot.display_avatar.read(),
                                                     reason="Ответы на задачи админ-чата от имени бота сервера")
             msg = await hook.send(text or discord.utils.MISSING, embed=discord.Embed.from_dict(embed) if embed else discord.utils.MISSING,
-                                  allowed_mentions=discord.AllowedMentions.none(), wait=True)
+                                  allowed_mentions=discord.AllowedMentions(users=True) if ping else discord.AllowedMentions.none(), wait=True)
             return msg.id
         except discord.HTTPException as ex:
             log(f"Не удалось написать от имени бота сервера: {ex}")
