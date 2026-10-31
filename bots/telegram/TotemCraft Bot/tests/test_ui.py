@@ -120,6 +120,30 @@ _, log = press(S, 'menu_apply')
 check('Заявка · шаг 1 из 2' in plain(sent_to(log, S)[0]), "ник: шаг 1 из 2")
 log = say(S, 'Stepper_1')
 check('Заявка · шаг 2 из 2' in plain(sent_to(log, S)[0]), "пароль: шаг 2 из 2")
+
+# Подчёркивания съел Telegram: настоящий ник берём из отказа входа и предлагаем кнопкой
+import tempfile
+_dir, bot.config.MC_SERVER_DIR = bot.config.MC_SERVER_DIR, tempfile.mkdtemp()
+os.makedirs(os.path.join(bot.config.MC_SERVER_DIR, 'logs'))
+with open(os.path.join(bot.config.MC_SERVER_DIR, 'logs', 'latest.log'), 'w', encoding='utf-8') as _f:
+    _f.write("[17:13:01] [User Authenticator #40/INFO]: Disconnecting lim_on_______ (/1.2.3.4:5): [RU] access\n")
+check(bot.attempted_nick('lim_on___') == 'lim_on_______', "нашёл настоящий ник в отказе входа")
+check(bot.attempted_nick('lim_on_______') is None, "тот же ник не предлагаем")
+check(bot.attempted_nick('other_nick') is None, "чужой ник не предлагаем")
+check(bot.attempted_nick('limon') is None, "без подчёркиваний логи не читаем")
+O = 900777
+say(O, '/start'); press(O, 'lang_ru'); press(O, 'menu_apply')
+log = say(O, 'lim_on___')
+check('Нажмите кнопку' in plain(sent_to(log, O)[0]), "предложили ник кнопкой")
+log = say(O, 'lim_on_______')
+check('шаг 2 из 2' in plain(sent_to(log, O)[0]), "выбрал кнопку: идём дальше")
+check(bot.user_states[O]['nick'] == 'lim_on_______', "записан настоящий ник")
+O2 = 900778
+say(O2, '/start'); press(O2, 'lang_ru'); press(O2, 'menu_apply')
+say(O2, 'lim_on___')
+log = say(O2, 'lim_on___')
+check('шаг 2 из 2' in plain(sent_to(log, O2)[0]), "настоял на своём нике: второй раз не спрашиваем")
+bot.config.MC_SERVER_DIR = _dir
 log = say(S, 'Str0ngPass1')
 check('шаг' not in plain(sent_to(log, S)[0]), "комментарий шагом не считается: незачем подталкивать писать")
 log = say(S, 'Пропустить')

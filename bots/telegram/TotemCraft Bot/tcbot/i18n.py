@@ -102,6 +102,10 @@ T = {
     'nick_taken': {'ru': "❌ Данный никнейм уже используется на сервере. Пожалуйста, выберите другой ник:",
                    'uk': "❌ Цей нік уже використовується на сервері. Будь ласка, оберіть інший нік:",
                    'en': "❌ This nickname is already taken on the server. Please choose another one:"},
+    'nick_offer': {
+        'ru': "Вы написали <code>{typed}</code>, но на сервер пробовали зайти с ником <code>{other}</code>. Telegram мог убрать подчёркивания.\nНажмите кнопку с вашим ником:",
+        'uk': "Ви написали <code>{typed}</code>, але на сервер пробували зайти з ніком <code>{other}</code>. Telegram міг прибрати підкреслення.\nНатисніть кнопку з вашим ніком:",
+        'en': "You typed <code>{typed}</code>, but someone tried to join the server as <code>{other}</code>. Telegram may have removed underscores.\nTap the button with your nickname:"},
     'nick_check': {
         'ru': "Ник записан так: <code>{nick}</code>\nПроверьте подчёркивания: Telegram может убрать часть из них. Если ник не совпадает, отмените заявку и подайте её заново.",
         'uk': "Нік записано так: <code>{nick}</code>\nПеревірте підкреслення: Telegram може прибрати частину з них. Якщо нік не збігається, скасуйте заявку й подайте її знову.",

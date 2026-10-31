@@ -1,6 +1,6 @@
 import telebot
 from telebot import types
-import os, re, time, requests, threading, schedule, html as _html
+import glob, gzip, os, re, time, requests, threading, schedule, html as _html
 from datetime import date, timedelta
 from collections import defaultdict
 
@@ -386,6 +386,27 @@ def reload_pending():
     pending.reload()
 
 # ---------- Валидация AuthMe ----------
+def attempted_nick(typed):
+    """Telegram может съесть подчёркивания как разметку (limon4k, 08.10): бот видит уже обрезанный ник.
+    Настоящий ник есть в отказах входа: сервер пишет его, если игрок пробовал зайти до заявки.
+    Читаем только при вводе ника с подчёркиванием и только три последних лога и latest.log."""
+    if '_' not in typed:
+        return None
+    logs = os.path.join(config.MC_SERVER_DIR, 'logs')
+    bare, found = typed.replace('_', '').lower(), None
+    try:
+        files = sorted(glob.glob(os.path.join(logs, '*.log.gz')), key=os.path.getmtime)[-3:]
+        for path in files + [os.path.join(logs, 'latest.log')]:
+            opener = gzip.open if path.endswith('.gz') else open
+            with opener(path, 'rt', encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    m = 'Disconnecting ' in line and re.search(r'Disconnecting ([A-Za-z0-9_]{3,16}) \(', line)
+                    if m and m.group(1).count('_') > typed.count('_') and m.group(1).replace('_', '').lower() == bare:
+                        found = m.group(1)
+    except OSError:
+        return None
+    return found
+
 def validate_nick_authme(nick, lang=i18n.DEFAULT):
     """
     Проверяет ник по правилам AuthMe:
@@ -3138,6 +3159,14 @@ def handle_application(m):
             return
         if check_nick_already_approved(text):
             safe_send(uid, tr(uid, 'nick_taken'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
+            return
+        other = None if state.get('nick_offered') else attempted_nick(text)
+        if other and not check_nick_already_approved(other):
+            state['nick_offered'] = True  # спрашиваем один раз; текст кнопки Telegram не переделывает
+            markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
+            markup.add(other, text, tr(uid, 'btn_cancel_app'))
+            safe_send(uid, tr(uid, 'nick_offer', other=escape_html(other), typed=escape_html(text)),
+                      parse_mode='HTML', reply_markup=markup)
             return
         state['nick'] = text
         state['step'] = 'password'
