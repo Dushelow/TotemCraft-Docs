@@ -102,6 +102,10 @@ T = {
     'nick_taken': {'ru': "❌ Данный никнейм уже используется на сервере. Пожалуйста, выберите другой ник:",
                    'uk': "❌ Цей нік уже використовується на сервері. Будь ласка, оберіть інший нік:",
                    'en': "❌ This nickname is already taken on the server. Please choose another one:"},
+    'nick_check': {
+        'ru': "Ник записан так: <code>{nick}</code>\nПроверьте подчёркивания: Telegram может убрать часть из них. Если ник не совпадает, отмените заявку и подайте её заново.",
+        'uk': "Нік записано так: <code>{nick}</code>\nПеревірте підкреслення: Telegram може прибрати частину з них. Якщо нік не збігається, скасуйте заявку й подайте її знову.",
+        'en': "Your nickname was saved as: <code>{nick}</code>\nCheck the underscores: Telegram may remove some of them. If it does not match, cancel the application and submit it again."},
     'ask_password': {
         'ru': "🔑 <b>Заявка · шаг 2 из 2</b>\nВведите пароль (6–30 символов, без пробелов):\n"
               "<i>Он понадобится при каждом заходе на сервер.</i>",

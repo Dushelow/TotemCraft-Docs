@@ -3141,7 +3141,9 @@ def handle_application(m):
             return
         state['nick'] = text
         state['step'] = 'password'
-        safe_send(uid, tr(uid, 'ask_password'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
+        # Telegram может съесть подчёркивания как разметку, бот видит уже обрезанный ник (limon4k, 08.10)
+        check = tr(uid, 'nick_check', nick=escape_html(text)) + "\n\n" if '_' in text else ""
+        safe_send(uid, check + tr(uid, 'ask_password'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
     elif step == 'password':
         ok, reason = validate_password_authme(text, nick=state.get('nick'), lang=lang_of(uid))
         if not ok:
