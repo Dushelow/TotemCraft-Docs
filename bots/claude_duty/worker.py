@@ -47,6 +47,11 @@ SUMMARY = re.compile(r"^\s*(?:срочно[\s,:!]*)?(?:проведи|пришл
 ROUTINE_LAST = WORK + '/apps_last.txt'  # последняя сделанная плановая проверка, «ГГГГ-ММ-ДД ЧЧ:ММ»
 ROUTINE_TURNS, ROUTINE_TIMEOUT = 150, 50 * 60
 CLOCK_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
+LIMIT = re.compile(r"hit your .*limit|usage limit|rate limit", re.IGNORECASE)  # кончился лимит подписки Claude
+RETRY_EVERY = 3600  # плановую проверку при лимите повторяем раз в час: отказ не тратит токены
+LIMIT_TEXT = ("Статус: внимание\nИтог: Кончился лимит подписки, поэтому проверка не выполнена.\n"
+              "**Команде:**\n- Заявки, форум и задачи сейчас разбирают люди.\n"
+              "- Плановую проверку повторяем каждый час, пока лимит не обновится.")
 TC = ['sudo', '-n', '/opt/tcclaude/tc']
 MODEL = os.environ.get('DUTY_MODEL', 'sonnet')
 
@@ -120,6 +125,7 @@ def main():
     for d in (INBOX, OUTBOX, WORK):
         os.makedirs(d, exist_ok=True)
     last_apps = 0
+    retry, retry_at = None, 0  # плановая проверка, упёршаяся в лимит
     while True:
         names = sorted(f for f in os.listdir(INBOX) if f.endswith('.json'))
         task = None
@@ -129,6 +135,10 @@ def main():
                 continue
             last_apps = time.time()
             task = check_routine()
+            if task:
+                retry = None  # подошло новое время: она сделает всё то же самое
+            elif retry and time.time() >= retry_at:
+                task, retry = retry, None
             if not task:
                 continue
         path = os.path.join(INBOX, names[0]) if names else None
@@ -146,6 +156,15 @@ def main():
             ok, answer = False, 'Не уложился по времени: что не успел, разберёт следующая плановая проверка.'
         except Exception as e:
             ok, answer = False, f'Ассистент не смог выполнить задачу: {type(e).__name__}: {e}'
+        if not ok and LIMIT.search(answer or ''):
+            print(f'задача {task_id}: кончился лимит: {answer[:80]}', flush=True)
+            if task and str(task_id).startswith('routine-'):
+                first = not task.get('retried')
+                task['retried'] = True
+                retry, retry_at = task, time.time() + RETRY_EVERY
+                if not first:  # о лимите сообщаем один раз
+                    continue
+            answer = LIMIT_TEXT
         if task and task.get('quiet') and ok and (answer or '').strip().strip('.').upper() == QUIET:
             print(f'задача {task_id}: готово, людям сообщать нечего', flush=True)
             continue
