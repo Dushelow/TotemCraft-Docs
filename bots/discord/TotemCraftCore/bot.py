@@ -178,6 +178,11 @@ class TotemCraftCore(discord.Client):
             try:
                 with open(path, encoding="utf-8") as f:
                     res = json.load(f)
+                if res.get("kind") == "limit":  # кончился лимит подписки: только в закрытый журнал
+                    await self.send_log(embed("Лимит ИИ-ассистента", ORANGE, "Работа не выполнена: кончился лимит подписки Claude. "
+                                              "Плановую проверку повторяем раз в час, игрокам и в админ-чат ничего не пишем.",
+                                              fields=[("Ответ Claude", str(res.get("answer"))[:300], False)]))
+                    continue
                 if res.get("kind") == "routine":  # сводка: по расписанию или по запросу (тогда id — номер задачи)
                     asked = self.store.get_task(res["id"]) if isinstance(res.get("id"), int) else None
                     channel = self.get_channel(ADMIN_CHAT_ID)

@@ -49,9 +49,6 @@ ROUTINE_TURNS, ROUTINE_TIMEOUT = 150, 50 * 60
 CLOCK_EVERY = 60  # раз в минуту только сверяем часы, без Claude и без запросов
 LIMIT = re.compile(r"hit your .*limit|usage limit|rate limit", re.IGNORECASE)  # кончился лимит подписки Claude
 RETRY_EVERY = 3600  # плановую проверку при лимите повторяем раз в час: отказ не тратит токены
-LIMIT_TEXT = ("Статус: внимание\nИтог: Кончился лимит подписки, поэтому проверка не выполнена.\n"
-              "**Команде:**\n- Заявки, форум и задачи сейчас разбирают люди.\n"
-              "- Плановую проверку повторяем каждый час, пока лимит не обновится.")
 TC = ['sudo', '-n', '/opt/tcclaude/tc']
 MODEL = os.environ.get('DUTY_MODEL', 'sonnet')
 
@@ -164,7 +161,7 @@ def main():
                 retry, retry_at = task, time.time() + RETRY_EVERY
                 if not first:  # о лимите сообщаем один раз
                     continue
-            answer = LIMIT_TEXT
+            task = {'kind': 'limit'}  # в админ-чат ничего, запись только в закрытый журнал Discord
         if task and task.get('quiet') and ok and (answer or '').strip().strip('.').upper() == QUIET:
             print(f'задача {task_id}: готово, людям сообщать нечего', flush=True)
             continue
