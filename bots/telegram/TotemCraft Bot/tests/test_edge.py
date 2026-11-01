@@ -129,13 +129,17 @@ press(ADMIN, f'approve_{Q}', mid=320)
 log = say(ADMIN, '-')
 retry_to = [c for c in (OWNER, ADMIN) if any('Не удалось зарегистрировать' in x for x in sent_to(log, c))]
 check(sorted(retry_to) == [OWNER, ADMIN], f"о сбое регистрации узнали решивший и владелец: {retry_to}")
-check('SecondNick' in bot.failed_registrations, "пароль для повтора сохранён в памяти")
+check('SecondNick' in bot.failed_registrations, "заявка для повтора сохранена")
+check(not any('одобрена' in x for x in sent_to(log, Q)), "сервер недоступен: игрок ещё не получил «одобрено»")
+bot.retry_registrations()
+check(bot.failed_registrations['SecondNick']['tries'] == 1, "автоповтор идёт, команду повторно не дёргаем")
 bot.rcon_command = rcon_mod.rcon_command
 n = len(ctx.rcon_log)
 (t, _), log = press(ADMIN, 'retry_reg_SecondNick')
 check(ctx.rcon_log[n:] == ['authme register SecondNick Str0ngPass2', 'authme register .SecondNick Str0ngPass2']
       and 'SecondNick' not in bot.failed_registrations,
-      "повтор регистрации сработал, пароль из памяти стёрт")
+      "повтор регистрации сработал, пароль стёрт")
+check(any('одобрена' in x for x in sent_to(log, Q)), "после регистрации игрок получил «одобрено»")
 (t, alert), _ = press(OWNER, 'retry_reg_SecondNick')
 check(alert, "повторное нажатие «Повторить» отвечает понятно")
 
@@ -321,4 +325,22 @@ ok, why = bot.validate_password_authme('kocty1488x')
 check(not ok and '14/88' in why and 'символика' in why, f"символика в пароле: {why}")
 ok, why = bot.validate_password_authme('Str0ngPass1')
 check(ok, "обычный пароль проходит")
+print("\n=== Занятый ник и пароли, которые не примет AuthMe ===")
+_ok = lambda p: bot.validate_password_authme(p, 'Nick1')[0]
+check(not _ok('a1' * 13 + 'x'), "27 знаков не принимаем")
+check(_ok('Tq7' * 8 + 'Zk'), "26 знаков принимаем")
+check(not _ok('Tqz7єїґ9'), "украинские буквы не принимаем")
+check(not _ok('Tqz79😀xk'), "эмодзи не принимаем")
+A1, A2 = 7101, 7102
+for _u in (A1, A2):
+    bot.user_states[_u] = {'step': 'rules', 'nick': 'SameNick77', 'password': 'Str0ngPass2', 'comment': ''}
+    press(_u, 'rules_agree')
+check(bot.nick_taken('samenick77', A2), "ник в чужой заявке считается занятым")
+check(not bot.nick_taken('FreeNick88', A2), "свободный ник не занят")
+bot.process_admin_decision('approve', str(A1), '', {'actor': None, 'decider_name': 'тест'})
+bot.process_admin_decision('approve', str(A2), '', {'actor': None, 'decider_name': 'тест'})
+check(str(A1) not in bot.pending and str(A2) in bot.pending, "второму тот же ник не одобряем, заявка остаётся")
+check(bot.pending[str(A2)]['auto']['manual'], "заявка со занятым ником уходит на ручной разбор")
+check(bot.storage.query("SELECT COUNT(*) FROM applications WHERE nick='SameNick77' AND status='Одобрено'")[0][0] == 1,
+      "в истории одно одобрение")
 fakes.finish()

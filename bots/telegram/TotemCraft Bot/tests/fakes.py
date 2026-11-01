@@ -73,7 +73,8 @@ def strip_tags(text):
     return html.unescape(_TAG.sub('', text))
 
 
-def _rcon_server(port, log):
+def _rcon_server(port, log, mc_dir=None):
+    import re, sqlite3
     srv = socket.socket()
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind(('127.0.0.1', port))
@@ -96,6 +97,12 @@ def _rcon_server(port, log):
         wr(rid if pw == 'testpw' else -1, '')
         rid, _, cmd = rd()
         log.append(cmd)
+        m = re.fullmatch(r'authme register (\S+) (\S+)', cmd)
+        if m and mc_dir and os.path.exists(os.path.join(mc_dir, 'plugins', 'AuthMe', 'authme.db')):
+            db = sqlite3.connect(os.path.join(mc_dir, 'plugins', 'AuthMe', 'authme.db'))  # как настоящий AuthMe
+            db.execute("INSERT INTO authme (username, realname) VALUES (?,?)", (m.group(1).lower(), m.group(1)))
+            db.commit()
+            db.close()
         wr(rid, '')
         c.close()
 
@@ -107,7 +114,7 @@ def start(workdir, mc_dir, owner=1000, names=None, rcon_port=25597):
     ctx.tg_log, ctx.webhook_log, ctx.rcon_log, ctx.answers = [], [], [], {}
     ctx.names = names or {}
     msg_id = [100]
-    threading.Thread(target=_rcon_server, args=(rcon_port, ctx.rcon_log), daemon=True).start()
+    threading.Thread(target=_rcon_server, args=(rcon_port, ctx.rcon_log, mc_dir), daemon=True).start()
     os.environ.update(BOT_TOKEN='1:x', ADMIN_ID=str(owner), DISCORD_WEBHOOK_URL='http://discord/main',
                       CONSOLE_WEBHOOK_URL='http://discord/console', RCON_PORT=str(rcon_port),
                       RCON_PASSWORD='testpw', MC_SERVER_DIR=mc_dir)

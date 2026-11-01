@@ -25,6 +25,8 @@ def decide(f):
     """f — факты о заявке (словарь). Возвращает словарь:
     manual (bool), stop (причины «только вручную»), minor (мелочи), delay (timedelta или None), icon."""
     stop, minor = [], []
+    if f.get('nick_taken'):
+        stop.append("Ник уже занят: есть на сервере или уже одобрен другому")
     if f.get('bans'):
         stop.append("Наказания на сервере: " + ", ".join(f['bans'][:3]))
     if f.get('approved_before'):

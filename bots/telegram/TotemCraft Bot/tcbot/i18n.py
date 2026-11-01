@@ -111,11 +111,11 @@ T = {
         'uk': "Нік записано так: <code>{nick}</code>\nПеревірте підкреслення: Telegram може прибрати частину з них. Якщо нік не збігається, скасуйте заявку й подайте її знову.",
         'en': "Your nickname was saved as: <code>{nick}</code>\nCheck the underscores: Telegram may remove some of them. If it does not match, cancel the application and submit it again."},
     'ask_password': {
-        'ru': "🔑 <b>Заявка · шаг 2 из 2</b>\nВведите пароль (6–30 символов, без пробелов):\n"
+        'ru': "🔑 <b>Заявка · шаг 2 из 2</b>\nВведите пароль (6–26 символов, без пробелов):\n"
               "<i>Он понадобится при каждом заходе на сервер.</i>",
-        'uk': "🔑 <b>Заявка · крок 2 з 2</b>\nВведіть пароль (6–30 символів, без пробілів):\n"
+        'uk': "🔑 <b>Заявка · крок 2 з 2</b>\nВведіть пароль (6–26 символів, без пробілів):\n"
               "<i>Він знадобиться під час кожного заходу на сервер.</i>",
-        'en': "🔑 <b>Application · step 2 of 2</b>\nEnter a password (6–30 characters, no spaces):\n"
+        'en': "🔑 <b>Application · step 2 of 2</b>\nEnter a password (6–26 characters, no spaces):\n"
               "<i>You will need it every time you join the server.</i>"},
     'bad_password': {'ru': "❌ Недопустимый пароль.\n{reason}\nПожалуйста, придумайте другой пароль:",
                      'uk': "❌ Недопустимий пароль.\n{reason}\nБудь ласка, придумайте інший пароль:",
@@ -393,9 +393,12 @@ T = {
     'pw_short': {'ru': "Пароль слишком короткий ({n} симв.). Минимум - 6 символов.",
                  'uk': "Пароль занадто короткий ({n} симв.). Мінімум 6 символів.",
                  'en': "Password is too short ({n} characters). Minimum is 6."},
-    'pw_long': {'ru': "Пароль слишком длинный ({n} симв.). Максимум - 30 символов.",
-                'uk': "Пароль занадто довгий ({n} симв.). Максимум 30 символів.",
-                'en': "Password is too long ({n} characters). Maximum is 30."},
+    'pw_chars': {'ru': "В пароле можно использовать только английские буквы, цифры и обычные символы, без эмодзи.",
+                 'uk': "У паролі можна використовувати лише англійські літери, цифри та звичайні символи, без емодзі.",
+                 'en': "The password may contain only English letters, digits and common symbols, no emoji."},
+    'pw_long': {'ru': "Пароль слишком длинный ({n} симв.). Максимум - 26 символов.",
+                'uk': "Пароль занадто довгий ({n} симв.). Максимум 26 символів.",
+                'en': "Password is too long ({n} characters). Maximum is 26."},
     'pw_cyrillic': {'ru': "Пароль не может содержать кириллицу. Используйте только латинские буквы, цифры и спецсимволы.",
                     'uk': "Пароль не може містити кирилицю. Використовуйте лише латинські літери, цифри та спецсимволи.",
                     'en': "Password cannot contain Cyrillic letters. Use only Latin letters, digits and symbols."},

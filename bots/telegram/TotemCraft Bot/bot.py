@@ -1,6 +1,6 @@
 import telebot
 from telebot import types
-import glob, gzip, os, re, time, requests, threading, schedule, html as _html
+import glob, gzip, os, re, sqlite3, time, requests, threading, schedule, html as _html
 from datetime import date, timedelta
 from collections import defaultdict
 
@@ -173,8 +173,30 @@ def send_console_command(command):
     if CONSOLE_WEBHOOK_URL:
         run_in_background(_post_webhook, CONSOLE_WEBHOOK_URL, {"content": md_escape(command)})
 
-# Пароли одобренных игроков, которых не удалось зарегистрировать: ник -> пароль (только в памяти)
-failed_registrations = {}
+# Одобренные игроки, которых не удалось зарегистрировать: ник -> заявка и комментарий. Лежит в базе, как и
+# ожидающие заявки: переживает перезапуск, запись стирается сразу после успешной регистрации.
+failed_registrations = storage.PersistentDict('reg_retry')
+REG_RETRY_MAX = 288  # повторы раз в 5 минут: сутки, дальше только кнопка у команды
+
+def authme_has(nick):
+    """Есть ли аккаунт в базе AuthMe. None: базу прочитать не удалось."""
+    path = os.path.join(config.MC_SERVER_DIR, 'plugins', 'AuthMe', 'authme.db')
+    try:
+        c = sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=3)
+        try:
+            return bool(c.execute("SELECT 1 FROM authme WHERE username=? LIMIT 1", (nick.lower(),)).fetchone())
+        finally:
+            c.close()
+    except sqlite3.Error:
+        return None
+
+def nick_taken(nick, except_uid=None):
+    """Ник занят: одобрен в заявках или есть в AuthMe. Заявку другого игрока учитываем только с except_uid
+    (при вводе ника). При решении её не считаем: иначе две заявки на один ник блокируют друг друга."""
+    if check_nick_already_approved(nick) or authme_has(nick):
+        return True
+    return except_uid is not None and any(k != str(except_uid) and (a.get('nick') or '').lower() == nick.lower() and not a.get('test_by')
+               for k, a in list(pending.items()))
 
 def bedrock_name(nick):
     """Ник Bedrock-игрока на сервере: Floodgate ставит префикс «.» и обрезает имя до 16 знаков."""
@@ -192,27 +214,65 @@ def name_variants(nicks):
 
 def register_on_server(nick, password, decided_by=None, player_id=None):
     """Регистрирует в AuthMe через RCON ник и его Bedrock-вариант (.ник) с тем же паролем,
-    чтобы игрок мог зайти и с Java, и с телефона или консоли. В Discord уходят команды со звёздочками."""
+    чтобы игрок мог зайти и с Java, и с телефона или консоли. В Discord уходят команды со звёздочками.
+    Успех подтверждаем по базе AuthMe: RCON отвечает и тогда, когда AuthMe отказал. Возвращает True или False."""
     names = [nick] + ([bedrock_name(nick)] if bedrock_name(nick) else [])
     for name in names:
         send_console_command(f"authme register {name} {'*' * 8}")
     try:
         answers = [rcon_command(f"authme register {name} {password}") for name in names]
-        failed_registrations.pop(nick, None)
         answer = "; ".join(a for a in answers if a)
+        created = authme_has(nick)
+        for _ in range(10):  # AuthMe создаёт аккаунт не мгновенно
+            if created is not False:
+                break
+            time.sleep(1)
+            created = authme_has(nick)
+        if created is False:
+            raise RuntimeError(f"AuthMe не создал аккаунт: {answer or 'нет ответа'}")
         audit(None, 'registered', player_id, nick, f"{', '.join(names)}" + (f": {answer}" if answer else ""))
         if answer:
             send_console_command(f"Ответ сервера: {answer}")
+        return True
     except Exception as e:
         log_error(e)
+        if nick in failed_registrations:  # о сбое команда уже знает, автоповтор продолжается
+            return False
         audit(None, 'reg_failed', player_id, nick, str(e))
-        failed_registrations[nick] = (password, player_id)
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔁 Повторить регистрацию", callback_data=f"retry_reg_{nick}"))
         notify_staff(None, f"⚠️ Не удалось зарегистрировать <code>{escape_html(nick)}</code> на сервере: {escape_html(e)}\n\n"
-                           f"Когда сервер будет доступен, нажмите кнопку. После перезапуска бота кнопка не сработает.",
+                           f"Игрок ещё не получил сообщение об одобрении. Бот сам повторяет раз в 5 минут в течение суток, "
+                           f"кнопка повторяет сразу.",
                      reply_markup=markup, kind='reg', ref=nick,
                      only=sorted({a for a in (decided_by, ADMIN_ID) if a in staff}))
+        return False
+
+def finish_approval(app, comment, decided_by):
+    """Сначала аккаунт, потом сообщение игроку: «одобрено» уходит только когда можно зайти."""
+    nick = app['nick']
+    if register_on_server(nick, app['password'], decided_by, app['user_id']):
+        if nick in failed_registrations:
+            del failed_registrations[nick]
+        notify_player_decision('approve', str(app['user_id']), app, comment)
+    elif nick not in failed_registrations:
+        failed_registrations[nick] = {'app': app, 'comment': comment, 'decided_by': decided_by, 'tries': 0}
+
+_reg_retry_lock = threading.Lock()
+
+def retry_registrations():
+    """Раз в 5 минут повторяет регистрации, которые не прошли (сервер был недоступен)."""
+    if not _reg_retry_lock.acquire(blocking=False):
+        return
+    try:
+        for nick in list(failed_registrations):
+            saved = failed_registrations[nick]
+            if saved.get('tries', 0) >= REG_RETRY_MAX:
+                continue
+            failed_registrations[nick] = {**saved, 'tries': saved.get('tries', 0) + 1}
+            finish_approval(saved['app'], saved.get('comment', ''), saved.get('decided_by'))
+    finally:
+        _reg_retry_lock.release()
 
 # ---------- Discord ----------
 _MD_SPECIAL = re.compile(r'([\\\*_~`|>])')
@@ -475,7 +535,8 @@ def _is_repeated_pattern(password):
 def validate_password_authme(password, nick=None, lang=i18n.DEFAULT):
     """
     Проверяет пароль по правилам AuthMe:
-    - Длина: 6–30 символов
+    - Длина: 6–26 символов (passwordMaxLength в config.yml AuthMe)
+    - Только символы, которые принимает AuthMe: [!-~]
     - Пробелы запрещены
     - Нет кириллицы
     - Не должен совпадать с ником (регистронезависимо)
@@ -487,12 +548,14 @@ def validate_password_authme(password, nick=None, lang=i18n.DEFAULT):
         return False, i18n.text(lang, 'pw_empty')
     if len(password) < 6:
         return False, i18n.text(lang, 'pw_short', n=len(password))
-    if len(password) > 30:
+    if len(password) > 26:
         return False, i18n.text(lang, 'pw_long', n=len(password))
     if re.search(r'[а-яёА-ЯЁ]', password):
         return False, i18n.text(lang, 'pw_cyrillic')
     if ' ' in password:
         return False, i18n.text(lang, 'pw_space')
+    if not re.fullmatch(r'[!-~]+', password):
+        return False, i18n.text(lang, 'pw_chars')
     if nick and password.lower() == nick.lower():
         return False, i18n.text(lang, 'pw_is_nick')
     if password.lower() in WEAK_PASSWORDS:
@@ -2240,6 +2303,7 @@ def auto_facts(uid, app):
     except Exception as e:
         log_error(e)
     words = owner_words()
+    f['nick_taken'] = nick_taken(nick)
     f['bad_nick'] = badwords.find(nick, words)
     f['bad_password'] = badwords.find(app.get('password', ''), words)
     f['bad_comment'] = badwords.find(app.get('comment', ''), words)
@@ -2595,6 +2659,10 @@ def outbox_decision(row_id, tg_id, action, comment):
                         (timeutil.now_iso(), "отказ без причины не отправляем", row_id))
         return
     nick = app.get('nick', '')
+    if action == 'approve' and not app.get('test_by') and nick_taken(nick):
+        storage.execute("UPDATE outbox SET status='refused', done_at=?, note=? WHERE id=?",
+                        (timeutil.now_iso(), f"ник {nick} уже занят", row_id))
+        return
     process_admin_decision(action, str(tg_id), comment.strip(), {'actor': None, 'decider_name': OUTBOX_NAME})
     storage.execute("UPDATE outbox SET status='sent', done_at=?, note=? WHERE id=?",
                     (timeutil.now_iso(), f"{'одобрена' if action == 'approve' else 'отклонена'} заявка {nick}", row_id))
@@ -3157,11 +3225,11 @@ def handle_application(m):
             safe_send(uid, tr(uid, 'bad_nick', reason=escape_html(reason)), parse_mode='HTML',
                       reply_markup=cancel_keyboard(uid))
             return
-        if check_nick_already_approved(text):
+        if nick_taken(text, uid):
             safe_send(uid, tr(uid, 'nick_taken'), parse_mode='HTML', reply_markup=cancel_keyboard(uid))
             return
         other = None if state.get('nick_offered') else attempted_nick(text)
-        if other and not check_nick_already_approved(other):
+        if other and not nick_taken(other, uid):
             state['nick_offered'] = True  # спрашиваем один раз; текст кнопки Telegram не переделывает
             markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=1)
             markup.add(other, text, tr(uid, 'btn_cancel_app'))
@@ -3629,14 +3697,14 @@ def callback_handler(call):
         nick = data[len('retry_reg_'):]
         saved = failed_registrations.get(nick)
         if not saved:
-            ok("Пароля нет: бот перезапускался. Попросите игрока подать заявку заново.", alert=True)
+            ok("Эта регистрация уже прошла.", alert=True)
             return
         ok("Повторяю регистрацию...")
         try:
             bot.edit_message_reply_markup(uid, msg.message_id, reply_markup=None)
         except Exception:
             pass
-        run_in_background(register_on_server, nick, saved[0], uid, saved[1])
+        run_in_background(finish_approval, saved['app'], saved.get('comment', ''), uid)
         return
 
     # --- Поиск ---
@@ -4071,12 +4139,22 @@ def process_admin_decision(action, user_id_str, comment, state):
     """Решение по заявке. state['actor'] — кто решил; None — автомат (автопринятие)."""
     actor = state['actor'] if 'actor' in state else ADMIN_ID
     decider = state.get('decider_name') or (staff_name(actor) if actor is not None else "🤖 автоматически")
+    conflict = None
     with decision_lock:
         app_claims.pop(user_id_str, None)
         app = pending.get(user_id_str)
+        if app and action == 'approve' and not app.get('test_by') and nick_taken(app['nick']):
+            conflict = app
         if not app:
             if actor is not None:
                 safe_send(actor, "⚠️ Заявка не найдена: игрок её отменил или её уже рассмотрел коллега.")
+                send_admin_menu(actor)
+            return
+        if conflict:  # пока заявка ждала, ник достался другому: одобрять нельзя, заявка остаётся в очереди
+            schedule_auto(user_id_str, conflict)
+            if actor is not None:
+                safe_send(actor, f"⚠️ Ник <code>{escape_html(conflict['nick'])}</code> уже занят, заявка не одобрена. "
+                                 f"Отклоните её с причиной.", parse_mode='HTML')
                 send_admin_menu(actor)
             return
         status = 'Одобрено' if action == 'approve' else 'Отклонено'
@@ -4089,8 +4167,6 @@ def process_admin_decision(action, user_id_str, comment, state):
         details = "автоматически: " + state.get('auto_desc', '') + details
     audit(actor, 'approved' if action == 'approve' else 'rejected', app['user_id'], app['nick'], details,
           actor_name=state.get('decider_name'))
-    if action == 'approve' and not test_by:
-        run_in_background(register_on_server, app['nick'], app['password'], actor, app['user_id'])
 
     # Карточка заявки остаётся в чате с пометкой решения и того, кто решил
     action_icon = "✅" if action == 'approve' else "❌"
@@ -4121,7 +4197,10 @@ def process_admin_decision(action, user_id_str, comment, state):
         except Exception:
             pass
 
-    run_in_background(notify_player_decision, action, user_id_str, app, comment)
+    if action == 'approve' and not test_by:
+        run_in_background(finish_approval, app, comment, actor)
+    else:
+        run_in_background(notify_player_decision, action, user_id_str, app, comment)
     discord_decision_notify(app["nick"], status, (comment or "") + (" [тестовая заявка]" if test_by else ""), decider)
     send_admin_menu(actor)
 
@@ -4219,6 +4298,7 @@ def run_scheduler():
     schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
     schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима
     schedule.every(10).seconds.do(outbox_job)  # ответы игрокам от Claude
+    schedule.every(5).minutes.do(run_in_background, retry_registrations)  # регистрации, которые не прошли
     schedule.every().day.at("04:10", "Europe/Moscow").do(group_log_cleanup)
     while True:
         schedule.run_pending()
