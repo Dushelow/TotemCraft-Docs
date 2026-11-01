@@ -1,22 +1,44 @@
 import telebot
 from telebot import types
-import glob, gzip, os, re, sqlite3, time, requests, threading, schedule, html as _html
+import glob, gzip, os, re, sqlite3, time, zlib, requests, threading, schedule, html as _html
 from datetime import date, timedelta
 from collections import defaultdict
 
 from tcbot import config, storage, timeutil
 from tcbot.config import TOKEN, ADMIN_ID, DISCORD_WEBHOOK_URL, CONSOLE_WEBHOOK_URL
-from tcbot.logs import log_error, log_warning
+from tcbot.logs import log_error, log_warning, scrub
 from tcbot.rcon import rcon_command
 from tcbot import autoaccept, bans, badwords, mmdb, tgage, i18n
 
 # 4 потока: одно медленное действие (профиль, досье, рассылка команде) не держит очередь нажатий
 bot = telebot.TeleBot(TOKEN, num_threads=4)
+telebot.apihelper.CONNECT_TIMEOUT = 5  # было 15: один зависший запрос держал кнопку 15 секунд
 
 # База: схема и разовый перенос старых файлов JSON/CSV
 storage.migrate()
 
-user_states = {}                                   # игрок -> шаг анкеты или обращения (в памяти, это черновик)
+class AppStates(dict):
+    """Шаги хранятся в памяти (там пароль). В базе только отметка «идёт анкета», без данных: после перезапуска
+    бота следующее сообщение игрока может быть паролем, его нельзя передавать в обращение."""
+    def __setitem__(self, uid, state):
+        super().__setitem__(uid, state)
+        if state.get('step') == 'nick':
+            interrupted_apps[str(uid)] = 1
+
+    def __delitem__(self, uid):
+        super().__delitem__(uid)
+        if str(uid) in interrupted_apps:
+            del interrupted_apps[str(uid)]
+
+    def pop(self, uid, *default):
+        if uid in self:
+            value = self[uid]
+            del self[uid]
+            return value
+        return default[0] if default else super().pop(uid)
+
+interrupted_apps = storage.PersistentDict('app_started')
+user_states = AppStates()                                   # игрок -> шаг анкеты или обращения (в памяти, это черновик)
 pending = storage.PersistentDict('pending')        # заявки в очереди: str(tg_id) -> данные заявки
 blocked_users = storage.PersistentSet('blocked', int)
 last_application = storage.PersistentDict('last_application')  # str(tg_id) -> UTC ISO последней подачи
@@ -101,14 +123,13 @@ def safe_send(chat_id, text, parse_mode=None, reply_markup=None, **kwargs):
         return api('отправка сообщения', bot.send_message, chat_id, text,
                    parse_mode=parse_mode, reply_markup=reply_markup, **kwargs)
     except Exception as e:
-        if parse_mode:
-            try:
-                return bot.send_message(chat_id, text, reply_markup=reply_markup, **kwargs)
-            except Exception as e2:
-                log_error(e2)
-                return None
-        else:
-            log_error(e)
+        # Без разметки только если сломана сама разметка, иначе игрок увидит теги <b>. Сбой связи: повтор как есть.
+        retry_mode = None if "can't parse entities" in str(e) else parse_mode
+        log_error(e)
+        try:
+            return bot.send_message(chat_id, text, parse_mode=retry_mode, reply_markup=reply_markup, **kwargs)
+        except Exception as e2:
+            log_error(e2)
             return None
 
 TG_MAX_LEN = 4096  # Лимит Telegram на длину одного сообщения
@@ -241,7 +262,7 @@ def register_on_server(nick, password, decided_by=None, player_id=None):
         audit(None, 'reg_failed', player_id, nick, str(e))
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton("🔁 Повторить регистрацию", callback_data=f"retry_reg_{nick}"))
-        notify_staff(None, f"⚠️ Не удалось зарегистрировать <code>{escape_html(nick)}</code> на сервере: {escape_html(e)}\n\n"
+        notify_staff(None, f"⚠️ Не удалось зарегистрировать <code>{escape_html(nick)}</code> на сервере: {escape_html(scrub(str(e)))}\n\n"
                            f"Игрок ещё не получил сообщение об одобрении. Бот сам повторяет раз в 5 минут в течение суток, "
                            f"кнопка повторяет сразу.",
                      reply_markup=markup, kind='reg', ref=nick,
@@ -463,7 +484,7 @@ def attempted_nick(typed):
                     m = 'Disconnecting ' in line and re.search(r'Disconnecting ([A-Za-z0-9_]{3,16}) \(', line)
                     if m and m.group(1).count('_') > typed.count('_') and m.group(1).replace('_', '').lower() == bare:
                         found = m.group(1)
-    except OSError:
+    except (OSError, EOFError, zlib.error):  # битый архив лога не должен мешать подать заявку
         return None
     return found
 
@@ -1047,6 +1068,8 @@ def last_decision(target_id):
 admin_states = {}                          # admin_id -> что админ сейчас вводит
 delayed_notifications = defaultdict(list)  # admin_id -> уведомления, отложенные на время ввода комментария
 dialogs = storage.PersistentDict('dialogs', int)  # admin_id -> player_id: с кем админ в диалоге (переживает перезапуск)
+APP_CLAIM_TTL = 15 * 60
+app_claim_times = {}                       # player_id (str) -> когда админ начал решать
 app_claims = {}                            # player_id (str) -> admin_id: кто сейчас пишет решение по заявке
 
 def dialog_admin(player_id):
@@ -2413,7 +2436,9 @@ def auto_job():
             if timeutil.parse(due) > now:
                 break
             if key in app_claims:
-                continue  # сейчас решает админ
+                if time.time() - app_claim_times.get(key, 0) < APP_CLAIM_TTL:
+                    continue  # сейчас решает админ
+                app_claims.pop(key, None)  # админ начал и бросил: заявка не должна зависнуть
             app = pending.get(key)
             if not app:
                 continue
@@ -2730,7 +2755,7 @@ def outbox_send(row_id, tg_id, text, close):
     sent = safe_send(tg_id, tr(tg_id, 'msg_from_admins', text=escape_html(text)), parse_mode='HTML')
     if not sent:
         storage.execute("UPDATE outbox SET status='failed', done_at=?, note=? WHERE id=?",
-                        (timeutil.now_iso(), "Telegram не принял: игрок заблокировал бота или удалил чат", row_id))
+                        (timeutil.now_iso(), "Telegram не принял: сбой связи, или игрок заблокировал бота, или удалил чат", row_id))
         return
     storage.add_message(tg_id, 'admin', text, staff_name=OUTBOX_NAME)
     clear_unread(tg_id)
@@ -3034,6 +3059,10 @@ def handle_all_messages(m):
         return
 
     # Пользовательские состояния (анкета, поддержка)
+    if uid not in user_states and str(uid) in interrupted_apps:
+        del interrupted_apps[str(uid)]  # бот перезапускался посреди анкеты: это может быть пароль, никуда не передаём
+        safe_send(uid, tr(uid, 'app_interrupted'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
+        return
     if uid in user_states:
         state = user_states[uid]
         step = state.get('step')
@@ -3256,8 +3285,13 @@ def handle_application(m):
         if text in i18n.variants('btn_skip'):
             state['comment'] = ''
         else:
+            if len(text) > 1000:
+                safe_send(uid, tr(uid, 'comment_long', n=len(text)))
+                return
             state['comment'] = text
         show_confirmation(uid, state)
+    elif step in ('confirm', 'rules'):
+        safe_send(uid, tr(uid, 'use_buttons'))
 
 def show_confirmation(uid, state):
     try:
@@ -3420,8 +3454,11 @@ def callback_handler(call):
         if uid not in user_states:
             answer_cb(call.id, tr(uid, 'app_outdated')); return
         state = user_states[uid]
-        if state.get('step') != 'rules':
-            answer_cb(call.id, tr(uid, 'already_done')); return
+        with decision_lock:  # повторное нажатие не должно подать заявку дважды
+            if state.get('step') != 'rules':
+                answer_cb(call.id, tr(uid, 'already_done')); return
+            state['step'] = 'submitting'
+        answer_cb(call.id)  # сразу, дальше идут медленные запросы: иначе кнопка крутится и игрок жмёт снова
         if data == "rules_agree":
             app_id = str(uid)
             test_by = uid if uid in player_view else None
@@ -3471,8 +3508,8 @@ def callback_handler(call):
                           reply_markup=sub)
         else:
             safe_send(uid, tr(uid, 'rules_declined'), reply_markup=main_keyboard(is_admin=False, user_id=uid))
-        del user_states[uid]
-        answer_cb(call.id)
+        if uid in user_states:
+            del user_states[uid]
         return
 
     # --- Главное меню пользователя (инлайн-кнопка) ---
@@ -3681,6 +3718,7 @@ def callback_handler(call):
             return
         ok()
         app_claims[target_id] = uid
+        app_claim_times[target_id] = time.time()
         admin_states[uid] = {'action': action, 'user_id': target_id, 'actor': uid,
                              'app_msg_chat_id': msg.chat.id, 'app_msg_message_id': msg.message_id}
         markup = types.InlineKeyboardMarkup()
@@ -4297,6 +4335,9 @@ def run_scheduler():
     schedule.every().day.at("08:00", "Europe/Moscow").do(daily_job)
     schedule.every().day.at("04:00", "Europe/Moscow").do(backup_job)  # копия bot.db в backups/, 14 последних
     schedule.every(1).minutes.do(auto_job)  # автопринятие подошедших заявок и конец рейд-режима
+    # запись, оборвавшаяся посреди отправки при прошлом запуске, иначе висела бы вечно
+    storage.execute("UPDATE outbox SET status='failed', done_at=?, note=? WHERE status='sending'",
+                    (timeutil.now_iso(), "бот перезапустился во время отправки, проверьте вручную"))
     schedule.every(10).seconds.do(outbox_job)  # ответы игрокам от Claude
     schedule.every(5).minutes.do(run_in_background, retry_registrations)  # регистрации, которые не прошли
     schedule.every().day.at("04:10", "Europe/Moscow").do(group_log_cleanup)

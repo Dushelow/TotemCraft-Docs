@@ -55,6 +55,9 @@ def wait(row_id):
         status, note = db().execute("SELECT status, note FROM outbox WHERE id=?", (row_id,)).fetchone()
         if status not in ('new', 'sending'):
             break
+    if status in ('new', 'sending'):
+        print(f"#{row_id} ещё в очереди, бот отправит сам. Не повторяйте: будет дубль")
+        sys.exit(0)
     print(f"#{row_id} {status}" + (f": {note}" if note else ''))
     sys.exit(0 if status == 'sent' else 1)
 
@@ -79,6 +82,9 @@ def send(argv, silent=False, group=False):
         status, note = db().execute("SELECT status, note FROM outbox WHERE id=?", (row_id,)).fetchone()
         if status not in ('new', 'sending'):
             break
+    if status in ('new', 'sending'):
+        print(f"#{row_id} ещё в очереди, бот отправит сам. Не повторяйте: будет дубль")
+        sys.exit(0)
     print(f"#{row_id} {status}" + (f": {note}" if note else ''))
     sys.exit(0 if status == 'sent' else 1)
 

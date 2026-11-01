@@ -343,4 +343,21 @@ check(str(A1) not in bot.pending and str(A2) in bot.pending, "второму т�
 check(bot.pending[str(A2)]['auto']['manual'], "заявка со занятым ником уходит на ручной разбор")
 check(bot.storage.query("SELECT COUNT(*) FROM applications WHERE nick='SameNick77' AND status='Одобрено'")[0][0] == 1,
       "в истории одно одобрение")
+print("\n=== Двойное нажатие, прерванная анкета, ключ в журнале ===")
+D = 7201
+bot.user_states[D] = {'step': 'rules', 'nick': 'DoublePress1', 'password': 'Str0ngPass2', 'comment': ''}
+press(D, 'rules_agree')
+press(D, 'rules_agree')
+check(bot.storage.query("SELECT COUNT(*) FROM audit WHERE action='app_submitted' AND target_id=?", (D,))[0][0] == 1,
+      "повторное нажатие не подаёт заявку второй раз")
+I = 7202
+say(I, '/start'); press(I, 'lang_ru'); press(I, 'menu_apply')
+check(str(I) in bot.interrupted_apps, "в базе отметка, что идёт анкета")
+dict.pop(bot.user_states, I)  # как после перезапуска: шаг в памяти потерян
+log = say(I, 'MySecretPass1')
+check(any('анкета прервалась' in x for x in sent_to(log, I)), "игроку сказали, что анкета прервалась")
+check(not any('MySecretPass1' in str(x) for c, x in log if c != I), "пароль никому не ушёл")
+check(str(I) not in bot.interrupted_apps, "отметка снята")
+from tcbot.logs import scrub
+check(scrub("url: /bot123456:ABCdefGHIjklMNOpqrSTUvwxYZ12345/getMe") == "url: /bot***/getMe", "ключ бота вырезан из текста ошибки")
 fakes.finish()

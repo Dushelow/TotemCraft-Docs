@@ -1,5 +1,6 @@
 """Журнал ошибок: файл с ограничением размера, без ожидаемого шума от Telegram."""
 import logging
+import re
 import traceback
 from logging.handlers import RotatingFileHandler
 
@@ -22,6 +23,24 @@ _EXPECTED = (
     'message to edit not found',
     "message can't be deleted",
 )
+
+
+_TOKEN = re.compile(r'bot\d{5,}:[A-Za-z0-9_-]{20,}')
+
+
+def scrub(text):
+    """Сетевые ошибки содержат адрес запроса вместе с ключом бота: убираем его."""
+    return _TOKEN.sub('bot***', text)
+
+
+class _Scrub(logging.Filter):
+    def filter(self, record):
+        record.msg = scrub(record.getMessage())
+        record.args = ()
+        return True
+
+
+logger.addFilter(_Scrub())
 
 
 def log_error(e=None):
