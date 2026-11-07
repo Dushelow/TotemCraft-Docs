@@ -151,13 +151,13 @@ connection:
     console-alert-message: '[Vulcan] %player% was kicked for sending an out of order
       confirmation packet! (&7Received &c%id% &7!= Expected &c%last-id%&7)'
   no-response:
-    # Has not replied to a confirmation packet for > x seconds. Kick the player.
     delay-in-seconds: 30
     kick-message: 'Internal Exception: io.netty.handler.timeout.ReadTimeoutException'
     staff-alert-message: '%prefix% &c%player% &7was kicked for not replying to confirmation
       packets! (&c%delay%&7ms)'
     console-alert-message: '[Vulcan] %player% was kicked for not replying to confirmation
       packets! (&c%delay%&7ms)'
+    code-of-conduct-fix: true
   max-size:
     # This is basically saying that we have sent the player 2000 packets that they have yet to respond to which is.... a lot
     # If you are seeing people getting kicked for this very frequently on your server then odds are you have other plugins
@@ -187,6 +187,11 @@ connection:
     staff-alert-message: '%prefix% &c%player% &7was kicked for having too high ping!
       &7(&c%ping%ms&7)'
     console-message: '[Vulcan] &c%player% &7kicked for having too high ping! &7(&c%ping%ms&7)'
+cancel-hits:
+  enabled-for-all-checks: false
+  duration: 3000
+  cancel-event: false
+  checks: []
 punishments:
   # The message that is sent when a player is punished (only sent to staff with /alerts enabled)
   message: '%prefix% &c%player% &7was punished for &f%check% &7(&fType %type%&7) &7[&4x%vl%&7]'
@@ -475,6 +480,8 @@ settings:
   entity-cram-exempt-ticks: 30
   dont-register-geyser: false
   testing-stuff: false
+  min-transaction-id: -32758
+  max-transaction-id: -420
 discord-webhook:
   # Whether or not cooldown is enabled
   cooldown: false
@@ -1034,7 +1041,7 @@ checks:
           rotate-every: 2
       y:
         enabled: true
-        punishable: true
+        punishable: false
         discord-alert-interval: 1
         broadcast-punishment: false
         max-violations: 5
@@ -2542,7 +2549,7 @@ checks:
         setback: false
         min-vl-to-setback: 1
         broadcast-punishment: false
-        max-violations: 20
+        max-violations: 500
         alert-interval: 1
         dont-alert-until: 2
         maximum-ping: 100000
@@ -3258,6 +3265,7 @@ checks:
         minimum-tps: 19.0
         punishment-commands:
         - kick %player% AntiCheat
+        cancel-place: false
     badpackets:
       a:
         enabled: true

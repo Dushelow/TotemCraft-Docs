@@ -6,3 +6,7 @@ bots/telegram/TotemCraft Bot/.env
 bots/telegram/TotemCraft Bot/backups/
 bots/telegram/TotemCraft Bot/legacy_files/
 bots/telegram/TotemCraft Bot/bot_errors.log*
+
+# TotemGuard: купленный Vulcan для сборки и результат сборки в репозиторий не кладём
+minecraft/custom-plugins/TotemGuard/lib/
+minecraft/custom-plugins/TotemGuard/target/

@@ -1,0 +1,15 @@
+name: TotemGuard
+version: '1.0.0'
+main: net.totemcraft.totemguard.TotemGuard
+api-version: '1.21'
+depend: [Vulcan]
+description: Наказание по экспериментальным проверкам Vulcan при устойчиво высоком VL
+commands:
+  totemguard:
+    description: Статус и перечитать правила (/totemguard reload)
+    permission: totemguard.admin
+permissions:
+  totemguard.admin:
+    default: op
+  totemguard.bypass:
+    default: false
