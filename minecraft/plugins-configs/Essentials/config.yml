@@ -990,7 +990,11 @@ chat:
   # Note: The {DISPLAYNAME} placeholder includes {PREFIX} and {SUFFIX} by default.
   # Using these together may result in double prefixes/suffixes in chat.
 
-  format: '&f<{DISPLAYNAME}> {MESSAGE}'
+  format:
+    shout: '&f<{DISPLAYNAME}> {MESSAGE}'
+    question: '&f<{DISPLAYNAME}> {MESSAGE}'
+    normal: '&f<{DISPLAYNAME}> {MESSAGE}'
+    local: '&7[Рядом] <{DISPLAYNAME}&7> &7{MESSAGE}'
   #format: '&7[{GROUP}]&r {DISPLAYNAME}&7:&r {MESSAGE}'
   #format: '&7{PREFIX}&r {NICKNAME}&r &7{SUFFIX}&r: {MESSAGE}'
 
