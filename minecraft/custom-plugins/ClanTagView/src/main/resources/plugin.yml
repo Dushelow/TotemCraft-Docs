@@ -1,0 +1,10 @@
+name: ClanTagView
+version: '1.0.0'
+main: net.totemcraft.clantagview.ClanTagView
+api-version: '1.21'
+depend: [SimpleClans]
+description: Теги кланов в чате видят только игроки в кланах и админы
+permissions:
+  clantagview.see:
+    description: Видеть теги кланов в чате, даже не состоя в клане
+    default: op
