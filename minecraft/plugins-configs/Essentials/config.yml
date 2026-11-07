@@ -960,7 +960,7 @@ chat:
   # Players with 'essentials.chat.shout' can override this by prefixing their message with an exclamation mark (!).
   # Players with 'essentials.chat.question' can override this by prefixing their message with a question mark (?).
   # You can add command costs for shout/question by adding 'chat-shout' and 'chat-question' to the 'command-costs' section above.
-  radius: 120
+  radius: 64
 
   # Chat formatting can be configured in two ways:
   #  - A standard format for all chat ('format' section)
