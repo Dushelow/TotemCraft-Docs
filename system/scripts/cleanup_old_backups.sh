@@ -9,7 +9,7 @@
 #
 # Сначала печатает, что собирается удалить, и ждёт, пока вы введёте yes.
 
-SB="u570805@u570805.your-storagebox.de"
+SB="uXXXXXX@uXXXXXX.your-storagebox.de"
 LOG=/root/cleanup_old_backups.log
 
 DIRS=(daily-2026-05-{15..31} daily-2026-06-{01..30} daily-2026-07-{01..23} daily-2026-10-09)
