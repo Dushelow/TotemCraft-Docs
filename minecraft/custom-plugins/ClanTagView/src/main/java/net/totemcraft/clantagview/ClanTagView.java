@@ -5,6 +5,7 @@ import com.earth2me.essentials.User;
 import fr.xephi.authme.api.v3.AuthMeApi;
 import io.papermc.paper.chat.ChatRenderer;
 import io.papermc.paper.event.player.AsyncChatEvent;
+import net.essentialsx.api.v2.events.chat.LocalChatEvent;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -19,8 +20,10 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
+import java.util.WeakHashMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -47,6 +50,11 @@ public final class ClanTagView extends JavaPlugin implements Listener {
     private final Set<UUID> localOnce = ConcurrentHashMap.newKeySet();
     /** Игроки, чьё сообщение сейчас отправляется через /g: приставка "!" не делает его ближним. */
     private final Set<UUID> globalOnce = ConcurrentHashMap.newKeySet();
+    /** Сообщения, которые Essentials отправил как ближние: их не пересылаем в Discord. */
+    private final Set<Object> localChats = Collections.synchronizedSet(Collections.newSetFromMap(new WeakHashMap<>()));
+    /** Игрок, чьё сообщение Essentials только что сделал ближним (тот же поток, то же событие чата). */
+    private final ThreadLocal<Player> localNow = new ThreadLocal<>();
+    private Object discordFilter;
 
     @Override
     public void onEnable() {
@@ -54,6 +62,36 @@ public final class ClanTagView extends JavaPlugin implements Listener {
         prefixes = List.copyOf(getConfig().getStringList("tag-after-prefixes"));
         essentials = (IEssentials) getServer().getPluginManager().getPlugin("Essentials");
         getServer().getPluginManager().registerEvents(this, this);
+        if (getServer().getPluginManager().isPluginEnabled("DiscordSRV")) {
+            discordFilter = DiscordLocalFilter.register(this);
+        }
+    }
+
+    @Override
+    public void onDisable() {
+        if (discordFilter != null) {
+            DiscordLocalFilter.unregister(discordFilter);
+        }
+    }
+
+    /** Essentials разослал сообщение только игрокам рядом (событие внутри обработки чата, тот же поток). */
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onLocalChat(LocalChatEvent event) {
+        localNow.set(event.getPlayer());
+    }
+
+    /** Запоминаем само событие чата как ближнее: DiscordSRV получает его позже, в другом потоке. */
+    @EventHandler(priority = EventPriority.HIGHEST)
+    public void markLocal(AsyncPlayerChatEvent event) {
+        Player local = localNow.get();
+        localNow.remove();
+        if (local == event.getPlayer()) {
+            localChats.add(event);
+        }
+    }
+
+    boolean isLocalChat(Object chatEvent) {
+        return chatEvent != null && localChats.contains(chatEvent);
     }
 
     /**

@@ -52,6 +52,14 @@
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/authme.jar</systemPath>
         </dependency>
+        <!-- Фильтр ближнего чата для Discord -->
+        <dependency>
+            <groupId>com.discordsrv</groupId>
+            <artifactId>discordsrv</artifactId>
+            <version>1.30.5</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/discordsrv.jar</systemPath>
+        </dependency>
     </dependencies>
 
     <build>
