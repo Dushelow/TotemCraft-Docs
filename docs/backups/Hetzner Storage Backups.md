@@ -4,10 +4,12 @@
 
 Используем **borg** (BorgBackup 1.2). С октября 2026 вместо `rsync + hardlinks`.
 
-- Бэкапится: миры `2025`, `2025_nether`, `2025_the_end`, `plugins`, а также `*.yml`, `*.properties`, `*.json` из корня сервера.
+- Бэкапится: папка мира `2025` и `plugins`, а также `*.yml`, `*.properties`, `*.json` из корня сервера.
 - Каждый день в 5:00 МСК создаётся архив `daily-YYYY-MM-DD_HHMM` в репозитории `borg-totemcraft` на Storage Box.
 - Borg режет файлы на куски и хранит только новые куски. Поэтому даже 15 ГБ база CoreProtect, которая меняется каждый день, не копируется каждый раз заново. Первая копия: 50 ГБ превратились в 25 ГБ (сжатие lz4).
-- Хранится: 7 ежедневных, 4 еженедельных, 6 ежемесячных архивов. Старые удаляет `borg prune` в конце того же скрипта.
+- Хранится: 7 ежедневных, 4 еженедельных, 6 ежемесячных архивов. Старые удаляет `borg prune --glob-archives 'daily-*'` в конце того же скрипта: чистятся только ежедневные архивы.
+- Особые архивы с другим именем чистка не трогает и они хранятся всегда. Так сделан архив перехода на новую версию: `pre-26.3-2026-11-07` (весь сервер до перехода, включая старую базу CoreProtect).
+- С версии 26.x все три мира лежат внутри `2025`: `2025/dimensions/minecraft/overworld`, `.../the_nether`, `.../the_end`. Папок `2025_nether` и `2025_the_end` больше нет. Как было до 26.3: `docs/legacy/1.21.11/Hetzner Storage Backups.md`.
 - Шифрования нет (`-e none`): хранилище приватное, зато нет риска потерять пароль.
 - Скрипт запускается от пользователя `minecraft` — он же владеет screen-сессией сервера. Скрипт: `/home/minecraft/backup.sh`, пример в `system/scripts/backup.sh.example`.
 
@@ -95,9 +97,9 @@ borg list
 
 ```bash
 mkdir -p /home/minecraft/restore-test && cd /home/minecraft/restore-test
-borg extract --progress ::daily-2026-10-10_0928
+borg extract --progress ::daily-2026-11-08_0500
 # только один мир:
-borg extract --progress ::daily-2026-10-10_0928 2025_nether
+borg extract --progress ::daily-2026-11-08_0500 2025/dimensions/minecraft/the_nether
 ```
 
 Затем вручную замени нужные папки в `/home/minecraft/server/` при **остановленном** сервере.

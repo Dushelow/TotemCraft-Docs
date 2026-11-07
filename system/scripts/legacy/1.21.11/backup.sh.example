@@ -1,0 +1,94 @@
+#!/bin/bash
+# Бэкап TotemCraft через borg на Hetzner Storage Box.
+# Запускать от пользователя minecraft (cron: 0 5 * * *).
+# Borg режет файлы на куски и хранит только новые, поэтому ежедневный
+# прирост небольшой даже для больших изменяющихся файлов (CoreProtect).
+#
+# ВАЖНО: на Storage Box урезанная оболочка, команды с | там НЕ работают.
+# Всё, что надо посчитать, считаем здесь, а не в ssh-команде.
+
+set -uo pipefail
+
+SERVER_DIR="/home/minecraft/server"
+LOG="/home/minecraft/backup.log"
+LOCK="/home/minecraft/backup.lock"
+
+export BORG_REPO="ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./borg-totemcraft"
+export BORG_REMOTE_PATH="borg-1.2"
+export BORG_RSH="ssh -o BatchMode=yes -o ServerAliveInterval=60 -o ServerAliveCountMax=3"
+export BORG_RELOCATED_REPO_ACCESS_IS_OK=no
+export BORG_UNKNOWN_UNENCRYPTED_REPO_ACCESS_IS_OK=yes
+
+# Максимум на всю копию: если дольше, считаем зависанием и сохранение включаем обратно
+BACKUP_TIMEOUT="3h"
+
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >> "$LOG"; }
+
+# Одновременно только один бэкап
+exec 9>"$LOCK"
+if ! flock -n 9; then
+  log "Другой бэкап ещё идёт, выходим"
+  exit 0
+fi
+
+server_alive() { screen -ls | grep -q "\.minecraft[[:space:]]"; }
+
+mc_cmd() { screen -S minecraft -X stuff "$1$(printf '\r')" 2>/dev/null || true; }
+
+SAVE_OFF_DONE=false
+on_exit() {
+  local code=$?
+  if $SAVE_OFF_DONE && server_alive; then
+    mc_cmd "save-on"
+    log "save-on (cleanup)"
+  fi
+  [ $code -ne 0 ] && log "=== БЭКАП ЗАВЕРШЁН С ОШИБКОЙ (код $code) ==="
+  exit $code
+}
+trap on_exit EXIT
+
+log "=== БЭКАП НАЧАТ ==="
+
+if server_alive; then
+  log "save-off + save-all flush"
+  mc_cmd "save-off"
+  SAVE_OFF_DONE=true
+  sleep 4
+  mc_cmd "save-all flush"
+  sleep 20
+else
+  log "Сервер не запущен, сохранение не трогаем"
+fi
+
+ARCHIVE="daily-$(date +%Y-%m-%d_%H%M)"
+cd "$SERVER_DIR" || exit 1
+
+# --exclude-caches не нужен, исключаем только то, что не бэкапим
+timeout "$BACKUP_TIMEOUT" borg create \
+  --stats --compression lz4 \
+  --exclude '*/session.lock' --exclude '*.tmp' \
+  "::${ARCHIVE}" \
+  2025 2025_nether 2025_the_end plugins \
+  *.yml *.properties *.json >> "$LOG" 2>&1
+rc=$?
+
+# rc 0 = успех, 1 = предупреждения (файл менялся во время чтения): для живого мира нормально
+if [ $rc -ne 0 ] && [ $rc -ne 1 ]; then
+  log "ОШИБКА: borg create код $rc"
+  exit $rc
+fi
+log "Архив $ARCHIVE создан (код $rc)"
+
+# Сразу включаем сохранение, не ждём чистки
+if $SAVE_OFF_DONE && server_alive; then
+  mc_cmd "save-on"
+  SAVE_OFF_DONE=false
+  log "save-on"
+fi
+
+# Хранить: 7 дней, 4 недели, 6 месяцев
+borg prune --list --keep-daily 7 --keep-weekly 4 --keep-monthly 6 >> "$LOG" 2>&1 \
+  || log "ПРЕДУПРЕЖДЕНИЕ: prune завершился с ошибкой"
+borg compact >> "$LOG" 2>&1 || log "ПРЕДУПРЕЖДЕНИЕ: compact завершился с ошибкой"
+
+log "=== БЭКАП ЗАВЕРШЁН УСПЕШНО ==="

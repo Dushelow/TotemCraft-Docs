@@ -68,7 +68,7 @@ timeout "$BACKUP_TIMEOUT" borg create \
   --stats --compression lz4 \
   --exclude '*/session.lock' --exclude '*.tmp' \
   "::${ARCHIVE}" \
-  2025 2025_nether 2025_the_end plugins \
+  2025 plugins \
   *.yml *.properties *.json >> "$LOG" 2>&1
 rc=$?
 
@@ -87,7 +87,7 @@ if $SAVE_OFF_DONE && server_alive; then
 fi
 
 # Хранить: 7 дней, 4 недели, 6 месяцев
-borg prune --list --keep-daily 7 --keep-weekly 4 --keep-monthly 6 >> "$LOG" 2>&1 \
+borg prune --list --glob-archives 'daily-*' --keep-daily 7 --keep-weekly 4 --keep-monthly 6 >> "$LOG" 2>&1 \
   || log "ПРЕДУПРЕЖДЕНИЕ: prune завершился с ошибкой"
 borg compact >> "$LOG" 2>&1 || log "ПРЕДУПРЕЖДЕНИЕ: compact завершился с ошибкой"
 
