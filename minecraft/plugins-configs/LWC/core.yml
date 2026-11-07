@@ -38,6 +38,7 @@ database:
 protections:
     denyRedstone: false
     denyHoppers: true
+    denyGolems: false
     autoRegister: false
     ignoreBlockDestruction: false
     ignoreLeftClick: false
@@ -338,6 +339,15 @@ protections:
         black_wall_banner:
             enabled: false
         copper_chest:
+            enabled: true
+            autoRegister: donation
+        exposed_copper_chest:
+            enabled: true
+            autoRegister: donation
+        weathered_copper_chest:
+            enabled: true
+            autoRegister: donation
+        oxidized_copper_chest:
             enabled: true
             autoRegister: donation
 modes:

@@ -63,6 +63,8 @@ chunks:
   fixed-chunk-inhabited-time: -1
   flush-regions-on-save: true
   max-auto-save-chunks-per-tick: 8
+  min-chunk-unload-count: 50
+  min-chunk-unload-fraction: 0.05
   prevent-moving-into-unloaded-chunks: false
 collisions:
   allow-player-cramming-damage: false
@@ -73,10 +75,11 @@ collisions:
 command-blocks:
   force-follow-perm-level: true
   permissions-level: 2
+  time-format-pattern: default
 entities:
   armor-stands:
     do-collision-entity-lookups: false
-    tick: false
+    tick: true
   behavior:
     allow-spider-world-border-climbing: true
     baby-zombie-movement-modifier: 0.5
@@ -98,6 +101,7 @@ entities:
       - HARD
     ender-dragons-death-always-places-dragon-egg: false
     experience-merge-max-value: -1
+    inactive-mob-goal-selector-throttle-rate: disabled
     mobs-can-always-pick-up-loot:
       skeletons: false
       zombies: false
@@ -146,7 +150,7 @@ entities:
     despawn-ranges:
       ambient:
         hard: 96
-        soft: 30 # Default: 32
+        soft: 30
       axolotls:
         hard: 96
         soft: 30
@@ -231,6 +235,7 @@ environment:
   disable-ice-and-snow: false
   disable-thunder: false
   fire-tick-delay: 30
+  fix-missing-tree-snow: false
   frosted-ice:
     delay:
       max: 40
@@ -310,7 +315,7 @@ tick-rates:
   container-update: 1
   dry-farmland: 1
   grass-spread: 4
-  mob-spawner: 1 # Default: 1 / Optimized: 4
+  mob-spawner: 1
   sensor:
     villager:
       secondarypoisensor: 80
@@ -318,3 +323,6 @@ tick-rates:
 unsupported-settings:
   disable-world-ticking-when-empty: false
   fix-invulnerable-end-crystal-exploit: true
+  ticking:
+    block-entities: true
+    chunks: true
