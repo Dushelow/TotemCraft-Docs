@@ -45,6 +45,8 @@
 - **NBTAPI** - Библиотека для работы с NBT-данными (требуется многими плагинами).
 - **packetevents** - Библиотека для работы с пакетами (используется Vulcan и другими).
 - **packetevents** - Библиотека для работы с пакетами (используется Vulcan и другими).
+- **TotemGuard** (свой, `minecraft/custom-plugins/TotemGuard`) - банит по проверке Vulcan Speed E при VL 500 (страховка, если Vulcan не накажет сам), журнал `plugins/TotemGuard/journal.log`, уведомления в игре как у Vulcan.
+- **ClanTagView** (свой, `minecraft/custom-plugins/ClanTagView`) - теги кланов в чате видят только игроки в кланах и админы (право `clantagview.see`).
 - **EmoteCraft** - Поддержка мода на анимации игроков. 
 
 _____
