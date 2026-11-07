@@ -226,10 +226,10 @@ clanchat:
   enable: true
   tag-based-clan-chat: false
   announcement-color: e
-  format: '&7[Клан %clan%&7] &f<%player%> %rank%: &f%message%'
+  format: '&6[Клан %clan%&6] <%player%> %rank%: %message%'
   spy-format: '&8[Spy] [&bC&8] <%clean-tag%&8> <%nick-color%*&8%player%>&8 %rank%&8:
     %message%'
-  rank: '&f[%rank%&f]'
+  rank: '&6[%rank%&6]'
   leader-color: f
   trusted-color: f
   member-color: f
