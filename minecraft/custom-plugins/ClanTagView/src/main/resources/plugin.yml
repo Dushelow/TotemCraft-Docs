@@ -1,10 +1,28 @@
 name: ClanTagView
-version: '1.1.1'
+version: '1.2.0'
 main: net.totemcraft.clantagview.ClanTagView
 api-version: '1.21'
-depend: [SimpleClans]
-description: Теги кланов в чате видят только игроки в кланах и админы
+depend: [SimpleClans, Essentials]
+softdepend: [AuthMe]
+# Обработчик "!" должен стоять раньше обработчика EssentialsChat с тем же приоритетом
+loadbefore: [EssentialsChat]
+description: Теги кланов в чате видят только игроки в кланах и админы; ближний чат через !, /l и /g
+commands:
+  # /l перекрывает сокращение /l команды /login из AuthMe: до входа наша /l сама передаёт её в AuthMe
+  l:
+    description: Сообщение игрокам рядом или режим «рядом»
+    usage: /l [текст]
+    aliases: [local]
+    permission: clantagview.local
+  g:
+    description: Сообщение всем или общий режим чата
+    usage: /g [текст]
+    aliases: [global]
+    permission: clantagview.local
 permissions:
   clantagview.see:
     description: Видеть теги кланов в чате, даже не состоя в клане
     default: op
+  clantagview.local:
+    description: Писать в ближний чат через !, /l и /g
+    default: true

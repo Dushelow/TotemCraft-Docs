@@ -1,0 +1,13 @@
+name: AutoLock
+version: '1.0.0'
+main: net.totemcraft.autolock.AutoLock
+api-version: '1.21'
+depend: [LWC]
+description: /autolock - постоянный автоприват (ящик пожертвований) по выбору игрока
+commands:
+  autolock:
+    description: Включить или выключить автоприват всего, что вы ставите
+    permission: autolock.use
+permissions:
+  autolock.use:
+    default: true

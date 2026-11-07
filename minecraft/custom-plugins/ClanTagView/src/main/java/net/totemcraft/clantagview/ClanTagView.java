@@ -1,5 +1,8 @@
 package net.totemcraft.clantagview;
 
+import com.earth2me.essentials.IEssentials;
+import com.earth2me.essentials.User;
+import fr.xephi.authme.api.v3.AuthMeApi;
 import io.papermc.paper.chat.ChatRenderer;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import net.kyori.adventure.text.Component;
@@ -7,18 +10,29 @@ import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.sacredlabyrinth.phaed.simpleclans.ClanPlayer;
 import net.sacredlabyrinth.phaed.simpleclans.SimpleClans;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Тег клана перед ником в чате видят только игроки в кланах и админы (право clantagview.see).
  * Сообщение собирается без тега (в формате Essentials нет {clan}), а тег добавляется в начало
  * строки отдельно для каждого получателя штатным механизмом Paper (ChatRenderer). Пакеты не трогаем.
+ * <p>
+ * Ещё здесь ближний чат: "!текст" и "/l текст" уходят только игрокам рядом (радиус Essentials),
+ * "/g текст" всем; "/l" и "/g" без текста включают режим «рядом» или общий (как /toggleshout).
+ * По умолчанию все пишут в общий (shout-default: true в Essentials). Сам ближний чат делает Essentials,
+ * плагин только на одно сообщение переводит игрока из общего режима в ближний.
  */
 public final class ClanTagView extends JavaPlugin implements Listener {
 
@@ -27,11 +41,147 @@ public final class ClanTagView extends JavaPlugin implements Listener {
     /** Приставки типа чата ("[Рядом] "): тег ставится после них, а не перед. */
     private volatile List<String> prefixes = List.of();
 
+    private static final char LOCAL_PREFIX = '!';
+    private IEssentials essentials;
+    /** Игроки, которых перевели в ближний режим на одно сообщение: вернуть в общий после Essentials. */
+    private final Set<UUID> localOnce = ConcurrentHashMap.newKeySet();
+    /** Игроки, чьё сообщение сейчас отправляется через /g: приставка "!" не делает его ближним. */
+    private final Set<UUID> globalOnce = ConcurrentHashMap.newKeySet();
+
     @Override
     public void onEnable() {
         saveDefaultConfig();
         prefixes = List.copyOf(getConfig().getStringList("tag-after-prefixes"));
+        essentials = (IEssentials) getServer().getPluginManager().getPlugin("Essentials");
         getServer().getPluginManager().registerEvents(this, this);
+    }
+
+    /**
+     * "!текст": одно сообщение в ближний чат. Essentials выбирает тип чата на LOWEST по режиму игрока
+     * (общий или ближний) и запоминает его; наш обработчик стоит раньше (loadbefore EssentialsChat).
+     */
+    @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = true)
+    public void onLocalPrefix(AsyncPlayerChatEvent event) {
+        String message = event.getMessage();
+        if (message.length() < 2 || message.charAt(0) != LOCAL_PREFIX
+                || globalOnce.contains(event.getPlayer().getUniqueId())) {
+            return;
+        }
+        String text = message.substring(1).trim();
+        User user = essentials == null ? null : essentials.getUser(event.getPlayer());
+        if (text.isEmpty() || user == null) {
+            return;
+        }
+        event.setMessage(text);
+        if (user.isToggleShout()) {
+            user.setToggleShout(false);
+            localOnce.add(event.getPlayer().getUniqueId());
+        }
+    }
+
+    /** Essentials уже выбрал тип чата: возвращаем игроку общий режим, даже если сообщение отменено. */
+    @EventHandler(priority = EventPriority.LOW)
+    public void restoreShout(AsyncPlayerChatEvent event) {
+        if (localOnce.remove(event.getPlayer().getUniqueId())) {
+            User user = essentials.getUser(event.getPlayer());
+            if (user != null) {
+                user.setToggleShout(true);
+            }
+        }
+    }
+
+    /**
+     * /l текст: одно сообщение рядом, /l: режим «рядом». /g текст: одно сообщение всем, /g: общий режим.
+     * /l занята в AuthMe как /login: до входа /l передаётся в AuthMe, а после входа слово,
+     * совпадающее с паролем игрока, в чат не уходит (вход по привычке через /l).
+     */
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("Команда только для игроков");
+            return true;
+        }
+        boolean local = command.getName().equalsIgnoreCase("l");
+        AuthMeApi authMe = authMe();
+        if (local && authMe != null && !authMe.isAuthenticated(player)) {
+            player.performCommand("authme:login " + String.join(" ", args));
+            return true;
+        }
+        User user = essentials == null ? null : essentials.getUser(player);
+        if (user == null) {
+            return true;
+        }
+        if (args.length == 0) {
+            setMode(player, user, local);
+            return true;
+        }
+        String text = String.join(" ", args);
+        if (!local) {
+            sendGlobal(player, user, text);
+        } else if (authMe != null && args.length == 1) {
+            // BCrypt медленный: сверяем в фоне, отправляем в основном потоке
+            getServer().getScheduler().runTaskAsynchronously(this, () -> {
+                boolean isPassword = authMe.checkPassword(player.getName(), text);
+                getServer().getScheduler().runTask(this, () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    if (isPassword) {
+                        player.sendMessage("§cВы уже вошли на сервер. Сообщение не отправлено: это ваш пароль.");
+                    } else {
+                        player.chat(LOCAL_PREFIX + text);
+                    }
+                });
+            });
+        } else {
+            // Через ту же приставку: весь путь сообщения (мут, AuthMe, формат) как у обычного чата
+            player.chat(LOCAL_PREFIX + text);
+        }
+        return true;
+    }
+
+    private void setMode(Player player, User user, boolean local) {
+        long radius = essentials.getSettings().getChatRadius();
+        if (local) {
+            if (!user.isToggleShout()) {
+                player.sendMessage("§7Вы уже пишете рядом. Вернуть общий чат: §f/g");
+                return;
+            }
+            user.setToggleShout(false);
+            player.sendMessage("§7Чат: §fрядом§7, сообщения видят игроки в " + radius
+                    + " блоках. Одно сообщение всем: §f/g текст§7, вернуть общий чат: §f/g");
+        } else {
+            if (user.isToggleShout()) {
+                player.sendMessage("§7Вы уже пишете всем. Сообщение рядом: §f!текст§7 или §f/l текст");
+                return;
+            }
+            user.setToggleShout(true);
+            player.sendMessage("§7Чат: §fобщий§7. Сообщение рядом: §f!текст§7 или §f/l текст");
+        }
+    }
+
+    /** Одно сообщение всем, даже из режима «рядом»; "!" в начале здесь не делает его ближним. */
+    private void sendGlobal(Player player, User user, String text) {
+        if (text.startsWith("/")) {
+            player.sendMessage("§cСообщение не может начинаться с /");
+            return;
+        }
+        UUID id = player.getUniqueId();
+        boolean wasLocal = !user.isToggleShout();
+        user.setToggleShout(true);
+        globalOnce.add(id);
+        try {
+            player.chat(text);
+        } finally {
+            globalOnce.remove(id);
+            if (wasLocal) {
+                user.setToggleShout(false);
+            }
+        }
+    }
+
+    private AuthMeApi authMe() {
+        return getServer().getPluginManager().isPluginEnabled("AuthMe") ? AuthMeApi.getInstance() : null;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
