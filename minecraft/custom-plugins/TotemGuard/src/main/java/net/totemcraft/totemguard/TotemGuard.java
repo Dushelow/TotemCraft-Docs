@@ -13,6 +13,13 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -36,6 +43,9 @@ public final class TotemGuard extends JavaPlugin implements Listener {
     private String bypassPermission;
     /** Проверки, о которых уже написали в журнал (по одной строке на проверку). */
     private final Set<String> described = ConcurrentHashMap.newKeySet();
+    /** Кого уже записали как «на половине порога» (по игроку и проверке, раз за запуск). */
+    private final Set<String> warned = ConcurrentHashMap.newKeySet();
+    private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     @Override
     public void onEnable() {
@@ -59,6 +69,7 @@ public final class TotemGuard extends JavaPlugin implements Listener {
             }
         }
         getLogger().info("Правил: " + rules.size() + " " + rules.keySet());
+        journal("запуск | правила " + rules);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -77,20 +88,47 @@ public final class TotemGuard extends JavaPlugin implements Listener {
                     + ", наказывает=" + check.isPunishable() + ", порог Vulcan=" + check.getMaxVl());
         }
         Rule rule = rules.get(key(check));
-        if (rule == null || check.getVl() < rule.threshold()) {
+        if (rule == null) {
+            return;
+        }
+        int vl = check.getVl();
+        if (vl >= rule.threshold() / 2 && vl < rule.threshold()
+                && warned.add(player.getUniqueId() + key(check))) {
+            journal("половина порога | " + describe(player, check, vl, rule));
+        }
+        if (vl < rule.threshold()) {
             return;
         }
         if (player.hasPermission(bypassPermission) || !punished.add(player.getUniqueId())) {
             return;
         }
         String name = player.getName();
-        int vl = check.getVl();
         String command = rule.command().replace("%player%", name);
+        String details = describe(player, check, vl, rule);
         // Событие Vulcan приходит не из основного потока: команду выполняем в нём
         Bukkit.getScheduler().runTask(this, () -> {
             getLogger().warning(name + " наказан: " + key(check) + " VL " + vl + " -> " + command);
+            journal("наказание | " + details + " | команда: " + command);
             Bukkit.dispatchCommand(Bukkit.getConsoleSender(), command);
         });
+    }
+
+    private static String describe(Player player, Check check, int vl, Rule rule) {
+        return player.getName() + " (" + player.getUniqueId() + ") | " + key(check)
+                + " VL " + vl + "/" + rule.threshold() + " | пинг " + player.getPing()
+                + " | TPS " + String.format(Locale.ROOT, "%.1f", Bukkit.getTPS()[0]);
+    }
+
+    /** Журнал plugins/TotemGuard/journal.log: только редкие события, одна строка на событие. */
+    private synchronized void journal(String line) {
+        Path file = getDataFolder().toPath().resolve("journal.log");
+        try {
+            Files.createDirectories(file.getParent());
+            Files.writeString(file, LocalDateTime.now().format(TIME) + " | " + line + System.lineSeparator(),
+                    StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException e) {
+            getLogger().warning("Не удалось записать журнал: " + e.getMessage());
+        }
     }
 
     private static String key(Check check) {
@@ -101,6 +139,7 @@ public final class TotemGuard extends JavaPlugin implements Listener {
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             loadRules();
+            journal("правила перечитаны: " + sender.getName());
             sender.sendMessage("TotemGuard: правила перечитаны (" + rules.size() + ")");
             return true;
         }
