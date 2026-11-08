@@ -5,9 +5,12 @@ import com.griefcraft.lwc.LWC;
 import com.griefcraft.model.Protection;
 import com.griefcraft.scripting.event.LWCProtectionRegisterEvent;
 import com.griefcraft.scripting.event.LWCProtectionRegistrationPostEvent;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
+import org.bukkit.block.BlockState;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -15,6 +18,9 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
+import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.IOException;
@@ -22,6 +28,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,13 +36,18 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * /autolock: постоянный автоприват по выбору игрока. Пока режим включён, каждый сундук, который
  * игрок ставит (обычный, ловушка, любой медный), сразу приватится как «защищенный от кражи»
- * (тип donation в LWC). Печи, бочки, воронки, двери и прочее не трогаем: их игрок приватит сам.
+ * (тип donation в LWC). Как в старом автопривате LWC до 26.3, ещё бочки. Печи, воронки, двери
+ * и прочее не трогаем: их игрок приватит сам, если LWC разрешает (core.yml).
+ *
+ * Ещё: LWC молча не даёт брать вещи из чужого контейнера «защищенный от кражи». Тогда пишем
+ * то же, что LWC пишет у обычного привата (protection.general.locked.private), не чаще раза в 3 с.
  * Создание идёт через то же событие LWC, что и его собственный автоприват, поэтому
  * лимиты приватов и прочие проверки LWC продолжают работать.
  */
 public final class AutoLock extends JavaPlugin implements Listener {
 
     private final Set<UUID> enabled = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Long> donationTold = new ConcurrentHashMap<>();
     private Path storage;
 
     @Override
@@ -55,7 +67,7 @@ public final class AutoLock extends JavaPlugin implements Listener {
             player.sendMessage("§7Автоприват §cвыключен§7: новые сундуки и бочки ставятся открытыми.");
         } else {
             enabled.add(player.getUniqueId());
-            player.sendMessage("§7Автоприват §aвключён§7: сундуки, которые вы ставите, сразу защищены от кражи."
+            player.sendMessage("§7Автоприват §aвключён§7: сундуки и бочки, которые вы ставите, сразу защищены от кражи."
                     + " Выключить: §f/autolock");
         }
         save();
@@ -69,7 +81,7 @@ public final class AutoLock extends JavaPlugin implements Listener {
             return;
         }
         Block block = event.getBlockPlaced();
-        if (!isChest(block.getType())) {
+        if (!autoLocks(block.getType())) {
             return;
         }
         LWC lwc = LWC.getInstance();
@@ -100,9 +112,35 @@ public final class AutoLock extends JavaPlugin implements Listener {
         player.sendMessage("§7Создан приват: §fзащищенный от кражи");
     }
 
-    /** Сундук, сундук-ловушка и все медные сундуки (обычные, окисленные, вощёные). Не эндер-сундук. */
-    static boolean isChest(Material type) {
-        return type != Material.ENDER_CHEST && type.name().endsWith("CHEST");
+    /** Сундук, сундук-ловушка, все медные сундуки (обычные, окисленные, вощёные) и бочка. Не эндер-сундук. */
+    static boolean autoLocks(Material type) {
+        return type == Material.BARREL || (type != Material.ENDER_CHEST && type.name().endsWith("CHEST"));
+    }
+
+    /** LWC уже отменил клик (взять из чужого «защищенного от кражи»): сказать почему. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onDonationClick(InventoryClickEvent event) {
+        if (!event.isCancelled() || !(event.getWhoClicked() instanceof Player player)) {
+            return;
+        }
+        InventoryHolder holder = event.getView().getTopInventory().getHolder(false);
+        Location location = holder instanceof BlockState state ? state.getLocation()
+                : holder instanceof DoubleChest chest ? chest.getLocation() : null;
+        LWC lwc = LWC.getInstance();
+        if (location == null || lwc == null) {
+            return;
+        }
+        Protection protection = lwc.findProtection(location);
+        if (protection == null || protection.getType() != Protection.Type.DONATION || protection.isOwner(player)) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Long last = donationTold.get(player.getUniqueId());
+        if (last != null && now - last < 3000) {
+            return;
+        }
+        donationTold.put(player.getUniqueId(), now);
+        lwc.sendLocale(player, "protection.general.locked.private", "block", LWC.materialToString(protection.getBlock()));
     }
 
     /**
@@ -118,6 +156,11 @@ public final class AutoLock extends JavaPlugin implements Listener {
             }
         }
         return false;
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent event) {
+        donationTold.remove(event.getPlayer().getUniqueId());
     }
 
     private void load() {
