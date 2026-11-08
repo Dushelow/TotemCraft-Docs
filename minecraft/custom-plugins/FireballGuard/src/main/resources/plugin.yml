@@ -1,0 +1,6 @@
+name: FireballGuard
+version: '1.0.0'
+main: net.totemcraft.fireballguard.FireballGuard
+api-version: '1.21'
+depend: [WorldGuard]
+description: Огненные шары (всполохи, гасты) не поджигают блоки в выбранных регионах, урон остаётся
