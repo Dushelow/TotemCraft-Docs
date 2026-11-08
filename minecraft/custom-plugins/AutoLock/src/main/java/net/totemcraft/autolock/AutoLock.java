@@ -27,8 +27,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * /autolock: постоянный автоприват по выбору игрока. Пока режим включён, всё, что игрок ставит
- * и что LWC умеет приватить, сразу приватится как «защищенный от кражи» (тип donation в LWC).
+ * /autolock: постоянный автоприват по выбору игрока. Пока режим включён, каждый сундук, который
+ * игрок ставит (обычный, ловушка, любой медный), сразу приватится как «защищенный от кражи»
+ * (тип donation в LWC). Печи, бочки, воронки, двери и прочее не трогаем: их игрок приватит сам.
  * Создание идёт через то же событие LWC, что и его собственный автоприват, поэтому
  * лимиты приватов и прочие проверки LWC продолжают работать.
  */
@@ -54,7 +55,7 @@ public final class AutoLock extends JavaPlugin implements Listener {
             player.sendMessage("§7Автоприват §cвыключен§7: новые сундуки и бочки ставятся открытыми.");
         } else {
             enabled.add(player.getUniqueId());
-            player.sendMessage("§7Автоприват §aвключён§7: всё, что вы ставите, сразу защищено от кражи."
+            player.sendMessage("§7Автоприват §aвключён§7: сундуки, которые вы ставите, сразу защищены от кражи."
                     + " Выключить: §f/autolock");
         }
         save();
@@ -68,6 +69,9 @@ public final class AutoLock extends JavaPlugin implements Listener {
             return;
         }
         Block block = event.getBlockPlaced();
+        if (!isChest(block.getType())) {
+            return;
+        }
         LWC lwc = LWC.getInstance();
         // Не приватим, если LWC такой блок не приватит или приват уже есть (вторая половина двойного сундука)
         if (lwc == null || !lwc.isProtectable(block) || lwc.findProtection(block) != null
@@ -96,15 +100,17 @@ public final class AutoLock extends JavaPlugin implements Listener {
         player.sendMessage("§7Создан приват: §fзащищенный от кражи");
     }
 
+    /** Сундук, сундук-ловушка и все медные сундуки (обычные, окисленные, вощёные). Не эндер-сундук. */
+    static boolean isChest(Material type) {
+        return type != Material.ENDER_CHEST && type.name().endsWith("CHEST");
+    }
+
     /**
      * Сундук, поставленный вплотную к такому же сундуку с приватом, станет его второй половиной.
      * В момент установки LWC этого ещё не видит, поэтому соседей проверяем сами.
      */
     private static boolean joinsProtectedChest(LWC lwc, Block block) {
         Material type = block.getType();
-        if (type == Material.ENDER_CHEST || !type.name().endsWith("CHEST")) {
-            return false;
-        }
         for (BlockFace face : new BlockFace[] {BlockFace.NORTH, BlockFace.SOUTH, BlockFace.EAST, BlockFace.WEST}) {
             Block near = block.getRelative(face);
             if (near.getType() == type && lwc.findProtection(near) != null) {

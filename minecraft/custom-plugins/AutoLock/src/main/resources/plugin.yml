@@ -1,12 +1,12 @@
 name: AutoLock
-version: '1.0.0'
+version: '1.1.0'
 main: net.totemcraft.autolock.AutoLock
 api-version: '1.21'
 depend: [LWC]
-description: /autolock - постоянный автоприват (ящик пожертвований) по выбору игрока
+description: /autolock - постоянный автоприват сундуков (защищенный от кражи) по выбору игрока
 commands:
   autolock:
-    description: Включить или выключить автоприват всего, что вы ставите
+    description: Включить или выключить автоприват сундуков, которые вы ставите
     permission: autolock.use
 permissions:
   autolock.use:
