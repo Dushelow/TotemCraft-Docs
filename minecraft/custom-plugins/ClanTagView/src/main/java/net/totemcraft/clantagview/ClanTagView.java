@@ -120,6 +120,20 @@ public final class ClanTagView extends JavaPlugin implements Listener {
         });
     }
 
+    /**
+     * Строка слежки: Essentials собирает её через MiniMessage и вставляет после ника «<reset>»,
+     * а сразу за ником в формате стоит «</gray>» от "&7>". Закрывать после сброса нечего,
+     * и MiniMessage печатает «</gray>» текстом. Убираем это закрытие.
+     */
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSpy(net.ess3.api.events.LocalChatSpyEvent event) {
+        String format = event.getFormat();
+        String fixed = format.replace("%1$s</gray>", "%1$s").replace("%s</gray>", "%s");
+        if (!fixed.equals(format)) {
+            event.setFormat(fixed);
+        }
+    }
+
     boolean isLocalChat(Object chatEvent) {
         return chatEvent != null && localChats.contains(chatEvent);
     }
