@@ -55,11 +55,15 @@ public final class ClanTagView extends JavaPlugin implements Listener {
     /** Игрок, чьё сообщение Essentials только что сделал ближним (тот же поток, то же событие чата). */
     private final ThreadLocal<Player> localNow = new ThreadLocal<>();
     private Object discordFilter;
+    /** «Рядом никого нет» не чаще раза в столько миллисекунд на игрока, чтобы не спамить. */
+    private long noOneCooldownMs;
+    private final java.util.Map<UUID, Long> noOneShown = new ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
         prefixes = List.copyOf(getConfig().getStringList("tag-after-prefixes"));
+        noOneCooldownMs = getConfig().getLong("local-no-one-cooldown-seconds", 30) * 1000L;
         essentials = (IEssentials) getServer().getPluginManager().getPlugin("Essentials");
         getServer().getPluginManager().registerEvents(this, this);
         if (getServer().getPluginManager().isPluginEnabled("DiscordSRV")) {
@@ -87,7 +91,33 @@ public final class ClanTagView extends JavaPlugin implements Listener {
         localNow.remove();
         if (local == event.getPlayer()) {
             localChats.add(event);
+            warnIfNoOneHeard(event);
         }
+    }
+
+    /**
+     * Ближнее сообщение никто не получил: пишем «Рядом никого нет», но не чаще раза в noOneCooldownMs.
+     * У Essentials этот текст (localNoOne) пустой, задержки он не умеет.
+     */
+    private void warnIfNoOneHeard(AsyncPlayerChatEvent event) {
+        Player player = event.getPlayer();
+        // Наблюдатели и невидимые админы сообщение получают, но «слушателями» не считаются
+        if (event.isCancelled() || event.getRecipients().stream().anyMatch(p -> p != player
+                && p.getGameMode() != org.bukkit.GameMode.SPECTATOR && player.canSee(p))) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        Long last = noOneShown.get(player.getUniqueId());
+        if (last != null && now - last < noOneCooldownMs) {
+            return;
+        }
+        noOneShown.put(player.getUniqueId(), now);
+        // Через тик, чтобы строка пришла после самого сообщения
+        getServer().getScheduler().runTask(this, () -> {
+            if (player.isOnline()) {
+                player.sendMessage("§7Рядом никого нет");
+            }
+        });
     }
 
     boolean isLocalChat(Object chatEvent) {
