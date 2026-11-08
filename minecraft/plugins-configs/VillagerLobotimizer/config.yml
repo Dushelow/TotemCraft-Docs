@@ -99,4 +99,4 @@ persist-lobotomized-state: true
 # PRIVACY: No personally identifiable information (PII) is collected. Only technical error data is sent.
 #
 # Set to false if you prefer not to share error reports with developers.
-enable-sentry: true
+enable-sentry: false
