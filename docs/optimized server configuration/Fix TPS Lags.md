@@ -86,6 +86,7 @@ ___
 | `optimizations.fast-clock-detector.enabled` | `false` | `true` | Выключено 18.09.2026. Заморозка чанка подменяет каждое изменение сигнала старым значением: фермы в чанке стоят 30 с, а поршень, на который в момент заморозки шёл сигнал, остаётся выдвинутым навсегда (проверено на стенде, жалоба LAVeBlaze). Лаг-машины теперь искать через RedstoneClockDetector и spark |
 | `optimizations.hopper-optimization.enabled` | `false` | `true` | Отключает оптимизацию хопперов |
 | `optimizations.farm-limiter.enabled` | `false` | `true` | Фермы растут без ограничений |
+| `optimizations.ai-optimization.enabled` | `false` | `true` | Выключено 08.11.2026: удаляло мобов дальше 64 блоков от игрока и ломало фермы |
 | `optimizations.ai-optimization.excluded-entities` | **Очень большой список** | Короткий (4) | Не деспаунить важных мобов далеко от игроков (все фермерские, питомцы, ездовые и т.д.) |
 | `messages.broadcast-enabled` | `false` | `true` | Отключает сообщения о предстоящей чистке |
 | `lag-snapshots.enabled` | `true` | `false` | Включает автоматическое сохранение логов при сильном лаге |
