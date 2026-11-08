@@ -1,6 +1,6 @@
 name: RegionRules
-version: '1.0.0'
+version: '1.1.0'
 main: net.totemcraft.regionrules.RegionRules
 api-version: '1.21'
 depend: [WorldGuard]
-description: Свои правила регионов WorldGuard - без огня от огненных шаров, мобы без урона от шипов
+description: Свои правила регионов WorldGuard - без огня от огненных шаров, мобы без урона от шипов, сообщения границы вайпа

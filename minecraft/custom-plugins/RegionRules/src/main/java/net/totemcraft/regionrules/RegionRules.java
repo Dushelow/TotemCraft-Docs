@@ -28,6 +28,7 @@ import java.util.Set;
  *   Урон и поджог игроков и мобов остаются. Флаг ghast-fireball не подходит: он отменяет
  *   и урон от шаров по игрокам (WorldGuardEntityListener.onEntityDamageByProjectile).
  * - no-thorns-damage: выбранные мобы не получают урон от шипов на броне игроков.
+ * - wipe-border: сообщения на границе зоны вайпа (см. WipeBorder).
  */
 public final class RegionRules extends JavaPlugin implements Listener {
 
@@ -52,6 +53,11 @@ public final class RegionRules extends JavaPlugin implements Listener {
         getServer().getPluginManager().registerEvents(this, this);
         getLogger().info("Без огня от огненных шаров: " + fireRegions);
         getLogger().info("Без урона от шипов " + thornsMobs + ": " + thornsRegions);
+        WipeBorder border = new WipeBorder(getConfig().getConfigurationSection("wipe-border"));
+        if (!border.isEmpty()) {
+            getServer().getPluginManager().registerEvents(border, this);
+            getLogger().info("Граница зоны вайпа: " + border);
+        }
     }
 
     private static void readIds(List<String> from, Set<String> to) {
