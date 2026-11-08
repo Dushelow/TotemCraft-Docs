@@ -164,7 +164,7 @@ clan:
   min-description-length: 10 # Мин. длина описания
   max-members: 25 # Макс. членов в клане
   confirmation-for-promote: false # Подтверждение для повышения в лидеры
-  trust-members-by-default: false # Доверять новым членам по умолчанию
+  trust-members-by-default: true # 08.11.2026: новые участники сразу доверенные (иначе нет /clan stats и др.)
   confirmation-for-demote: false # Подтверждение для понижения
   percentage-online-to-demote: 100.0 # Процент онлайн для понижения лидера
   ff-on-by-default: false # Friendly fire включён по умолчанию
