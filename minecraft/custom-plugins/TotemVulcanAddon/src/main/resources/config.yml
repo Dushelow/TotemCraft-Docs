@@ -1,0 +1,19 @@
+# TotemVulcanAddon (бывший TotemGuard): наказание по экспериментальным проверкам Vulcan.
+# Vulcan сам по таким проверкам не наказывает. Ключ правила: "проверка:тип" как в журнале Vulcan.
+# Порог подбирается по журналу violations.txt: заметно выше максимума у честных игроков.
+# Перечитать без перезапуска: /totemvulcan reload. Журнал событий: journal.log в папке плагина.
+
+# Право, с которым игрока не наказывают (называется как у прежнего TotemGuard)
+bypass-permission: totemguard.bypass
+
+rules:
+  # Speed E (неправильное трение): моды на полёт на элитрах и прыжки по стенам.
+  # 07.11.2026: у честных игроков максимум VL 128, у игрока с читерскими модами 2186.
+  speed:e:
+    vl: 500
+    command: 'ban %player% AntiCheat'
+
+# Уведомления в игре тем, кто получает уведомления Vulcan. {player} {check} {vl} {threshold}
+alerts:
+  half-threshold: '&2&lTotemVulcan &8» &f{player} &7на половине порога &f{check} &7[&e{vl}&7/&4{threshold}&7]'
+  punished: '&2&lTotemVulcan &8» &f{player} &7наказан за &f{check} &7[&4{vl}&7/&4{threshold}&7]'

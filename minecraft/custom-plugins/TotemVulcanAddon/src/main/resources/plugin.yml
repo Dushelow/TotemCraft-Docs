@@ -1,0 +1,22 @@
+name: TotemVulcanAddon
+version: '${project.version}'
+main: net.totemcraft.vulcanaddon.TotemVulcanAddon
+api-version: '1.21'
+depend: [Vulcan]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к Vulcan - наказание по экспериментальным проверкам при устойчиво высоком VL
+commands:
+  totemvulcan:
+    description: Правила и число наказанных; /totemvulcan reload - перечитать правила
+    usage: /totemvulcan [reload]
+    aliases: [totemguard]
+    permission: totemguard.admin
+permissions:
+  # Названия прав как у прежнего TotemGuard, чтобы ничего не перевыдавать
+  totemguard.admin:
+    description: Команда /totemvulcan
+    default: op
+  totemguard.bypass:
+    description: Не наказывать (для проверки и персонала)
+    default: false

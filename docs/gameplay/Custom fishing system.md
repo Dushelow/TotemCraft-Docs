@@ -1,4 +1,6 @@
-# FishClaim - Система рыбалки на TotemCraft
+# TotemFishClaim - Система рыбалки на TotemCraft
+
+Плагин до 09.11.2026 назывался FishClaim; исходники в `minecraft/custom-plugins/TotemFishClaim`.
 
 **Версия плагина:** 1.2.2  
 **API Minecraft:** 1.21  
@@ -50,7 +52,7 @@ Minecraft Server (Purpur 1.21)
 │
 ├── DiscordSRV           ← слушает PlayerFishEvent, постит embed в #fish
 │
-└── FishClaim (Java)     ← слушает те же события, управляет предметами
+└── TotemFishClaim (Java) ← слушает те же события, управляет предметами
         │
         └── HTTP (127.0.0.1:7842) ──► Python FishBot
                                            │
@@ -106,8 +108,8 @@ Discord #fish (новый embed)
     └── combos.json             # комбо-бонусы
 
 /home/minecraft/server/plugins/
-├── fishclaim-<версия>.jar      # имя файла = версия из pom.xml и plugin.yml
-└── FishClaim/
+├── TotemFishClaim-<версия>.jar # имя файла = версия из pom.xml
+└── TotemFishClaim/
     └── config.yml              # fishbot-url
 
 /home/minecraft/server/plugins/DiscordSRV/
@@ -130,7 +132,7 @@ FISH_CHANNEL_ID=<ID канала #fish: уловы от DiscordSRV и карто
 GUILD_ID=<ID сервера Discord>
 ```
 
-### `plugins/FishClaim/config.yml`
+### `plugins/TotemFishClaim/config.yml`
 
 ```yaml
 fishbot-url: "http://127.0.0.1:7842"

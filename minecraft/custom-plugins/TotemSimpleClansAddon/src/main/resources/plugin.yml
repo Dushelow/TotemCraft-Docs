@@ -1,0 +1,13 @@
+name: TotemSimpleClansAddon
+version: '${project.version}'
+main: net.totemcraft.simpleclansaddon.TotemSimpleClansAddon
+api-version: '1.21'
+depend: [SimpleClans]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к SimpleClans - теги кланов в чате видят только клановые и админы
+permissions:
+  # Название права как у прежнего плагина ClanTagView: в LuckPerms оно уже выдано
+  clantagview.see:
+    description: Видеть теги кланов в чате, даже не состоя в клане
+    default: op

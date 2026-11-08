@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>net.totemcraft</groupId>
+    <artifactId>totem-worldguard-addon</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>TotemWorldGuardAddon</name>
+    <description>Аддон TotemCraft к WorldGuard: правила регионов, которых нет среди флагов</description>
+    <url>https://totemcraft.net</url>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>1.21.1-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- API WorldGuard: берётся из jar с сервера (lib/worldguard.jar), в наш jar не попадает -->
+        <dependency>
+            <groupId>com.sk89q.worldguard</groupId>
+            <artifactId>worldguard-bukkit</artifactId>
+            <version>7.0.21</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/worldguard.jar</systemPath>
+        </dependency>
+        <!-- API WorldEdit: берётся из jar с сервера (lib/worldedit.jar), в наш jar не попадает -->
+        <dependency>
+            <groupId>com.sk89q.worldedit</groupId>
+            <artifactId>worldedit-bukkit</artifactId>
+            <version>7.4.6</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/worldedit.jar</systemPath>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>TotemWorldGuardAddon-${project.version}</finalName>
+        <resources>
+            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes><include>plugin.yml</include></includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes><exclude>plugin.yml</exclude></excludes>
+            </resource>
+        </resources>
+    </build>
+</project>

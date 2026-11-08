@@ -1,0 +1,28 @@
+name: TotemEssentialsAddon
+version: '${project.version}'
+main: net.totemcraft.essentialsaddon.TotemEssentialsAddon
+api-version: '1.21'
+depend: [Essentials]
+softdepend: [AuthMe, DiscordSRV]
+# Обработчик "!" должен стоять раньше обработчика EssentialsChat с тем же приоритетом
+loadbefore: [EssentialsChat]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к EssentialsChat - ближний чат через !, /l и /g (в Discord не уходит)
+commands:
+  # /l перекрывает сокращение /l команды /login из AuthMe: до входа наша /l сама передаёт её в AuthMe
+  l:
+    description: Сообщение игрокам рядом или режим «рядом»
+    usage: /l [текст]
+    aliases: [local]
+    permission: clantagview.local
+  g:
+    description: Сообщение всем или общий режим чата
+    usage: /g [текст]
+    aliases: [global]
+    permission: clantagview.local
+permissions:
+  # Название права как у прежнего плагина ClanTagView, чтобы ничего не перевыдавать
+  clantagview.local:
+    description: Писать в ближний и общий чат через !, /l и /g
+    default: true

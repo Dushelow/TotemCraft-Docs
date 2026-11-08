@@ -1,0 +1,18 @@
+name: TotemLWCAddon
+version: '${project.version}'
+main: net.totemcraft.lwcaddon.TotemLWCAddon
+api-version: '1.21'
+depend: [LWC]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к LWC - /autolock и сообщение у чужого «защищенного от кражи»
+commands:
+  autolock:
+    description: Включить или выключить автоприват сундуков и бочек, которые вы ставите
+    usage: /autolock
+    permission: autolock.use
+permissions:
+  # Название права как у прежнего плагина AutoLock, чтобы ничего не перевыдавать
+  autolock.use:
+    description: Пользоваться /autolock
+    default: true

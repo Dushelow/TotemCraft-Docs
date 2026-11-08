@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>net.totemcraft</groupId>
+    <artifactId>totem-essentials-addon</artifactId>
+    <version>1.0.0</version>
+    <packaging>jar</packaging>
+
+    <name>TotemEssentialsAddon</name>
+    <description>Аддон TotemCraft к EssentialsChat: ближний чат через !, /l и /g</description>
+    <url>https://totemcraft.net</url>
+
+    <properties>
+        <maven.compiler.release>21</maven.compiler.release>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>papermc</id>
+            <url>https://repo.papermc.io/repository/maven-public/</url>
+        </repository>
+    </repositories>
+
+    <dependencies>
+        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <dependency>
+            <groupId>io.papermc.paper</groupId>
+            <artifactId>paper-api</artifactId>
+            <version>1.21.1-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- API EssentialsX: берётся из jar с сервера (lib/essentials.jar), в наш jar не попадает -->
+        <dependency>
+            <groupId>net.essentialsx</groupId>
+            <artifactId>essentialsx</artifactId>
+            <version>2.22.0</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/essentials.jar</systemPath>
+        </dependency>
+        <!-- API AuthMe: берётся из jar с сервера (lib/authme.jar), в наш jar не попадает -->
+        <dependency>
+            <groupId>fr.xephi</groupId>
+            <artifactId>authme</artifactId>
+            <version>6.0.1</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/authme.jar</systemPath>
+        </dependency>
+        <!-- API DiscordSRV: берётся из jar с сервера (lib/discordsrv.jar), в наш jar не попадает -->
+        <dependency>
+            <groupId>com.discordsrv</groupId>
+            <artifactId>discordsrv</artifactId>
+            <version>1.30.5</version>
+            <scope>system</scope>
+            <systemPath>${project.basedir}/lib/discordsrv.jar</systemPath>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>TotemEssentialsAddon-${project.version}</finalName>
+        <resources>
+            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes><include>plugin.yml</include></includes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes><exclude>plugin.yml</exclude></excludes>
+            </resource>
+        </resources>
+    </build>
+</project>

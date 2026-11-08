@@ -1,0 +1,8 @@
+name: TotemWorldGuardAddon
+version: '${project.version}'
+main: net.totemcraft.worldguardaddon.TotemWorldGuardAddon
+api-version: '1.21'
+depend: [WorldGuard]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к WorldGuard - без огня от огненных шаров, мобы без урона от шипов, граница зоны вайпа

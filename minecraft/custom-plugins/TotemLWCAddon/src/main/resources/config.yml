@@ -1,0 +1,36 @@
+# TotemLWCAddon: аддон TotemCraft к LWC. Каждую механику можно выключить отдельно.
+# После правки нужен перезапуск сервера. Цвета: коды через &.
+
+# /autolock: игрок включает постоянный автоприват, и всё из списка blocks, что он ставит,
+# сразу приватится. Блок должен быть разрешён в plugins/LWC/core.yml (enabled: true).
+autolock:
+  enabled: true
+  # Тип привата LWC: donation («защищенный от кражи»: класть может любой, брать только владелец),
+  # private, public, display, supply
+  protection-type: donation
+  # Названия блоков Paper, звёздочка - любые символы
+  blocks:
+    - CHEST
+    - TRAPPED_CHEST
+    - '*COPPER_CHEST'   # медные: обычные, окисленные, вощёные
+    - BARREL
+  exclude: []
+  # Кто включил /autolock (UUID по строке), в папке плагина
+  players-file: autolock-players.txt
+  messages:
+    enabled: '&7Автоприват &aвключён&7: сундуки и бочки, которые вы ставите, сразу защищены от кражи. Выключить: &f/autolock'
+    disabled: '&7Автоприват &cвыключен&7: новые сундуки и бочки ставятся открытыми.'
+    # Название типа как в lwc_ru.properties сервера (donation=защищенный от кражи)
+    created: '&7Создан приват: &fзащищенный от кражи'
+    only-players: 'Команда только для игроков'
+
+# LWC молча не даёт брать вещи из чужого «защищенного от кражи».
+# Тогда пишем игроку то же, что LWC пишет у обычного привата.
+donation-notice:
+  enabled: true
+  cooldown-seconds: 3
+  # Ключ сообщения из языкового файла LWC (plugins/LWC/locale/lwc_ru.properties)
+  lwc-message: protection.general.locked.private
+
+messages:
+  feature-disabled: '&cЭта функция выключена.'
