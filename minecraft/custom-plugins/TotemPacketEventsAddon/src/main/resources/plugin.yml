@@ -1,0 +1,8 @@
+name: TotemPacketEventsAddon
+version: '${project.version}'
+main: net.totemcraft.packeteventsaddon.TotemPacketEventsAddon
+api-version: '1.21'
+depend: [packetevents]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к PacketEvents - принтер Litematica без кика за лишние пакеты движения

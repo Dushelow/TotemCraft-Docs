@@ -10,6 +10,7 @@
 | [TotemSimpleClansAddon](TotemSimpleClansAddon) | SimpleClans | теги кланов в чате видят только клановые и админы |
 | [TotemEssentialsAddon](TotemEssentialsAddon) | EssentialsChat | ближний чат `!`, `/l`, `/g`; «Рядом никого нет»; ближнее не уходит в Discord; строка слежки |
 | [TotemWorldGuardAddon](TotemWorldGuardAddon) | WorldGuard | без огня от огненных шаров; мобы без урона от шипов; граница зоны вайпа |
+| [TotemPacketEventsAddon](TotemPacketEventsAddon) | PacketEvents | принтер Litematica без кика за лишние пакеты движения |
 | [TotemVulcanAddon](TotemVulcanAddon) | Vulcan | наказание по экспериментальным проверкам при устойчиво высоком VL |
 | [TotemFishClaim](TotemFishClaim) | свой | рыбалка: мифические рыбы (Fish NFT) |
 
