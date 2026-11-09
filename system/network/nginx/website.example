@@ -28,6 +28,13 @@ server {
     }
 
     # PHP обработка (для сайта на PHP)
+    # Онлайн-карта: картинки Overviewer с игрового сервера (страница /map)
+    location /livemap/ {
+        proxy_pass http://YOUR_MAIN_IP:8123/;
+        proxy_connect_timeout 5s;
+        proxy_read_timeout 30s;
+    }
+
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
         fastcgi_pass unix:/run/php/php8.3-fpm.sock;

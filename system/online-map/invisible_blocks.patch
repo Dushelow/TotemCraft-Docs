@@ -1,0 +1,31 @@
+diff --git a/Overviewer.AppDir/AppRun b/Overviewer.AppDir/AppRun
+old mode 100755
+new mode 100644
+diff --git a/contribManager.py b/contribManager.py
+old mode 100755
+new mode 100644
+diff --git a/overviewer.py b/overviewer.py
+old mode 100755
+new mode 100644
+diff --git a/overviewer_core/world.py b/overviewer_core/world.py
+index 8b2c564..a0f3f91 100644
+--- a/overviewer_core/world.py
++++ b/overviewer_core/world.py
+@@ -1482,10 +1482,10 @@ class RegionSet(object):
+ 
+             # Including these blocks ensures that no namespaces are omitted.
+             # Add the following to the end of this block map; they serve no purpose.
+-            'minecraft:barrier': (99999, 0),
+-            'minecraft:light': (99999, 1),
+-            'minecraft:moving_piston': (99999, 2),
+-            'minecraft:structure_void': (99999, 4),
++            'minecraft:barrier': (0, 0),
++            'minecraft:light': (0, 0),
++            'minecraft:moving_piston': (0, 0),
++            'minecraft:structure_void': (0, 0),
+             
+         }
+         
+diff --git a/setup.py b/setup.py
+old mode 100755
+new mode 100644

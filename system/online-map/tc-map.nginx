@@ -1,0 +1,20 @@
+# Онлайн-карта: отдаёт картинки Overviewer только серверу сайта (он показывает их на totemcraft.net/map)
+server {
+    listen 8123;
+    server_name _;
+    allow IP_сервера_сайта;
+    allow 127.0.0.1;
+    deny all;
+
+    root /home/mapper/out;
+    index index.html;
+    access_log off;
+
+    location ~* \.(jpg|png)$ {
+        expires 1h;
+        add_header Cache-Control "public";
+    }
+    location ~* \.(js|html|css)$ {
+        expires 5m;
+    }
+}

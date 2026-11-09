@@ -1,0 +1,16 @@
+[Unit]
+Description=TotemCraft online map render (Overviewer, only changed chunks)
+
+[Service]
+Type=oneshot
+User=mapper
+WorkingDirectory=/home/mapper/overviewer
+# level.dat закрыт для чтения чужим: копию для карты делает root
+ExecStartPre=+/usr/bin/install -o mapper -g mapper -m 600 /home/minecraft/server/2025/level.dat /home/mapper/world/level.dat
+ExecStart=/bin/sh -c "/home/mapper/venv/bin/python overviewer.py --config=/home/mapper/config.py > /home/mapper/render.log 2>&1"
+# игре процессор, диск и память отдаются первыми
+Nice=19
+IOSchedulingClass=idle
+CPUQuota=200%
+MemoryMax=2G
+TimeoutStartSec=infinity

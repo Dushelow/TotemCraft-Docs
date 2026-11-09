@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily map render after restart (04:30) and backup (05:00)
+
+[Timer]
+OnCalendar=*-*-* 05:30:00 Europe/Moscow
+
+[Install]
+WantedBy=timers.target
