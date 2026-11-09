@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>TotemSimpleClansAddon</name>
-    <description>Аддон TotemCraft к SimpleClans: теги кланов в чате видят только клановые и админы</description>
+    <description>РђРґРґРѕРЅ TotemCraft Рє SimpleClans: С‚РµРіРё РєР»Р°РЅРѕРІ РІ С‡Р°С‚Рµ РІРёРґСЏС‚ С‚РѕР»СЊРєРѕ РєР»Р°РЅРѕРІС‹Рµ Рё Р°РґРјРёРЅС‹</description>
     <url>https://totemcraft.net</url>
 
     <properties>
@@ -26,14 +26,14 @@
     </repositories>
 
     <dependencies>
-        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <!-- РўРѕР»СЊРєРѕ СЃС‚Р°Р±РёР»СЊРЅС‹Р№ API Paper: Р±РµР· NMS, С‡С‚РѕР±С‹ РїРµСЂРµР¶РёРІР°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏ РёРіСЂС‹ -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.1-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
-        <!-- API SimpleClans: берётся из jar с сервера (lib/simpleclans.jar), в наш jar не попадает -->
+        <!-- API SimpleClans: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/simpleclans.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>net.sacredlabyrinth</groupId>
             <artifactId>simpleclans</artifactId>
@@ -46,7 +46,7 @@
     <build>
         <finalName>TotemSimpleClansAddon-${project.version}</finalName>
         <resources>
-            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <!-- ${project.version} РІ plugin.yml РїРѕРґСЃС‚Р°РІР»СЏРµС‚СЃСЏ РёР· pom.xml -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>

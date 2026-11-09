@@ -9,7 +9,8 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Аддон TotemCraft к LWC. Механики включаются по отдельности в config.yml:
  * <ul>
  *   <li>{@link AutoLockFeature} - /autolock, постоянный автоприват сундуков и бочек;</li>
- *   <li>{@link DonationNoticeFeature} - сообщение, когда из чужого «защищенного от кражи» пытаются взять вещь.</li>
+ *   <li>{@link DonationNoticeFeature} - сообщение, когда из чужого «защищенного от кражи» пытаются взять вещь;</li>
+ *   <li>{@link ProtectedBlockChangeFeature} - чужой не может менять запривачённый блок (воск на медном сундуке).</li>
  * </ul>
  */
 public final class TotemLWCAddon extends JavaPlugin {
@@ -28,6 +29,11 @@ public final class TotemLWCAddon extends JavaPlugin {
             getServer().getPluginManager().registerEvents(
                     new DonationNoticeFeature(getConfig().getConfigurationSection("donation-notice")), this);
             getLogger().info("Сообщение у чужого «защищенного от кражи»: включено");
+        }
+        if (getConfig().getBoolean("protected-block-change.enabled", true)) {
+            getServer().getPluginManager().registerEvents(
+                    new ProtectedBlockChangeFeature(getConfig().getConfigurationSection("protected-block-change")), this);
+            getLogger().info("Запривачённый блок меняет только владелец: включено");
         }
     }
 

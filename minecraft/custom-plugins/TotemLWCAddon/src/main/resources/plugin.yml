@@ -5,7 +5,7 @@ api-version: '1.21'
 depend: [LWC]
 authors: [TotemCraft]
 website: https://totemcraft.net
-description: Аддон TotemCraft к LWC - /autolock и сообщение у чужого «защищенного от кражи»
+description: Аддон TotemCraft к LWC - /autolock, сообщение у чужого «защищенного от кражи», запривачённый блок меняет только владелец
 commands:
   autolock:
     description: Включить или выключить автоприват сундуков и бочек, которые вы ставите

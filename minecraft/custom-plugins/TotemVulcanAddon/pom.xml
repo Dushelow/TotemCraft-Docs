@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>TotemVulcanAddon</name>
-    <description>Аддон TotemCraft к Vulcan: наказание по экспериментальным проверкам при устойчиво высоком VL</description>
+    <description>РђРґРґРѕРЅ TotemCraft Рє Vulcan: РЅР°РєР°Р·Р°РЅРёРµ РїРѕ СЌРєСЃРїРµСЂРёРјРµРЅС‚Р°Р»СЊРЅС‹Рј РїСЂРѕРІРµСЂРєР°Рј РїСЂРё СѓСЃС‚РѕР№С‡РёРІРѕ РІС‹СЃРѕРєРѕРј VL</description>
     <url>https://totemcraft.net</url>
 
     <properties>
@@ -26,14 +26,14 @@
     </repositories>
 
     <dependencies>
-        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <!-- РўРѕР»СЊРєРѕ СЃС‚Р°Р±РёР»СЊРЅС‹Р№ API Paper: Р±РµР· NMS, С‡С‚РѕР±С‹ РїРµСЂРµР¶РёРІР°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏ РёРіСЂС‹ -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.1-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
-        <!-- API Vulcan (купленный jar): берётся из jar с сервера (lib/vulcan-api.jar), в наш jar не попадает -->
+        <!-- API Vulcan (РєСѓРїР»РµРЅРЅС‹Р№ jar): Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/vulcan-api.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>me.frep</groupId>
             <artifactId>vulcan</artifactId>
@@ -46,7 +46,7 @@
     <build>
         <finalName>TotemVulcanAddon-${project.version}</finalName>
         <resources>
-            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <!-- ${project.version} РІ plugin.yml РїРѕРґСЃС‚Р°РІР»СЏРµС‚СЃСЏ РёР· pom.xml -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>

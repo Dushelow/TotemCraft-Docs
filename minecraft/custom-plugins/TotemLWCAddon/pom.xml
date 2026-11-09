@@ -6,11 +6,11 @@
 
     <groupId>net.totemcraft</groupId>
     <artifactId>totem-lwc-addon</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <packaging>jar</packaging>
 
     <name>TotemLWCAddon</name>
-    <description>Аддон TotemCraft к LWC: /autolock и сообщение у чужого контейнера «защищенный от кражи»</description>
+    <description>РђРґРґРѕРЅ TotemCraft Рє LWC: /autolock, СЃРѕРѕР±С‰РµРЅРёРµ Сѓ С‡СѓР¶РѕРіРѕ В«Р·Р°С‰РёС‰РµРЅРЅРѕРіРѕ РѕС‚ РєСЂР°Р¶РёВ», Р·Р°С‰РёС‚Р° Р·Р°РїСЂРёРІР°С‡С‘РЅРЅС‹С… Р±Р»РѕРєРѕРІ РѕС‚ СЃРјРµРЅС‹ (РІРѕСЃРє)</description>
     <url>https://totemcraft.net</url>
 
     <properties>
@@ -26,14 +26,14 @@
     </repositories>
 
     <dependencies>
-        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <!-- РўРѕР»СЊРєРѕ СЃС‚Р°Р±РёР»СЊРЅС‹Р№ API Paper: Р±РµР· NMS, С‡С‚РѕР±С‹ РїРµСЂРµР¶РёРІР°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏ РёРіСЂС‹ -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.1-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
-        <!-- API LWC: берётся из jar с сервера (lib/lwc.jar), в наш jar не попадает -->
+        <!-- API LWC: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/lwc.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>com.griefcraft</groupId>
             <artifactId>lwc</artifactId>
@@ -46,7 +46,7 @@
     <build>
         <finalName>TotemLWCAddon-${project.version}</finalName>
         <resources>
-            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <!-- ${project.version} РІ plugin.yml РїРѕРґСЃС‚Р°РІР»СЏРµС‚СЃСЏ РёР· pom.xml -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>

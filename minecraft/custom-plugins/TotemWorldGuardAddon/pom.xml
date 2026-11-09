@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>TotemWorldGuardAddon</name>
-    <description>Аддон TotemCraft к WorldGuard: правила регионов, которых нет среди флагов</description>
+    <description>РђРґРґРѕРЅ TotemCraft Рє WorldGuard: РїСЂР°РІРёР»Р° СЂРµРіРёРѕРЅРѕРІ, РєРѕС‚РѕСЂС‹С… РЅРµС‚ СЃСЂРµРґРё С„Р»Р°РіРѕРІ</description>
     <url>https://totemcraft.net</url>
 
     <properties>
@@ -26,14 +26,14 @@
     </repositories>
 
     <dependencies>
-        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <!-- РўРѕР»СЊРєРѕ СЃС‚Р°Р±РёР»СЊРЅС‹Р№ API Paper: Р±РµР· NMS, С‡С‚РѕР±С‹ РїРµСЂРµР¶РёРІР°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏ РёРіСЂС‹ -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.1-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
-        <!-- API WorldGuard: берётся из jar с сервера (lib/worldguard.jar), в наш jar не попадает -->
+        <!-- API WorldGuard: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/worldguard.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>com.sk89q.worldguard</groupId>
             <artifactId>worldguard-bukkit</artifactId>
@@ -41,7 +41,7 @@
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/worldguard.jar</systemPath>
         </dependency>
-        <!-- API WorldEdit: берётся из jar с сервера (lib/worldedit.jar), в наш jar не попадает -->
+        <!-- API WorldEdit: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/worldedit.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>com.sk89q.worldedit</groupId>
             <artifactId>worldedit-bukkit</artifactId>
@@ -54,7 +54,7 @@
     <build>
         <finalName>TotemWorldGuardAddon-${project.version}</finalName>
         <resources>
-            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <!-- ${project.version} РІ plugin.yml РїРѕРґСЃС‚Р°РІР»СЏРµС‚СЃСЏ РёР· pom.xml -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>

@@ -32,5 +32,15 @@ donation-notice:
   # Ключ сообщения из языкового файла LWC (plugins/LWC/locale/lwc_ru.properties)
   lwc-message: protection.general.locked.private
 
+# Запривачённый блок может менять только владелец (и админы LWC): чужой не снимет воск топором
+# и не нанесёт сотами на медный сундук. LWC сам это пропускал у «защищенного от кражи»,
+# тип блока менялся, и приват пропадал.
+protected-block-change:
+  enabled: true
+  # Сказать игроку, почему не вышло (то же сообщение LWC, что у обычного привата)
+  notify: true
+  cooldown-seconds: 3
+  lwc-message: protection.general.locked.private
+
 messages:
   feature-disabled: '&cЭта функция выключена.'

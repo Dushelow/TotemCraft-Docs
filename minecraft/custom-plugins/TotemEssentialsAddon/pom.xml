@@ -10,7 +10,7 @@
     <packaging>jar</packaging>
 
     <name>TotemEssentialsAddon</name>
-    <description>Аддон TotemCraft к EssentialsChat: ближний чат через !, /l и /g</description>
+    <description>РђРґРґРѕРЅ TotemCraft Рє EssentialsChat: Р±Р»РёР¶РЅРёР№ С‡Р°С‚ С‡РµСЂРµР· !, /l Рё /g</description>
     <url>https://totemcraft.net</url>
 
     <properties>
@@ -26,14 +26,14 @@
     </repositories>
 
     <dependencies>
-        <!-- Только стабильный API Paper: без NMS, чтобы переживать обновления игры -->
+        <!-- РўРѕР»СЊРєРѕ СЃС‚Р°Р±РёР»СЊРЅС‹Р№ API Paper: Р±РµР· NMS, С‡С‚РѕР±С‹ РїРµСЂРµР¶РёРІР°С‚СЊ РѕР±РЅРѕРІР»РµРЅРёСЏ РёРіСЂС‹ -->
         <dependency>
             <groupId>io.papermc.paper</groupId>
             <artifactId>paper-api</artifactId>
             <version>1.21.1-R0.1-SNAPSHOT</version>
             <scope>provided</scope>
         </dependency>
-        <!-- API EssentialsX: берётся из jar с сервера (lib/essentials.jar), в наш jar не попадает -->
+        <!-- API EssentialsX: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/essentials.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>net.essentialsx</groupId>
             <artifactId>essentialsx</artifactId>
@@ -41,7 +41,7 @@
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/essentials.jar</systemPath>
         </dependency>
-        <!-- API AuthMe: берётся из jar с сервера (lib/authme.jar), в наш jar не попадает -->
+        <!-- API AuthMe: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/authme.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>fr.xephi</groupId>
             <artifactId>authme</artifactId>
@@ -49,7 +49,7 @@
             <scope>system</scope>
             <systemPath>${project.basedir}/lib/authme.jar</systemPath>
         </dependency>
-        <!-- API DiscordSRV: берётся из jar с сервера (lib/discordsrv.jar), в наш jar не попадает -->
+        <!-- API DiscordSRV: Р±РµСЂС‘С‚СЃСЏ РёР· jar СЃ СЃРµСЂРІРµСЂР° (lib/discordsrv.jar), РІ РЅР°С€ jar РЅРµ РїРѕРїР°РґР°РµС‚ -->
         <dependency>
             <groupId>com.discordsrv</groupId>
             <artifactId>discordsrv</artifactId>
@@ -62,7 +62,7 @@
     <build>
         <finalName>TotemEssentialsAddon-${project.version}</finalName>
         <resources>
-            <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
+            <!-- ${project.version} РІ plugin.yml РїРѕРґСЃС‚Р°РІР»СЏРµС‚СЃСЏ РёР· pom.xml -->
             <resource>
                 <directory>src/main/resources</directory>
                 <filtering>true</filtering>
