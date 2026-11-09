@@ -7,7 +7,7 @@ renders["totemcraft"] = {
     "world": "2025",
     "title": "TotemCraft",
     "dimension": "overworld",
-    "rendermode": "normal",
+    "rendermode": "lighting",
     "northdirection": "upper-right",
     "imgformat": "jpg",
     "imgquality": 85,
