@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id);
 const T = window.totem;
 let selected = '';
 let settingsFilled = false;
+const openChats = new Set();
+let voiceFilled = false;
 const openPersona = new Set();
 
 function err(e) { $('err').textContent = e ? String(e.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : ''; }
@@ -46,6 +48,24 @@ function botCard(b) {
         <button data-a="persona" class="sec">Характер</button>
         <button data-a="remove" class="red">Удалить</button>
       </div>
+      <div style="margin-top:8px">
+        <button data-a="chats" class="sec">${openChats.has(b.name) ? '▾' : '▸'} Чаты Qwen (${(b.chats || []).length})</button>
+      </div>
+      ${openChats.has(b.name) ? `<div class="chats">
+        <div class="muted">Сейчас: ${b.chatId ? esc(b.chatId.slice(0, 8)) + '…' : 'нет (начнётся новый при первом сообщении)'}</div>
+        <div class="row" style="margin-top:4px">
+          <button data-a="rewarm" class="sec" title="повторить вводную в этом чате, например после смены характера">Прогреть заново</button>
+          <button data-a="newchat" class="sec">Новый чат</button>
+        </div>
+        <div class="row" style="margin-top:4px"><input class="grow" data-f="chatLink" placeholder="ссылка на чат Qwen https://chat.qwen.ai/c/..."><button data-a="chatUse" class="sec">Взять</button></div>
+        ${(b.chats || []).map((c) => `<div class="row chatrow ${c.id === b.chatId ? 'cur' : ''}" data-id="${esc(c.id)}">
+          <span class="grow"><b>${esc(c.note || c.id.slice(0, 8) + '…')}</b> <span class="muted">${new Date(c.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></span>
+          <button data-a="chatOpen" class="sec" title="открыть справа">Открыть</button>
+          ${c.id === b.chatId ? '' : '<button data-a="chatPick" class="sec" title="вести разговор в этом чате">Сделать текущим</button>'}
+          <button data-a="chatNote" class="sec" title="подписать">✎</button>
+          <button data-a="chatForget" class="sec" title="убрать из списка (сам чат в Qwen останется)">✕</button>
+        </div>`).join('')}
+      </div>` : ''}
       <div data-f="personaBox" style="display:${openPersona.has(b.name) ? 'block' : 'none'}">
         <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="4">${esc(b.persona || '')}</textarea>
         <div class="row" style="margin-top:6px"><button data-a="savePersona">Сохранить характер</button></div>
@@ -62,6 +82,7 @@ async function refresh() {
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', ');
     settingsFilled = true;
   }
+  fillVoice(st.voice);
   if (!selected && st.bots[0]) selected = st.bots[0].name;
   const box = $('bots');
   // не перерисовывать, пока человек печатает приказ или характер
@@ -92,6 +113,28 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'stop') act(() => T.botStop(name));
   if (a === 'order') { const v = f('order').value.trim(); if (v) act(async () => { await T.botOrder({ name, text: v }); f('order').value = ''; f('order').blur(); }); }
   if (a === 'chat') act(() => T.botChat(name));
+  if (a === 'chats') { openChats.has(name) ? openChats.delete(name) : openChats.add(name); lastHtml = ''; refresh(); }
+  if (a === 'rewarm') act(() => T.chatRewarm(name));
+  if (a === 'chatUse') act(async () => { await T.chatUse({ name, link: f('chatLink').value }); f('chatLink').value = ''; f('chatLink').blur(); lastHtml = ''; });
+  const cid = e.target.closest('.chatrow') && e.target.closest('.chatrow').dataset.id;
+  if (a === 'chatOpen') act(() => T.chatOpen(cid));
+  if (a === 'chatPick') act(() => T.chatUse({ name, link: cid }));
+  if (a === 'chatForget') act(() => T.chatForget({ name, id: cid }));
+  if (a === 'chatNote') {
+    // подпись прямо в строке: Enter - сохранить, Esc - отмена
+    const row = e.target.closest('.chatrow');
+    const label = row.querySelector('b');
+    const inp = document.createElement('input');
+    inp.value = label.textContent.endsWith('…') ? '' : label.textContent;
+    inp.placeholder = 'подпись, Enter';
+    inp.dataset.f = 'note';
+    label.replaceWith(inp);
+    inp.focus();
+    inp.addEventListener('keydown', (k) => {
+      if (k.key === 'Enter') { const v = inp.value; inp.blur(); act(async () => { await T.chatNote({ name, id: cid, note: v }); lastHtml = ''; }); }
+      if (k.key === 'Escape') { inp.blur(); lastHtml = ''; refresh(); }
+    });
+  }
   if (a === 'combat') act(async () => { await T.botCombat({ name, combat: e.target.dataset.v }); lastHtml = ''; });
   if (a === 'newchat') act(() => T.botNewChat(name));
   if (a === 'persona') { openPersona.has(name) ? openPersona.delete(name) : openPersona.add(name); lastHtml = ''; refresh(); }
@@ -100,6 +143,60 @@ $('bots').addEventListener('click', (e) => {
 });
 $('bots').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.dataset.f === 'order') { e.preventDefault(); e.target.closest('.bot').querySelector('[data-a="order"]').click(); }
+});
+
+// --- голос
+const VOICE_NAMES = { 'ru_RU-denis-medium': 'Денис (мужской)', 'ru_RU-dmitri-medium': 'Дмитрий (мужской)', 'ru_RU-ruslan-medium': 'Руслан (мужской)', 'ru_RU-irina-medium': 'Ирина (женский)' };
+function piperText(p) {
+  if (!p) return '';
+  return p.program && p.voice ? 'Piper скачан, голос готов' : p.program ? 'Piper скачан, этот голос нет: нажмите «Скачать»' : 'Piper не скачан: нажмите «Скачать» (около 85 МБ)';
+}
+function fillVoice(v) {
+  if (!v || !v.piper) return;
+  if (!voiceFilled) {
+    $('vEnabled').checked = !!v.enabled; $('vProvider').value = v.provider; $('vFallback').checked = !!v.fallback;
+    $('vLocal').checked = !!v.local; $('vVolume').value = v.volume;
+    $('vPiperVoice').innerHTML = v.piper.voices.map((n) => `<option value="${n}">${VOICE_NAMES[n] || n}</option>`).join('');
+    $('vPiperVoice').value = v.piperVoice;
+    voiceFilled = true;
+  }
+  if (!$('vStatus').dataset.busy) $('vStatus').textContent = piperText(v.piper);
+}
+const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked,
+  local: $('vLocal').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value });
+$('vSave').onclick = () => act(() => T.voiceSave(voiceForm()));
+$('vInstall').onclick = () => act(async () => {
+  await T.voiceSave(voiceForm());
+  $('vStatus').dataset.busy = '1'; $('vInstall').disabled = true;
+  try { await T.voiceInstallPiper(); } finally { delete $('vStatus').dataset.busy; $('vInstall').disabled = false; }
+});
+$('vTest').onclick = () => act(async () => { await T.voiceSave(voiceForm()); await T.voiceTest(selected); });
+T.onVoiceStatus((t) => { $('vStatus').textContent = t; });
+
+// проигрывание: реплики идут по очереди, не накладываются
+let audioCtx = null, playUntil = 0;
+T.onVoicePcm(({ pcm, rate, volume }) => {
+  audioCtx = audioCtx || new AudioContext();
+  const bytes = pcm instanceof Uint8Array ? pcm : new Uint8Array(pcm);
+  const n = Math.floor(bytes.byteLength / 2);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, n * 2);
+  const buf = audioCtx.createBuffer(1, n, rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = view.getInt16(i * 2, true) / 32768;
+  const src = audioCtx.createBufferSource();
+  const gain = audioCtx.createGain();
+  gain.gain.value = +volume;
+  src.buffer = buf; src.connect(gain).connect(audioCtx.destination);
+  const at = Math.max(audioCtx.currentTime + 0.05, playUntil);
+  src.start(at);
+  playUntil = at + buf.duration + 0.15;
+});
+T.onVoiceSystem(({ text, volume }) => {
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ru-RU'; u.volume = +volume;
+  const ru = speechSynthesis.getVoices().find((v) => /^ru/i.test(v.lang));
+  if (ru) u.voice = ru;
+  speechSynthesis.speak(u);
 });
 
 $('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value }));

@@ -152,6 +152,38 @@ const PICK = (model, mode) => `(async () => {
 // Ошибки, после которых пробуем следующую модель из списка
 const LIMIT = /limit|лимит|quota|too many|429|exceed|unavailable|недоступ|rate/i;
 
+// Qwen иногда отвечает двумя вариантами («Which response do you prefer?») и ждёт выбора: поток тогда содержит оба
+// вперемешку. Берём текст первой карточки со страницы (реплика + JSON из блока кода) и выбираем её.
+const AB = `(async () => {
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const btns = () => [...document.querySelectorAll('button')].filter((b) => /prefer this (response|answer)|предпочитаю этот ответ/i.test(b.textContent));
+  for (let i = 0; i < 6 && btns().length < 2; i++) await pause(250);
+  const [a, b] = btns();
+  if (!a || !b) return null;
+  let card = a;
+  while (card.parentElement && !card.parentElement.contains(b)) card = card.parentElement;
+  let text = '';
+  for (let i = 0; i < 12; i++) {   // страница дорисовывает текст после конца потока
+    await pause(250);
+    const now = card.innerText;
+    if (now === text && text) break;
+    text = now;
+  }
+  a.click();
+  return text;
+})()`;
+
+// Текст карточки → обычный ответ: реплика строками до блока кода, JSON - от первой { до последней }.
+function abToAnswer(text) {
+  const lines = String(text || '').split('\n').map((l) => l.trim()).filter(Boolean)
+    .filter((l) => !/^(response|ответ)\s*\d$/i.test(l) && !/prefer this|предпочитаю этот/i.test(l));
+  const all = lines.join('\n');
+  const a = all.indexOf('{'), b = all.lastIndexOf('}');
+  const json = a >= 0 && b > a ? all.slice(a, b + 1).replace(/\n\d+\n/g, '\n') : '';
+  const say = lines.filter((l) => !/^(json|\d+)$/i.test(l) && l.indexOf('{') < 0 && l.indexOf('}') < 0).join(' ');
+  return (say ? say + '\n' : '') + (json ? '```json\n' + json + '\n```' : '');
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class QwenBridge {
@@ -165,6 +197,59 @@ class QwenBridge {
   }
 
   hook() { return this.wc.executeJavaScript(HOOK); }
+
+  // Озвучка ответа кнопкой Qwen «Read aloud». Звук берём из сети отладчиком Electron: страница шлёт запрос
+  // /api/v2/tts/completions со своими подписями, мы его не подделываем, а только читаем ответ (поток base64 PCM).
+  // Сама страница звук не играет: вкладка Qwen заглушена, играем мы, куда нужно.
+  attachDebugger() {
+    if (this.dbg) return;
+    const d = this.wc.debugger;
+    try { d.attach('1.3'); } catch (e) { if (!/already attached/i.test(e.message)) throw e; }
+    this.dbg = d;
+    this.tts = new Map();   // requestId -> resolve
+    d.on('message', async (_e, method, params) => {
+      if (method === 'Network.requestWillBeSent' && /\/api\/v2\/tts\/completions/.test(params.request.url)) {
+        this.ttsReq = params.requestId;
+      }
+      if (method === 'Network.loadingFinished' && params.requestId === this.ttsReq && this.ttsWait) {
+        try {
+          const b = await d.sendCommand('Network.getResponseBody', { requestId: params.requestId });
+          const text = b.base64Encoded ? Buffer.from(b.body, 'base64').toString() : b.body;
+          const parts = [];
+          for (const l of text.split('\n')) { const m = /"tts":\s*"([^"]*)"/.exec(l); if (m && m[1]) parts.push(Buffer.from(m[1], 'base64')); }
+          this.ttsWait.ok(Buffer.concat(parts));
+        } catch (e) { this.ttsWait.fail(e); }
+      }
+    });
+    d.sendCommand('Network.enable', { maxResourceBufferSize: 50e6, maxTotalBufferSize: 100e6 });
+    this.wc.setAudioMuted(true);
+  }
+
+  /** Прочитать вслух последний ответ в открытом чате. Возвращает { pcm, rate: 24000 }. В общей очереди с вопросами. */
+  readAloud(chatId) {
+    const run = () => this._readAloud(chatId);
+    const p = this.chain.then(run, run);
+    this.chain = p.catch(() => {});
+    return p;
+  }
+
+  async _readAloud(chatId) {
+    this.attachDebugger();
+    await this.open(chatId);
+    const got = new Promise((ok, fail) => { this.ttsWait = { ok, fail }; setTimeout(() => fail(new Error('Qwen не дал звук за 30 с')), 30000); });
+    const clicked = await this.wc.executeJavaScript(`(async () => {
+      const fire = (el) => { for (const t of ['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'])
+        el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, { bubbles: true, cancelable: true })); };
+      const more = [...document.querySelectorAll('[aria-label="More actions"]')].pop();
+      if (!more) return 'нет кнопки «More actions»';
+      fire(more); await new Promise((r) => setTimeout(r, 600));
+      const it = [...document.querySelectorAll('.qwen-chat-v2-dropdown-menu-item')].find((n) => /read aloud|прочитать|озвуч/i.test(n.textContent));
+      if (!it) { fire(more); return 'нет пункта «Read aloud»'; }
+      fire(it); return 'ok';
+    })()`);
+    if (clicked !== 'ok') { this.ttsWait = null; throw new Error(clicked); }
+    try { return { pcm: await got, rate: 24000 }; } finally { this.ttsWait = null; }
+  }
 
   currentChat() {
     const m = /^https:\/\/chat\.qwen\.ai\/c\/([A-Za-z0-9_-]+)/.exec(this.wc.getURL());
@@ -244,6 +329,11 @@ class QwenBridge {
         // новый чат получает адрес после первого ответа
         let id = this.currentChat();
         for (let i = 0; i < 20 && !id; i++) { await sleep(250); id = this.currentChat(); }
+        const ab = await this.wc.executeJavaScript(AB).catch(() => null);
+        if (ab) {
+          this.onAttention('Qwen дал два варианта ответа, выбран первый');
+          return { answer: abToAnswer(ab) || r.done.answer, chatId: id || chatId };
+        }
         return { answer: r.done.answer, chatId: id || chatId };
       }
     }
@@ -251,4 +341,4 @@ class QwenBridge {
   }
 }
 
-module.exports = { QwenBridge };
+module.exports = { QwenBridge, abToAnswer };

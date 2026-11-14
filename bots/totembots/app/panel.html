@@ -33,6 +33,13 @@
   .log { background: #17181a; border-radius: 6px; padding: 6px 8px; height: 260px; overflow: auto; font: 11.5px/1.4 Consolas, monospace;
     white-space: pre-wrap; word-break: break-word; margin-top: 8px; }
   .log .in { color: #8fb8ff; } .log .out { color: #b5e08f; } .log .chat { color: #c9c9c9; } .log .err { color: #ff8a8a; }
+  .chk { display: flex; align-items: center; gap: 6px; color: var(--text); font-size: 13px; }
+  .chk input { width: auto; }
+  input[type=range] { padding: 0; }
+  .chats { background: #232428; border-radius: 6px; padding: 6px 8px; margin-top: 6px; }
+  .chatrow { margin-top: 4px; font-size: 12px; }
+  .chatrow.cur b { color: #8fb8ff; }
+  .chatrow button { padding: 2px 7px; }
   #err { color: var(--bad); min-height: 16px; font-size: 12px; }
 </style>
 </head>
@@ -58,6 +65,27 @@
       <label>Модели Qwen по порядку через запятую: первая основная, дальше запасные на случай лимита (пусто - как выбрано в Qwen)</label><input id="models" placeholder="например Qwen3.7-Plus, Qwen3.5-Flash">
       <label>Ваш год рождения: им программа сама отвечает, когда Qwen спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
       <div class="row" style="margin-top:8px"><button id="saveSettings">Сохранить</button></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details>
+      <summary>Голос ботов</summary>
+      <label class="chk"><input type="checkbox" id="vEnabled"> Озвучивать реплики ботов</label>
+      <label>Чем озвучивать</label>
+      <select id="vProvider">
+        <option value="qwen">Qwen: голос из настроек Qwen (кнопка «Read aloud»)</option>
+        <option value="piper">Piper: нейросеть на этом компьютере, без интернета</option>
+        <option value="system">Голоса Windows (только колонки)</option>
+      </select>
+      <label class="chk"><input type="checkbox" id="vFallback"> Если не вышло, пробовать остальные способы</label>
+      <label class="chk"><input type="checkbox" id="vLocal"> Играть в колонках этого компьютера</label>
+      <label class="chk muted"><input type="checkbox" disabled> В Plasmo Voice на сервере (следующий шаг: аддон на сервере)</label>
+      <label>Громкость</label><input type="range" id="vVolume" min="0" max="1" step="0.05">
+      <label>Голос Piper</label>
+      <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall" class="sec">Скачать</button></div>
+      <div id="vStatus" class="muted" style="margin-top:4px"></div>
+      <div class="row" style="margin-top:8px"><button id="vSave">Сохранить</button><button id="vTest" class="sec">Проверить голос</button></div>
     </details>
   </div>
 

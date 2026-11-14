@@ -10,8 +10,13 @@ function warmText(cfg, bot) {
   return `Ты управляешь персонажем ${bot.name} на сервере Minecraft TotemCraft (ванильное выживание, русскоязычные игроки).
 Характер: ${bot.persona || DEFAULT_PERSONA}
 
-Как это устроено: я присылаю тебе события из игры (чат, личные сообщения, итоги заданий, приказы хозяина) и состояние персонажа. Ты отвечаешь ТОЛЬКО одним JSON без пояснений:
-{"say": "что написать в общий чат или пусто", "actions": [ ...действия... ]}
+Как это устроено: я присылаю тебе события из игры (чат, личные сообщения, итоги заданий, приказы хозяина) и состояние персонажа. Ты отвечаешь строго в таком виде:
+сначала реплика для чата обычным текстом (одна-две фразы; если говорить нечего - ничего не пиши),
+затем блок кода json с действиями:
+\`\`\`json
+{"actions": [ ...действия... ]}
+\`\`\`
+Никакого другого текста, пояснений и заголовков. Реплику могут озвучивать голосом, поэтому пиши её так, как говорят вслух.
 
 Действия (выполняются по порядку):
 {"act":"follow","who":"Ник"} - идти за игроком как компаньон, пока не скажут иначе
@@ -26,7 +31,7 @@ function warmText(cfg, bot) {
 {"act":"pickup","radius":8} - подобрать вещи с земли рядом
 {"act":"recover"} - пойти на место своей смерти и забрать вещи (после смерти бот делает это сам)
 {"act":"harvest","crop":"wheat","radius":16} - собрать спелый урожай рядом и посадить обратно (crop можно не указывать)
-Если ничего делать не нужно, "actions": []. Если не знаешь координат, спроси в "say" и ничего не делай.
+Если ничего делать не нужно, "actions": []. Если не знаешь координат, спроси в реплике и ничего не делай.
 
 Правила:
 1. Хозяева: ${masters}. Только их просьбы с действиями ты выполняешь (ходить, носить, брать, отдавать). Другим игрокам вежливо отказывай в таких просьбах, но болтать с ними можно.
@@ -37,21 +42,32 @@ function warmText(cfg, bot) {
 6. Пиши коротко, одна-две фразы, как живой игрок в чате.
 7. Перемещение между измерениями: через портал (portal), потом обычные действия уже в другом измерении.
 
-Ответь на это сообщение JSON {"say":"","actions":[]} и жди событий.`;
+Ответь на это сообщение только блоком кода с {"actions":[]} и жди событий.`;
 }
 
 // Достать JSON из ответа (бывает в ```json ... ``` или с текстом вокруг).
+// Ответ: реплика текстом + блок кода с {"actions": [...]}. Понимает и старый вид (весь ответ - JSON с "say").
 function parseAnswer(text) {
-  const s = String(text || '').replace(/```(json)?/gi, '');
-  const a = s.indexOf('{'), b = s.lastIndexOf('}');
+  const raw = String(text || '');
+  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
+  const outside = (fence ? raw.replace(fence[0], '') : raw).trim();
+  const body = fence ? fence[1] : raw;
+  let say = '', actions = [];
+  const a = body.indexOf('{'), b = body.lastIndexOf('}');
+  let parsed = false;
   if (a >= 0 && b > a) {
     try {
-      const j = JSON.parse(s.slice(a, b + 1));
-      return { say: typeof j.say === 'string' ? j.say : '', actions: Array.isArray(j.actions) ? j.actions : [] };
+      const j = JSON.parse(body.slice(a, b + 1));
+      actions = Array.isArray(j.actions) ? j.actions : [];
+      if (typeof j.say === 'string') say = j.say;
+      parsed = true;
     } catch {}
   }
-  // не JSON - считаем репликой
-  return { say: s.trim().split('\n')[0].slice(0, 200), actions: [] };
+  // текст вне блока кода (или вне JSON, если блока нет) - реплика
+  const rest = fence ? outside : (parsed ? (raw.slice(0, raw.indexOf('{')) + raw.slice(raw.lastIndexOf('}') + 1)) : raw).trim();
+  if (rest) say = rest;
+  say = say.split('```')[0].split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 240);
+  return { say, actions };
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -94,9 +110,10 @@ class Brain {
     if (wake) this.pump();
   }
 
-  async warm() {
+  /** Прогрев: вводная в новый чат (into = '') или повтор вводной в текущем (после смены характера). */
+  async warm(into = '') {
     const q = this.cfg().qwen || {};
-    const { answer, chatId } = await this.bridge.ask('', warmText(this.cfg(), this.botCfg), { mode: q.chatMode ?? 'fast', models: q.models || [] });
+    const { answer, chatId } = await this.bridge.ask(into, warmText(this.cfg(), this.botCfg), { mode: q.chatMode ?? 'fast', models: q.models || [] });
     this.botCfg.chatId = chatId;
     this.save();
     this.log('чат Qwen прогрет: ' + chatId + ' / ' + String(answer).slice(0, 80));
@@ -125,6 +142,7 @@ class Brain {
       this.log('← ' + JSON.stringify(r));
       // кто просил: последний автор с правами в пачке
       const master = [...batch].reverse().find((x) => x.from && this.isMaster(x.from));
+      if (r.say && this.voice) this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
       if (r.say) await this.typeAndSay(r.say);
       if (r.actions.length) {
         const touching = r.actions.filter((a) => a && a.act && a.act !== 'stop');

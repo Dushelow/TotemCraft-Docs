@@ -9,6 +9,7 @@ const { loginViaChrome } = require('./chrome-login');
 const { QwenBridge } = require('./qwen-bridge');
 const { TotemBot } = require('./bot');
 const { Brain, DEFAULT_PERSONA } = require('./brain');
+const { Voice, PIPER_VOICES } = require('./voice');
 
 const PANEL_WIDTH = 440;
 const QWEN_URL = 'https://chat.qwen.ai/';
@@ -17,7 +18,7 @@ const QWEN_URL = 'https://chat.qwen.ai/';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
-let win, qwen, bridge;
+let win, qwen, bridge, voice;
 
 // --- настройки
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
@@ -26,6 +27,12 @@ function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
 }
 function saveCfg() {
+  // история чатов каждого бота: новые сверху, до 30
+  for (const b of cfg.bots) {
+    b.chats = (b.chats || []).filter((c) => c && c.id);
+    if (b.chatId && !b.chats.some((c) => c.id === b.chatId)) b.chats.unshift({ id: b.chatId, at: Date.now() });
+    b.chats = b.chats.slice(0, 30);
+  }
   fs.mkdirSync(path.dirname(cfgPath()), { recursive: true });
   fs.writeFileSync(cfgPath(), JSON.stringify(cfg, null, 2));
 }
@@ -51,6 +58,7 @@ function startBot(name) {
   body.on('chat', (t) => logTo(name, '[чат] ' + t));
   body.on('end', () => logTo(name, 'бот выключен'));
   const brain = new Brain({ body, bridge, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
+  brain.voice = voice;
   Object.assign(l, { body, brain });
   body.start();
 }
@@ -58,9 +66,10 @@ function startBot(name) {
 function stateForPanel() {
   return {
     host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {},
+    voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
-      return { name: b.name, persona: b.persona, chatId: b.chatId || '', combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
+      return { name: b.name, persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
   };
@@ -86,6 +95,8 @@ function createWindow() {
   qwen.webContents.loadURL(QWEN_URL);
   bridge = new QwenBridge(qwen.webContents);
   bridge.birthYear = () => cfg.birthYear || '';
+  voice = new Voice({ cfg: () => cfg, bridge, dir: app.getPath('userData'), toPanel: (ch, d) => win.webContents.send(ch, d),
+    log: (name, t) => logTo(name, t) });
   bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); };
 
   // Вход через Google открывается всплывающим окном: в том же профиле, чтобы вход сохранился.
@@ -151,6 +162,26 @@ ipcMain.handle('bot-combat', (_e, { name, combat }) => {
   if (l && l.body && l.body.guard) l.body.guard.mode = combat;
   return true;
 });
+ipcMain.handle('voice-save', (_e, v) => {
+  const PROVIDERS = ['qwen', 'piper', 'system'];
+  cfg.voice = {
+    enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local,
+    provider: PROVIDERS.includes(v.provider) ? v.provider : 'qwen',
+    volume: Math.max(0, Math.min(1, +v.volume || 0)),
+    piperVoice: PIPER_VOICES[v.piperVoice] ? v.piperVoice : 'ru_RU-denis-medium',
+  };
+  saveCfg();
+  return true;
+});
+ipcMain.handle('voice-install-piper', async () => voice.installPiper((t) => win.webContents.send('voice-status', t)));
+ipcMain.handle('voice-test', async (_e, name) => {
+  const b = cfg.bots.find((x) => x.name === name) || { name: name || 'проверка', chatId: '' };
+  if (!live.get(b.name)) live.set(b.name, { log: [] });
+  const was = cfg.voice && cfg.voice.enabled;
+  cfg.voice = { ...(cfg.voice || {}), enabled: true };
+  try { await voice.speak('Привет! Это проверка голоса бота.', b); } finally { cfg.voice.enabled = was; }
+  return true;
+});
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
 ipcMain.handle('bot-stop', (_e, name) => { const l = live.get(name); if (l && l.body) l.body.stop(); return true; });
 ipcMain.handle('bot-order', (_e, { name, text }) => {
@@ -163,6 +194,41 @@ ipcMain.handle('bot-newchat', (_e, name) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (b) { b.chatId = ''; saveCfg(); }
   logTo(name, 'следующий разговор начнётся в новом чате Qwen');
+  return true;
+});
+// --- менеджер чатов Qwen
+const chatIdOf = (link) => { const m = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(String(link || '')); return m ? m[1] : ''; };
+ipcMain.handle('chat-use', (_e, { name, link }) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  const id = chatIdOf(link);
+  if (!b || !id) throw new Error('нужна ссылка вида https://chat.qwen.ai/c/...');
+  b.chatId = id; saveCfg();
+  logTo(name, 'чат Qwen: ' + id);
+  return true;
+});
+ipcMain.handle('chat-open', (_e, id) => { if (chatIdOf(id)) qwen.webContents.loadURL(`${QWEN_URL}c/${chatIdOf(id)}`); return true; });
+ipcMain.handle('chat-forget', (_e, { name, id }) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  if (b) { b.chats = (b.chats || []).filter((c) => c.id !== id); if (b.chatId === id) b.chatId = ''; saveCfg(); }
+  return true;
+});
+ipcMain.handle('chat-note', (_e, { name, id, note }) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  const c = b && (b.chats || []).find((x) => x.id === id);
+  if (c) { c.note = String(note || '').slice(0, 60); saveCfg(); }
+  return true;
+});
+ipcMain.handle('chat-rewarm', async (_e, name) => {
+  const l = live.get(name);
+  const b = cfg.bots.find((x) => x.name === name);
+  if (!b) throw new Error('нет такого бота');
+  if (!l || !l.brain) {   // бот не запущен - прогреть всё равно можно
+    const tmp = new Brain({ body: { on() {} }, bridge, cfg: () => cfg, botCfg: b, save: saveCfg, log: (t) => logTo(name, t) });
+    if (!live.get(name)) live.set(name, { log: [] });
+    await tmp.warm(b.chatId || '');
+    return true;
+  }
+  await l.brain.warm(b.chatId || '');
   return true;
 });
 ipcMain.handle('bot-chat', (_e, name) => {
