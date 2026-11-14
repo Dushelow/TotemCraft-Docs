@@ -26,12 +26,13 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Мирные мобы для выбранных игроков (peaceful-mobs): мобы из mobs в месте where не выбирают целью игроков
- * из списка правила и не наносят им урон (удар, снаряд, взрыв снаряда), не поджигают их.
+ * из списка правила, то есть специально в них не стреляют и не нападают. Случайное попадание (шар летел в
+ * другого) ранит как обычно; с block-damage: true урон и поджог от этих мобов отменяются полностью.
  * Список игроков хранится в peaceful-players.yml и меняется командой /mobrules peace.
  */
 final class PeacefulMobsFeature implements Listener {
 
-    record Rule(String name, Set<EntityType> mobs, Scope where, boolean ownersCanEdit,
+    record Rule(String name, Set<EntityType> mobs, Scope where, boolean ownersCanEdit, boolean blockDamage,
                 Map<UUID, String> players, AtomicLong blocked) {
     }
 
@@ -65,7 +66,7 @@ final class PeacefulMobsFeature implements Listener {
                 }
             }
             rules.put(name.toLowerCase(java.util.Locale.ROOT), new Rule(name, mobs, new Scope(r.getConfigurationSection("where")),
-                    r.getBoolean("region-owners-can-edit", true), players, new AtomicLong()));
+                    r.getBoolean("region-owners-can-edit", true), r.getBoolean("block-damage", false), players, new AtomicLong()));
         }
     }
 
@@ -90,10 +91,11 @@ final class PeacefulMobsFeature implements Listener {
         return sb.toString();
     }
 
-    private boolean spares(Entity mob, Player player) {
+    /** damageToo: проверка урона и поджога - действует только в правилах с block-damage: true. */
+    private boolean spares(Entity mob, Player player, boolean damageToo) {
         EntityType type = mob.getType();
         for (Rule rule : rules.values()) {
-            if (rule.mobs().contains(type) && rule.players().containsKey(player.getUniqueId())
+            if ((!damageToo || rule.blockDamage()) && rule.mobs().contains(type) && rule.players().containsKey(player.getUniqueId())
                     && rule.where().contains(player.getLocation())) {
                 rule.blocked().incrementAndGet();
                 return true;
@@ -113,21 +115,21 @@ final class PeacefulMobsFeature implements Listener {
                         + r.players().containsKey(p.getUniqueId()) + " " + r.players() + ", место " + r.where().contains(p.getLocation()));
             }
         }
-        if (event.getTarget() instanceof Player player && spares(event.getEntity(), player)) {
+        if (event.getTarget() instanceof Player player && spares(event.getEntity(), player, false)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event) {
-        if (event.getEntity() instanceof Player player && spares(Sources.culprit(event.getDamager()), player)) {
+        if (event.getEntity() instanceof Player player && spares(Sources.culprit(event.getDamager()), player, true)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)
     public void onCombust(EntityCombustByEntityEvent event) {
-        if (event.getEntity() instanceof Player player && spares(Sources.culprit(event.getCombuster()), player)) {
+        if (event.getEntity() instanceof Player player && spares(Sources.culprit(event.getCombuster()), player, true)) {
             event.setCancelled(true);
         }
     }
