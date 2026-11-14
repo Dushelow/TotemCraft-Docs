@@ -5,6 +5,7 @@ const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
 const { EventEmitter } = require('events');
+const { Guard } = require('./guard');
 
 const VERSION = '1.21.11';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -65,6 +66,9 @@ class TotemBot extends EventEmitter {
       mv.canOpenDoors = true;
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
+      this.guard = new Guard(this);
+      this.guard.mode = this.opts.combat || 'defend';
+      this.guard.attach();
       this.log('на сервере');
       this.event('ты зашёл на сервер');
       this.loops();
@@ -201,7 +205,7 @@ class TotemBot extends EventEmitter {
 
   lookTick() {
     const b = this.bot;
-    if (!b || !b.entity || b.pathfinder.isMoving() || this.busyLook) return;
+    if (!b || !b.entity || b.pathfinder.isMoving() || this.busyLook || (this.guard && this.guard.fighting)) return;
     const t = this.lookTarget;
     if (!t) return;
     const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0);

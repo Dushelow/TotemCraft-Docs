@@ -35,6 +35,11 @@ function botCard(b) {
       <label>Приказ (как написали бы ему в игре)</label>
       <div class="row"><input class="grow" data-f="order" placeholder="иди за мной / возьми 2 стака шерсти из сундука 100 64 -20 и отнеси CaptianRage">
         <button data-a="order">Отправить</button></div>
+      <label>Мобы</label>
+      <div class="row">
+        ${[['defend', 'Защищать себя и меня'], ['flee', 'Убегать ко мне'], ['off', 'Не трогать']].map(([v, t]) =>
+          `<button data-a="combat" data-v="${v}" class="${b.combat === v ? '' : 'sec'}">${t}</button>`).join('')}
+      </div>
       <div class="row" style="margin-top:6px">
         <button data-a="chat" class="sec" ${b.chatId ? '' : 'disabled'}>Его чат в Qwen</button>
         <button data-a="newchat" class="sec">Новый чат</button>
@@ -86,6 +91,7 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'stop') act(() => T.botStop(name));
   if (a === 'order') { const v = f('order').value.trim(); if (v) act(async () => { await T.botOrder({ name, text: v }); f('order').value = ''; f('order').blur(); }); }
   if (a === 'chat') act(() => T.botChat(name));
+  if (a === 'combat') act(async () => { await T.botCombat({ name, combat: e.target.dataset.v }); lastHtml = ''; });
   if (a === 'newchat') act(() => T.botNewChat(name));
   if (a === 'persona') { openPersona.has(name) ? openPersona.delete(name) : openPersona.add(name); lastHtml = ''; refresh(); }
   if (a === 'savePersona') act(async () => { await T.botPersona({ name, persona: f('persona').value }); openPersona.delete(name); f('persona').blur(); lastHtml = ''; });

@@ -13,6 +13,7 @@ contextBridge.exposeInMainWorld('totem', {
   botRemove: call('bot-remove'),
   botPersona: call('bot-persona'),
   botStart: call('bot-start'),
+  botCombat: call('bot-combat'),
   botStop: call('bot-stop'),
   botOrder: call('bot-order'),
   botNewChat: call('bot-newchat'),

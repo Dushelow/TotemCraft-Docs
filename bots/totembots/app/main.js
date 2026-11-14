@@ -46,7 +46,7 @@ function startBot(name) {
   let l = live.get(name);
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
-  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port });
+  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend' });
   body.on('log', (t) => logTo(name, t));
   body.on('chat', (t) => logTo(name, '[чат] ' + t));
   body.on('end', () => logTo(name, 'бот выключен'));
@@ -60,7 +60,7 @@ function stateForPanel() {
     host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '',
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
-      return { name: b.name, persona: b.persona, chatId: b.chatId || '', state: l && l.body ? l.body.state() : { status: 'off' },
+      return { name: b.name, persona: b.persona, chatId: b.chatId || '', combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
   };
@@ -135,6 +135,14 @@ ipcMain.handle('bot-remove', (_e, name) => {
 ipcMain.handle('bot-persona', (_e, { name, persona }) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (b) { b.persona = String(persona || '').trim() || DEFAULT_PERSONA; b.chatId = ''; saveCfg(); }   // новый характер - новый чат
+  return true;
+});
+ipcMain.handle('bot-combat', (_e, { name, combat }) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  if (!b || !['defend', 'flee', 'off'].includes(combat)) return false;
+  b.combat = combat; saveCfg();
+  const l = live.get(name);
+  if (l && l.body && l.body.guard) l.body.guard.mode = combat;
   return true;
 });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
