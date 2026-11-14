@@ -1,10 +1,13 @@
-# Ценные предметы TotemCraft: дольше лежат на земле (Paper alt-item-despawn-rate) и не горят/не рассыпаются
-# (Purpur gameplay-mechanics.item.immune). Правит paper-world-defaults.yml и purpur.yml построчно,
-# комментарии и остальное не трогает. Запуск: python valuable_items.py <папка сервера> [тики]
+# Ценные предметы TotemCraft: дольше лежат на земле (Paper alt-item-despawn-rate). Правит paper-world-defaults.yml
+# построчно, комментарии и остальное не трогает. Запуск: python valuable_items.py <папка сервера>
+# С 14.11.2026 (вечер): 24 часа, дроп ферм мобов (FARM) 1 час, несгораемость Purpur не ставится (игрокам не понравилась).
 import re, sys
 
 SERVER = sys.argv[1]
-TICKS = int(sys.argv[2]) if len(sys.argv) > 2 else 72000  # 1 час при загруженном чанке
+DAY, HOUR = 1728000, 72000  # тики при загруженном чанке: 24 часа и 1 час
+# падает с мобов на фермах: держим час, чтобы не копился
+FARM = ['bow', 'crossbow', 'golden_sword'] + [m + '_' + p for m in ['leather', 'chainmail']
+        for p in ['helmet', 'chestplate', 'leggings', 'boots']]
 
 RESOURCES = ['diamond', 'diamond_block', 'netherite_ingot', 'netherite_scrap', 'netherite_block', 'ancient_debris',
              'emerald', 'emerald_block', 'enchanted_book', 'totem_of_undying', 'nether_star', 'beacon',
@@ -34,18 +37,9 @@ m = re.search(r'(\n(\s+)alt-item-despawn-rate:\n\s+enabled: )\w+(\n(\s+)items:\n
 assert m, 'alt-item-despawn-rate не найден'
 ind = m.group(4) + '  '
 old_items = dict(re.findall(r'^\s+([a-z0-9_:]+): (-?\d+)$', m.group(5), re.M))
-old_items.update({i: str(TICKS) for i in ITEMS})
+old_items.update({i: str(HOUR if i in FARM else DAY) for i in ITEMS})
 block = ''.join(f'{ind}{k}: {v}\n' for k, v in old_items.items())
 s = s[:m.start()] + m.group(1) + 'true' + m.group(3) + block + s[m.end():]
 open(p, 'w', encoding='utf-8', newline='\n').write(s)
 
-# --- Purpur: purpur.yml, world-settings.default.gameplay-mechanics.item.immune.{cactus,explosion,fire}
-p = SERVER + '/purpur.yml'
-s = open(p, encoding='utf-8').read()
-for kind in ['cactus', 'explosion', 'fire']:
-    m = re.search(r'(\n(\s+)immune:\n(?:\2  .*\n)*?\2  ' + kind + r':) \[\]\n', s)
-    assert m, 'purpur immune.' + kind + ' не найден или уже не пустой'
-    ind = m.group(2) + '    '
-    s = s[:m.start()] + m.group(1) + '\n' + ''.join(f'{ind}- minecraft:{i}\n' for i in ITEMS) + s[m.end():]
-open(p, 'w', encoding='utf-8', newline='\n').write(s)
-print('ценных предметов:', len(ITEMS), '| время на земле:', TICKS, 'тиков')
+print('ценных предметов:', len(ITEMS), '| из них дроп ферм (1 час):', len(FARM))
