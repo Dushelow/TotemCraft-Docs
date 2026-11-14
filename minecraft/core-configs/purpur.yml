@@ -10,6 +10,7 @@
 
 verbose: false
 settings:
+  generate-end-void-rings: false
   register-minecraft-debug-commands: false
   register-minecraft-disabled-commands: false
   messages:
@@ -100,6 +101,7 @@ settings:
     barrel:
       rows: 3
     ender_chest:
+      persist-hidden-rows: true
       six-rows: false
       use-permissions-for-rows: false
     crying_obsidian:
@@ -189,10 +191,14 @@ settings:
       distance: 0.5
     minecraft:orange_bed:
       distance: 0.5
-config-version: 47
+    minecraft:shelf_mushroom:
+      distance: 0.5
+config-version: 50
 world-settings:
   default:
     blocks:
+      leaves:
+        instant-decay: false
       observer:
         disable-clock: false
       anvil:
@@ -773,6 +779,44 @@ world-settings:
       use-night-vision: false
       use-dismounts-underwater-tag: true
     mobs:
+      breeze:
+        ridable: false
+        ridable-in-water: true
+        controllable: true
+        attributes:
+          max_health: 30.0
+          scale: 1.0
+        takes-damage-from-water: false
+        always-drop-exp: false
+      camel_husk:
+        ridable-in-water: false
+        attributes:
+          max_health:
+            min: 32.0
+            max: 32.0
+          jump_strength:
+            min: 0.42
+            max: 0.42
+          movement_speed:
+            min: 0.09
+            max: 0.09
+        always-drop-exp: false
+      parched:
+        ridable: false
+        ridable-in-water: true
+        controllable: true
+        attributes:
+          max_health: 16.0
+          scale: 1.0
+        takes-damage-from-water: false
+        always-drop-exp: false
+        can-pick-up-loot: default
+      sulfur_cube:
+        ridable: false
+        ridable-in-water: true
+        controllable: true
+        takes-damage-from-water: false
+        always-drop-exp: false
       allay:
         ridable: false
         ridable-in-water: true
@@ -788,16 +832,26 @@ world-settings:
         attributes:
           max_health: 12.0
           scale: 1.0
-        breeding-delay-ticks: 6000
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       axolotl:
         ridable: false
         controllable: true
         attributes:
           max_health: 14.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       bat:
         ridable: false
         ridable-in-water: true
@@ -823,13 +877,18 @@ world-settings:
         attributes:
           max_health: 10.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         can-work-at-night: false
         can-work-in-rain: false
         can-instantly-start-drowning: true
         always-drop-exp: false
         dies-after-sting: true
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       blaze:
         ridable: false
         ridable-in-water: true
@@ -860,7 +919,12 @@ world-settings:
           movement_speed:
             min: 0.09
             max: 0.09
-        breeding-delay-ticks: 6000
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       cat:
         ridable: false
         ridable-in-water: true
@@ -872,10 +936,15 @@ world-settings:
         scan-range-for-other-cats:
           swamp-hut: 16
           village: 48
-        breeding-delay-ticks: 6000
         default-collar-color: RED
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       cave_spider:
         ridable: false
         ridable-in-water: true
@@ -893,9 +962,14 @@ world-settings:
           max_health: 4.0
           scale: 1.0
         retaliate: false
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       cod:
         ridable: false
         controllable: true
@@ -926,12 +1000,17 @@ world-settings:
           max_health: 10.0
           scale: 1.0
         feed-mushrooms-for-mooshroom: 0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         naturally-aggressive-to-players:
           chance: 0.0
           damage: 2.0
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       creaking:
         ridable: false
         ridable-in-water: true
@@ -981,9 +1060,14 @@ world-settings:
           movement_speed:
             min: 0.175
             max: 0.175
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       drowned:
         ridable: false
         ridable-in-water: true
@@ -1062,17 +1146,27 @@ world-settings:
           max_health: 10.0
           scale: 1.0
         tulips-change-type: false
-        breeding-delay-ticks: 6000
         mob-griefing-override: default
         takes-damage-from-water: false
         always-drop-exp: false
         can-pick-up-loot: default
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       frog:
         ridable: false
         ridable-in-water: true
         controllable: true
         ridable-jump-height: 0.6499999761581421
-        breeding-delay-ticks: 6000
+        breeding:
+          offspring:
+            chance: 1.0
+            min: 2
+            max: 5
+          cooldown-in-ticks: 6000
       ghast:
         ridable: false
         ridable-in-water: true
@@ -1114,9 +1208,14 @@ world-settings:
         attributes:
           max_health: 10.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       guardian:
         ridable: false
         controllable: true
@@ -1144,9 +1243,14 @@ world-settings:
         attributes:
           max_health: 40.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       horse:
         ridable-in-water: false
         attributes:
@@ -1159,9 +1263,14 @@ world-settings:
           movement_speed:
             min: 0.1125
             max: 0.3375
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       husk:
         ridable: false
         ridable-in-water: true
@@ -1178,6 +1287,7 @@ world-settings:
         always-drop-exp: false
         can-pick-up-loot: default
       illusioner:
+        spawn-in-raids: false
         ridable: false
         ridable-in-water: true
         controllable: true
@@ -1214,10 +1324,15 @@ world-settings:
           movement_speed:
             min: 0.175
             max: 0.175
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         join-caravans: true
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       magma_cube:
         ridable: false
         ridable-in-water: true
@@ -1234,9 +1349,14 @@ world-settings:
         attributes:
           max_health: 10.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       mule:
         ridable-in-water: false
         attributes:
@@ -1249,9 +1369,10 @@ world-settings:
           movement_speed:
             min: 0.175
             max: 0.175
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          cooldown-in-ticks: 6000
       nautilus:
         attributes:
           max_health: 15.0
@@ -1259,8 +1380,13 @@ world-settings:
           attack_damage: 3.0
           knockback_resistance: 0.3
           scale: 1.0
-        breeding-delay-ticks: 6000
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       ocelot:
         ridable: false
         ridable-in-water: true
@@ -1268,10 +1394,15 @@ world-settings:
         attributes:
           max_health: 10.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
         spawn-below-sea-level: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       panda:
         ridable: false
         ridable-in-water: true
@@ -1279,9 +1410,14 @@ world-settings:
         attributes:
           max_health: 20.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       parrot:
         ridable: false
         ridable-in-water: true
@@ -1333,9 +1469,14 @@ world-settings:
           max_health: 10.0
           scale: 1.0
         give-saddle-back: false
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       piglin:
         ridable: false
         ridable-in-water: true
@@ -1377,9 +1518,10 @@ world-settings:
           max_health: 30.0
           scale: 1.0
         breedable-item: ''
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          cooldown-in-ticks: 6000
       pufferfish:
         ridable: false
         controllable: true
@@ -1397,10 +1539,15 @@ world-settings:
           scale: 1.0
         spawn-toast-chance: 0.0
         spawn-killer-rabbit-chance: 0.0
-        breeding-delay-ticks: 6000
         mob-griefing-override: default
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       ravager:
         ridable: false
         ridable-in-water: false
@@ -1445,10 +1592,15 @@ world-settings:
         attributes:
           max_health: 8.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         mob-griefing-override: default
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       shulker:
         ridable: false
         ridable-in-water: true
@@ -1538,7 +1690,8 @@ world-settings:
         attributes:
           max_health: 14.0
           scale: 1.0
-        breeding-delay-ticks: 6000
+        breeding:
+          cooldown-in-ticks: 6000
       squid:
         ridable: false
         controllable: true
@@ -1576,10 +1729,15 @@ world-settings:
         attributes:
           max_health: 20.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         give-saddle-back: false
         takes-damage-from-water: true
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       tadpole:
         ridable: false
         ridable-in-water: true
@@ -1598,9 +1756,14 @@ world-settings:
           movement_speed:
             min: 0.175
             max: 0.175
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       tropical_fish:
         ridable: false
         controllable: true
@@ -1616,9 +1779,14 @@ world-settings:
         attributes:
           max_health: 30.0
           scale: 1.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       vex:
         ridable: false
         ridable-in-water: true
@@ -1640,7 +1808,6 @@ world-settings:
         follow-emerald-blocks: false
         can-be-leashed: false
         can-breed: true
-        breeding-delay-ticks: 6000
         clerics-farm-warts: false
         cleric-wart-farmers-throw-warts-at-villagers: true
         mob-griefing-override: default
@@ -1660,6 +1827,12 @@ world-settings:
           acquire-poi: 16
           nearest-bed-sensor: 16
         can-pick-up-loot: default
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       vindicator:
         ridable: false
         ridable-in-water: true
@@ -1686,6 +1859,7 @@ world-settings:
         allow-trading: true
         always-drop-exp: false
       warden:
+        can-ride-vehicles: false
         ridable: false
         ridable-in-water: true
         controllable: true
@@ -1735,9 +1909,14 @@ world-settings:
         default-collar-color: RED
         milk-cures-rabid-wolves: true
         spawn-rabid-chance: 0.0
-        breeding-delay-ticks: 6000
         takes-damage-from-water: false
         always-drop-exp: false
+        breeding:
+          offspring:
+            chance: 0.0
+            min: 1
+            max: 1
+          cooldown-in-ticks: 6000
       zoglin:
         ridable: false
         ridable-in-water: true
@@ -1885,9 +2064,420 @@ world-settings:
         works-without-arrows: false
       item:
         immune:
-          cactus: []
-          explosion: []
-          fire: []
+          cactus:
+            - minecraft:diamond
+            - minecraft:diamond_block
+            - minecraft:netherite_ingot
+            - minecraft:netherite_scrap
+            - minecraft:netherite_block
+            - minecraft:ancient_debris
+            - minecraft:emerald
+            - minecraft:emerald_block
+            - minecraft:enchanted_book
+            - minecraft:totem_of_undying
+            - minecraft:nether_star
+            - minecraft:beacon
+            - minecraft:heart_of_the_sea
+            - minecraft:conduit
+            - minecraft:heavy_core
+            - minecraft:enchanted_golden_apple
+            - minecraft:golden_apple
+            - minecraft:dragon_egg
+            - minecraft:dragon_head
+            - minecraft:wither_skeleton_skull
+            - minecraft:echo_shard
+            - minecraft:recovery_compass
+            - minecraft:netherite_upgrade_smithing_template
+            - minecraft:shulker_box
+            - minecraft:white_shulker_box
+            - minecraft:orange_shulker_box
+            - minecraft:magenta_shulker_box
+            - minecraft:light_blue_shulker_box
+            - minecraft:yellow_shulker_box
+            - minecraft:lime_shulker_box
+            - minecraft:pink_shulker_box
+            - minecraft:gray_shulker_box
+            - minecraft:light_gray_shulker_box
+            - minecraft:cyan_shulker_box
+            - minecraft:purple_shulker_box
+            - minecraft:blue_shulker_box
+            - minecraft:brown_shulker_box
+            - minecraft:green_shulker_box
+            - minecraft:red_shulker_box
+            - minecraft:black_shulker_box
+            - minecraft:sentry_armor_trim_smithing_template
+            - minecraft:vex_armor_trim_smithing_template
+            - minecraft:wild_armor_trim_smithing_template
+            - minecraft:coast_armor_trim_smithing_template
+            - minecraft:dune_armor_trim_smithing_template
+            - minecraft:wayfinder_armor_trim_smithing_template
+            - minecraft:raiser_armor_trim_smithing_template
+            - minecraft:shaper_armor_trim_smithing_template
+            - minecraft:host_armor_trim_smithing_template
+            - minecraft:ward_armor_trim_smithing_template
+            - minecraft:silence_armor_trim_smithing_template
+            - minecraft:tide_armor_trim_smithing_template
+            - minecraft:snout_armor_trim_smithing_template
+            - minecraft:rib_armor_trim_smithing_template
+            - minecraft:eye_armor_trim_smithing_template
+            - minecraft:spire_armor_trim_smithing_template
+            - minecraft:flow_armor_trim_smithing_template
+            - minecraft:bolt_armor_trim_smithing_template
+            - minecraft:leather_helmet
+            - minecraft:leather_chestplate
+            - minecraft:leather_leggings
+            - minecraft:leather_boots
+            - minecraft:chainmail_helmet
+            - minecraft:chainmail_chestplate
+            - minecraft:chainmail_leggings
+            - minecraft:chainmail_boots
+            - minecraft:iron_helmet
+            - minecraft:iron_chestplate
+            - minecraft:iron_leggings
+            - minecraft:iron_boots
+            - minecraft:golden_helmet
+            - minecraft:golden_chestplate
+            - minecraft:golden_leggings
+            - minecraft:golden_boots
+            - minecraft:diamond_helmet
+            - minecraft:diamond_chestplate
+            - minecraft:diamond_leggings
+            - minecraft:diamond_boots
+            - minecraft:netherite_helmet
+            - minecraft:netherite_chestplate
+            - minecraft:netherite_leggings
+            - minecraft:netherite_boots
+            - minecraft:copper_helmet
+            - minecraft:copper_chestplate
+            - minecraft:copper_leggings
+            - minecraft:copper_boots
+            - minecraft:wooden_sword
+            - minecraft:wooden_axe
+            - minecraft:wooden_pickaxe
+            - minecraft:wooden_shovel
+            - minecraft:wooden_hoe
+            - minecraft:stone_sword
+            - minecraft:stone_axe
+            - minecraft:stone_pickaxe
+            - minecraft:stone_shovel
+            - minecraft:stone_hoe
+            - minecraft:iron_sword
+            - minecraft:iron_axe
+            - minecraft:iron_pickaxe
+            - minecraft:iron_shovel
+            - minecraft:iron_hoe
+            - minecraft:golden_sword
+            - minecraft:golden_axe
+            - minecraft:golden_pickaxe
+            - minecraft:golden_shovel
+            - minecraft:golden_hoe
+            - minecraft:diamond_sword
+            - minecraft:diamond_axe
+            - minecraft:diamond_pickaxe
+            - minecraft:diamond_shovel
+            - minecraft:diamond_hoe
+            - minecraft:netherite_sword
+            - minecraft:netherite_axe
+            - minecraft:netherite_pickaxe
+            - minecraft:netherite_shovel
+            - minecraft:netherite_hoe
+            - minecraft:copper_sword
+            - minecraft:copper_axe
+            - minecraft:copper_pickaxe
+            - minecraft:copper_shovel
+            - minecraft:copper_hoe
+            - minecraft:wooden_spear
+            - minecraft:stone_spear
+            - minecraft:iron_spear
+            - minecraft:golden_spear
+            - minecraft:diamond_spear
+            - minecraft:netherite_spear
+            - minecraft:copper_spear
+            - minecraft:elytra
+            - minecraft:trident
+            - minecraft:mace
+            - minecraft:bow
+            - minecraft:crossbow
+            - minecraft:shield
+            - minecraft:turtle_helmet
+            - minecraft:wolf_armor
+            - minecraft:fishing_rod
+          explosion:
+            - minecraft:diamond
+            - minecraft:diamond_block
+            - minecraft:netherite_ingot
+            - minecraft:netherite_scrap
+            - minecraft:netherite_block
+            - minecraft:ancient_debris
+            - minecraft:emerald
+            - minecraft:emerald_block
+            - minecraft:enchanted_book
+            - minecraft:totem_of_undying
+            - minecraft:nether_star
+            - minecraft:beacon
+            - minecraft:heart_of_the_sea
+            - minecraft:conduit
+            - minecraft:heavy_core
+            - minecraft:enchanted_golden_apple
+            - minecraft:golden_apple
+            - minecraft:dragon_egg
+            - minecraft:dragon_head
+            - minecraft:wither_skeleton_skull
+            - minecraft:echo_shard
+            - minecraft:recovery_compass
+            - minecraft:netherite_upgrade_smithing_template
+            - minecraft:shulker_box
+            - minecraft:white_shulker_box
+            - minecraft:orange_shulker_box
+            - minecraft:magenta_shulker_box
+            - minecraft:light_blue_shulker_box
+            - minecraft:yellow_shulker_box
+            - minecraft:lime_shulker_box
+            - minecraft:pink_shulker_box
+            - minecraft:gray_shulker_box
+            - minecraft:light_gray_shulker_box
+            - minecraft:cyan_shulker_box
+            - minecraft:purple_shulker_box
+            - minecraft:blue_shulker_box
+            - minecraft:brown_shulker_box
+            - minecraft:green_shulker_box
+            - minecraft:red_shulker_box
+            - minecraft:black_shulker_box
+            - minecraft:sentry_armor_trim_smithing_template
+            - minecraft:vex_armor_trim_smithing_template
+            - minecraft:wild_armor_trim_smithing_template
+            - minecraft:coast_armor_trim_smithing_template
+            - minecraft:dune_armor_trim_smithing_template
+            - minecraft:wayfinder_armor_trim_smithing_template
+            - minecraft:raiser_armor_trim_smithing_template
+            - minecraft:shaper_armor_trim_smithing_template
+            - minecraft:host_armor_trim_smithing_template
+            - minecraft:ward_armor_trim_smithing_template
+            - minecraft:silence_armor_trim_smithing_template
+            - minecraft:tide_armor_trim_smithing_template
+            - minecraft:snout_armor_trim_smithing_template
+            - minecraft:rib_armor_trim_smithing_template
+            - minecraft:eye_armor_trim_smithing_template
+            - minecraft:spire_armor_trim_smithing_template
+            - minecraft:flow_armor_trim_smithing_template
+            - minecraft:bolt_armor_trim_smithing_template
+            - minecraft:leather_helmet
+            - minecraft:leather_chestplate
+            - minecraft:leather_leggings
+            - minecraft:leather_boots
+            - minecraft:chainmail_helmet
+            - minecraft:chainmail_chestplate
+            - minecraft:chainmail_leggings
+            - minecraft:chainmail_boots
+            - minecraft:iron_helmet
+            - minecraft:iron_chestplate
+            - minecraft:iron_leggings
+            - minecraft:iron_boots
+            - minecraft:golden_helmet
+            - minecraft:golden_chestplate
+            - minecraft:golden_leggings
+            - minecraft:golden_boots
+            - minecraft:diamond_helmet
+            - minecraft:diamond_chestplate
+            - minecraft:diamond_leggings
+            - minecraft:diamond_boots
+            - minecraft:netherite_helmet
+            - minecraft:netherite_chestplate
+            - minecraft:netherite_leggings
+            - minecraft:netherite_boots
+            - minecraft:copper_helmet
+            - minecraft:copper_chestplate
+            - minecraft:copper_leggings
+            - minecraft:copper_boots
+            - minecraft:wooden_sword
+            - minecraft:wooden_axe
+            - minecraft:wooden_pickaxe
+            - minecraft:wooden_shovel
+            - minecraft:wooden_hoe
+            - minecraft:stone_sword
+            - minecraft:stone_axe
+            - minecraft:stone_pickaxe
+            - minecraft:stone_shovel
+            - minecraft:stone_hoe
+            - minecraft:iron_sword
+            - minecraft:iron_axe
+            - minecraft:iron_pickaxe
+            - minecraft:iron_shovel
+            - minecraft:iron_hoe
+            - minecraft:golden_sword
+            - minecraft:golden_axe
+            - minecraft:golden_pickaxe
+            - minecraft:golden_shovel
+            - minecraft:golden_hoe
+            - minecraft:diamond_sword
+            - minecraft:diamond_axe
+            - minecraft:diamond_pickaxe
+            - minecraft:diamond_shovel
+            - minecraft:diamond_hoe
+            - minecraft:netherite_sword
+            - minecraft:netherite_axe
+            - minecraft:netherite_pickaxe
+            - minecraft:netherite_shovel
+            - minecraft:netherite_hoe
+            - minecraft:copper_sword
+            - minecraft:copper_axe
+            - minecraft:copper_pickaxe
+            - minecraft:copper_shovel
+            - minecraft:copper_hoe
+            - minecraft:wooden_spear
+            - minecraft:stone_spear
+            - minecraft:iron_spear
+            - minecraft:golden_spear
+            - minecraft:diamond_spear
+            - minecraft:netherite_spear
+            - minecraft:copper_spear
+            - minecraft:elytra
+            - minecraft:trident
+            - minecraft:mace
+            - minecraft:bow
+            - minecraft:crossbow
+            - minecraft:shield
+            - minecraft:turtle_helmet
+            - minecraft:wolf_armor
+            - minecraft:fishing_rod
+          fire:
+            - minecraft:diamond
+            - minecraft:diamond_block
+            - minecraft:netherite_ingot
+            - minecraft:netherite_scrap
+            - minecraft:netherite_block
+            - minecraft:ancient_debris
+            - minecraft:emerald
+            - minecraft:emerald_block
+            - minecraft:enchanted_book
+            - minecraft:totem_of_undying
+            - minecraft:nether_star
+            - minecraft:beacon
+            - minecraft:heart_of_the_sea
+            - minecraft:conduit
+            - minecraft:heavy_core
+            - minecraft:enchanted_golden_apple
+            - minecraft:golden_apple
+            - minecraft:dragon_egg
+            - minecraft:dragon_head
+            - minecraft:wither_skeleton_skull
+            - minecraft:echo_shard
+            - minecraft:recovery_compass
+            - minecraft:netherite_upgrade_smithing_template
+            - minecraft:shulker_box
+            - minecraft:white_shulker_box
+            - minecraft:orange_shulker_box
+            - minecraft:magenta_shulker_box
+            - minecraft:light_blue_shulker_box
+            - minecraft:yellow_shulker_box
+            - minecraft:lime_shulker_box
+            - minecraft:pink_shulker_box
+            - minecraft:gray_shulker_box
+            - minecraft:light_gray_shulker_box
+            - minecraft:cyan_shulker_box
+            - minecraft:purple_shulker_box
+            - minecraft:blue_shulker_box
+            - minecraft:brown_shulker_box
+            - minecraft:green_shulker_box
+            - minecraft:red_shulker_box
+            - minecraft:black_shulker_box
+            - minecraft:sentry_armor_trim_smithing_template
+            - minecraft:vex_armor_trim_smithing_template
+            - minecraft:wild_armor_trim_smithing_template
+            - minecraft:coast_armor_trim_smithing_template
+            - minecraft:dune_armor_trim_smithing_template
+            - minecraft:wayfinder_armor_trim_smithing_template
+            - minecraft:raiser_armor_trim_smithing_template
+            - minecraft:shaper_armor_trim_smithing_template
+            - minecraft:host_armor_trim_smithing_template
+            - minecraft:ward_armor_trim_smithing_template
+            - minecraft:silence_armor_trim_smithing_template
+            - minecraft:tide_armor_trim_smithing_template
+            - minecraft:snout_armor_trim_smithing_template
+            - minecraft:rib_armor_trim_smithing_template
+            - minecraft:eye_armor_trim_smithing_template
+            - minecraft:spire_armor_trim_smithing_template
+            - minecraft:flow_armor_trim_smithing_template
+            - minecraft:bolt_armor_trim_smithing_template
+            - minecraft:leather_helmet
+            - minecraft:leather_chestplate
+            - minecraft:leather_leggings
+            - minecraft:leather_boots
+            - minecraft:chainmail_helmet
+            - minecraft:chainmail_chestplate
+            - minecraft:chainmail_leggings
+            - minecraft:chainmail_boots
+            - minecraft:iron_helmet
+            - minecraft:iron_chestplate
+            - minecraft:iron_leggings
+            - minecraft:iron_boots
+            - minecraft:golden_helmet
+            - minecraft:golden_chestplate
+            - minecraft:golden_leggings
+            - minecraft:golden_boots
+            - minecraft:diamond_helmet
+            - minecraft:diamond_chestplate
+            - minecraft:diamond_leggings
+            - minecraft:diamond_boots
+            - minecraft:netherite_helmet
+            - minecraft:netherite_chestplate
+            - minecraft:netherite_leggings
+            - minecraft:netherite_boots
+            - minecraft:copper_helmet
+            - minecraft:copper_chestplate
+            - minecraft:copper_leggings
+            - minecraft:copper_boots
+            - minecraft:wooden_sword
+            - minecraft:wooden_axe
+            - minecraft:wooden_pickaxe
+            - minecraft:wooden_shovel
+            - minecraft:wooden_hoe
+            - minecraft:stone_sword
+            - minecraft:stone_axe
+            - minecraft:stone_pickaxe
+            - minecraft:stone_shovel
+            - minecraft:stone_hoe
+            - minecraft:iron_sword
+            - minecraft:iron_axe
+            - minecraft:iron_pickaxe
+            - minecraft:iron_shovel
+            - minecraft:iron_hoe
+            - minecraft:golden_sword
+            - minecraft:golden_axe
+            - minecraft:golden_pickaxe
+            - minecraft:golden_shovel
+            - minecraft:golden_hoe
+            - minecraft:diamond_sword
+            - minecraft:diamond_axe
+            - minecraft:diamond_pickaxe
+            - minecraft:diamond_shovel
+            - minecraft:diamond_hoe
+            - minecraft:netherite_sword
+            - minecraft:netherite_axe
+            - minecraft:netherite_pickaxe
+            - minecraft:netherite_shovel
+            - minecraft:netherite_hoe
+            - minecraft:copper_sword
+            - minecraft:copper_axe
+            - minecraft:copper_pickaxe
+            - minecraft:copper_shovel
+            - minecraft:copper_hoe
+            - minecraft:wooden_spear
+            - minecraft:stone_spear
+            - minecraft:iron_spear
+            - minecraft:golden_spear
+            - minecraft:diamond_spear
+            - minecraft:netherite_spear
+            - minecraft:copper_spear
+            - minecraft:elytra
+            - minecraft:trident
+            - minecraft:mace
+            - minecraft:bow
+            - minecraft:crossbow
+            - minecraft:shield
+            - minecraft:turtle_helmet
+            - minecraft:wolf_armor
+            - minecraft:fishing_rod
           lightning: []
         shears:
           damage-if-sprinting: false
@@ -1929,6 +2519,7 @@ world-settings:
         village-sieges: default
         ignore-creative-players: false
       player:
+        burp-volume: 0.5
         netherite-fire-resistance:
           duration: 0
           amplifier: 0
@@ -1953,7 +2544,6 @@ world-settings:
         can-skip-night: true
         critical-damage-multiplier: 1.5
         burp-delay: 10
-        burp-when-full: false
         ridable-in-water: false
         curse-of-binding:
           remove-with-weakness: false
@@ -1972,6 +2562,7 @@ world-settings:
         - minecraft:diamond_pickaxe
         - minecraft:netherite_pickaxe
       projectile-offset:
+        wind-charge: 1.0
         bow: 1.0
         crossbow: 1.0
         egg: 1.0
