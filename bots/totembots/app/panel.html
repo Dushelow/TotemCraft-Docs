@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<title>TotemBots</title>
+<style>
+  :root { --bg: #1e1f22; --card: #2b2d31; --text: #e6e6e6; --muted: #9aa0a6; --ok: #3ba55d; --bad: #ed4245; --acc: #5865f2; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; width: 380px; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  .card { background: var(--card); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
+  .muted { color: var(--muted); font-size: 12px; word-break: break-all; }
+  button { background: var(--acc); color: #fff; border: 0; border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  button:hover { filter: brightness(1.1); }
+</style>
+</head>
+<body>
+  <h1>TotemBots</h1>
+  <div class="card">
+    <div class="row"><span id="dot" class="dot"></span><b id="state">Qwen: проверяю...</b></div>
+    <div id="url" class="muted"></div>
+    <div class="row" style="margin-top:10px"><button id="chrome">Войти через Chrome</button><button id="reload">Открыть Qwen заново</button></div>
+    <div id="login" class="muted" style="margin-top:8px"></div>
+  </div>
+  <div class="card muted">Боты появятся здесь на следующем шаге.</div>
+  <script src="panel.js"></script>
+</body>
+</html>

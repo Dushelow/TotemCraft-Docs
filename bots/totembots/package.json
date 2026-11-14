@@ -1,0 +1,13 @@
+{
+  "name": "totembots",
+  "version": "0.1.0",
+  "description": "Боты-игроки TotemCraft с чатом через Qwen: программа для компьютера владельца",
+  "main": "app/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^39.8.10"
+  }
+}
