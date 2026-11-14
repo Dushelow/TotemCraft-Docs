@@ -1,4 +1,4 @@
-package net.totemcraft.worldguardaddon;
+package net.totemcraft.mobrules;
 
 import org.bukkit.Location;
 import org.bukkit.Material;

@@ -1,4 +1,4 @@
-package net.totemcraft.worldguardaddon;
+package net.totemcraft.wipeborder;
 
 import org.bukkit.Location;
 import org.bukkit.configuration.ConfigurationSection;
@@ -15,7 +15,7 @@ import org.bukkit.event.vehicle.VehicleMoveEvent;
 import java.util.HashMap;
 import java.util.Map;
 
-import static net.totemcraft.worldguardaddon.TotemWorldGuardAddon.color;
+import static net.totemcraft.wipeborder.TotemWipeBorder.color;
 
 /**
  * Граница зоны вайпа (config.yml, wipe-border.worlds): сообщения при пересечении квадрата ±radius

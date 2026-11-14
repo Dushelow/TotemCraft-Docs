@@ -5,12 +5,12 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>net.totemcraft</groupId>
-    <artifactId>totem-worldguard-addon</artifactId>
-    <version>2.0.0</version>
+    <artifactId>totem-mob-rules</artifactId>
+    <version>1.0.0</version>
     <packaging>jar</packaging>
 
-    <name>TotemWorldGuardAddon</name>
-    <description>Аддон TotemCraft к WorldGuard: правила регионов, которых нет среди флагов</description>
+    <name>TotemMobRules</name>
+    <description>Правила поведения мобов TotemCraft: временный огонь от мобов, взрывы без разрушений, правила урона</description>
     <url>https://totemcraft.net</url>
 
     <properties>
@@ -52,7 +52,7 @@
     </dependencies>
 
     <build>
-        <finalName>TotemWorldGuardAddon-${project.version}</finalName>
+        <finalName>TotemMobRules-${project.version}</finalName>
         <resources>
             <!-- ${project.version} в plugin.yml подставляется из pom.xml -->
             <resource>

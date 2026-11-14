@@ -1,0 +1,20 @@
+name: TotemMobRules
+version: '${project.version}'
+main: net.totemcraft.mobrules.TotemMobRules
+api-version: '1.21'
+# WorldGuard нужен только правилам с регионами в where; без него плагин работает,
+# а правила с регионами не срабатывают (предупреждение в журнале)
+softdepend: [WorldGuard]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Правила поведения мобов TotemCraft - временный огонь от мобов, взрывы без разрушений, правила урона
+commands:
+  mobrules:
+    description: Правила мобов - /mobrules status, /mobrules reload
+    usage: /mobrules [status|reload]
+    aliases: [totemmobrules, totemrules]
+    permission: totemrules.admin
+permissions:
+  totemrules.admin:
+    description: Команда /mobrules
+    default: op

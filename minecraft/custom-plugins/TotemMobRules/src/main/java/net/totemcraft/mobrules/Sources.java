@@ -1,4 +1,4 @@
-package net.totemcraft.worldguardaddon;
+package net.totemcraft.mobrules;
 
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;

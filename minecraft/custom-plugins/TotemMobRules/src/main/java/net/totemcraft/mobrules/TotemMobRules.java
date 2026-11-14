@@ -1,6 +1,5 @@
-package net.totemcraft.worldguardaddon;
+package net.totemcraft.mobrules;
 
-import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
@@ -14,23 +13,21 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Аддон TotemCraft: правила мира, которых нет в ванилле и среди флагов WorldGuard. WorldGuard необязателен:
- * он нужен только правилам, где в where указаны регионы. Механики включаются по отдельности в config.yml:
+ * TotemMobRules: правила поведения мобов на TotemCraft. WorldGuard необязателен: он нужен только правилам,
+ * где в where указаны регионы. Механики включаются по отдельности в config.yml:
  * <ul>
  *   <li>{@link TemporaryFireFeature} - огонь от выбранных мобов гаснет сам и не сжигает блоки;</li>
  *   <li>{@link ExplosionRulesFeature} - взрывы выбранных мобов не ломают блоки;</li>
- *   <li>{@link DamageRulesFeature} - список правил «кто не получает урон, от кого или от чего, где»;</li>
- *   <li>{@link WipeBorderFeature} - сообщения на границе центра мира (зоны вайпа).</li>
+ *   <li>{@link DamageRulesFeature} - список правил «кто не получает урон, от кого или от чего, где».</li>
  * </ul>
- * /totemrules reload - перечитать config.yml без перезапуска, /totemrules status - что включено и сколько сработало.
+ * /mobrules reload - перечитать config.yml без перезапуска, /mobrules status - что включено и сколько сработало.
  */
-public final class TotemWorldGuardAddon extends JavaPlugin {
+public final class TotemMobRules extends JavaPlugin {
 
     private final List<Listener> active = new ArrayList<>();
     private TemporaryFireFeature temporaryFire;
     private ExplosionRulesFeature explosions;
     private DamageRulesFeature damageRules;
-    private WipeBorderFeature wipeBorder;
 
     @Override
     public void onEnable() {
@@ -70,14 +67,6 @@ public final class TotemWorldGuardAddon extends JavaPlugin {
                 getLogger().info("Правила урона:" + rules.describe());
             }
         }
-        ConfigurationSection border = config.getConfigurationSection("wipe-border");
-        if (border != null && border.getBoolean("enabled", true)) {
-            WipeBorderFeature feature = new WipeBorderFeature(border.getConfigurationSection("worlds"));
-            if (!feature.isEmpty()) {
-                wipeBorder = register(feature);
-                getLogger().info("Граница зоны вайпа: " + feature);
-            }
-        }
         checkRegions(scopes);
     }
 
@@ -113,7 +102,6 @@ public final class TotemWorldGuardAddon extends JavaPlugin {
         temporaryFire = null;
         explosions = null;
         damageRules = null;
-        wipeBorder = null;
     }
 
     @Override
@@ -121,18 +109,14 @@ public final class TotemWorldGuardAddon extends JavaPlugin {
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             unload();
             load();
-            sender.sendMessage("TotemWorldGuardAddon: config.yml перечитан, подробности в журнале сервера");
+            sender.sendMessage("TotemMobRules: config.yml перечитан, подробности в журнале сервера");
             return true;
         }
-        sender.sendMessage("TotemWorldGuardAddon " + getPluginMeta().getVersion() + ":");
+        sender.sendMessage("TotemMobRules " + getPluginMeta().getVersion() + ":");
         sender.sendMessage(" Временный огонь: " + (temporaryFire == null ? "выключен" : temporaryFire.describe()));
         sender.sendMessage(" Взрывы без разрушения: " + (explosions == null ? "выключено" : explosions.describe()));
         sender.sendMessage(" Правила урона:" + (damageRules == null ? " нет" : damageRules.describe()));
-        sender.sendMessage(" Граница вайпа: " + (wipeBorder == null ? "выключена" : wipeBorder.toString()));
         return true;
     }
 
-    static String color(String text) {
-        return ChatColor.translateAlternateColorCodes('&', text == null ? "" : text);
-    }
 }

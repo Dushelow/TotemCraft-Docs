@@ -1,4 +1,4 @@
-package net.totemcraft.worldguardaddon;
+package net.totemcraft.mobrules;
 
 import com.sk89q.worldedit.bukkit.BukkitAdapter;
 import com.sk89q.worldguard.WorldGuard;

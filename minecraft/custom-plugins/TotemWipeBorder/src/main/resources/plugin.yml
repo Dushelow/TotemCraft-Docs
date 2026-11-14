@@ -1,0 +1,17 @@
+name: TotemWipeBorder
+version: '${project.version}'
+main: net.totemcraft.wipeborder.TotemWipeBorder
+api-version: '1.21'
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Сообщения TotemCraft на границе центра мира (зоны вайпа)
+commands:
+  wipeborder:
+    description: Граница зоны вайпа - /wipeborder status, /wipeborder reload
+    usage: /wipeborder [status|reload]
+    aliases: [totemwipeborder]
+    permission: totemwipeborder.admin
+permissions:
+  totemwipeborder.admin:
+    description: Команда /wipeborder
+    default: op

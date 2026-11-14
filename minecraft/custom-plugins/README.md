@@ -9,7 +9,8 @@
 | [TotemLWCAddon](TotemLWCAddon) | LWC | `/autolock`; сообщение у чужого «защищенного от кражи» |
 | [TotemSimpleClansAddon](TotemSimpleClansAddon) | SimpleClans | теги кланов в чате видят только клановые и админы |
 | [TotemEssentialsAddon](TotemEssentialsAddon) | EssentialsChat | ближний чат `!`, `/l`, `/g`; «Рядом никого нет»; ближнее не уходит в Discord; строка слежки |
-| [TotemWorldGuardAddon](TotemWorldGuardAddon) | WorldGuard | без огня от огненных шаров; мобы без урона от шипов; граница зоны вайпа |
+| [TotemMobRules](TotemMobRules) | свой (WorldGuard по желанию) | поведение мобов: временный огонь, взрывы без разрушений, правила урона (кто от кого не получает урон и где) |
+| [TotemWipeBorder](TotemWipeBorder) | свой | сообщения на границе центра мира (зоны вайпа) |
 | [TotemPacketEventsAddon](TotemPacketEventsAddon) | PacketEvents | принтер Litematica без кика за лишние пакеты движения |
 | [TotemAdvancedBanX](TotemAdvancedBanX) | AdvancedBanX | своя сборка 3.1.0: сообщения снова видны на 26.x |
 | [TotemVulcanAddon](TotemVulcanAddon) | Vulcan | наказание по экспериментальным проверкам при устойчиво высоком VL |
@@ -22,5 +23,7 @@
 ## История
 
 До 09.11.2026 были: ClanTagView (теги кланов и ближний чат), AutoLock, RegionRules, TotemGuard, FishClaim.
+14.11.2026 TotemWorldGuardAddon (бывший RegionRules) разделён на TotemMobRules и TotemWipeBorder: механики про
+мобов и сообщения границы - разные темы, а WorldGuard стал необязательным.
 Переход - скрипт [tools/migrate-to-totem-addons.sh](tools/migrate-to-totem-addons.sh): старые jar и папки
 данных уходят в копию, данные (`players.txt` /autolock, журнал TotemGuard, адрес бота рыбалки) переносятся.
