@@ -5,28 +5,68 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>TotemBots</title>
 <style>
-  :root { --bg: #1e1f22; --card: #2b2d31; --text: #e6e6e6; --muted: #9aa0a6; --ok: #3ba55d; --bad: #ed4245; --acc: #5865f2; }
+  :root { --bg: #1e1f22; --card: #2b2d31; --line: #3a3c42; --text: #e6e6e6; --muted: #9aa0a6; --ok: #3ba55d; --warn: #faa61a; --bad: #ed4245; --acc: #5865f2; }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 16px; width: 380px; background: var(--bg); color: var(--text); font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
-  h1 { font-size: 18px; margin: 0 0 12px; }
-  .card { background: var(--card); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
-  .row { display: flex; align-items: center; gap: 8px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
-  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); }
-  .muted { color: var(--muted); font-size: 12px; word-break: break-all; }
-  button { background: var(--acc); color: #fff; border: 0; border-radius: 6px; padding: 7px 12px; font: inherit; cursor: pointer; }
-  button:hover { filter: brightness(1.1); }
+  html, body { height: 100%; }
+  body { margin: 0; width: 440px; height: 100vh; display: flex; flex-direction: column; background: var(--bg); color: var(--text);
+    font: 13px/1.45 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  header { padding: 12px 14px 4px; }
+  h1 { font-size: 17px; margin: 0; }
+  main { flex: 1; overflow: auto; padding: 8px 14px 14px; }
+  .card { background: var(--card); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px; }
+  .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
+  .muted { color: var(--muted); font-size: 12px; }
+  .grow { flex: 1; min-width: 0; }
+  button { background: var(--acc); color: #fff; border: 0; border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
+  button.sec { background: #4e5058; } button.red { background: #a8383b; }
+  button:disabled { opacity: .5; cursor: default; }
+  input, textarea { background: #1e1f22; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; width: 100%; }
+  textarea { resize: vertical; }
+  label { display: block; margin: 6px 0 2px; color: var(--muted); font-size: 12px; }
+  details summary { cursor: pointer; color: var(--muted); }
+  .bot { border: 1px solid transparent; }
+  .bot.sel { border-color: var(--acc); }
+  .bot h3 { margin: 0; font-size: 14px; }
+  .log { background: #17181a; border-radius: 6px; padding: 6px 8px; height: 260px; overflow: auto; font: 11.5px/1.4 Consolas, monospace;
+    white-space: pre-wrap; word-break: break-word; margin-top: 8px; }
+  .log .in { color: #8fb8ff; } .log .out { color: #b5e08f; } .log .chat { color: #c9c9c9; } .log .err { color: #ff8a8a; }
+  #err { color: var(--bad); min-height: 16px; font-size: 12px; }
 </style>
 </head>
 <body>
-  <h1>TotemBots</h1>
+<header><h1>TotemBots</h1></header>
+<main>
   <div class="card">
-    <div class="row"><span id="dot" class="dot"></span><b id="state">Qwen: проверяю...</b></div>
-    <div id="url" class="muted"></div>
-    <div class="row" style="margin-top:10px"><button id="chrome">Войти через Chrome</button><button id="reload">Открыть Qwen заново</button></div>
-    <div id="login" class="muted" style="margin-top:8px"></div>
+    <div class="row"><span id="qdot" class="dot"></span><b id="qstate" class="grow">Qwen: проверяю...</b></div>
+    <div class="row" style="margin-top:8px"><button id="chrome">Войти через Chrome</button><button id="reload" class="sec">Открыть Qwen заново</button></div>
+    <div id="login" class="muted" style="margin-top:6px"></div>
   </div>
-  <div class="card muted">Боты появятся здесь на следующем шаге.</div>
-  <script src="panel.js"></script>
+
+  <div class="card">
+    <details>
+      <summary>Настройки: сервер, хозяева, возраст для Qwen</summary>
+      <label>Адрес сервера</label><input id="host">
+      <label>Порт</label><input id="port">
+      <label>Хозяева (ники через запятую, первый - вы): только их приказы с действиями бот выполняет</label><input id="masters">
+      <label>Ваш год рождения: им программа сама отвечает, когда Qwen спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
+      <div class="row" style="margin-top:8px"><button id="saveSettings">Сохранить</button></div>
+    </details>
+  </div>
+
+  <div id="bots"></div>
+
+  <div class="card">
+    <details>
+      <summary>Добавить бота</summary>
+      <label>Ник</label><input id="newName" placeholder="Alex">
+      <label>Характер (можно пусто: дружелюбный игрок)</label><textarea id="newPersona" rows="3"></textarea>
+      <div class="row" style="margin-top:8px"><button id="add">Добавить</button></div>
+    </details>
+  </div>
+  <div id="err"></div>
+</main>
+<script src="panel.js"></script>
 </body>
 </html>
