@@ -7,6 +7,7 @@
 | Плагин | Дополняет | Что делает |
 |---|---|---|
 | [TotemLWCAddon](TotemLWCAddon) | LWC | `/autolock`; сообщение у чужого «защищенного от кражи» |
+| [TotemAuthMeAddon](TotemAuthMeAddon) | AuthMe | жемчуг Края в стазис-камерах не пропадает при перезаходе |
 | [TotemSimpleClansAddon](TotemSimpleClansAddon) | SimpleClans | теги кланов в чате видят только клановые и админы |
 | [TotemEssentialsAddon](TotemEssentialsAddon) | EssentialsChat | ближний чат `!`, `/l`, `/g`; «Рядом никого нет»; ближнее не уходит в Discord; строка слежки |
 | [TotemMobRules](TotemMobRules) | свой (WorldGuard по желанию) | поведение мобов: временный огонь, взрывы без разрушений, правила урона (кто от кого не получает урон и где) |

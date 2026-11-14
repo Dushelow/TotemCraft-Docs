@@ -1,0 +1,8 @@
+name: TotemAuthMeAddon
+version: '${project.version}'
+main: net.totemcraft.authmeaddon.TotemAuthMeAddon
+api-version: '1.21'
+depend: [AuthMe]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к AuthMe - жемчуг Края в стазис-камерах не пропадает при перезаходе
