@@ -1,7 +1,8 @@
 // Полная проверка на стенде tc-up: программа TotemBots (с Qwen) ведёт бота TbAlex, тестовый хозяин TbOwner пишет ему.
 // Программа запускается с портом отладки 9223, кнопки панели жмём через window.totem.* (как человек в панели).
-// Перед запуском: в %APPDATA%/totembots/config.json бот TbAlex (пароль Tb12345x), host 127.0.0.1:25566, masters [TbOwner].
-// Запуск: node test/qwen_e2e.js
+// Настройки программы тест подменяет сам (бот TbAlex, стенд, хозяин TbOwner) и возвращает владельцу в конце.
+// Разговор идёт в одном постоянном тестовом чате Qwen (id в test/.test_chat, не в git), чтобы не плодить чаты.
+// Запуск: node test/qwen_e2e.js [--voice]
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const mineflayer = require('mineflayer');
@@ -10,6 +11,24 @@ const { clickActionPacket } = require('../app/bot');
 const rcon = (c) => execSync(`docker exec tc-up rcon-cli "${c.replace(/"/g, '\\"')}"`).toString().replace(/\x1b\[[0-9;]*m|§./g, '').trim();
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const X = 1300, Y = 150, Z = 1300;
+const fs = require('fs');
+const CFG = path.join(process.env.APPDATA, 'totembots', 'config.json');
+const CHAT = path.join(__dirname, '.test_chat');
+const userCfg = fs.existsSync(CFG) ? fs.readFileSync(CFG, 'utf8') : null;
+function useTestConfig() {
+  const u = userCfg ? JSON.parse(userCfg) : {};
+  const chatId = fs.existsSync(CHAT) ? fs.readFileSync(CHAT, 'utf8').trim() : '';
+  fs.writeFileSync(CFG, JSON.stringify({ host: '127.0.0.1', port: 25566, masters: ['TbOwner'], birthYear: u.birthYear || '',
+    qwen: u.qwen || { chatMode: 'fast', planMode: 'auto', models: [] },
+    voice: { ...(u.voice || {}), enabled: process.argv.includes('--voice'), local: false },
+    bots: [{ name: 'TbAlex', password: 'Tb12345x', persona: '', chatId }] }, null, 2));
+}
+function restoreConfig() {
+  try { const t = JSON.parse(fs.readFileSync(CFG, 'utf8')); if (t.bots[0].chatId) fs.writeFileSync(CHAT, t.bots[0].chatId); } catch {}
+  if (userCfg !== null) fs.writeFileSync(CFG, userCfg);
+}
+process.on('exit', restoreConfig);
+useTestConfig();
 
 async function panel() {
   for (let i = 0; i < 60; i++) {
