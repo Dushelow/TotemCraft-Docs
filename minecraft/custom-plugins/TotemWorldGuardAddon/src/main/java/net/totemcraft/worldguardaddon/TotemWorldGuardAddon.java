@@ -1,65 +1,135 @@
 package net.totemcraft.worldguardaddon;
 
 import org.bukkit.ChatColor;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.ConfigurationSection;
+import org.bukkit.event.HandlerList;
+import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 /**
- * Аддон TotemCraft к WorldGuard: правила регионов, которых нет среди флагов WorldGuard.
- * Механики включаются по отдельности в config.yml:
+ * Аддон TotemCraft: правила мира, которых нет в ванилле и среди флагов WorldGuard. WorldGuard необязателен:
+ * он нужен только правилам, где в where указаны регионы. Механики включаются по отдельности в config.yml:
  * <ul>
- *   <li>{@link TemporaryFireFeature} - огонь от огненных шаров гаснет сам, блоки не сжигает;</li>
- *   <li>{@link ProtectedMobsFeature} - выбранные мобы в регионах не получают урон от выбранных мобов;</li>
- *   <li>{@link ThornsFeature} - выбранные мобы в регионах не получают урон от шипов;</li>
+ *   <li>{@link TemporaryFireFeature} - огонь от выбранных мобов гаснет сам и не сжигает блоки;</li>
+ *   <li>{@link ExplosionRulesFeature} - взрывы выбранных мобов не ломают блоки;</li>
+ *   <li>{@link DamageRulesFeature} - список правил «кто не получает урон, от кого или от чего, где»;</li>
  *   <li>{@link WipeBorderFeature} - сообщения на границе центра мира (зоны вайпа).</li>
  * </ul>
+ * /totemrules reload - перечитать config.yml без перезапуска, /totemrules status - что включено и сколько сработало.
  */
 public final class TotemWorldGuardAddon extends JavaPlugin {
 
+    private final List<Listener> active = new ArrayList<>();
     private TemporaryFireFeature temporaryFire;
-
-    @Override
-    public void onDisable() {
-        if (temporaryFire != null) {
-            temporaryFire.extinguishAll();
-        }
-    }
+    private ExplosionRulesFeature explosions;
+    private DamageRulesFeature damageRules;
+    private WipeBorderFeature wipeBorder;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
+        load();
+    }
+
+    @Override
+    public void onDisable() {
+        unload();
+    }
+
+    private void load() {
+        reloadConfig();
         ConfigurationSection config = getConfig();
         boolean debug = config.getBoolean("debug", false);
+        List<Scope> scopes = new ArrayList<>();
 
-        if (config.getBoolean("temporary-fireball-fire.enabled", false)) {
-            temporaryFire = new TemporaryFireFeature(this, config.getStringList("temporary-fireball-fire.regions"),
-                    config.getStringList("temporary-fireball-fire.sources"),
-                    config.getLong("temporary-fireball-fire.burn-seconds", 60),
-                    config.getBoolean("temporary-fireball-fire.burn-blocks", false),
-                    config.getBoolean("temporary-fireball-fire.spread", false), debug);
-            getServer().getPluginManager().registerEvents(temporaryFire, this);
-            getLogger().info("Временный огонь от огненных шаров: " + temporaryFire.describe());
+        ConfigurationSection fire = config.getConfigurationSection("temporary-fire");
+        if (fire != null && fire.getBoolean("enabled", true)) {
+            temporaryFire = register(new TemporaryFireFeature(this, fire, debug));
+            scopes.add(temporaryFire.where());
+            getLogger().info("Временный огонь: " + temporaryFire.describe());
         }
-        if (config.getBoolean("protected-mobs.enabled", false)) {
-            ProtectedMobsFeature mobs = new ProtectedMobsFeature(this, config.getStringList("protected-mobs.regions"),
-                    config.getStringList("protected-mobs.victims"), config.getStringList("protected-mobs.attackers"),
-                    config.getBoolean("protected-mobs.fire-damage", true));
-            getServer().getPluginManager().registerEvents(mobs, this);
-            getLogger().info("Защищённые мобы: " + mobs.describe());
+        ConfigurationSection boom = config.getConfigurationSection("no-block-damage-explosions");
+        if (boom != null && boom.getBoolean("enabled", true)) {
+            explosions = register(new ExplosionRulesFeature(this, boom));
+            scopes.add(explosions.where());
+            getLogger().info("Взрывы без разрушения блоков: " + explosions.describe());
         }
-        if (config.getBoolean("no-thorns-damage.enabled", true)) {
-            ThornsFeature thorns = new ThornsFeature(this, new Regions(config.getStringList("no-thorns-damage.regions")),
-                    config.getStringList("no-thorns-damage.mobs"), debug);
-            getServer().getPluginManager().registerEvents(thorns, this);
-            getLogger().info("Без урона от шипов: " + thorns.describe());
-        }
-        if (config.getBoolean("wipe-border.enabled", true)) {
-            WipeBorderFeature border = new WipeBorderFeature(config.getConfigurationSection("wipe-border.worlds"));
-            if (!border.isEmpty()) {
-                getServer().getPluginManager().registerEvents(border, this);
-                getLogger().info("Граница зоны вайпа: " + border);
+        ConfigurationSection damage = config.getConfigurationSection("damage-rules");
+        if (damage != null) {
+            DamageRulesFeature rules = new DamageRulesFeature(this, damage);
+            if (!rules.isEmpty()) {
+                damageRules = register(rules);
+                scopes.addAll(rules.scopes());
+                getLogger().info("Правила урона:" + rules.describe());
             }
         }
+        ConfigurationSection border = config.getConfigurationSection("wipe-border");
+        if (border != null && border.getBoolean("enabled", true)) {
+            WipeBorderFeature feature = new WipeBorderFeature(border.getConfigurationSection("worlds"));
+            if (!feature.isEmpty()) {
+                wipeBorder = register(feature);
+                getLogger().info("Граница зоны вайпа: " + feature);
+            }
+        }
+        checkRegions(scopes);
+    }
+
+    /** Опечатка в названии региона молча выключила бы правило: предупреждаем при запуске и перечитывании. */
+    private void checkRegions(List<Scope> scopes) {
+        Set<String> names = new HashSet<>();
+        scopes.forEach(s -> names.addAll(s.regions()));
+        if (names.isEmpty()) {
+            return;
+        }
+        if (!getServer().getPluginManager().isPluginEnabled("WorldGuard")) {
+            getLogger().warning("В правилах указаны регионы " + names + ", но WorldGuard не включён: эти правила не сработают");
+            return;
+        }
+        Set<String> missing = WorldGuardRegions.missing(names);
+        if (!missing.isEmpty()) {
+            getLogger().warning("Регионов нет ни в одном мире (опечатка?): " + missing);
+        }
+    }
+
+    private <T extends Listener> T register(T listener) {
+        getServer().getPluginManager().registerEvents(listener, this);
+        active.add(listener);
+        return listener;
+    }
+
+    private void unload() {
+        if (temporaryFire != null) {
+            temporaryFire.extinguishAll();
+        }
+        active.forEach(HandlerList::unregisterAll);
+        active.clear();
+        temporaryFire = null;
+        explosions = null;
+        damageRules = null;
+        wipeBorder = null;
+    }
+
+    @Override
+    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
+            unload();
+            load();
+            sender.sendMessage("TotemWorldGuardAddon: config.yml перечитан, подробности в журнале сервера");
+            return true;
+        }
+        sender.sendMessage("TotemWorldGuardAddon " + getPluginMeta().getVersion() + ":");
+        sender.sendMessage(" Временный огонь: " + (temporaryFire == null ? "выключен" : temporaryFire.describe()));
+        sender.sendMessage(" Взрывы без разрушения: " + (explosions == null ? "выключено" : explosions.describe()));
+        sender.sendMessage(" Правила урона:" + (damageRules == null ? " нет" : damageRules.describe()));
+        sender.sendMessage(" Граница вайпа: " + (wipeBorder == null ? "выключена" : wipeBorder.toString()));
+        return true;
     }
 
     static String color(String text) {

@@ -1,12 +1,17 @@
-# TotemWorldGuardAddon: аддон TotemCraft к WorldGuard, правила регионов, которых нет среди его флагов.
-# Каждую механику можно выключить отдельно. Регионы - названия регионов WorldGuard (в любом мире).
-# После правки нужен перезапуск сервера. Цвета: коды через &.
+# TotemWorldGuardAddon: правила мира TotemCraft, которых нет в ванилле и среди флагов WorldGuard.
+# Каждую механику можно выключить (enabled: false). Перечитать без перезапуска: /totemrules reload,
+# посмотреть, что включено и сколько сработало: /totemrules status.
+#
+# where - где действует правило: worlds (названия миров) и regions (регионы WorldGuard).
+# Пустой where или пустые списки - везде. Регионы нужны только если указаны; опечатка в названии
+# региона видна в журнале при запуске.
+# Мобы - названия Paper: blaze, ghast, villager, iron_golem, creeper, wither, ...
+# Цвета в сообщениях: коды через &.
 
-# Огонь от огненных шаров этих мобов (sources) временный: горит как обычно, игрок в нём горит и
-# получает урон, но через burn-seconds гаснет сам. burn-blocks: false - блоки под ним не сгорают,
-# spread: false - дальше не распространяется. Огонь от зажигалки, лавы и молнии не трогается.
-# regions пустой - на всей карте.
-temporary-fireball-fire:
+# Огонь, который поставили мобы из sources (шаром или взрывом своего шара), временный: горит как обычно,
+# игрок в нём горит и получает урон, но через burn-seconds гаснет сам. burn-blocks: false - блоки под ним
+# не сгорают, spread: false - дальше не распространяется. Огонь от игроков, лавы и молнии не трогается.
+temporary-fire:
   enabled: true
   sources:
     - blaze
@@ -14,41 +19,55 @@ temporary-fireball-fire:
   burn-seconds: 60
   burn-blocks: false
   spread: false
-  regions: []
+  where: {}
 
-# Мобы из victims в регионах не получают урон от мобов из attackers (удар, огненный шар) и не
-# загораются от них. fire-damage: true - ещё не горят в огне внутри региона. Игроков не касается.
-# regions пустой - на всей карте. Названия мобов как в Paper (villager, iron_golem, blaze...).
-protected-mobs:
+# Взрывы мобов из mobs (сам моб или его снаряд) не ломают блоки. Урон существам остаётся,
+# огонь от взрыва - по правилам temporary-fire.
+no-block-damage-explosions:
   enabled: true
-  victims:
-    - villager
-  attackers:
-    - blaze
-    - ghast
-  fire-damage: true
-  regions:
-    - spawn_zone_castle
-
-# Эти мобы не получают урон от шипов на броне игроков (названия мобов Paper).
-no-thorns-damage:
-  enabled: true
-  regions:
-    - spawn_zone_castle
   mobs:
-    - blaze
+    - ghast
+  where: {}
+
+# Правила урона: существа из victims не получают урон от мобов из from-mobs (удар, снаряд, взрыв
+# снаряда) ИЛИ от причин из from-causes (thorns, fire, fire_tick, lava, ...) в месте where.
+# От мобов из from-mobs они ещё и не загораются. Название правила - любое, для журнала и /totemrules status.
+damage-rules:
+  # Стражи-всполохи и гасты не убивают жителей в замке, жители не горят в огне в замке
+  villagers-in-castle:
+    victims:
+      - villager
+    from-mobs:
+      - blaze
+      - ghast
+    from-causes:
+      - fire
+      - fire_tick
+    where:
+      regions:
+        - spawn_zone_castle
+  # Всполохи в замке не умирают от шипов на броне игроков
+  blazes-no-thorns:
+    victims:
+      - blaze
+    from-causes:
+      - thorns
+    where:
+      regions:
+        - spawn_zone_castle
 
 # Граница центра мира (зоны вайпа): сообщения, когда игрок пересекает квадрат ±radius в этом мире
-# (пешком, на транспорте, телепортом). Переход в другой мир сообщения не даёт, кроме попадания
-# сразу за границу. Ключ - название мира. Пустая строка - не показывать.
+# (пешком, на транспорте, телепортом, при входе в игру за границей). Переход в другой мир сообщения
+# не даёт. Центр - центр границы мира (worldborder), если use-world-border-center: true, иначе 0,0.
 wipe-border:
   enabled: true
   worlds:
     '2025':
       radius: 10000
+      use-world-border-center: true
       leave-title: '&c⚠ Внимание! Зона вайпа'
       leave-message: '&e⚠ Вы покидаете центр мира. &7Дальше 10.000 блоков территория обновляется с выходом новых версий: постройки будут удалены.'
       enter-message: '&7Основной мир без вайпов (до 10.000 блоков)'
 
-# true: писать в журнал каждую отмену поджога и урон по мобам из no-thorns-damage в регионах
+# true: писать в журнал каждый поджог от мобов (для проверки)
 debug: false

@@ -28,9 +28,16 @@ import static net.totemcraft.worldguardaddon.TotemWorldGuardAddon.color;
  */
 final class WipeBorderFeature implements Listener {
 
-    private record Zone(int radius, String leaveTitle, String leaveMessage, String enterMessage) {
+    /** Квадрат ±radius вокруг центра границы мира (worldborder center) или вокруг 0,0. */
+    private record Zone(int radius, boolean borderCenter, String leaveTitle, String leaveMessage, String enterMessage) {
         boolean inside(Location l) {
-            return Math.abs(l.getBlockX()) <= radius && Math.abs(l.getBlockZ()) <= radius;
+            double cx = 0, cz = 0;
+            if (borderCenter && l.getWorld() != null) {
+                Location c = l.getWorld().getWorldBorder().getCenter();
+                cx = c.getX();
+                cz = c.getZ();
+            }
+            return Math.abs(l.getBlockX() - Math.floor(cx)) <= radius && Math.abs(l.getBlockZ() - Math.floor(cz)) <= radius;
         }
     }
 
@@ -43,7 +50,7 @@ final class WipeBorderFeature implements Listener {
         for (String world : section.getKeys(false)) {
             ConfigurationSection z = section.getConfigurationSection(world);
             if (z != null) {
-                zones.put(world, new Zone(z.getInt("radius", 10000), color(z.getString("leave-title", "")),
+                zones.put(world, new Zone(z.getInt("radius", 10000), z.getBoolean("use-world-border-center", true), color(z.getString("leave-title", "")),
                         color(z.getString("leave-message", "")), color(z.getString("enter-message", ""))));
             }
         }
@@ -85,6 +92,16 @@ final class WipeBorderFeature implements Listener {
             if (passenger instanceof Player player) {
                 cross(player, from, to);
             }
+        }
+    }
+
+    /** Вход в игру сразу за границей: предупредить, как при выходе за неё. */
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onJoin(org.bukkit.event.player.PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        Zone zone = zones.get(player.getWorld().getName());
+        if (zone != null && !zone.inside(player.getLocation())) {
+            leave(player, zone);
         }
     }
 

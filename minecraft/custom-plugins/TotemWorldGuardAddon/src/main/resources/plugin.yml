@@ -2,7 +2,17 @@ name: TotemWorldGuardAddon
 version: '${project.version}'
 main: net.totemcraft.worldguardaddon.TotemWorldGuardAddon
 api-version: '1.21'
-depend: [WorldGuard]
+# WorldGuard нужен только правилам с регионами; без него плагин работает, правила с регионами не срабатывают
+softdepend: [WorldGuard]
 authors: [TotemCraft]
 website: https://totemcraft.net
-description: Аддон TotemCraft к WorldGuard - без огня от огненных шаров, мобы без урона от шипов, граница зоны вайпа
+description: Правила мира TotemCraft - временный огонь от мобов, взрывы без разрушений, правила урона, граница зоны вайпа
+commands:
+  totemrules:
+    description: Правила мира - /totemrules status, /totemrules reload
+    usage: /totemrules [status|reload]
+    permission: totemrules.admin
+permissions:
+  totemrules.admin:
+    description: Команда /totemrules
+    default: op
