@@ -1,13 +1,13 @@
 # Карта TotemCraft (как у EmeraldCubes): только обычный мир, один слой, JPG, тёмный фон
 worlds["2025"] = "/home/mapper/world"
 texturepath = "/home/mapper/client/26.3.jar"
-outputdir = "/home/mapper/out"
+outputdir = "/home/mapper/out-smooth"
 processes = 2
 renders["totemcraft"] = {
     "world": "2025",
     "title": "TotemCraft",
     "dimension": "overworld",
-    "rendermode": "lighting",
+    "rendermode": "smooth_lighting",
     "northdirection": "upper-right",
     "imgformat": "jpg",
     "imgquality": 85,

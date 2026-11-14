@@ -63,3 +63,9 @@ ru.totemcraft.net проксирует весь сайт, поэтому кар�
 
 - Сайт: вернуть `inc-menu.php` и `nginx-default` из `/root/site_backups/2026-11-09-map/`, удалить `map.php`, `nginx -t && systemctl reload nginx`.
 - Основной сервер: `systemctl disable --now tc-map.timer`, `rm /etc/systemd/system/tc-map.*`, `apt remove nginx`, `ufw delete allow from IP_сервера_сайта to any port 8123 proto tcp`, `userdel -r mapper`.
+
+## История
+
+- 12.11.2026 22:55: первая полная карта (lighting) готова. 13.11 обычная дорисовка заняла 1 ч 9 мин.
+- 14.11.2026 06:14: автообновления системы (`needrestart`) перезапустили отрисовку посреди работы. Overviewer после оборванного запуска перепроверяет все картинки (в журнале «5592405 картинок»). Исправлено: `tc-map.service` добавлен в исключения `/etc/needrestart/conf.d/totemcraft.conf` (копия до правки `/root/needrestart-totemcraft.conf.before-map`).
+- 14.11.2026: переход на мягкие тени (`smooth_lighting`, по замеру так же быстро, как `lighting`). Новая карта рисуется в `/home/mapper/out-smooth`, сайт пока смотрит на старую: `/home/mapper/out` теперь ссылка на `out-lighting`. После первого успешного запуска `ExecStartPost` из `tc-map.service.d/swap-smooth.conf` переключает ссылку на `out-smooth`. После этого `out-lighting` (27 ГБ), `config-lighting.py` и `swap-smooth.conf` можно удалить.
