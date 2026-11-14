@@ -8,12 +8,22 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Аддон TotemCraft к WorldGuard: правила регионов, которых нет среди флагов WorldGuard.
  * Механики включаются по отдельности в config.yml:
  * <ul>
- *   <li>{@link FireballFireFeature} - огненные шары не поджигают блоки в регионах;</li>
+ *   <li>{@link TemporaryFireFeature} - огонь от огненных шаров гаснет сам, блоки не сжигает;</li>
+ *   <li>{@link ProtectedMobsFeature} - выбранные мобы в регионах не получают урон от выбранных мобов;</li>
  *   <li>{@link ThornsFeature} - выбранные мобы в регионах не получают урон от шипов;</li>
  *   <li>{@link WipeBorderFeature} - сообщения на границе центра мира (зоны вайпа).</li>
  * </ul>
  */
 public final class TotemWorldGuardAddon extends JavaPlugin {
+
+    private TemporaryFireFeature temporaryFire;
+
+    @Override
+    public void onDisable() {
+        if (temporaryFire != null) {
+            temporaryFire.extinguishAll();
+        }
+    }
 
     @Override
     public void onEnable() {
@@ -21,10 +31,21 @@ public final class TotemWorldGuardAddon extends JavaPlugin {
         ConfigurationSection config = getConfig();
         boolean debug = config.getBoolean("debug", false);
 
-        if (config.getBoolean("no-fireball-fire.enabled", true)) {
-            Regions regions = new Regions(config.getStringList("no-fireball-fire.regions"));
-            getServer().getPluginManager().registerEvents(new FireballFireFeature(this, regions, debug), this);
-            getLogger().info("Без огня от огненных шаров: " + regions);
+        if (config.getBoolean("temporary-fireball-fire.enabled", false)) {
+            temporaryFire = new TemporaryFireFeature(this, config.getStringList("temporary-fireball-fire.regions"),
+                    config.getStringList("temporary-fireball-fire.sources"),
+                    config.getLong("temporary-fireball-fire.burn-seconds", 60),
+                    config.getBoolean("temporary-fireball-fire.burn-blocks", false),
+                    config.getBoolean("temporary-fireball-fire.spread", false), debug);
+            getServer().getPluginManager().registerEvents(temporaryFire, this);
+            getLogger().info("Временный огонь от огненных шаров: " + temporaryFire.describe());
+        }
+        if (config.getBoolean("protected-mobs.enabled", false)) {
+            ProtectedMobsFeature mobs = new ProtectedMobsFeature(this, config.getStringList("protected-mobs.regions"),
+                    config.getStringList("protected-mobs.victims"), config.getStringList("protected-mobs.attackers"),
+                    config.getBoolean("protected-mobs.fire-damage", true));
+            getServer().getPluginManager().registerEvents(mobs, this);
+            getLogger().info("Защищённые мобы: " + mobs.describe());
         }
         if (config.getBoolean("no-thorns-damage.enabled", true)) {
             ThornsFeature thorns = new ThornsFeature(this, new Regions(config.getStringList("no-thorns-damage.regions")),

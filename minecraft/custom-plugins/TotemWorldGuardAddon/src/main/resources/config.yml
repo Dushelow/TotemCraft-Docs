@@ -2,11 +2,31 @@
 # Каждую механику можно выключить отдельно. Регионы - названия регионов WorldGuard (в любом мире).
 # После правки нужен перезапуск сервера. Цвета: коды через &.
 
-# Огненные шары (всполохи, гасты, заряды из раздатчиков) не поджигают блоки.
-# Урон и поджог игроков и мобов остаются.
-# Флаг WorldGuard ghast-fireball deny не подходит: он отменяет и урон от шаров по игрокам.
-no-fireball-fire:
+# Огонь от огненных шаров этих мобов (sources) временный: горит как обычно, игрок в нём горит и
+# получает урон, но через burn-seconds гаснет сам. burn-blocks: false - блоки под ним не сгорают,
+# spread: false - дальше не распространяется. Огонь от зажигалки, лавы и молнии не трогается.
+# regions пустой - на всей карте.
+temporary-fireball-fire:
   enabled: true
+  sources:
+    - blaze
+    - ghast
+  burn-seconds: 60
+  burn-blocks: false
+  spread: false
+  regions: []
+
+# Мобы из victims в регионах не получают урон от мобов из attackers (удар, огненный шар) и не
+# загораются от них. fire-damage: true - ещё не горят в огне внутри региона. Игроков не касается.
+# regions пустой - на всей карте. Названия мобов как в Paper (villager, iron_golem, blaze...).
+protected-mobs:
+  enabled: true
+  victims:
+    - villager
+  attackers:
+    - blaze
+    - ghast
+  fire-damage: true
   regions:
     - spawn_zone_castle
 
