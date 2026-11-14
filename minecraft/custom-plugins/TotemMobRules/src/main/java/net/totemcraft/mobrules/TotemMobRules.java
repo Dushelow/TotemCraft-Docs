@@ -28,6 +28,7 @@ public final class TotemMobRules extends JavaPlugin {
     private TemporaryFireFeature temporaryFire;
     private ExplosionRulesFeature explosions;
     private DamageRulesFeature damageRules;
+    private PeacefulMobsFeature peaceful;
 
     @Override
     public void onEnable() {
@@ -67,6 +68,16 @@ public final class TotemMobRules extends JavaPlugin {
                 getLogger().info("Правила урона:" + rules.describe());
             }
         }
+        ConfigurationSection peace = config.getConfigurationSection("peaceful-mobs");
+        if (peace != null) {
+            PeacefulMobsFeature feature = new PeacefulMobsFeature(this, peace);
+            feature.debug = debug;
+            if (!feature.isEmpty()) {
+                peaceful = register(feature);
+                scopes.addAll(feature.scopes());
+                getLogger().info("Мирные мобы:" + feature.describe());
+            }
+        }
         checkRegions(scopes);
     }
 
@@ -102,10 +113,18 @@ public final class TotemMobRules extends JavaPlugin {
         temporaryFire = null;
         explosions = null;
         damageRules = null;
+        peaceful = null;
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length >= 1 && args[0].equalsIgnoreCase("peace")) {
+            return peaceCommand(sender, label, args);
+        }
+        if (!sender.hasPermission("totemrules.admin")) {
+            sender.sendMessage("Нет прав. Список игроков мирных мобов: /" + label + " peace list");
+            return true;
+        }
         if (args.length == 1 && args[0].equalsIgnoreCase("reload")) {
             unload();
             load();
@@ -116,7 +135,61 @@ public final class TotemMobRules extends JavaPlugin {
         sender.sendMessage(" Временный огонь: " + (temporaryFire == null ? "выключен" : temporaryFire.describe()));
         sender.sendMessage(" Взрывы без разрушения: " + (explosions == null ? "выключено" : explosions.describe()));
         sender.sendMessage(" Правила урона:" + (damageRules == null ? " нет" : damageRules.describe()));
+        sender.sendMessage(" Мирные мобы:" + (peaceful == null ? " нет" : peaceful.describe()));
         return true;
+    }
+
+    /** /mobrules peace list [правило] | add <правило> <ник> | remove <правило> <ник> */
+    private boolean peaceCommand(CommandSender sender, String label, String[] args) {
+        if (peaceful == null) {
+            sender.sendMessage("Мирные мобы не настроены (раздел peaceful-mobs в config.yml)");
+            return true;
+        }
+        if (args.length < 2 || args[1].equalsIgnoreCase("list")) {
+            for (PeacefulMobsFeature.Rule rule : peaceful.rules().values()) {
+                if (args.length >= 3 && !rule.name().equalsIgnoreCase(args[2])) {
+                    continue;
+                }
+                sender.sendMessage(rule.name() + ": " + rule.mobs() + " не трогают " + rule.players().values() + ", " + rule.where());
+            }
+            sender.sendMessage("Добавить: /" + label + " peace add <правило> <ник>, убрать: /" + label + " peace remove <правило> <ник>");
+            return true;
+        }
+        boolean add = args[1].equalsIgnoreCase("add");
+        if ((!add && !args[1].equalsIgnoreCase("remove")) || args.length != 4) {
+            sender.sendMessage("Использование: /" + label + " peace list | add <правило> <ник> | remove <правило> <ник>");
+            return true;
+        }
+        PeacefulMobsFeature.Rule rule = peaceful.rules().get(args[2].toLowerCase(java.util.Locale.ROOT));
+        if (rule == null) {
+            sender.sendMessage("Нет правила " + args[2] + ". Есть: " + peaceful.rules().keySet());
+            return true;
+        }
+        if (!peaceful.canEdit(sender, rule)) {
+            sender.sendMessage("Менять этот список могут админы и владельцы региона правила");
+            return true;
+        }
+        boolean changed = peaceful.edit(rule, args[3], add);
+        sender.sendMessage(changed ? (add ? args[3] + " добавлен: " : args[3] + " убран: ") + rule.mobs() + ", " + rule.where()
+                : args[3] + (add ? " уже в списке" : " не было в списке"));
+        if (changed) {
+            getLogger().info(sender.getName() + (add ? " добавил " : " убрал ") + args[3] + " в мирных мобах " + rule.name());
+        }
+        return true;
+    }
+
+    @Override
+    public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (args.length == 1) {
+            return List.of("status", "reload", "peace");
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("peace")) {
+            return List.of("list", "add", "remove");
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("peace") && peaceful != null) {
+            return new ArrayList<>(peaceful.rules().keySet());
+        }
+        return null;
     }
 
 }

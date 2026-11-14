@@ -39,6 +39,28 @@ final class WorldGuardRegions {
         return false;
     }
 
+    /** Владеет ли игрок хотя бы одним регионом из списка (в любом мире). */
+    static boolean ownsAny(org.bukkit.entity.Player player, Set<String> ids) {
+        if (!available()) {
+            return false;
+        }
+        com.sk89q.worldguard.LocalPlayer local = com.sk89q.worldguard.bukkit.WorldGuardPlugin.inst().wrapPlayer(player);
+        for (World world : Bukkit.getWorlds()) {
+            RegionManager manager = WorldGuard.getInstance().getPlatform().getRegionContainer()
+                    .get(BukkitAdapter.adapt(world));
+            if (manager == null) {
+                continue;
+            }
+            for (String id : ids) {
+                ProtectedRegion region = manager.getRegion(id);
+                if (region != null && region.isOwner(local)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     /** Каких регионов из списка нет ни в одном мире (опечатки в конфиге). */
     static Set<String> missing(Set<String> ids) {
         Set<String> missing = new TreeSet<>(ids);

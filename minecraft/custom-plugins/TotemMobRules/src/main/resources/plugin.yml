@@ -10,11 +10,10 @@ website: https://totemcraft.net
 description: Правила поведения мобов TotemCraft - временный огонь от мобов, взрывы без разрушений, правила урона
 commands:
   mobrules:
-    description: Правила мобов - /mobrules status, /mobrules reload
-    usage: /mobrules [status|reload]
+    description: Правила мобов - /mobrules status|reload (админы), /mobrules peace list|add|remove (админы и владельцы регионов)
+    usage: /mobrules [status|reload|peace]
     aliases: [totemmobrules, totemrules]
-    permission: totemrules.admin
 permissions:
   totemrules.admin:
-    description: Команда /mobrules
+    description: /mobrules status и reload, правка любых списков peace
     default: op
