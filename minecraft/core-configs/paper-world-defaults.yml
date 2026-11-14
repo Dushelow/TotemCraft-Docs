@@ -202,14 +202,6 @@ entities:
         spire_armor_trim_smithing_template: 72000
         flow_armor_trim_smithing_template: 72000
         bolt_armor_trim_smithing_template: 72000
-        iron_helmet: 72000
-        iron_chestplate: 72000
-        iron_leggings: 72000
-        iron_boots: 72000
-        golden_helmet: 72000
-        golden_chestplate: 72000
-        golden_leggings: 72000
-        golden_boots: 72000
         diamond_helmet: 72000
         diamond_chestplate: 72000
         diamond_leggings: 72000
@@ -218,19 +210,6 @@ entities:
         netherite_chestplate: 72000
         netherite_leggings: 72000
         netherite_boots: 72000
-        copper_helmet: 72000
-        copper_chestplate: 72000
-        copper_leggings: 72000
-        copper_boots: 72000
-        iron_sword: 72000
-        iron_axe: 72000
-        iron_pickaxe: 72000
-        iron_shovel: 72000
-        iron_hoe: 72000
-        golden_axe: 72000
-        golden_pickaxe: 72000
-        golden_shovel: 72000
-        golden_hoe: 72000
         diamond_sword: 72000
         diamond_axe: 72000
         diamond_pickaxe: 72000
@@ -241,22 +220,20 @@ entities:
         netherite_pickaxe: 72000
         netherite_shovel: 72000
         netherite_hoe: 72000
-        copper_sword: 72000
-        copper_axe: 72000
-        copper_pickaxe: 72000
-        copper_shovel: 72000
-        copper_hoe: 72000
-        iron_spear: 72000
-        golden_spear: 72000
         diamond_spear: 72000
         netherite_spear: 72000
-        copper_spear: 72000
         elytra: 72000
         trident: 72000
         mace: 72000
         shield: 72000
         turtle_helmet: 72000
         wolf_armor: 72000
+        diamond_horse_armor: 72000
+        diamond_nautilus_armor: 72000
+        netherite_horse_armor: 72000
+        netherite_nautilus_armor: 72000
+        saddle: 72000
+        lead: 72000
     count-all-mobs-for-spawning: false
     creative-arrow-despawn-rate: '50'
     despawn-range-shape: ELLIPSOID
