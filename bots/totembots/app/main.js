@@ -21,7 +21,7 @@ let win, qwen, bridge;
 
 // --- настройки
 const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
-let cfg = { host: '127.0.0.1', port: 25566, masters: ['Valghard'], bots: [] };
+let cfg = { host: '127.0.0.1', port: 25566, masters: ['Valghard'], bots: [], qwen: { chatMode: 'fast', planMode: 'auto', models: [] } };
 function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
 }
@@ -57,7 +57,7 @@ function startBot(name) {
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '',
+    host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {},
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
       return { name: b.name, persona: b.persona, chatId: b.chatId || '', combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
@@ -112,6 +112,12 @@ ipcMain.handle('save-settings', (_e, s) => {
   cfg.host = String(s.host || '').trim() || '127.0.0.1';
   cfg.port = +s.port || 25565;
   cfg.masters = String(s.masters || '').split(/[\s,]+/).filter(Boolean);
+  const MODES = ['fast', 'auto', 'think', ''];
+  cfg.qwen = {
+    chatMode: MODES.includes(s.chatMode) ? s.chatMode : 'fast',
+    planMode: MODES.includes(s.planMode) ? s.planMode : 'auto',
+    models: String(s.models || '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean),
+  };
   cfg.birthYear = /^(19|20)\d\d$/.test(String(s.birthYear || '').trim()) ? String(s.birthYear).trim() : '';
   saveCfg();
   return true;

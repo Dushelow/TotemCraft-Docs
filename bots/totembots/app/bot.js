@@ -48,6 +48,8 @@ class TotemBot extends EventEmitter {
 
   start() {
     if (this.bot) return;
+    this.manual = false;
+    clearTimeout(this.reconnectTimer);
     const { name, host, port } = this.opts;
     this.status = 'connecting';
     this.log(`захожу на ${host}:${port} как ${name}`);
@@ -69,6 +71,7 @@ class TotemBot extends EventEmitter {
       this.guard = new Guard(this);
       this.guard.mode = this.opts.combat || 'defend';
       this.guard.attach();
+      this.retry = 0;
       this.log('на сервере');
       this.event('ты зашёл на сервер');
       this.loops();
@@ -78,8 +81,16 @@ class TotemBot extends EventEmitter {
     // чат игроков (подписанный или нет): автор приходит отдельно от текста
     bot.on('chat', (username, message) => this.playerChat(username, message, false));
     bot.on('whisper', (username, message) => this.playerChat(username, message, true));
-    bot.on('death', () => { this.log('умер'); this.event('ты умер и возродился, вещи остались на месте смерти', true); this.cancel(); });
-    bot.on('kicked', (r) => this.log('кикнули: ' + this.reason(r)));
+    bot.on('death', () => {
+      const p = bot.entity.position;
+      this.deathPoint = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim: bot.game.dimension, at: Date.now() };
+      this.resumeFollow = this.followName || this.resumeFollow;
+      this.log(`умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z}`);
+      this.cancel();
+      // после возрождения (spawn) - забрать вещи, как waypoint смерти в Baritone
+      bot.once('spawn', () => setTimeout(() => this.afterDeath().catch(() => {}), 2500));
+    });
+    bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
     bot.on('error', (e) => this.log('ошибка: ' + e.message));
     bot.on('end', (r) => {
       this.log('отключён: ' + (r || ''));
@@ -87,10 +98,18 @@ class TotemBot extends EventEmitter {
       this.bot = null;
       clearInterval(this.timer);
       this.emit('end');
+      const banned = /ban|бан|заблокир/i.test(this.kickReason || '');
+      if (!this.manual && !banned) {
+        this.retry = Math.min(120, (this.retry || 10) * 1.5);
+        this.log(`переподключусь через ${Math.round(this.retry)} с`);
+        this.reconnectTimer = setTimeout(() => { this.kickReason = ''; this.start(); }, this.retry * 1000);
+      }
     });
   }
 
   stop() {
+    this.manual = true;
+    clearTimeout(this.reconnectTimer);
     this.cancel();
     if (this.bot) this.bot.quit();
   }
@@ -374,6 +393,92 @@ class TotemBot extends EventEmitter {
     return `прошёл портал, теперь ${this.dimName()}`;
   }
 
+  // --- навыки: подобрать вещи, вернуть свои после смерти, урожай
+  // Вещи на земле рядом (как pickup в Baritone). Свои после смерти, чужие брошенные, дроп с урожая.
+  async pickup(a, tok) {
+    const b = this.bot;
+    const r = Math.min(24, +a.radius || 8);
+    const center = a.x !== undefined ? new Vec3(+a.x, +a.y, +a.z) : b.entity.position.clone();
+    let got = 0;
+    for (let round = 0; round < 40; round++) {
+      this.check(tok);
+      const items = Object.values(b.entities).filter((e) => e.name === 'item' && e.isValid && e.position.distanceTo(center) <= r)
+        .sort((x, y) => x.position.distanceTo(b.entity.position) - y.position.distanceTo(b.entity.position));
+      if (!items.length) break;
+      const it = items[0];
+      try {
+        await this.goto(new goals.GoalNear(it.position.x, it.position.y, it.position.z, 0.8), tok, 20000);
+      } catch (e) { if (e instanceof Cancelled) throw e; }
+      for (let i = 0; i < 10 && it.isValid; i++) await sleep(150);
+      if (!it.isValid) got++;
+      else { it.isValid = false; }   // недостижимо - пропускаем
+    }
+    return got ? `подобрал вещи (${got} кучек)` : 'вещей рядом нет';
+  }
+
+  async recover(tok) {
+    const d = this.deathPoint;
+    if (!d) return 'места смерти не помню';
+    if (d.dim !== this.bot.game.dimension) throw new Error(`вещи остались в другом измерении (${d.x} ${d.y} ${d.z})`);
+    await this.goto(new goals.GoalNear(d.x, d.y, d.z, 2), tok, 300000);
+    const r = await this.pickup({ x: d.x, y: d.y, z: d.z, radius: 10 }, tok);
+    this.deathPoint = null;
+    return 'дошёл до места смерти, ' + r;
+  }
+
+  async afterDeath() {
+    const d = this.deathPoint;
+    if (!d || !this.bot) return;
+    const follow = this.resumeFollow;
+    this.event(`ты умер на ${d.x} ${d.y} ${d.z} и возродился, иду забирать вещи`, true);
+    const res = await this.run([{ act: 'recover' }], 'забрать вещи после смерти');
+    this.event('после смерти: ' + res, true);
+    if (follow && this.player(follow)) this.follow(follow);
+    this.resumeFollow = '';
+  }
+
+  // Урожай: спелые культуры - сломать, подобрать, посадить обратно («взял - засади обратно»). Ничего, кроме урожая, не ломает.
+  async harvest(a, tok) {
+    const b = this.bot;
+    const CROPS = { wheat: [7, 'wheat_seeds'], carrots: [7, 'carrot'], potatoes: [7, 'potato'], beetroots: [3, 'beetroot_seeds'], nether_wart: [3, 'nether_wart'] };
+    const want = a.crop ? String(a.crop).replace(/^minecraft:/, '') : '';
+    const ids = Object.keys(CROPS).filter((n) => !want || n === want || n.startsWith(want)).map((n) => b.registry.blocksByName[n].id);
+    const r = Math.min(32, +a.radius || 16);
+    let done = 0, replanted = 0;
+    const limit = +a.count || 256;
+    for (let i = 0; i < limit; i++) {
+      this.check(tok);
+      const pos = b.findBlocks({ matching: ids, maxDistance: r, count: 200 })
+        .map((p) => b.blockAt(p)).filter((bl) => bl && (bl.getProperties().age | 0) >= CROPS[bl.name][0])
+        .sort((x, y) => x.position.distanceTo(b.entity.position) - y.position.distanceTo(b.entity.position))[0];
+      if (!pos) break;
+      const [, seed] = CROPS[pos.name];
+      const p = pos.position;
+      await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 30000);
+      const blk = b.blockAt(p);
+      if (!blk || blk.name !== pos.name) continue;
+      this.busyLook = true;
+      try {
+        await b.dig(blk, true);
+        done++;
+        this.busyLook = false;
+        await sleep(300);
+        await this.pickup({ x: p.x + 0.5, y: p.y, z: p.z + 0.5, radius: 2.5 }, tok);   // семена из этого же куста
+        await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 15000);
+        this.busyLook = true;
+        const soil = b.blockAt(p.offset(0, -1, 0));
+        const s = b.inventory.items().find((x) => x.name === seed);
+        if (s && soil && /farmland|soul_sand/.test(soil.name) && b.blockAt(p).name === 'air') {
+          await b.equip(s, 'hand');
+          await b.placeBlock(soil, new Vec3(0, 1, 0));
+          replanted++;
+        }
+      } catch (e) { if (e instanceof Cancelled) throw e; } finally { this.busyLook = false; }
+    }
+    await this.pickup({ radius: 6 }, tok);
+    return done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет';
+  }
+
   /** Выполнить список действий по порядку. Возвращает итог текстом. */
   async run(actions, label) {
     if (!this.bot || this.status !== 'online') return 'бот не на сервере';
@@ -404,6 +509,9 @@ class TotemBot extends EventEmitter {
           case 'put': r = await this.put(a, tok); break;
           case 'give': r = await this.give(a, tok); break;
           case 'portal': r = await this.portal(a, tok); break;
+          case 'pickup': r = await this.pickup(a, tok); break;
+          case 'recover': r = await this.recover(tok); break;
+          case 'harvest': r = await this.harvest(a, tok); break;
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'follow': done.push(this.follow(a.who)); return done.join('; ');
           case 'stop': this.cancel(); return done.concat('остановился').join('; ');

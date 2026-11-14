@@ -118,6 +118,40 @@ const AGE = (year) => `(async () => {
   return 'ok';
 })()`;
 
+// Модель и режим («Быстро», «Авто», «Мышление») - настоящим меню Qwen, как в тренажёре naparnik/trainer.
+// Пусто - не трогать. Возвращает, что выбрано на странице.
+const PICK = (model, mode) => `(async () => {
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const fire = (el) => { for (const t of ['pointerover','mouseover','pointerenter','mouseenter','pointerdown','mousedown','pointerup','mouseup','click'])
+    el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, { bubbles: !/enter/.test(t), cancelable: true })); };
+  const model = ${JSON.stringify(model || '')}, mode = ${JSON.stringify(mode || '')};
+  const MODES = { auto: /^(авто|auto)/i, think: /^(мышление|think)/i, fast: /^(быстр|fast)/i };
+  const modelNow = () => { const t = document.querySelector('[aria-label="Select Model"]'); return t ? t.textContent.trim() : ''; };
+  const modeNow = () => { const l = document.querySelector('.qwen-thinking-selector .qwen-chat-v2-dropdown-menu-select-label'); return l ? l.textContent.trim() : ''; };
+  let found = true;
+  try {
+    const trigger = document.querySelector('[aria-label="Select Model"]');
+    if (model && trigger && trigger.textContent.trim().toLowerCase() !== model.toLowerCase()) {
+      fire(trigger); await pause(400);
+      const find = () => [...document.querySelectorAll('.wms-list__item')].find((n) => String((n.querySelector('.wms-list__name-info') || {}).textContent).trim().toLowerCase() === model.toLowerCase());
+      const more = document.querySelector('.wms-more-entry__content');
+      if (!find() && more) { fire(more); await pause(500); }
+      const item = find();
+      if (item) { fire(item); await pause(500); } else { found = false; fire(trigger); }
+    }
+    const rx = MODES[mode], mt = document.querySelector('.qwen-thinking-selector .qwen-chat-v2-dropdown-menu-select');
+    if (rx && mt && !rx.test(modeNow())) {
+      fire(mt); await pause(400);
+      const it = [...document.querySelectorAll('.qwen-chat-v2-dropdown-menu-item')].find((n) => rx.test(n.textContent.trim()));
+      if (it) { fire(it); await pause(400); } else fire(mt);
+    }
+  } catch (e) {}
+  return { model: modelNow(), mode: modeNow(), found };
+})()`;
+
+// Ошибки, после которых пробуем следующую модель из списка
+const LIMIT = /limit|лимит|quota|too many|429|exceed|unavailable|недоступ|rate/i;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class QwenBridge {
@@ -149,16 +183,37 @@ class QwenBridge {
    * Отправить text в чат chatId ('' - новый чат). Возвращает { answer, chatId }.
    * Запросы выстраиваются в очередь.
    */
-  ask(chatId, text) {
-    const run = () => this._ask(chatId, text);
+  /** opt: { mode: 'fast'|'auto'|'think'|'', models: ['модель', 'запасная', ...] } */
+  ask(chatId, text, opt = {}) {
+    const run = () => this._askWithFallback(chatId, text, opt);
     const p = this.chain.then(run, run);
     this.chain = p.catch(() => {});
     return p;
   }
 
-  async _ask(chatId, text) {
+  async _askWithFallback(chatId, text, opt) {
+    const models = (opt.models && opt.models.length) ? opt.models : [''];
+    let last;
+    for (let i = 0; i < models.length; i++) {
+      try {
+        return await this._ask(chatId, text, models[i], opt.mode || '');
+      } catch (e) {
+        last = e;
+        if (!LIMIT.test(e.message) || i === models.length - 1) throw e;
+        this.onAttention(`Qwen: модель ${models[i] || '(текущая)'} не ответила (${e.message.slice(0, 80)}), пробую ${models[i + 1]}`);
+      }
+    }
+    throw last;
+  }
+
+  async _ask(chatId, text, model, mode) {
     await this.open(chatId);
     await this.hook();
+    if (model || mode) {
+      const r = await this.wc.executeJavaScript(PICK(model, mode)).catch(() => null);
+      if (r && model && !r.found) throw new Error('модель недоступна: ' + model);
+      this.lastPick = r;
+    }
     let sent = await this.wc.executeJavaScript(SEND(text));
     // Qwen спрашивает возраст: отвечает сам владелец в окне справа, ждём до 10 минут и отправляем снова
     for (let i = 0; sent.age && i < 120; i++) {

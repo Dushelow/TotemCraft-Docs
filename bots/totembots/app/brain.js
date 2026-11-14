@@ -23,11 +23,14 @@ function warmText(cfg, bot) {
 {"act":"give","who":"Ник","item":"white_wool","count":64} - подойти и выбросить игроку под ноги
 {"act":"portal","x":0,"y":64,"z":0} - войти в портал по этим координатам и дождаться перехода
 {"act":"wait","seconds":5} - подождать
+{"act":"pickup","radius":8} - подобрать вещи с земли рядом
+{"act":"recover"} - пойти на место своей смерти и забрать вещи (после смерти бот делает это сам)
+{"act":"harvest","crop":"wheat","radius":16} - собрать спелый урожай рядом и посадить обратно (crop можно не указывать)
 Если ничего делать не нужно, "actions": []. Если не знаешь координат, спроси в "say" и ничего не делай.
 
 Правила:
 1. Хозяева: ${masters}. Только их просьбы с действиями ты выполняешь (ходить, носить, брать, отдавать). Другим игрокам вежливо отказывай в таких просьбах, но болтать с ними можно.
-2. Ты не ломаешь и не ставишь блоки, не дерёшься, команд сервера не пишешь.
+2. Чужие постройки не ломаешь никогда. Ломать можно только урожай (и сразу сажать обратно). С мобами бот дерётся сам, игроков не бьёшь, команд сервера не пишешь.
 3. Не притворяйся, что ты не бот: если кто-то всерьёз спрашивает, бот ли ты, честно скажи, что ты бот-помощник. Сам об этом не объявляй.
 4. Никакого флирта и романтики, на сервере много детей. Не ругайся матом, не груби.
 5. Отвечай в чат, только когда это уместно: к тебе обратились, ты рядом с разговором, или нужно сообщить о задании. На чужие разговоры не встревай, тогда "say": "".
@@ -92,7 +95,8 @@ class Brain {
   }
 
   async warm() {
-    const { answer, chatId } = await this.bridge.ask('', warmText(this.cfg(), this.botCfg));
+    const q = this.cfg().qwen || {};
+    const { answer, chatId } = await this.bridge.ask('', warmText(this.cfg(), this.botCfg), { mode: q.chatMode ?? 'fast', models: q.models || [] });
     this.botCfg.chatId = chatId;
     this.save();
     this.log('чат Qwen прогрет: ' + chatId + ' / ' + String(answer).slice(0, 80));
@@ -109,7 +113,13 @@ class Brain {
       const batch = this.pending.splice(0);
       const msg = batch.map((x) => x.line).join('\n') + `\n[состояние] ${this.body.stateText()}`;
       this.lastAsk = Date.now();
-      const { answer, chatId } = await this.bridge.ask(this.botCfg.chatId, msg);
+      // задание (приказ из панели или просьба хозяина что-то сделать) - режим «для заданий», остальное - «для болтовни»
+      const q = this.cfg().qwen || {};
+      const isPlan = batch.some((x) => /^\[приказ/.test(x.line) || (x.from && this.isMaster(x.from)
+        && /(возьми|принеси|отнеси|отдай|собери|сходи|положи|забери|найди|построй|отведи)/i.test(x.line)));
+      const opt = { mode: isPlan ? (q.planMode ?? 'auto') : (q.chatMode ?? 'fast'), models: q.models || [] };
+      const { answer, chatId } = await this.bridge.ask(this.botCfg.chatId, msg, opt);
+      if (this.bridge.lastPick) this.log(`Qwen: ${this.bridge.lastPick.model} / ${this.bridge.lastPick.mode}`);
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
       this.log('← ' + JSON.stringify(r));

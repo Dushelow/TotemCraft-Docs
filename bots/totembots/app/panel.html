@@ -22,6 +22,7 @@
   button { background: var(--acc); color: #fff; border: 0; border-radius: 6px; padding: 5px 10px; font: inherit; cursor: pointer; }
   button.sec { background: #4e5058; } button.red { background: #a8383b; }
   button:disabled { opacity: .5; cursor: default; }
+  select { background: #1e1f22; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; width: 100%; }
   input, textarea { background: #1e1f22; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; font: inherit; width: 100%; }
   textarea { resize: vertical; }
   label { display: block; margin: 6px 0 2px; color: var(--muted); font-size: 12px; }
@@ -50,6 +51,11 @@
       <label>Адрес сервера</label><input id="host">
       <label>Порт</label><input id="port">
       <label>Хозяева (ники через запятую, первый - вы): только их приказы с действиями бот выполняет</label><input id="masters">
+      <label>Режим Qwen для болтовни</label>
+      <select id="chatMode"><option value="fast">Быстро</option><option value="auto">Авто</option><option value="think">Мышление</option><option value="">Как выбрано в Qwen</option></select>
+      <label>Режим Qwen для заданий</label>
+      <select id="planMode"><option value="auto">Авто</option><option value="think">Мышление</option><option value="fast">Быстро</option><option value="">Как выбрано в Qwen</option></select>
+      <label>Модели Qwen по порядку через запятую: первая основная, дальше запасные на случай лимита (пусто - как выбрано в Qwen)</label><input id="models" placeholder="например Qwen3.7-Plus, Qwen3.5-Flash">
       <label>Ваш год рождения: им программа сама отвечает, когда Qwen спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
       <div class="row" style="margin-top:8px"><button id="saveSettings">Сохранить</button></div>
     </details>
