@@ -252,6 +252,58 @@ class QwenBridge {
     this.onAttention('Qwen спросил возраст, ответил годом из настроек: ' + r);
   }
 
+
+  /** Настоящий щелчок отладчиком (некоторые кнопки Qwen не реагируют на события из скрипта), сквозь заглушку. */
+  async clickTrusted(expr) {
+    this.attachDebugger();
+    const b = await this.wc.executeJavaScript(`(() => { const el = ${expr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`).catch(() => null);
+    if (!b) return false;
+    await this.passThrough(true);
+    try {
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) await this.wc.debugger.sendCommand('Input.dispatchMouseEvent', { type, x: b.x, y: b.y, button: 'left', clickCount: 1 });
+    } finally { await this.passThrough(false); }
+    return true;
+  }
+
+  /**
+   * Распознать речь (PCM 48 кГц моно 16 бит) голосовым вводом Qwen: вместо микрофона странице подаётся этот звук.
+   * Сообщение не отправляется: текст берётся из поля ввода, поле очищается. В общей очереди с вопросами.
+   */
+  transcribe(pcm) { return this.exclusive(() => this._transcribe(pcm)); }
+
+  async _transcribe(pcm) {
+    const dur = pcm.length / 2 / 48000;
+    if (dur < 0.3) return '';
+    const hasInput = await this.wc.executeJavaScript(`!!document.querySelector('[aria-label="Voice Input"]')`).catch(() => false);
+    if (!hasInput) { await this.wc.loadURL(`${ORIGIN}/`); await this.hook(); for (let i = 0; i < 40; i++) { if (await this.wc.executeJavaScript(`!!document.querySelector('[aria-label="Voice Input"]')`).catch(() => false)) break; await sleep(250); } }
+    await this.wc.executeJavaScript(`(() => {
+      const raw = atob(${JSON.stringify(pcm.toString('base64'))}); const n = raw.length >> 1; const f = new Float32Array(n);
+      for (let i = 0; i < n; i++) { let v = raw.charCodeAt(2 * i) | (raw.charCodeAt(2 * i + 1) << 8); if (v > 32767) v -= 65536; f[i] = v / 32768; }
+      const ta = document.querySelector('textarea.message-input-textarea');
+      window.__tbKeep = ta ? ta.value : '';
+      navigator.mediaDevices.getUserMedia = async () => {
+        const ctx = new AudioContext({ sampleRate: 48000 });
+        const buf = ctx.createBuffer(1, f.length, 48000); buf.getChannelData(0).set(f);
+        const src = ctx.createBufferSource(); src.buffer = buf;
+        const dst = ctx.createMediaStreamDestination(); src.connect(dst);
+        setTimeout(() => src.start(), 300);
+        return dst.stream;
+      };
+      return 1;
+    })()`);
+    if (!await this.clickTrusted(`document.querySelector('[aria-label="Voice Input"]')`)) throw new Error('нет кнопки голосового ввода Qwen');
+    await sleep(dur * 1000 + 900);
+    await this.clickTrusted(`document.querySelector('.button-confirm, [aria-label="Confirm"]')`);
+    let text = '';
+    for (let i = 0; i < 40 && !text; i++) {
+      await sleep(250);
+      text = await this.wc.executeJavaScript(`(() => { const ta = document.querySelector('textarea.message-input-textarea'); const v = ta ? ta.value : ''; return v && v !== window.__tbKeep ? v.slice((window.__tbKeep || '').length).trim() : ''; })()`).catch(() => '');
+    }
+    // поле - как было (распознанное не отправляем)
+    await this.wc.executeJavaScript(`(() => { const ta = document.querySelector('textarea.message-input-textarea'); if (ta) { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, window.__tbKeep || ''); ta.dispatchEvent(new Event('input', { bubbles: true })); } return 1; })()`).catch(() => {});
+    return text;
+  }
+
   /** Всё, что программа делает в окне Qwen, - по очереди и под заглушкой. */
   exclusive(fn) {
     const run = async () => {

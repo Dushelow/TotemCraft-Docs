@@ -52,6 +52,7 @@ class Attention {
     const inConvo = (this.convo.get(m.from) || 0) > now && (near || m.channel === 'whisper');
     let kind;
     if (m.channel === 'whisper') kind = 'address';
+    else if (m.channel === 'voice') kind = (mention || inConvo || m.master || this.mode !== 'quiet') ? 'address' : 'near';   // голос рядом слышен как живой
     else if (mention) kind = 'address';
     else if (this.mode === 'quiet') kind = near ? 'near' : 'background';
     else if (inConvo) kind = 'address';
@@ -77,7 +78,7 @@ class Attention {
   /** Канал ответа: личка - туда же; ближний - ближний; общий - общий, но не чаще раза в 20 с (иначе ближний). */
   replyChannel(channels, to) {
     if (channels.includes('whisper') && to) return { channel: 'whisper', to };
-    if (channels.includes('local')) return { channel: 'local' };
+    if (channels.includes('local') || channels.includes('voice')) return { channel: 'local' };
     if (channels.includes('global')) {
       if (Date.now() - this.lastGlobalReply < GLOBAL_REPLY_MS) return { channel: 'local' };
       this.lastGlobalReply = Date.now();

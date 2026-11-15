@@ -120,6 +120,16 @@ class Brain {
     this.attn = new Attention(botCfg.name, { mode: botCfg.chatMode || 'normal', aliases: botCfg.aliases || [] });
     this.onBackground = () => {};   // общий журнал фона (main.js) - туда весь неважный общий чат
     body.on('player-chat', (m) => this.onChat(m));
+    // уши: фраза игрока рядом в Plasmo Voice -> текст голосовым вводом Qwen -> как реплика рядом
+    body.on('speech', ({ from, pcm }) => {
+      if (!this.bridge.transcribe) return;
+      this.log(`слышу голос ${from} (${(pcm.length / 96000).toFixed(1)} с)`);
+      this.bridge.transcribe(pcm).then((text) => {
+        if (!text) { this.log('голос не разобрал'); return; }
+        this.log(`[голос] ${from}: ${text}`);
+        this.onChat({ from, text, channel: 'voice' });
+      }).catch((e) => this.log('распознавание: ' + e.message));
+    });
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
   }
 
@@ -137,7 +147,7 @@ class Brain {
     let at = e ? `, стоит на ${Math.floor(e.position.x)} ${Math.floor(e.position.y)} ${Math.floor(e.position.z)}` : '';
     const pt = e ? this.body.pointing(from) : '';
     if (pt) at += ', ' + pt;
-    const label = { whisper: 'личка', local: 'рядом', global: 'общий' }[ch];
+    const label = { whisper: 'личка', local: 'рядом', global: 'общий', voice: 'голос рядом' }[ch];
     const where = (dist !== null ? `${dist} бл. от тебя` : 'далеко') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
     this.push(`[чат ${label}] ${from}${role} (${where}): ${text}`, true, from, ch);

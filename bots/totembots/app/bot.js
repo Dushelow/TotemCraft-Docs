@@ -56,6 +56,17 @@ class TotemBot extends EventEmitter {
     const bot = this.bot = mineflayer.createBot({ host, port, username: name, version: VERSION, auth: 'offline', hideErrors: true });
     bot.loadPlugin(pathfinder);
     bot._client.on('show_dialog', (d) => this.onDialog(d));
+    // Уши: аддон TotemVoiceAddon присылает речь игроков рядом по каналу totem:ears ([1]+ник, [2]+PCM 48 кГц, [3]).
+    // Канал надо объявить серверу (minecraft:register), иначе Bukkit не пришлёт.
+    bot.once('login', () => { try { bot._client.write('custom_payload', { channel: 'minecraft:register', data: Buffer.from('totem:ears') }); } catch {} });
+    let heard = null;
+    bot._client.on('custom_payload', (p) => {
+      if (p.channel !== 'totem:ears' || !p.data || !p.data.length) return;
+      const t = p.data[0];
+      if (t === 1) heard = { from: p.data.subarray(1).toString('utf8'), parts: [] };
+      else if (t === 2 && heard) heard.parts.push(Buffer.from(p.data.subarray(1)));
+      else if (t === 3 && heard) { const h = heard; heard = null; this.emit('speech', { from: h.from, pcm: Buffer.concat(h.parts) }); }
+    });
     // Отбрасывание: с 1.21.9 скорость в пакете уже в блоках за тик (minecraft-data так и раскладывает: -0.4, 0.36),
     // а mineflayer делит её ещё на 8000 по старому формату - бот не отлетал, Vulcan отмечал Velocity (стенд 15.11).
     // Обработчик ставим после входа: модули mineflayer подключаются позже createBot, и их обработчик иначе сработал бы последним.

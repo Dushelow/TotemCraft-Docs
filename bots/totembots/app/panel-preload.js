@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('totem', {
   botPersona: call('bot-persona'),
   botStart: call('bot-start'),
   botMap: call('bot-map'),
+  debugHear: call('debug-hear'),
   botChatMode: call('bot-chatmode'),
   backgroundNow: call('background-now'),
   botNewPass: call('bot-newpass'),
