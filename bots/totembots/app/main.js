@@ -10,6 +10,7 @@ const { QwenBridge } = require('./qwen-bridge');
 const { TotemBot } = require('./bot');
 const { Brain, DEFAULT_PERSONA } = require('./brain');
 const { Voice, PIPER_VOICES } = require('./voice');
+const { Memory } = require('./memory');
 
 const PANEL_WIDTH = 440;
 const QWEN_URL = 'https://chat.qwen.ai/';
@@ -18,10 +19,11 @@ const QWEN_URL = 'https://chat.qwen.ai/';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
-let win, qwen, bridge, voice;
+let win, qwen, bridge, voice, memory;
 
 // --- настройки
-const cfgPath = () => path.join(app.getPath('userData'), 'config.json');
+// TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
+const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(app.getPath('userData'), 'config.json');
 let cfg = { host: '127.0.0.1', port: 25566, masters: ['Valghard'], bots: [], qwen: { chatMode: 'fast', planMode: 'auto', models: [] } };
 function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
@@ -59,6 +61,9 @@ function startBot(name) {
   body.on('end', () => logTo(name, 'бот выключен'));
   const brain = new Brain({ body, bridge, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
   brain.voice = voice;
+  brain.memory = memory;
+  body.memory = memory;
+  body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
   body.start();
 }
@@ -225,7 +230,7 @@ ipcMain.handle('chat-rewarm', async (_e, name) => {
   if (!l || !l.brain) {   // бот не запущен - прогреть всё равно можно
     const tmp = new Brain({ body: { on() {} }, bridge, cfg: () => cfg, botCfg: b, save: saveCfg, log: (t) => logTo(name, t) });
     if (!live.get(name)) live.set(name, { log: [] });
-    await tmp.warm(b.chatId || '');
+    try { await tmp.warm(b.chatId || ''); } finally { tmp.stop(); }
     return true;
   }
   await l.brain.warm(b.chatId || '');
@@ -263,7 +268,7 @@ ipcMain.handle('qwen-login-chrome', async () => {
   }
 });
 
-app.whenReady().then(() => { loadCfg(); Menu.setApplicationMenu(null); createWindow(); });
+app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); Menu.setApplicationMenu(null); createWindow(); });
 app.on('window-all-closed', () => {
   for (const l of live.values()) if (l.body) l.body.stop();
   setTimeout(() => app.quit(), 300);

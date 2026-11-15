@@ -95,8 +95,10 @@ const AGE = (year) => `(async () => {
   const title = [...document.querySelectorAll('div, h1, h2, h3, p, span')].find((n) => n.childElementCount === 0
     && /confirm your age|verify your age|подтвердите свой возраст/i.test(n.textContent) && n.getBoundingClientRect().width > 0);
   if (!title) return 'нет окна';
+  // окно целиком: поднимаемся, пока внутри не окажется именно кнопка «Continue» (а не крестик в шапке)
+  const isGo = (b) => /continue|продолжить|подтвердить|confirm/i.test(b.textContent);
   let box = title;
-  while (box.parentElement && !box.querySelector('button')) box = box.parentElement;
+  while (box.parentElement && ![...box.querySelectorAll('button')].some(isGo)) box = box.parentElement;
   const y = ${JSON.stringify(String(year))};
   const sel = box.querySelector('select');
   if (sel) {
@@ -112,7 +114,7 @@ const AGE = (year) => `(async () => {
       opt.scrollIntoView({ block: 'center' }); fire(opt); await pause(400);
     }
   }
-  const btn = [...box.querySelectorAll('button')].find((b) => /continue|продолжить|подтвердить|confirm/i.test(b.textContent));
+  const btn = [...box.querySelectorAll('button')].find(isGo);
   if (!btn) return 'не нашёл кнопку';
   fire(btn); await pause(1000);
   return 'ok';
@@ -194,6 +196,15 @@ class QwenBridge {
     this.birthYear = () => '';
     this.chain = Promise.resolve();
     this.wc.on('dom-ready', () => this.hook().catch(() => {}));
+    // окно возраста может выскочить когда угодно (при загрузке, после ответа): проверяем раз в 20 с
+    this.ageTimer = setInterval(() => this.checkAge().catch(() => {}), 20000);
+  }
+
+  async checkAge() {
+    const year = this.birthYear();
+    if (!year || this.wc.isDestroyed()) return;
+    const r = await this.wc.executeJavaScript(AGE(year));
+    if (r !== 'нет окна') this.onAttention('Qwen спросил возраст, ответил годом из настроек: ' + r);
   }
 
   hook() { return this.wc.executeJavaScript(HOOK); }

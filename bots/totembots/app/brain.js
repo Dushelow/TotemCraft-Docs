@@ -31,10 +31,21 @@ function warmText(cfg, bot) {
 {"act":"pickup","radius":8} - подобрать вещи с земли рядом
 {"act":"recover"} - пойти на место своей смерти и забрать вещи (после смерти бот делает это сам)
 {"act":"harvest","crop":"wheat","radius":16} - собрать спелый урожай рядом и посадить обратно (crop можно не указывать)
+{"act":"goto_place","name":"склад"} - пойти к месту из памяти
+{"act":"remember","kind":"place","name":"склад","note":"сундуки хозяина"} - запомнить место (без x y z - там, где стоишь; можно дать x y z)
+{"act":"remember","kind":"person","name":"Ник","note":"кто это, что любит, о чём договорились"} - запомнить про человека
+{"act":"remember","kind":"fact","text":"..."} - запомнить факт о сервере или мире
+{"act":"remember","kind":"journal","text":"..."} - записать в свой дневник (что было, что чувствуешь, что задумал)
+{"act":"forget","kind":"place","name":"склад"} - забыть (kind: place, person, fact)
+
+Память: я присылаю блок [память] с местами, людьми, фактами и твоим дневником, когда он меняется. Запоминай САМ, без
+просьб, всё, что пригодится потом: новые места, людей и их просьбы, договорённости, интересные события. Ты живой
+персонаж: у тебя есть свои интересы и настроение, ты можешь сам предложить заняться чем-то, пошутить, рассказать,
+что видел. Когда приходит [тишина], реши сам, чем заняться (в рамках правил), или просто отдохни (actions пустой).
 Если ничего делать не нужно, "actions": []. Если не знаешь координат, спроси в реплике и ничего не делай.
 
 Правила:
-1. Хозяева: ${masters}. Только их просьбы с действиями ты выполняешь (ходить, носить, брать, отдавать). Другим игрокам вежливо отказывай в таких просьбах, но болтать с ними можно.
+1. Хозяева: ${masters}. Только их просьбы с вещами и сундуками ты выполняешь (взять, положить, отдать). Другим игрокам вежливо отказывай в таких просьбах, но болтать с ними, запоминать их и ходить рядом можно. По своей воле вещи из сундуков не берёшь.
 2. Чужие постройки не ломаешь никогда. Ломать можно только урожай (и сразу сажать обратно). С мобами бот дерётся сам, игроков не бьёшь, команд сервера не пишешь.
 3. Не притворяйся, что ты не бот: если кто-то всерьёз спрашивает, бот ли ты, честно скажи, что ты бот-помощник. Сам об этом не объявляй.
 4. Никакого флирта и романтики, на сервере много детей. Не ругайся матом, не груби.
@@ -71,6 +82,7 @@ function parseAnswer(text) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const hash = (t) => require('crypto').createHash('sha1').update(t).digest('hex').slice(0, 12);
 
 class Brain {
   /** cfg() - текущие настройки ({ masters }), botCfg - запись бота (name, persona, chatId), save() - сохранить chatId */
@@ -80,6 +92,11 @@ class Brain {
     this.busy = false;
     this.lastAsk = 0;
     this.taskFrom = '';
+    this.lastEvent = Date.now();
+    this.sentDigest = -1;
+    this.sinceDigest = 0;
+    this.idleTimer = setInterval(() => this.idle(), 30000);
+    body.on('end', () => {});
 
     body.on('player-chat', (m) => this.onChat(m));
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
@@ -104,7 +121,19 @@ class Brain {
     this.push(`[приказ хозяина ${owner} из панели] ${text}`, true, owner);
   }
 
+  // Инициатива: долго тихо - бот сам решает, чем заняться
+  idle() {
+    const ini = this.cfg().initiative || { enabled: true, minutes: 4 };
+    if (!ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy) return;
+    if (Date.now() - this.lastEvent < (ini.minutes || 4) * 60000) return;
+    const mins = Math.round((Date.now() - this.lastEvent) / 60000);
+    this.push(`[тишина] уже ${mins} мин ничего не происходит. Чем займёшься? Можно ничего.`, true, '@self');
+  }
+
+  stop() { clearInterval(this.idleTimer); }
+
   push(line, wake, from = '') {
+    this.lastEvent = Date.now();
     this.pending.push({ line, from });
     this.log('→ ' + line);
     if (wake) this.pump();
@@ -113,7 +142,10 @@ class Brain {
   /** Прогрев: вводная в новый чат (into = '') или повтор вводной в текущем (после смены характера). */
   async warm(into = '') {
     const q = this.cfg().qwen || {};
-    const { answer, chatId } = await this.bridge.ask(into, warmText(this.cfg(), this.botCfg), { mode: q.chatMode ?? 'fast', models: q.models || [] });
+    const text = warmText(this.cfg(), this.botCfg);
+    const head = into ? '[обновлённая вводная, она заменяет прежнюю]\n' : '';
+    const { answer, chatId } = await this.bridge.ask(into, head + text, { mode: q.chatMode ?? 'fast', models: q.models || [] });
+    this.botCfg.warmHash = hash(text);
     this.botCfg.chatId = chatId;
     this.save();
     this.log('чат Qwen прогрет: ' + chatId + ' / ' + String(answer).slice(0, 80));
@@ -127,8 +159,16 @@ class Brain {
       if (wait > 0) await sleep(wait);
       await sleep(800);   // подождать, вдруг допишут ещё
       if (!this.botCfg.chatId) await this.warm();
+      // вводная изменилась (обновление программы, характер, хозяева) - повторить её в этом же чате
+      else if (this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg))) await this.warm(this.botCfg.chatId);
       const batch = this.pending.splice(0);
-      const msg = batch.map((x) => x.line).join('\n') + `\n[состояние] ${this.body.stateText()}`;
+      let msg = batch.map((x) => x.line).join('\n') + `\n[состояние] ${this.body.stateText()}`;
+      // память: целиком, когда изменилась, и раз в 25 сообщений, чтобы не забывалась в длинном чате
+      const mem = this.memory;
+      if (mem && (this.sentDigest !== mem.version || ++this.sinceDigest >= 25)) {
+        msg += '\n' + mem.digest(this.botCfg.name);
+        this.sentDigest = mem.version; this.sinceDigest = 0;
+      }
       this.lastAsk = Date.now();
       // задание (приказ из панели или просьба хозяина что-то сделать) - режим «для заданий», остальное - «для болтовни»
       const q = this.cfg().qwen || {};
@@ -140,17 +180,23 @@ class Brain {
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
       this.log('← ' + JSON.stringify(r));
-      // кто просил: последний автор с правами в пачке
-      const master = [...batch].reverse().find((x) => x.from && this.isMaster(x.from));
+      // кто просил: последний автор с правами в пачке; '@self' - бот сам (инициатива)
+      const master = [...batch].reverse().find((x) => x.from && x.from !== '@self' && this.isMaster(x.from));
+      const self = batch.some((x) => x.from === '@self');
       if (r.say && this.voice) this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
       if (r.say) await this.typeAndSay(r.say);
       if (r.actions.length) {
-        const touching = r.actions.filter((a) => a && a.act && a.act !== 'stop');
-        if (touching.length && !master) {
-          this.log('действия отклонены: просил не хозяин');
-        } else {
-          this.runActions(r.actions, master ? master.from : '');
-        }
+        // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
+        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover']);
+        const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
+        const notFromMaster = !master;
+        // чужие просьбы не двигают бота дальше «подойти» и не перезаписывают места
+        const allowed = notFromMaster
+          ? r.actions.filter((a) => a && a.act && FREE.has(a.act) && (self || ['remember', 'stop', 'come', 'follow'].includes(a.act))
+            && !(a.act === 'remember' && (a.kind || 'place') === 'place' && !self))
+          : r.actions;
+        if (NEED_MASTER.length && notFromMaster) this.log('отклонено (нужен хозяин): ' + NEED_MASTER.map((a) => a.act).join(', '));
+        if (allowed.length) this.runActions(allowed, master ? master.from : self ? 'сам' : '');
       }
     } catch (e) {
       this.log('Qwen: ' + e.message);
@@ -173,8 +219,8 @@ class Brain {
     const result = await this.body.run(actions, label);
     if (!result) return;
     this.log('итог: ' + result);
-    // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop - сразу, без отчёта
-    if (actions.some((a) => !['follow', 'stop'].includes(a.act))) this.push(`[итог задания от ${from || 'хозяина'}] ${result}`, true, '');
+    // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop/remember - без отчёта
+    if (actions.some((a) => !['follow', 'stop', 'remember', 'forget'].includes(a.act))) this.push(`[итог задания (${from || 'хозяин'})] ${result}`, true, '');
   }
 }
 

@@ -86,6 +86,7 @@ class TotemBot extends EventEmitter {
       this.deathPoint = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim: bot.game.dimension, at: Date.now() };
       this.resumeFollow = this.followName || this.resumeFollow;
       this.log(`умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z}`);
+      if (this.memory) this.memory.journal(this.opts.name, `умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z} (${this.dimName()})`);
       this.cancel();
       // после возрождения (spawn) - забрать вещи, как waypoint смерти в Baritone
       bot.once('spawn', () => setTimeout(() => this.afterDeath().catch(() => {}), 2500));
@@ -262,6 +263,7 @@ class TotemBot extends EventEmitter {
         try { await b.equip(food, 'hand'); await b.consume(); } catch {} finally { this.eating = false; }
       }
     }
+    this.notice().catch(() => {});
     // компаньон: потерял из виду - сказать один раз
     if (this.mode === 'follow') {
       if (!owner) {
@@ -270,6 +272,34 @@ class TotemBot extends EventEmitter {
         this.lostReported = false;
         b.pathfinder.setGoal(new goals.GoalFollow(owner, rnd(2.2, 3.5)), true);
       }
+    }
+  }
+
+  // Сам замечает и запоминает: порталы рядом, новых игроков. Раз в 10 с, дёшево.
+  async notice() {
+    const b = this.bot, m = this.memory;
+    if (!m || !b || !b.entity) return;
+    const t = Date.now();
+    if (t - (this.noticedAt || 0) < 10000) return;
+    this.noticedAt = t;
+    const me = b.entity.position, dim = this.dimName();
+    const portal = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 24 });
+    if (portal) {
+      const p = portal.position;
+      const known = Object.values(m.data.places).some((x) => x.dim === dim && Math.hypot(x.x - p.x, x.y - p.y, x.z - p.z) < 12);
+      if (!known) {
+        const r = m.place({ name: `портал ${dim === 'Незер' ? 'в Незере' : 'в обычном мире'} ${p.x} ${p.z}`, x: p.x, y: p.y, z: p.z, dim, note: 'нашёл сам' }, this.opts.name);
+        this.log(r);
+        this.event(`ты нашёл портал в Незер: ${p.x} ${p.y} ${p.z} (${dim}), запомнил`, false);
+      }
+    }
+    this.met = this.met || new Set();
+    for (const pl of Object.values(b.players)) {
+      if (!pl.entity || pl.username === b.username || this.met.has(pl.username)) continue;
+      if (pl.entity.position.distanceTo(me) > 16) continue;
+      this.met.add(pl.username);
+      const where = m.nearestPlace(me, dim);
+      m.journal(this.opts.name, `встретил ${pl.username}${where ? ' у места «' + where.name + '»' : ''}`);
     }
   }
 
@@ -479,6 +509,21 @@ class TotemBot extends EventEmitter {
     return done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет';
   }
 
+  /** remember: place (без координат - где стою), person, fact. */
+  remember(a, by) {
+    const m = this.memory;
+    if (!m) return 'памяти нет';
+    const who = this.opts.name + (by ? ` (${by})` : '');
+    const kind = a.kind || (a.text ? 'fact' : a.note && !a.x ? 'person' : 'place');
+    if (kind === 'place') {
+      const p = this.bot.entity.position;
+      return m.place({ name: a.name, x: a.x ?? Math.floor(p.x), y: a.y ?? Math.floor(p.y), z: a.z ?? Math.floor(p.z), dim: a.dim || this.dimName(), note: a.note }, who);
+    }
+    if (kind === 'person') return m.person(a, who);
+    if (kind === 'journal' || kind === 'thought') { m.journal(this.opts.name, a.text); return 'записал в дневник'; }
+    return m.fact(a, who);
+  }
+
   /** Выполнить список действий по порядку. Возвращает итог текстом. */
   async run(actions, label) {
     if (!this.bot || this.status !== 'online') return 'бот не на сервере';
@@ -512,6 +557,16 @@ class TotemBot extends EventEmitter {
           case 'pickup': r = await this.pickup(a, tok); break;
           case 'recover': r = await this.recover(tok); break;
           case 'harvest': r = await this.harvest(a, tok); break;
+          case 'remember': r = this.remember(a, label); break;
+          case 'forget': r = this.memory ? this.memory.forget(a) : 'памяти нет'; break;
+          case 'goto_place': {
+            const pl = this.memory && this.memory.findPlace(a.name);
+            if (!pl) throw new Error(`не знаю места «${a.name}»`);
+            if (pl.dim !== this.dimName()) throw new Error(`место «${pl.name}» в другом измерении (${pl.dim}), туда через портал`);
+            await this.goto(new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
+            r = `пришёл к месту «${pl.name}»`;
+            break;
+          }
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'follow': done.push(this.follow(a.who)); return done.join('; ');
           case 'stop': this.cancel(); return done.concat('остановился').join('; ');

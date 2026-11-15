@@ -1,3 +1,4 @@
 node_modules/
 dist/
 test/.test_chat
+test/.data/

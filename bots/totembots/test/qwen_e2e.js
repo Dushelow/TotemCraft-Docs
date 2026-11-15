@@ -1,7 +1,8 @@
 // Полная проверка на стенде tc-up: программа TotemBots (с Qwen) ведёт бота TbAlex, тестовый хозяин TbOwner пишет ему.
 // Программа запускается с портом отладки 9223, кнопки панели жмём через window.totem.* (как человек в панели).
-// Настройки программы тест подменяет сам (бот TbAlex, стенд, хозяин TbOwner) и возвращает владельцу в конце.
-// Разговор идёт в одном постоянном тестовом чате Qwen (id в test/.test_chat, не в git), чтобы не плодить чаты.
+// Настройки и память у теста свои (test/.data/, не в git): программа получает их через TOTEMBOTS_CONFIG и
+// TOTEMBOTS_MEMORY, файл настроек владельца не трогается. Вход в Qwen общий (профиль программы).
+// Разговор идёт в одном постоянном тестовом чате Qwen (сохраняется в test/.data/config.json), чтобы не плодить чаты.
 // Запуск: node test/qwen_e2e.js [--voice]
 const { spawn, execSync } = require('child_process');
 const path = require('path');
@@ -12,23 +13,32 @@ const rcon = (c) => execSync(`docker exec tc-up rcon-cli "${c.replace(/"/g, '\\"
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const X = 1300, Y = 150, Z = 1300;
 const fs = require('fs');
-const CFG = path.join(process.env.APPDATA, 'totembots', 'config.json');
-const CHAT = path.join(__dirname, '.test_chat');
-const userCfg = fs.existsSync(CFG) ? fs.readFileSync(CFG, 'utf8') : null;
-function useTestConfig() {
-  const u = userCfg ? JSON.parse(userCfg) : {};
-  const chatId = fs.existsSync(CHAT) ? fs.readFileSync(CHAT, 'utf8').trim() : '';
-  fs.writeFileSync(CFG, JSON.stringify({ host: '127.0.0.1', port: 25566, masters: ['TbOwner'], birthYear: u.birthYear || '',
-    qwen: u.qwen || { chatMode: 'fast', planMode: 'auto', models: [] },
-    voice: { ...(u.voice || {}), enabled: process.argv.includes('--voice'), local: false },
-    bots: [{ name: 'TbAlex', password: 'Tb12345x', persona: '', chatId }] }, null, 2));
+const DATA = path.join(__dirname, '.data');
+const CFG = path.join(DATA, 'config.json');
+const MEM = path.join(DATA, 'memory');
+function testConfig() {
+  fs.mkdirSync(MEM, { recursive: true });
+  const old = fs.existsSync(CFG) ? JSON.parse(fs.readFileSync(CFG, 'utf8')) : {};
+  const oldBot = (old.bots || [])[0] || {};
+  const legacy = path.join(__dirname, '.test_chat');   // прежнее место id тестового чата
+  const chatId = oldBot.chatId || (fs.existsSync(legacy) ? fs.readFileSync(legacy, 'utf8').trim() : '');
+  // год рождения для окна возраста Qwen берём из настроек владельца (только чтение)
+  let year = '';
+  try { year = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, 'totembots', 'config.json'), 'utf8')).birthYear || ''; } catch {}
+  fs.writeFileSync(CFG, JSON.stringify({ host: '127.0.0.1', port: 25566, masters: ['TbOwner'], birthYear: year,
+    qwen: old.qwen || { chatMode: 'fast', planMode: 'auto', models: [] },
+    voice: { ...(old.voice || {}), enabled: process.argv.includes('--voice'), local: false },
+    bots: [{ ...oldBot, name: 'TbAlex', password: 'Tb12345x', persona: '', chatId }] }, null, 2));
+  if (process.argv.includes('--fresh-memory')) fs.rmSync(MEM, { recursive: true, force: true });
 }
-function restoreConfig() {
-  try { const t = JSON.parse(fs.readFileSync(CFG, 'utf8')); if (t.bots[0].chatId) fs.writeFileSync(CHAT, t.bots[0].chatId); } catch {}
-  if (userCfg !== null) fs.writeFileSync(CFG, userCfg);
+testConfig();
+// своё окно программы закрываем по номеру процесса; если у владельца программа открыта - не мешаем ей
+let appPid = 0;
+function killApp() { if (appPid) { try { execSync('taskkill /F /T /PID ' + appPid, { stdio: 'ignore' }); } catch {} } }
+if (/electron.exe/i.test(execSync('tasklist /FI "IMAGENAME eq electron.exe"').toString())) {
+  console.log('Программа TotemBots уже открыта (у владельца): тест не запускаю, чтобы не мешать ей. Закройте её и повторите.');
+  process.exit(2);
 }
-process.on('exit', restoreConfig);
-useTestConfig();
 
 async function panel() {
   for (let i = 0; i < 60; i++) {
@@ -67,7 +77,8 @@ async function panel() {
   rcon(`tp TbOwner ${X} ${Y} ${Z - 8}`);
 
   const app = spawn(path.join(__dirname, '..', 'node_modules', '.bin', 'electron.cmd'), ['.', '--remote-debugging-port=9223'],
-    { cwd: path.join(__dirname, '..'), shell: true, stdio: 'ignore' });
+    { cwd: path.join(__dirname, '..'), shell: true, stdio: 'ignore', env: { ...process.env, TOTEMBOTS_CONFIG: CFG, TOTEMBOTS_MEMORY: DATA } });
+  appPid = app.pid;
   const ev = await panel();
   await sleep(4000);
   console.log('Qwen:', JSON.stringify(await ev('window.totem.qwenState()')));
@@ -105,11 +116,30 @@ async function panel() {
   await sleep(40000);
   await showLog(6);
 
+  console.log('\n== 5. память: запомнить склад');
+  rcon(`tp TbOwner ${X + 8} ${Y} ${Z}`);
+  await sleep(4000);
+  owner.chat('TbAlex запомни, вот тут у сундука мой склад');
+  await sleep(40000);
+  await showLog(5);
+  const memFile = path.join(MEM, 'totemcraft.json');
+  const mem = JSON.parse(fs.readFileSync(memFile, 'utf8'));
+  console.log('места в памяти:', JSON.stringify(Object.values(mem.places).map((p) => `${p.name} ${p.x} ${p.y} ${p.z}`)));
+
+  console.log('\n== 6. сходи к складу (из другого места)');
+  rcon('tp TbOwner 1285 150 1285');
+  rcon('tp TbAlex 1287 150 1285');
+  await sleep(4000);
+  owner.chat('TbAlex сходи к складу и подожди меня там');
+  await sleep(50000);
+  await showLog(5);
+  console.log('бот сейчас:', rcon('data get entity TbAlex Pos').replace(/.*: /, ''));
+
   await ev('window.totem.botStop("TbAlex")');
   owner.quit();
   await sleep(1500);
   app.kill();
-  try { execSync('taskkill /F /IM electron.exe /T', { stdio: 'ignore' }); } catch {}
+  killApp();
   rcon(`forceload remove ${X - 32} ${Z - 32} ${X + 32} ${Z + 32}`);
   process.exit(0);
-})().catch((e) => { console.error(e); try { execSync('taskkill /F /IM electron.exe /T', { stdio: 'ignore' }); } catch {} process.exit(1); });
+})().catch((e) => { console.error(e); killApp(); process.exit(1); });
