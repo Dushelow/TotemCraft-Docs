@@ -44,35 +44,43 @@ function cdp(wsUrl) {
   });
 }
 
-async function qwenPage() {
+// сайты: где войти, какой ключ в localStorage - признак входа (Qwen - token, DeepSeek - userToken не на странице входа)
+const SITES = {
+  qwen: { url: QWEN, name: 'Qwen', key: 'token', ready: 'localStorage.getItem("token")' },
+  deepseek: { url: 'https://chat.deepseek.com/', name: 'DeepSeek', key: 'userToken',
+    ready: '(!/sign_in|login/.test(location.pathname) && localStorage.getItem("userToken") && localStorage.getItem("userToken").length > 20) ? localStorage.getItem("userToken") : ""' },
+};
+
+async function sitePage(url) {
   const list = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-  return list.find((t) => t.type === 'page' && t.url.startsWith(QWEN));
+  return list.find((t) => t.type === 'page' && t.url.startsWith(url));
 }
 
 /**
  * Открывает Chrome и ждёт входа. onStatus(text) - что показать в панели.
  * Возвращает { cookies, token }. Таймаут 10 минут.
  */
-async function loginViaChrome(profileDir, onStatus) {
+async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
+  const S = SITES[siteId];
   const exe = findChrome();
   if (!exe) throw new Error('Chrome не найден');
   const proc = spawn(exe, [`--user-data-dir=${profileDir}`, `--remote-debugging-port=${PORT}`,
-    '--no-first-run', '--no-default-browser-check', '--new-window', QWEN], { detached: false, stdio: 'ignore' });
+    '--no-first-run', '--no-default-browser-check', '--new-window', S.url], { detached: false, stdio: 'ignore' });
   try {
-    onStatus('Войдите в Qwen в открывшемся окне Chrome');
+    onStatus(`Войдите в ${S.name} в открывшемся окне Chrome`);
     const until = Date.now() + 10 * 60 * 1000;
     while (Date.now() < until) {
       await sleep(2000);
       if (proc.exitCode !== null) throw new Error('Chrome закрыли до входа');
       let page;
-      try { page = await qwenPage(); } catch { continue; }
+      try { page = await sitePage(S.url); } catch { continue; }
       if (!page) continue;
       const c = await cdp(page.webSocketDebuggerUrl);
       try {
-        const r = await c.send('Runtime.evaluate', { expression: 'localStorage.getItem("token")', returnByValue: true });
+        const r = await c.send('Runtime.evaluate', { expression: S.ready, returnByValue: true });
         const token = r.result && r.result.value;
         if (!token) continue;
-        const { cookies } = await c.send('Network.getCookies', { urls: [QWEN] });
+        const { cookies } = await c.send('Network.getCookies', { urls: [S.url] });
         onStatus('Вход получен, закрываю Chrome');
         return { cookies, token };
       } finally {

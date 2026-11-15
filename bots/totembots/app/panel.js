@@ -307,6 +307,7 @@ $('srvRu').onclick = () => { $('host').value = 'ru.totemcraft.net'; $('port').va
 
 $('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }));
 $('add').onclick = () => act(async () => { await T.botAdd({ name: $('newName').value, persona: $('newPersona').value }); selected = $('newName').value.trim(); $('newName').value = ''; $('newPersona').value = ''; lastHtml = ''; });
+$('dsChrome').onclick = async () => { $('dsChrome').disabled = true; await T.deepseekLoginChrome(); $('dsChrome').disabled = false; };
 $('chrome').onclick = async () => { $('chrome').disabled = true; await T.qwenLoginChrome(); $('chrome').disabled = false; refreshQwen(); };
 $('reload').onclick = () => T.qwenReload();
 // вкладки над Qwen: окно бота и своё окно владельца

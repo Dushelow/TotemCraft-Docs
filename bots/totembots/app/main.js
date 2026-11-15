@@ -473,6 +473,25 @@ ipcMain.handle('bot-chat', (_e, name) => {
   return true;
 });
 
+// Вход в DeepSeek через настоящий Chrome (встроенное окно Google не пускает): куки и userToken - в окно DeepSeek
+ipcMain.handle('deepseek-login-chrome', async () => {
+  const status = (t) => win.webContents.send('qwen-login-status', t);
+  try {
+    const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login-deepseek'), status, 'deepseek');
+    const ds = dsView.webContents.session;
+    for (const c of cookies) {
+      await ds.cookies.set({ url: 'https://' + c.domain.replace(/^\./, '') + c.path, name: c.name, value: c.value, domain: c.domain,
+        path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: SAME_SITE[c.sameSite] || 'unspecified', ...(c.expires > 0 ? { expirationDate: c.expires } : {}) });
+    }
+    await dsView.webContents.loadURL(SITES.deepseek.home);
+    await dsView.webContents.executeJavaScript(`localStorage.setItem("userToken", ${JSON.stringify(token)})`);
+    await dsView.webContents.loadURL(SITES.deepseek.home);
+    status('Готово: DeepSeek вошёл в программе');
+    win.focus();
+    return { ok: true };
+  } catch (e) { status('DeepSeek: не вышло - ' + e.message); return { ok: false, error: e.message }; }
+});
+
 // Вход через настоящий Chrome: забираем куки и token Qwen в профиль программы.
 const SAME_SITE = { Strict: 'strict', Lax: 'lax', None: 'no_restriction' };
 ipcMain.handle('qwen-login-chrome', async () => {
