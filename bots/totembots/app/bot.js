@@ -699,6 +699,21 @@ class TotemBot extends EventEmitter {
     }
     if (best) break;
     }
+    if (!best && this.worldMap) {   // рядом нет - ближайшая суша по карте (вся прорисовка), плыть туда
+      const m = this.worldMap.load(b.game.dimension), pcx = Math.floor(me.x / 16), pcz = Math.floor(me.z / 16);
+      let bd = Infinity, land = null;
+      for (const [k, c] of Object.entries(m.chunks)) {
+        if (c.k !== 'g' || c.h === null || c.h < lvl) continue;
+        const [cx, cz] = k.split(',').map(Number), d = Math.hypot(cx - pcx, cz - pcz);
+        if (d < bd && d > 0) { bd = d; land = { x: cx * 16 + 8, z: cz * 16 + 8 }; }
+      }
+      if (land) {
+        this.log(`берега рядом нет - плыву к суше по карте: ${land.x} ${land.z}`);
+        this.mode = 'shore';
+        this.goto(new goals.GoalNearXZ(land.x, land.z, 6), this.token, 120000).catch(() => {}).finally(() => { if (this.mode === 'shore') this.mode = 'idle'; });
+        return;
+      }
+    }
     if (!best) { this.log('в воде, берега рядом не вижу'); return; }
     this.log(`выплываю на берег: ${best.x} ${best.y} ${best.z}`);
     this.mode = 'shore';   // пока плывёт - не «стоит без дела»
