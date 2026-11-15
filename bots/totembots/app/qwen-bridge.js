@@ -227,7 +227,7 @@ class QwenBridge {
     this.ageConfirmed = false;
     this.wc.on('dom-ready', () => {
       this.hook().catch(() => {});
-      if (this.busy) this.wc.executeJavaScript(BUSY_ON).catch(() => {});
+      if (this.busy && !this.captcha) this.wc.executeJavaScript(BUSY_ON).catch(() => {});
       this.watchAge();
     });
     this.wc.on('did-navigate-in-page', () => this.watchAge());
@@ -240,7 +240,7 @@ class QwenBridge {
     const until = Date.now() + 30000;
     this.ageWatch = setInterval(async () => {
       if (this.ageConfirmed || Date.now() > until || this.wc.isDestroyed()) { clearInterval(this.ageWatch); this.ageWatch = null; return; }
-      await this.checkAge().catch(() => {});
+      if (!this.captcha) await this.checkAge().catch(() => {});   // на проверке-ползунке ничего не трогаем
     }, 2000);
   }
 
@@ -306,8 +306,36 @@ class QwenBridge {
   }
 
   /** Всё, что программа делает в окне Qwen, - по очереди и под заглушкой. */
+  /**
+   * Проверка «не робот ли вы» (ползунок и т.п.) - её проходит человек, программа не трогает. Пока она на экране:
+   * заглушки нет, программа ничего не нажимает и ждёт; в панели - просьба пройти. Ушла - работа продолжается.
+   */
+  watchCaptcha() {
+    if (this.captchaTimer) return;
+    this.captchaTimer = setInterval(async () => {
+      const on = await this.wc.executeJavaScript(`(() => { const t = (document.body && document.body.innerText || '').slice(0, 20000);
+        return /slide to verify|drag the slider|complete the verification|security verification|请完成|滑动验证|拖动滑块/i.test(t)
+          || !!document.querySelector('#aliyunCaptcha-window-popup, .aliyunCaptcha-mask, [id^="nc_"][id$="_wrapper"], iframe[src*="captcha"]'); })()`).catch(() => false);
+      if (on && !this.captcha) {
+        this.captcha = true;
+        await this.wc.executeJavaScript(BUSY_OFF).catch(() => {});
+        this.onAttention('Qwen просит пройти проверку (ползунок) - пройдите её сами в «Окне бота»; программа пока ничего не нажимает и ждёт');
+      } else if (!on && this.captcha) {
+        this.captcha = false;
+        if (this.busy) await this.wc.executeJavaScript(BUSY_ON).catch(() => {});
+        this.onAttention('проверка Qwen пройдена, бот продолжает');
+      }
+    }, 1500);
+  }
+
+  async waitCaptcha() {
+    for (let i = 0; this.captcha && i < 900; i++) await sleep(1000);
+  }
+
   exclusive(fn) {
+    this.watchCaptcha();
     const run = async () => {
+      await this.waitCaptcha();
       this.busy++;
       await this.wc.executeJavaScript(BUSY_ON).catch(() => {});
       try { return await fn(); } finally {

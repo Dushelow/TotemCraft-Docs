@@ -112,6 +112,7 @@ function renderNow(st) {
   pausedNow = !!st.paused;
   $('pauseBtn').textContent = st.paused ? 'Продолжить' : 'Пауза';
   $('pauseBtn').className = st.paused ? '' : 'sec';
+  if (st.captcha) out.push(step('bad', 'Qwen просит пройти проверку', 'откройте «Окно бота» справа и пройдите её (ползунок) - программа ничего не нажимает и ждёт, потом продолжит сама'));
   if (st.paused) out.push(step('warn', 'Мозг на паузе', 'боты стоят на сервере, но к Qwen не обращаются и сами ничего не решают. «Продолжить» - снова думать'));
   out.push(step('', `Сервер: ${st.host}:${st.port}`, 'менять: «Настройки: сервер, хозяева...» ниже; пароль бота - в его карточке, «На сервере»'));
   out.push(qwenOk === null ? step('spin', 'Qwen: проверяю вход', '')
