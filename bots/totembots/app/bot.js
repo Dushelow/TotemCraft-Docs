@@ -91,6 +91,15 @@ class TotemBot extends EventEmitter {
       mv.allowParkour = true;
       mv.allowSprinting = true;
       mv.canOpenDoors = true;
+      // по образцу Baritone (maxFallHeightNoWater, blocksToAvoid, mobAvoidance, exclusionAreas)
+      mv.maxDropDown = 3;
+      for (const n of ['fire', 'soul_fire', 'lava', 'magma_block', 'campfire', 'soul_campfire', 'sweet_berry_bush',
+        'wither_rose', 'powder_snow', 'cactus', 'pointed_dripstone']) {
+        const bl = bot.registry.blocksByName[n];
+        if (bl) mv.blocksToAvoid.add(bl.id);
+      }
+      mv.entitiesToAvoid = new Set(['creeper']);
+      mv.exclusionAreasStep = [(block) => this.forbiddenCost(block)];
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
       this.guard = new Guard(this);
@@ -115,6 +124,19 @@ class TotemBot extends EventEmitter {
       this.cancel();
       // после возрождения (spawn) - забрать вещи, как waypoint смерти в Baritone
       bot.once('spawn', () => setTimeout(() => this.afterDeath().catch(() => {}), 2500));
+    });
+    // кто из игроков ударил: замах рукой в последние 0,6 с в 5 блоках (удар без атакующего в событии)
+    // кто спит (события mineflayer по позе игрока)
+    this.sleepers = new Set();
+    bot.on('entitySleep', (e) => { if (e !== bot.entity) this.sleepers.add(e.id); });
+    bot.on('entityWake', (e) => this.sleepers.delete(e.id));
+    const swings = new Map();
+    bot.on('entitySwingArm', (e) => { if (e.type === 'player') swings.set(e.username, Date.now()); });
+    bot.on('entityHurt', (e) => {
+      if (e !== bot.entity) return;
+      const who = [...swings].find(([n, t]) => Date.now() - t < 600 && bot.players[n] && bot.players[n].entity
+        && bot.players[n].entity.position.distanceTo(bot.entity.position) < 5);
+      if (who && Date.now() - (this.hitReported || 0) > 10000) { this.hitReported = Date.now(); this.event(`игрок ${who[0]} ударил тебя`, true); }
     });
     bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
     bot.on('error', (e) => this.log('ошибка: ' + e.message));
@@ -305,14 +327,10 @@ class TotemBot extends EventEmitter {
     } else {
       this.lookTarget = focus.position.offset(0, focus.height * 0.9, 0);
     }
-    // еда
-    if (b.food < 14 && !this.eating) {
-      const food = b.inventory.items().find((i) => b.registry.foodsByName && b.registry.foodsByName[i.name]);
-      if (food) {
-        this.eating = true;
-        try { await b.equip(food, 'hand'); await b.consume(); } catch {} finally { this.eating = false; }
-      }
-    }
+    await this.eatTick();
+    this.airTick();
+    this.stuckTick();
+    this.sleepTick().catch(() => {});
     // в воде без дела - всплывать (держать прыжок), как игрок; иначе бот тонет
     {
       const here = b.blockAt(b.entity.position.offset(0, 1, 0));
@@ -330,6 +348,107 @@ class TotemBot extends EventEmitter {
         b.pathfinder.setGoal(new goals.GoalFollow(owner, rnd(2.2, 3.5)), true);
       }
     }
+  }
+
+  // Еда по образцу Meteor AutoEat: чёрный список (вредное и хорус - телепортирует), лучшее по сытости и насыщению.
+  // Голод < 14 - есть; здоровье неполное и голод < 18 вне боя - доесть для лечения.
+  // Золотое яблоко (AutoGap): opts.gapple = 'emergency' (по умолчанию: бой и здоровье <= 8) или 'never'.
+  async eatTick() {
+    const b = this.bot;
+    if (this.eating || !b.registry.foodsByName) return;
+    const BAD = new Set(['rotten_flesh', 'spider_eye', 'poisonous_potato', 'pufferfish', 'chorus_fruit', 'suspicious_stew',
+      'chicken', 'golden_apple', 'enchanted_golden_apple']);
+    const fighting = this.guard && this.guard.fighting;
+    let pick = null;
+    if ((this.opts.gapple || 'emergency') === 'emergency' && fighting && b.health <= 8) {
+      pick = b.inventory.items().find((i) => i.name === (b.health <= 4 ? 'enchanted_golden_apple' : 'golden_apple'))
+        || b.inventory.items().find((i) => /golden_apple$/.test(i.name));
+    }
+    const hungry = b.food < 14 || (b.health < 20 && b.food < 18 && !fighting);
+    if (!pick && hungry && b.food < 20) {
+      const score = (i) => { const f = b.registry.foodsByName[i.name]; return f ? f.foodPoints + f.saturation : -1; };
+      pick = b.inventory.items().filter((i) => b.registry.foodsByName[i.name] && !BAD.has(i.name)).sort((x, y) => score(y) - score(x))[0];
+      // совсем голодно и нормальной еды нет - гнилая плоть лучше голодной смерти
+      if (!pick && b.food <= 6) pick = b.inventory.items().find((i) => i.name === 'rotten_flesh');
+    }
+    if (!pick) return;
+    this.eating = true;
+    try { await b.equip(pick, 'hand'); await b.consume(); this.log('съел ' + pick.name); } catch {} finally { this.eating = false; }
+  }
+
+  // Воздух кончается под водой - всплыть, даже посреди пути
+  airTick() {
+    const b = this.bot;
+    const head = b.blockAt(b.entity.position.offset(0, 1.6, 0));
+    const under = head && /water|bubble_column/.test(head.name);
+    if (under && b.oxygenLevel !== undefined && b.oxygenLevel < 12) {
+      b.setControlState('jump', true);
+      this.surfacing = true;
+    } else if (this.surfacing && !under) {
+      b.setControlState('jump', false);
+      this.surfacing = false;
+    }
+  }
+
+  // Сторож застревания (Baritone: movementTimeoutTicks): путь идёт, а бот 5 с почти на месте -
+  // прыжок и шаг назад, путь заново; три раза подряд - сообщить мозгу.
+  stuckTick() {
+    const b = this.bot;
+    if (!b.pathfinder.isMoving()) { this.stuck = null; return; }
+    const p = b.entity.position;
+    if (!this.stuck || p.distanceTo(this.stuck.at) > 1) { this.stuck = { at: p.clone(), since: Date.now(), tries: this.stuck ? this.stuck.tries : 0 }; return; }
+    if (Date.now() - this.stuck.since < 5000) return;
+    this.stuck.tries++;
+    this.stuck.since = Date.now();
+    this.log('застрял, пробую выбраться (' + this.stuck.tries + ')');
+    b.setControlState('jump', true);
+    b.setControlState('back', true);
+    setTimeout(() => { try { b.setControlState('jump', false); b.setControlState('back', false); const g = b.pathfinder.goal; if (g) b.pathfinder.setGoal(g, b.pathfinder.dynamicGoal); } catch {} }, 400);
+    if (this.stuck.tries === 3) this.event('ты застрял и не можешь пройти дальше', true);
+  }
+
+  // Сон: на сервере ночь пропускается, когда спят все не-AFK. Кто-то лёг, ночь, кровать в 16 блоках - ложимся.
+  // Утром mineflayer будит сам; кровать запоминаем (Baritone doBedWaypoints).
+  async sleepTick() {
+    const b = this.bot;
+    if (this.opts.sleep === false || b.isSleeping || this.mode === 'task' || this.sleepTry > Date.now()) return;
+    const t = b.time && b.time.timeOfDay;
+    const night = t !== undefined && t >= 12542 && t <= 23460;
+    if (!night && !b.thunderState) return;
+    const someoneSleeps = [...(this.sleepers || [])].some((id) => b.entities[id] && b.entities[id].type === 'player');
+    if (!someoneSleeps) return;
+    if (this.guard && this.guard.fighting) return;
+    const bed = b.findBlock({ matching: (bl) => /_bed$/.test(bl.name), maxDistance: 16 });
+    if (!bed) { this.sleepTry = Date.now() + 60000; return; }
+    this.sleepTry = Date.now() + 30000;
+    try {
+      await this.goto(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), this.token, 20000);
+      await b.sleep(bed);
+      this.log('лёг спать');
+      if (this.memory) this.memory.place({ name: `кровать у ${bed.position.x} ${bed.position.z}`, x: bed.position.x, y: bed.position.y, z: bed.position.z, dim: this.dimName(), note: 'спал тут' }, this.opts.name);
+      b.once('wake', () => { this.log('проснулся'); if (this.followName && this.player(this.followName)) this.follow(this.followName); });
+    } catch (e) { this.log('не смог лечь: ' + e.message); }
+  }
+
+  // Запретные места: в памяти место с пометкой «нельзя», «чужая», «не заходить» - путь обходит 16 блоков вокруг
+  forbiddenCost(block) {
+    if (!block || !block.position) return 0;
+    // опасный пол (магма, костёр) - pathfinder смотрит только блоки на уровне тела
+    // с запасом в блок: на углу бот срезает диагональ и цепляет край
+    for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const floor = this.bot.blockAt(block.position.offset(dx, -1, dz), false);
+      if (floor && /^(magma_block|campfire|soul_campfire)$/.test(floor.name)) return dx || dz ? 20 : 100;
+    }
+    const m = this.memory;
+    if (!m) return 0;
+    const dim = this.dimName();
+    if (!this.forbidden || this.forbidden.version !== m.version) {
+      this.forbidden = { version: m.version, list: Object.values(m.data.places).filter((p) => /нельзя|чуж|не заход|запрет/i.test(p.name + ' ' + (p.note || ''))) };
+    }
+    for (const p of this.forbidden.list) {
+      if (p.dim === dim && Math.abs(p.x - block.position.x) < 16 && Math.abs(p.z - block.position.z) < 16) return 100;
+    }
+    return 0;
   }
 
   // Сам замечает и запоминает: порталы рядом, новых игроков. Раз в 10 с, дёшево.
@@ -549,16 +668,29 @@ class TotemBot extends EventEmitter {
   // Урожай: спелые культуры - сломать, подобрать, посадить обратно («взял - засади обратно»). Ничего, кроме урожая, не ломает.
   async harvest(a, tok) {
     const b = this.bot;
-    const CROPS = { wheat: [7, 'wheat_seeds'], carrots: [7, 'carrot'], potatoes: [7, 'potato'], beetroots: [3, 'beetroot_seeds'], nether_wart: [3, 'nether_wart'] };
+    // по образцу Baritone FarmProcess: что спелое и как сажать
+    const CROPS = { wheat: [7, 'wheat_seeds'], carrots: [7, 'carrot'], potatoes: [7, 'potato'], beetroots: [3, 'beetroot_seeds'],
+      nether_wart: [3, 'nether_wart'], sugar_cane: ['stack'], bamboo: ['stack'], melon: ['fruit'], pumpkin: ['fruit'] };
     const want = a.crop ? String(a.crop).replace(/^minecraft:/, '') : '';
     const ids = Object.keys(CROPS).filter((n) => !want || n === want || n.startsWith(want)).map((n) => b.registry.blocksByName[n].id);
+    const ready = (bl) => {
+      const rule = CROPS[bl.name][0];
+      if (rule === 'stack') return b.blockAt(bl.position.offset(0, -1, 0)).name === bl.name;   // нижний стебель не трогаем
+      if (rule === 'fruit') {   // плод, а не украшение: рядом стебель, который к нему прикреплён
+        return [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => {
+          const s = b.blockAt(bl.position.offset(dx, 0, dz));
+          return s && s.name === `attached_${bl.name}_stem`;
+        });
+      }
+      return (bl.getProperties().age | 0) >= rule;
+    };
     const r = Math.min(32, +a.radius || 16);
     let done = 0, replanted = 0;
     const limit = +a.count || 256;
     for (let i = 0; i < limit; i++) {
       this.check(tok);
       const pos = b.findBlocks({ matching: ids, maxDistance: r, count: 200 })
-        .map((p) => b.blockAt(p)).filter((bl) => bl && (bl.getProperties().age | 0) >= CROPS[bl.name][0])
+        .map((p) => b.blockAt(p)).filter((bl) => bl && CROPS[bl.name] && ready(bl))
         .sort((x, y) => x.position.distanceTo(b.entity.position) - y.position.distanceTo(b.entity.position))[0];
       if (!pos) break;
       const [, seed] = CROPS[pos.name];
@@ -568,21 +700,28 @@ class TotemBot extends EventEmitter {
       if (!blk || blk.name !== pos.name) continue;
       this.busyLook = true;
       try {
-        await this.breakInstant(blk);
+        if (blk.hardness === 0) await this.breakInstant(blk);
+        else {   // арбуз, тыква, бамбук: обычное ломание лучшим инструментом (AutoTool)
+          const tool = b.inventory.items().filter((x) => /_axe$/.test(x.name)).sort((x, y) => y.type - x.type)[0];
+          if (tool) await b.equip(tool, 'hand');
+          await b.lookAt(p.offset(0.5, 0.5, 0.5));
+          await b.dig(blk, true);
+        }
         done++;
+        this.log('сорвал ' + pos.name + ' ' + p.x + ' ' + p.y + ' ' + p.z);
         this.busyLook = false;
         await sleep(300);
         await this.pickup({ x: p.x + 0.5, y: p.y, z: p.z + 0.5, radius: 2.5 }, tok);   // семена из этого же куста
         await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 15000);
         this.busyLook = true;
         const soil = b.blockAt(p.offset(0, -1, 0));
-        const s = b.inventory.items().find((x) => x.name === seed);
+        const s = seed && typeof seed === 'string' && !['stack', 'fruit'].includes(seed) ? b.inventory.items().find((x) => x.name === seed) : null;
         if (s && soil && /farmland|soul_sand/.test(soil.name) && b.blockAt(p).name === 'air') {
           await b.equip(s, 'hand');
           await b.placeBlock(soil, new Vec3(0, 1, 0));
           replanted++;
         }
-      } catch (e) { if (e instanceof Cancelled) throw e; } finally { this.busyLook = false; }
+      } catch (e) { if (e instanceof Cancelled) throw e; this.log('урожай: ' + pos.name + ': ' + e.message); } finally { this.busyLook = false; }
     }
     await this.pickup({ radius: 6 }, tok);
     return done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет';
