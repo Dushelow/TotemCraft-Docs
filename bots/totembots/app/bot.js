@@ -483,6 +483,10 @@ class TotemBot extends EventEmitter {
     const p = e.position;
     if (process.env.TB_DEBUG) console.log('вода:', p.y.toFixed(2), 'fwd', b.getControlState('forward'), 'moving', b.pathfinder.isMoving(), 'yaw', e.yaw.toFixed(2));
     if (!b.getControlState('forward') && !b.pathfinder.isMoving()) return;
+    if (b.pathfinder.isMoving()) {   // ведёт путь: толчок, только если следующая точка выше (вылезти), а не плывём вдоль берега
+      const nx = ((this.lastPath || {}).path || [])[0];
+      if (!nx || nx.y <= Math.floor(e.position.y)) return;
+    }
     const yaw = e.yaw;
     const front = p.offset(-Math.sin(yaw) * 0.8, 0, -Math.cos(yaw) * 0.8).floored();
     const ledge = b.blockAt(front), up1 = b.blockAt(front.offset(0, 1, 0)), up2 = b.blockAt(front.offset(0, 2, 0));
@@ -491,7 +495,7 @@ class TotemBot extends EventEmitter {
     // как в клиенте: сначала всплыть повыше (прыжок в воде), с гребня - толчок 0,3 через край
     if (p.y - Math.floor(p.y) < 0.45) { b.setControlState('jump', true); return; }
     // один толчок на касание, не чаще раза в секунду: толчок каждый такт Vulcan видит как полёт (Flight F, бан на стенде)
-    if (Date.now() - (this.exitAt || 0) < 1000) return;
+    if (Date.now() - (this.exitAt || 0) < 2000) return;
     this.exitAt = Date.now();
     e.velocity.y = 0.3;
   }
@@ -644,7 +648,7 @@ class TotemBot extends EventEmitter {
             const f = b.blockAt(b.entity.position);
             if (!f || !/water|kelp|seagrass/.test(f.name)) break;
             const q = b.entity.position, crest = q.y - Math.floor(q.y) >= 0.45;
-            if (i % 5 === 0) await b.lookAt(best.offset(0.5, 1.4, 0.5), true);
+            if (i === 0) await b.lookAt(best.offset(0.5, 1.4, 0.5));   // повернуться один раз, плавно
             b.setControlState('jump', true);
             b.setControlState('forward', crest || !b.entity.isCollidedHorizontally);
             b.setControlState('back', !crest && b.entity.isCollidedHorizontally);
