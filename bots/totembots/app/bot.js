@@ -441,6 +441,7 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     if (!b || !b.entity) return;
     this.senseTick();
+    try { this.shoreTick(); } catch {}
     // взгляд: на того, за кем идём, иногда по сторонам
     const owner = this.followName ? this.player(this.followName) : null;
     const nearest = Object.values(b.players).filter((p) => p.entity && p.username !== b.username)
@@ -512,6 +513,34 @@ class TotemBot extends EventEmitter {
       b.setControlState('jump', false);
       this.surfacing = false;
     }
+  }
+
+  // Как человек: без дела в воде не болтается - через 15 с плывёт к ближайшему берегу (до 40 блоков).
+  // Только когда стоит без задания и ни за кем не идёт: в задании и при слежке путь строит pathfinder.
+  shoreTick() {
+    const b = this.bot, me = b.entity.position;
+    const feet = b.blockAt(me);
+    const wet = feet && /water|bubble_column|kelp|seagrass/.test(feet.name);
+    if (!wet || this.mode !== 'idle' || b.pathfinder.isMoving()) { this.wetSince = wet ? (this.wetSince || Date.now()) : 0; return; }
+    if (!this.wetSince) this.wetSince = Date.now();
+    if (Date.now() - this.wetSince < 15000 || Date.now() - (this.shoreTry || 0) < 30000) return;
+    this.shoreTry = Date.now();
+    const solid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|ice|leaves/.test(k.name); };
+    const empty = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava/.test(k.name); };
+    let best = null;
+    for (let r = 4; r <= 40 && !best; r += 4) {
+      for (let a = 0; a < 16; a++) {
+        const x = Math.floor(me.x + Math.cos(a * Math.PI / 8) * r), z = Math.floor(me.z + Math.sin(a * Math.PI / 8) * r);
+        for (let y = Math.floor(me.y) + 4; y >= Math.floor(me.y) - 3; y--) {
+          const v = new Vec3(x, y, z);
+          if (solid(v) && empty(v.offset(0, 1, 0)) && empty(v.offset(0, 2, 0))) { best = v.offset(0, 1, 0); break; }
+        }
+        if (best) break;
+      }
+    }
+    if (!best) { this.log('в воде, берега рядом не вижу'); return; }
+    this.log(`выплываю на берег: ${best.x} ${best.y} ${best.z}`);
+    b.pathfinder.setGoal(new goals.GoalNear(best.x, best.y, best.z, 1));
   }
 
   // Сторож застревания (Baritone: movementTimeoutTicks): путь идёт, а бот 5 с почти на месте -
