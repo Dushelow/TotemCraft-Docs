@@ -382,7 +382,16 @@ class TotemBot extends EventEmitter {
     const tod = t === undefined ? '' : t < 1000 ? 'утро' : t < 11500 ? 'день' : t < 13000 ? 'вечер' : t < 23000 ? 'ночь' : 'рассвет';
     const weather = b.thunderState > 0 ? ', гроза' : b.isRaining ? ', дождь' : '';
     const ch = this.worldMap && this.worldMap.load(b.game.dimension).chunks[`${Math.floor(s.pos[0] / 16)},${Math.floor(s.pos[2] / 16)}`];
-    const under = ch && ch.h !== null && s.pos[1] < ch.h - 6 ? ', под землёй' : '';
+    // «под землёй» - только если над головой нет неба (свет неба у головы < 8, и над головой твёрдое в 40 блоках);
+    // средняя высота чанка врёт у ледяных шипов, гор и деревьев (боевой 15.11: на льду «под землёй»)
+    let under = '';
+    {
+      const head = b.blockAt(b.entity.position.offset(0, 1.6, 0));
+      const sky = head && typeof head.skyLight === 'number' ? head.skyLight : null;
+      let roof = false;
+      for (let dy = 2; dy <= 40 && !roof; dy++) { const k = b.blockAt(b.entity.position.offset(0, dy, 0)); if (k && k.boundingBox === 'block' && !/leaves|glass|ice/.test(k.name)) roof = true; }
+      if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй';
+    }
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
     return {
       pos: s.pos,
