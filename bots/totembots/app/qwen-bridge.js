@@ -186,6 +186,31 @@ function abToAnswer(text) {
   return (say ? say + '\n' : '') + (json ? '```json\n' + json + '\n```' : '');
 }
 
+// Заглушка поверх Qwen, пока программа сама работает в окне (пара секунд): щелчки и клавиши владельца не попадают
+// в поле ввода и меню. Наши действия идут мимо неё: скрипты вызывают события прямо на элементах, а перед настоящим
+// щелчком отладчиком заглушка на миг прячется.
+const BUSY_ON = `(() => {
+  let o = document.getElementById('tb-busy');
+  if (!o) {
+    o = document.createElement('div'); o.id = 'tb-busy'; o.tabIndex = -1;
+    o.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(20,20,24,.18);cursor:progress;display:flex;align-items:flex-end;justify-content:center;outline:none';
+    o.innerHTML = '<div style="margin-bottom:18px;padding:6px 14px;border-radius:8px;background:#2b2d31;color:#e6e6e6;font:13px Segoe UI,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.4)">Бот работает с Qwen, подождите пару секунд</div>';
+    for (const t of ['mousedown','mouseup','click','dblclick','wheel','contextmenu','keydown','keypress','keyup'])
+      o.addEventListener(t, (e) => { if (e.isTrusted && !window.__tbPass) { e.preventDefault(); e.stopPropagation(); } }, true);
+    document.documentElement.appendChild(o);
+  }
+  if (!window.__tbKeys) {   // клавиши владельца не уходят в поле ввода, пока заглушка на месте
+    window.__tbKeys = true;
+    for (const t of ['keydown', 'keypress', 'keyup', 'paste'])
+      window.addEventListener(t, (e) => { if (e.isTrusted && document.getElementById('tb-busy') && !window.__tbPass) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  }
+  o.style.display = 'flex';
+  if (document.activeElement && document.activeElement !== o) document.activeElement.blur();
+  o.focus();
+  return 1;
+})()`;
+const BUSY_OFF = `(() => { const o = document.getElementById('tb-busy'); if (o) o.remove(); return 1; })()`;
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 class QwenBridge {
@@ -197,17 +222,52 @@ class QwenBridge {
     this.projectId = () => '';   // новые чаты - внутри проекта Qwen
     this.beforeNewChat = async () => {};   // убедиться, что проект есть
     this.chain = Promise.resolve();
-    this.wc.on('dom-ready', () => this.hook().catch(() => {}));
-    // окно возраста может выскочить когда угодно (при загрузке, после ответа): проверяем раз в 20 с
-    this.ageTimer = setInterval(() => this.checkAge().catch(() => {}), 20000);
+    this.busy = 0;
+    this.ageConfirmed = false;
+    this.wc.on('dom-ready', () => {
+      this.hook().catch(() => {});
+      if (this.busy) this.wc.executeJavaScript(BUSY_ON).catch(() => {});
+      this.watchAge();
+    });
+    this.wc.on('did-navigate-in-page', () => this.watchAge());
+  }
+
+  // Окно возраста Qwen показывает после запуска, при открытии чата; после одного подтверждения - до перезапуска нет.
+  // Поэтому смотрим 30 с после каждого перехода, пока не подтвердили; дальше не тратим силы. Запасная проверка - при отправке.
+  watchAge() {
+    if (this.ageConfirmed || this.ageWatch) return;
+    const until = Date.now() + 30000;
+    this.ageWatch = setInterval(async () => {
+      if (this.ageConfirmed || Date.now() > until || this.wc.isDestroyed()) { clearInterval(this.ageWatch); this.ageWatch = null; return; }
+      await this.checkAge().catch(() => {});
+    }, 2000);
   }
 
   async checkAge() {
     const year = this.birthYear();
     if (!year || this.wc.isDestroyed()) return;
     const r = await this.wc.executeJavaScript(AGE(year));
-    if (r !== 'нет окна') this.onAttention('Qwen спросил возраст, ответил годом из настроек: ' + r);
+    if (r === 'нет окна') return;
+    if (r === 'ok') this.ageConfirmed = true;
+    this.onAttention('Qwen спросил возраст, ответил годом из настроек: ' + r);
   }
+
+  /** Всё, что программа делает в окне Qwen, - по очереди и под заглушкой. */
+  exclusive(fn) {
+    const run = async () => {
+      this.busy++;
+      await this.wc.executeJavaScript(BUSY_ON).catch(() => {});
+      try { return await fn(); } finally {
+        if (--this.busy === 0) await this.wc.executeJavaScript(BUSY_OFF).catch(() => {});
+      }
+    };
+    const p = this.chain.then(run, run);
+    this.chain = p.catch(() => {});
+    return p;
+  }
+
+  /** Перед настоящим щелчком отладчиком - пропустить его сквозь заглушку. */
+  passThrough(on) { return this.wc.executeJavaScript(`window.__tbPass = ${on ? 'true' : 'false'}; (() => { const o = document.getElementById('tb-busy'); if (o) o.style.pointerEvents = ${on ? "'none'" : "'auto'"}; })()`).catch(() => {}); }
 
   hook() { return this.wc.executeJavaScript(HOOK); }
 
@@ -250,12 +310,7 @@ class QwenBridge {
   }
 
   /** Прочитать вслух последний ответ в открытом чате. Возвращает { pcm, rate: 24000 }. В общей очереди с вопросами. */
-  readAloud(chatId) {
-    const run = () => this._readAloud(chatId);
-    const p = this.chain.then(run, run);
-    this.chain = p.catch(() => {});
-    return p;
-  }
+  readAloud(chatId) { return this.exclusive(() => this._readAloud(chatId)); }
 
   async _readAloud(chatId) {
     this.attachDebugger();
@@ -294,12 +349,7 @@ class QwenBridge {
    * Запросы выстраиваются в очередь.
    */
   /** opt: { mode: 'fast'|'auto'|'think'|'', models: ['модель', 'запасная', ...] } */
-  ask(chatId, text, opt = {}) {
-    const run = () => this._askWithFallback(chatId, text, opt);
-    const p = this.chain.then(run, run);
-    this.chain = p.catch(() => {});
-    return p;
-  }
+  ask(chatId, text, opt = {}) { return this.exclusive(() => this._askWithFallback(chatId, text, opt)); }
 
   async _askWithFallback(chatId, text, opt) {
     const models = (opt.models && opt.models.length) ? opt.models : [''];
@@ -331,6 +381,7 @@ class QwenBridge {
       const year = this.birthYear();
       if (year && i < 3) {
         const r = await this.wc.executeJavaScript(AGE(year)).catch((e) => String(e));
+        if (r === 'ok') this.ageConfirmed = true;
         this.onAttention('Qwen спросил возраст, ответил годом из настроек: ' + r);
       } else if (i === 0 || i === 3) {
         this.onAttention('Qwen просит подтвердить возраст: ответьте в окне Qwen справа или впишите год рождения в настройках');

@@ -23,11 +23,7 @@ class QwenProject {
   get id() { return (this.cfg().qwenProject || {}).id || ''; }
 
   // в общей очереди моста: вкладка Qwen одна
-  run(fn) {
-    const p = this.bridge.chain.then(fn, fn);
-    this.bridge.chain = p.catch(() => {});
-    return p;
-  }
+  run(fn) { return this.bridge.exclusive(fn); }
 
   dbg() { this.bridge.attachDebugger(); return this.wc.debugger; }
   ev(expr) { return this.wc.executeJavaScript(expr).catch((e) => { throw new Error('скрипт на странице упал: ' + expr.replace(/s+/g, ' ').slice(0, 120)); }); }
@@ -35,15 +31,21 @@ class QwenProject {
   async click(expr) {
     const b = await this.ev(`(() => { const el = ${expr}; if (!el) return null; el.scrollIntoView({ block: 'center' }); const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
     if (!b) return false;
-    for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
-      await this.dbg().sendCommand('Input.dispatchMouseEvent', { type, x: b.x, y: b.y, button: 'left', clickCount: 1 });
-    }
+    await this.bridge.passThrough(true);
+    try {
+      for (const type of ['mouseMoved', 'mousePressed', 'mouseReleased']) {
+        await this.dbg().sendCommand('Input.dispatchMouseEvent', { type, x: b.x, y: b.y, button: 'left', clickCount: 1 });
+      }
+    } finally { await this.bridge.passThrough(false); }
     return true;
   }
 
   async hover(expr) {
     const b = await this.ev(`(() => { const el = ${expr}; if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`);
-    if (b) await this.dbg().sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: b.x, y: b.y });
+    if (b) {
+      await this.bridge.passThrough(true);
+      try { await this.dbg().sendCommand('Input.dispatchMouseEvent', { type: 'mouseMoved', x: b.x, y: b.y }); } finally { await this.bridge.passThrough(false); }
+    }
     return !!b;
   }
 

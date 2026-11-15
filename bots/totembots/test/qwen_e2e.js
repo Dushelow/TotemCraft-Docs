@@ -89,6 +89,7 @@ async function panel() {
   await sleep(2000);
 
   const showLog = async (n = 12) => { const s = await ev('window.totem.state()'); console.log(s.bots[0].log.slice(-n).join('\n')); };
+  const ageLines = async () => { const s = await ev('window.totem.state()'); return s.bots[0].log.filter((l) => /возраст/.test(l)); };
 
   console.log('\n== 1. болтовня');
   owner.chat('привет TbAlex, как дела?');
@@ -135,6 +136,7 @@ async function panel() {
   await showLog(5);
   console.log('бот сейчас:', rcon('data get entity TbAlex Pos').replace(/.*: /, ''));
 
+  console.log('\n== окно возраста за прогон:', JSON.stringify(await ageLines()));
   await ev('window.totem.botStop("TbAlex")');
   owner.quit();
   await sleep(1500);
