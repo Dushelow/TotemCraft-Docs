@@ -56,6 +56,31 @@ class TotemBot extends EventEmitter {
     const bot = this.bot = mineflayer.createBot({ host, port, username: name, version: VERSION, auth: 'offline', hideErrors: true });
     bot.loadPlugin(pathfinder);
     bot._client.on('show_dialog', (d) => this.onDialog(d));
+    // Отбрасывание: с 1.21.9 скорость в пакете уже в блоках за тик (minecraft-data так и раскладывает: -0.4, 0.36),
+    // а mineflayer делит её ещё на 8000 по старому формату - бот не отлетал, Vulcan отмечал Velocity (стенд 15.11).
+    // Обработчик ставим после входа: модули mineflayer подключаются позже createBot, и их обработчик иначе сработал бы последним.
+    bot.once('login', () => bot._client.on('entity_velocity', (p) => {
+      if (bot.entity && p.entityId === bot.entity.id && p.velocity && Math.abs(p.velocity.x) < 20) {
+        bot.entity.velocity.set(p.velocity.x, p.velocity.y, p.velocity.z);
+      }
+    }));
+    // Смена слота в руке на тот же самый - Vulcan Bad Packets C (кик с одного раза, стенд 15.11: при посадке урожая
+    // mineflayer заново выбирал слот семян). Настоящий клиент такого не шлёт - отбрасываем повтор.
+    {
+      const raw = bot._client.write.bind(bot._client);
+      let slot = -1;
+      bot._client.on('held_item_slot', (p) => { slot = p.slot ?? p.slotId ?? slot; });
+      const trail = [];   // для отладки: последние пакеты (TB_PACKETLOG=1 печатает их при кике)
+      bot.on('kicked', () => { if (process.env.TB_PACKETLOG) console.log('последние пакеты:\n' + trail.join('\n')); });
+      bot._client.write = (name, params) => {
+        if (process.env.TB_PACKETLOG && !/^(position|position_look|look|flying|tick_end|keep_alive|pong)$/.test(name)) { trail.push(Date.now() % 100000 + ' ' + name + ' ' + JSON.stringify(params).slice(0, 140)); if (trail.length > 25) trail.shift(); }
+        if (name === 'held_item_slot') {
+          if (params.slotId === slot) return;
+          slot = params.slotId;
+        }
+        return raw(name, params);
+      };
+    }
 
     bot.once('spawn', () => {
       this.status = 'online';
@@ -288,6 +313,13 @@ class TotemBot extends EventEmitter {
         try { await b.equip(food, 'hand'); await b.consume(); } catch {} finally { this.eating = false; }
       }
     }
+    // в воде без дела - всплывать (держать прыжок), как игрок; иначе бот тонет
+    {
+      const here = b.blockAt(b.entity.position.offset(0, 1, 0));
+      const inWater = here && /water/.test(here.name);
+      if (inWater && !b.pathfinder.isMoving()) { b.setControlState('jump', true); this.swimming = true; }
+      else if (this.swimming) { b.setControlState('jump', false); this.swimming = false; }
+    }
     this.notice().catch(() => {});
     // компаньон: потерял из виду - сказать один раз
     if (this.mode === 'follow') {
@@ -471,12 +503,34 @@ class TotemBot extends EventEmitter {
     return got ? `подобрал вещи (${got} кучек)` : 'вещей рядом нет';
   }
 
+  // Урожай ломается мгновенно: настоящий клиент шлёт только «начал ломать» (status 0) и взмах. mineflayer.dig()
+  // шлёт ещё и «закончил» (status 2) по уже пустому блоку - Vulcan Bad Packets C, кик (стенд 15.11).
+  async breakInstant(block) {
+    const b = this.bot;
+    await b.lookAt(block.position.offset(0.5, 0.3, 0.5));
+    this.digSeq = (this.digSeq || 0) + 1;
+    b._client.write('block_dig', { status: 0, location: block.position, face: 1, sequence: this.digSeq });
+    b.swingArm();
+    for (let i = 0; i < 20; i++) {   // ждём, пока сервер сообщит, что блок сломан
+      await sleep(50);
+      const now = b.blockAt(block.position);
+      if (!now || now.name !== block.name) return;
+    }
+    throw new Error('блок не сломался');
+  }
+
   async recover(tok) {
     const d = this.deathPoint;
     if (!d) return 'места смерти не помню';
     if (d.dim !== this.bot.game.dimension) throw new Error(`вещи остались в другом измерении (${d.x} ${d.y} ${d.z})`);
     await this.goto(new goals.GoalNear(d.x, d.y, d.z, 2), tok, 300000);
-    const r = await this.pickup({ x: d.x, y: d.y, z: d.z, radius: 10 }, tok);
+    // предметы на земле сервер показывает не сразу после прихода: смотрим ещё пару раз
+    let r = '';
+    for (let i = 0; i < 3; i++) {
+      r = await this.pickup({ x: d.x, y: d.y, z: d.z, radius: 10 }, tok);
+      if (!/нет$/.test(r)) break;
+      await sleep(1500);
+    }
     this.deathPoint = null;
     return 'дошёл до места смерти, ' + r;
   }
@@ -514,7 +568,7 @@ class TotemBot extends EventEmitter {
       if (!blk || blk.name !== pos.name) continue;
       this.busyLook = true;
       try {
-        await b.dig(blk, true);
+        await this.breakInstant(blk);
         done++;
         this.busyLook = false;
         await sleep(300);

@@ -14,6 +14,7 @@ const blockAt = (x, y, z) => (rcon(`execute if block ${x} ${y} ${z} wheat[age=0]
   rcon('minecraft:kill @e[type=item,x=1300,y=150,z=1300,distance=..60]');
   // грядка 3x3 вокруг воды, спелая пшеница; рядом дубовые доски (постройка, трогать нельзя)
   rcon(`fill ${X + 4} ${Y - 1} ${Z + 4} ${X + 6} ${Y - 1} ${Z + 6} farmland[moisture=7]`);
+  rcon(`fill ${X + 4} ${Y - 2} ${Z + 4} ${X + 6} ${Y - 2} ${Z + 6} stone`);   // дно: иначе вода уходит вниз шахтой
   rcon(`setblock ${X + 5} ${Y - 1} ${Z + 5} water`);
   rcon(`fill ${X + 4} ${Y} ${Z + 4} ${X + 6} ${Y} ${Z + 6} wheat[age=7]`);
   rcon(`setblock ${X + 5} ${Y} ${Z + 5} air`);
@@ -31,6 +32,7 @@ const blockAt = (x, y, z) => (rcon(`execute if block ${x} ${y} ${z} wheat[age=0]
 
   console.log('\n== урожай');
   console.log(await tb.run([{ act: 'harvest', radius: 12 }], 'урожай'));
+  console.log('   позиция: клиент', tb.bot.entity.position.floored().toString(), '| сервер', rcon('data get entity TbAlex Pos').replace(/.*data: /, ''), '| на земле', tb.bot.entity.onGround, '| вода', !!(tb.bot.blockAt(tb.bot.entity.position) || {}).name && tb.bot.blockAt(tb.bot.entity.position).name);
   let ok = 0;
   for (let dx = 4; dx <= 6; dx++) for (let dz = 4; dz <= 6; dz++) if (!(dx === 5 && dz === 5) && blockAt(X + dx, Y, Z + dz) === 'росток') ok++;
   console.log('посажено обратно (ростков):', ok, 'из 8 | доски целы:', rcon(`execute if block ${X + 8} ${Y} ${Z + 5} oak_planks`).includes('passed'));
@@ -43,6 +45,7 @@ const blockAt = (x, y, z) => (rcon(`execute if block ${x} ${y} ${z} wheat[age=0]
   rcon(`summon item ${X - 12} ${Y} ${Z - 9} {Item:{id:"minecraft:iron_ingot",count:20}}`);
   rcon(`summon item ${X - 8} ${Y} ${Z - 11} {Item:{id:"minecraft:bread",count:5}}`);
   console.log(await tb.run([{ act: 'recover' }], 'вещи'));
+  console.log('   позиция: клиент', tb.bot.entity.position.floored().toString(), '| сервер', rcon('data get entity TbAlex Pos').replace(/.*data: /, ''), '| на земле', tb.bot.entity.onGround, '| вода', !!(tb.bot.blockAt(tb.bot.entity.position) || {}).name && tb.bot.blockAt(tb.bot.entity.position).name);
   console.log('кирка у бота:', !!tb.bot.inventory.items().find((i) => i.name === 'diamond_pickaxe'), '| на земле осталось:',
     rcon(`execute if entity @e[type=item,x=${X - 10},y=${Y},z=${Z - 10},distance=..8]`));
 
