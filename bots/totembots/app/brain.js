@@ -282,6 +282,21 @@ class Brain {
 
   stop() { clearInterval(this.idleTimer); }
 
+  /** Для панели: что сейчас с мозгом, понятными словами. */
+  status() {
+    const ini = this.cfg().initiative || { enabled: true, minutes: 2 };
+    const next = this.lastEvent + (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips));
+    return {
+      thinking: this.thinking ? { secs: Math.round((Date.now() - this.thinking.since) / 1000), about: this.thinking.about } : null,
+      queue: this.pending.length,
+      resting: this.bridge.resting ? Math.ceil((this.bridge.restUntil - Date.now()) / 60000) : 0,
+      nextFree: ini.enabled ? Math.max(0, Math.round((next - Date.now()) / 1000)) : -1,
+      last: this.lastDecision || null,
+      goal: this.memory && this.memory.bot(this.botCfg.name).goal ? this.memory.bot(this.botCfg.name).goal.text : '',
+      chat: !!this.botCfg.chatId,
+    };
+  }
+
   push(line, wake, from = '', channel = '', extra = {}) {
     this.lastEvent = Date.now();
     if (from && from !== '@self') { this.idleSkips = 0; this.selfChain = 0; }
@@ -330,6 +345,7 @@ class Brain {
         this.sentDigest = mem.version; this.sinceDigest = 0;
       }
       this.lastAsk = Date.now();
+      this.thinking = { since: Date.now(), about: batch.map((x) => x.line.replace(/^\[([^\]]*)\].*/, '$1')).slice(0, 3).join(', ') };
       // задание (приказ из панели или просьба хозяина что-то сделать) - режим «для заданий», остальное - «для болтовни»
       const q = this.cfg().qwen || {};
       const isPlan = batch.some((x) => /^\[приказ/.test(x.line) || (x.from && this.isMaster(x.from)
@@ -341,6 +357,7 @@ class Brain {
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
       this.log('← ' + JSON.stringify(r));
+      this.lastDecision = { at: Date.now(), say: r.say, acts: r.actions.map((a) => a && a.act).filter(Boolean), model: this.bridge.lastPick ? this.bridge.lastPick.model : '' };
       // кто просил: последний автор с правами в пачке; '@self' - бот сам (инициатива)
       const master = [...batch].reverse().find((x) => x.from && x.from !== '@self' && this.isMaster(x.from));
       const self = batch.some((x) => x.from === '@self');
@@ -421,6 +438,7 @@ class Brain {
       const again = batch.filter((x) => !x.retried);
       if (again.length) { again.forEach((x) => { x.retried = true; }); this.pending.unshift(...again); this.log('повторю через 5 с'); setTimeout(() => this.pump(), 5000); }
     } finally {
+      this.thinking = null;
       this.busy = false;
       if (this.pending.length) setTimeout(() => this.pump(), 500);
     }

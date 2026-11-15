@@ -15,6 +15,7 @@ async function act(fn) { try { err(''); await fn(); await refresh(); } catch (e)
 async function refreshQwen() {
   const s = await T.qwenState();
   $('qdot').className = 'dot ' + (s.loggedIn ? 'ok' : 'bad');
+  qwenOk = !!s.loggedIn;
   $('qstate').textContent = s.loggedIn ? 'Qwen: вход выполнен' : 'Qwen: нужен вход (кнопка ниже)';
 }
 
@@ -102,9 +103,38 @@ function botCard(b) {
   </div>`;
 }
 
-let lastHtml = '';
+let lastHtml = '', qwenOk = null;
+// «Что сейчас происходит»: шаги от входа в Qwen до мозга бота, с пояснениями
+function step(ic, title, hint) { return `<div class="step"><div class="ic ${ic}"></div><div><b>${esc(title)}</b>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div></div>`; }
+function renderNow(st) {
+  const out = [];
+  out.push(qwenOk === null ? step('spin', 'Qwen: проверяю вход', '')
+    : qwenOk ? step('ok', 'Qwen: вход выполнен', 'нейросеть - мозг ботов, работает в окне справа (вкладка «Окно бота»)')
+      : step('bad', 'Qwen: нужен вход', 'нажмите «Войти через Chrome» ниже и войдите своим аккаунтом Google'));
+  if (st.project && st.project.enabled) out.push(step(st.project.id ? 'ok' : 'spin', st.project.id ? 'Проект Qwen готов' : 'Проект Qwen создаётся', 'там чаты ботов и общая память; ' + (st.project.status || '')));
+  if (!st.bots.length) out.push(step('warn', 'Ботов нет', 'добавьте бота внизу панели («Добавить бота»)'));
+  for (const b of st.bots) {
+    const s = b.state || {}, br = b.brain;
+    if (s.status === 'online') out.push(step('ok', `${b.name} на сервере`, `${s.dim}, ${s.pos.join(' ')}; ${s.mode === 'follow' ? 'идёт за ' + s.follow : s.mode === 'task' ? 'занят: ' + s.task : 'свободен'}`));
+    else if (s.status === 'connecting') out.push(step('spin', `${b.name} заходит на сервер`, 'вход и пароль AuthMe - секунд 10'));
+    else { out.push(step('', `${b.name} выключен`, 'кнопка «Включить» в его карточке; при запуске программы боты заходят сами')); continue; }
+    if (!br) continue;
+    if (br.resting) out.push(step('bad', 'Мозг отдыхает: лимит Qwen', `на всех моделях этого аккаунта; снова попробует через ${br.resting} мин. Можно войти в другой аккаунт Google`));
+    else if (br.thinking) out.push(step('spin', `Мозг думает... ${br.thinking.secs} с`, 'о чём: ' + br.thinking.about + (br.queue ? `; ещё в очереди: ${br.queue}` : '')));
+    else if (!br.chat) out.push(step('spin', 'Мозг просыпается', 'скоро создастся чат в Qwen и бот начнёт жить сам'));
+    else out.push(step('ok', 'Мозг на связи, ждёт', br.nextFree >= 0 ? `своё дело придумает через ${br.nextFree > 60 ? Math.ceil(br.nextFree / 60) + ' мин' : br.nextFree + ' с'}, если раньше никто не позовёт` : 'свободная воля выключена'));
+    if (br.last) {
+      const ago = Math.round((Date.now() - br.last.at) / 1000);
+      const what = [br.last.say && `сказал «${br.last.say}»`, br.last.acts.length && 'делает: ' + br.last.acts.join(', ')].filter(Boolean).join('; ') || 'решил ничего не делать';
+      out.push(step('', `Последнее решение (${ago < 60 ? ago + ' с' : Math.round(ago / 60) + ' мин'} назад)`, what + (br.last.model ? ` · модель ${br.last.model}` : '')));
+    }
+    if (br.goal) out.push(step('', 'Цель: ' + br.goal, 'бот поставил её себе сам и продолжает между делами'));
+  }
+  $('steps').innerHTML = out.join('');
+}
 async function refresh() {
   const st = await T.state();
+  renderNow(st);
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');

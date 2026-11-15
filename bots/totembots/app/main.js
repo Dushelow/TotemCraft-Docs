@@ -95,7 +95,7 @@ function stateForPanel() {
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
       return { name: b.name, chatMode: b.chatMode || 'normal', aliases: (b.aliases || []).join(', '),
-        attention: l && l.brain ? { ...l.brain.attn.count } : null, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
+        attention: l && l.brain ? { ...l.brain.attn.count } : null, brain: l && l.brain && l.body && l.body.bot ? l.brain.status() : null, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
   };

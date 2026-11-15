@@ -43,6 +43,16 @@
   .srv { background: #232428; border-radius: 6px; padding: 6px 8px; margin-top: 6px; font-size: 12px; }
   .cmd { font: 11.5px Consolas, monospace; background: #17181a; border-radius: 4px; padding: 3px 6px; word-break: break-all; }
   #err { color: var(--bad); min-height: 16px; font-size: 12px; }
+  .now { border: 1px solid #3b4a8a; }
+  .nowtitle { font-weight: 600; margin-bottom: 6px; }
+  .step { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; border-top: 1px solid #34363c; }
+  .step:first-child { border-top: 0; }
+  .step .ic { width: 16px; height: 16px; flex: none; margin-top: 2px; border-radius: 50%; background: #4e5058; }
+  .step .ic.ok { background: var(--ok); } .step .ic.bad { background: var(--bad); } .step .ic.warn { background: var(--warn); }
+  .step .ic.spin { background: none; border: 2px solid #5865f2; border-top-color: transparent; animation: spin .8s linear infinite; box-sizing: border-box; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .step b { font-weight: 600; }
+  .step .hint { color: var(--muted); font-size: 12px; }
   #tabs { position: fixed; left: 440px; right: 0; top: 0; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 8px;
     background: #232428; border-bottom: 1px solid var(--line); }
   #tabs button { background: #4e5058; padding: 4px 12px; }
@@ -59,6 +69,10 @@
 </div>
 <header><h1>TotemBots</h1></header>
 <main>
+  <div class="card now" id="now">
+    <div class="nowtitle">Что сейчас происходит</div>
+    <div id="steps"></div>
+  </div>
   <div class="card">
     <div class="row"><span id="qdot" class="dot"></span><b id="qstate" class="grow">Qwen: проверяю...</b></div>
     <div class="row" style="margin-top:8px"><button id="chrome">Войти через Chrome</button><button id="reload" class="sec">Открыть Qwen заново</button></div>
