@@ -170,6 +170,7 @@ function createWindow() {
   dsView.webContents.loadURL(SITES.deepseek.home);
   dsView.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: dss } } }));
   const dsChat = new WebChat(dsView.webContents, 'deepseek', (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
+  dsChat.inUse = () => tab === 'deepseek';
   router = new Router({ qwen: bridge, cfg: () => cfg, webs: { deepseekweb: dsChat }, log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
     log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
@@ -217,7 +218,7 @@ const SERVICE_INTRO = 'Ты служебный помощник ботов се�
   'Только строки, каждая с новой строки, без нумерации и без markdown. Если важного нет - ответь одним словом: пусто.';
 async function summarizeBackground(force = false) {
   const n = background.lines.length;
-  if (background.busy || !n) return;
+  if (background.busy || !n || cfg.paused) return;   // пауза - никаких обращений к нейросетям
   if (!force && n < 60 && (n < 5 || Date.now() - background.lastRun < 15 * 60000)) return;
   background.busy = true;
   const chunk = background.lines.splice(0, 120);
@@ -254,7 +255,7 @@ function dataDir() { return process.env.TOTEMBOTS_MEMORY || app.getPath('userDat
 let projectState = { status: '', syncedVersion: -1, syncedAt: 0, busy: false };
 function projectEnabled() { return !cfg.qwenProject || cfg.qwenProject.enabled !== false; }
 async function projectSync(force = false) {
-  if (!projectEnabled() || projectState.busy) return;
+  if (!projectEnabled() || projectState.busy || cfg.paused) return;
   if (!force && (memory.version === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
   projectState.busy = true;
   try {

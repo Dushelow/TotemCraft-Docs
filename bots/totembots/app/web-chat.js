@@ -34,9 +34,11 @@ class WebChat {
 
   async _ask(chatId, text) {
     const s = this.site;
+    // окно открыто у владельца (вход, своё) или вход не сделан - страницу не трогаем вообще
+    if (this.inUse && this.inUse()) throw new Error(`${s.name}: окно открыто у владельца - не трогаю`);
+    if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - кнопка «Войти в DeepSeek через Chrome»`);
     const want = chatId ? s.chatUrl(chatId) : s.home;
     if (!this.wc.getURL().startsWith(want) || !chatId) { await this.wc.loadURL(want); await sleep(1500); }
-    if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - войдите во вкладке «DeepSeek»`);
     if (await this.captcha()) throw new Error(`${s.name}: проверка «не робот» - пройдите её во вкладке`);
     // поле ввода
     let ok = false;
