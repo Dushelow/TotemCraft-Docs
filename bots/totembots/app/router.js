@@ -14,7 +14,8 @@ const PRESETS = {
 const LIMITED = /limit|quota|429|rate|exceed|лимит|captcha|проверк|не начал|timeout|ECONN|ETIMEDOUT|fetch failed|5\d\d/i;
 
 class Router {
-  constructor({ qwen, cfg, log, webs = {} }) {
+  constructor({ qwen, cfg, log, webs = {}, save = () => {} }) {
+    this.save = save;
     this.qwen = qwen; this.cfg = cfg; this.log = log || (() => {}); this.webs = webs;   // webs: { deepseekweb: WebChat }
     this.chats = new Map();      // логический чат -> { warm, turns: [{q, a}], qwenId }
     this.rest = {};              // мозг -> до какого времени не трогать
@@ -50,8 +51,12 @@ class Router {
   ensureWarm(chatId, warm) { const ch = this.chats.get(chatId); if (ch && !ch.warm) ch.warm = warm; }
 
   async ask(chatId, text, opt = {}) {
-    // логический чат с прошлого запуска программы - истории нет: пусть мозг начнёт новый (как PARENT_NOT_FOUND)
-    if (chatId && chatId.startsWith('L-') && !this.chats.has(chatId)) throw new Error('PARENT_NOT_FOUND: чат с прошлого запуска');
+    // логический чат с прошлого запуска: чат Qwen (и сайтов) помнится в настройках - продолжаем там же
+    if (chatId && chatId.startsWith('L-') && !this.chats.has(chatId)) {
+      const saved = (this.cfg().routerChats || {})[chatId];
+      if (!saved || !saved.qwenId) throw new Error('PARENT_NOT_FOUND: чат с прошлого запуска');
+      this.chats.set(chatId, { warm: '', turns: [], qwenId: saved.qwenId, webIds: saved.webIds || {} });
+    }
     let id = chatId;
     if (!id) id = 'L-' + crypto.randomUUID();
     let ch = this.chats.get(id);
@@ -66,6 +71,8 @@ class Router {
         const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : b.web ? await this.askWeb(b, ch, text) : await this.askApi(b, ch, text);
         if (!answer || !String(answer).trim()) throw new Error('пустой ответ');
         ch.turns.push({ q: text, a: answer }); ch.turns = ch.turns.slice(-24);
+        { const c = this.cfg(); c.routerChats = c.routerChats || {}; const prev = c.routerChats[id] || {};
+          if (prev.qwenId !== ch.qwenId || JSON.stringify(prev.webIds || {}) !== JSON.stringify(ch.webIds || {})) { c.routerChats[id] = { qwenId: ch.qwenId, webIds: ch.webIds || {}, at: Date.now() }; const keys = Object.keys(c.routerChats); if (keys.length > 40) delete c.routerChats[keys[0]]; this.save(); } }
         if (this.lastBrain !== b.id) { this.lastBrain = b.id; this.onAttention('мозг сейчас: ' + b.name); }
         this.lastPick = { model: b.id === 'qwen' ? (this.qwen.lastPick || {}).model || 'Qwen' : `${b.name} ${b.model}`, mode: b.id === 'qwen' ? (this.qwen.lastPick || {}).mode || '' : 'api' };
         return { answer, chatId: id };

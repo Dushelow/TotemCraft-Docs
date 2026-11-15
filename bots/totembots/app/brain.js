@@ -54,6 +54,9 @@ ${require('./commands').manual()}
 что за постройка) - !see(вопрос): я сделаю снимок твоего вида и карты сверху и пришлю описание [вижу картинкой].
 Снимок дорогой - не чаще, чем нужно.
 
+МЕЛОЧИ ИГРЫ: сытым (еда 20/20) есть нельзя - тело ответит «не голоден». Семена не ставятся как блок: сначала вспахать
+мотыгой (!till), потом посадить (!plant) - или сразу !farm(wheat_seeds, 4). Ночью мобы - лучше в дом или к людям.
+
 ЗНАНИЕ И ОПЫТ. Не знаешь, как сделать вещь, - !plan(предмет): пришлю весь путь по шагам с учётом инвентаря, выполняй
 его командами. Вышло что-то полезное из нескольких команд - !saveSkill(название), потом повторишь !skill(название).
 Понял что-то на опыте - !lesson(текст): уроки приходят в [память] и не дают ходить по кругу. Помни людей и отношения
@@ -189,6 +192,7 @@ class Brain {
     if (!qwen.askImage || !this.body.snapshot) return;
     try {
       const png = this.body.snapshot();
+      const shotAt = Date.now(), shotPos = this.body.bot.entity.position.floored();
       try { const dir = require('path').join(__dirname, '..', 'local', 'vision'); require('fs').mkdirSync(dir, { recursive: true }); require('fs').writeFileSync(require('path').join(dir, this.botCfg.name + '.png'), png); } catch {}
       this.log('смотрю глазами (снимок -> Qwen)');
       const prompt = 'Кадр из Minecraft, нарисован грубо цветами блоков: слева вид глазами персонажа, справа карта сверху на 48 блоков ' +
@@ -197,7 +201,8 @@ class Brain {
       const r = await qwen.askImage(this.botCfg.eyesChat || '', prompt, png);
       if (r.chatId) { this.botCfg.eyesChat = r.chatId; this.save(); }
       const ans = String(r.answer).replace(/^[\s\S]*?(?=[А-Яа-яЁё])/, '').replace(/\s+/g, ' ').slice(0, 600);   // английские рассуждения до первой русской фразы - отбросить
-      this.push('[вижу картинкой] ' + (ans || String(r.answer).slice(0, 400)), true, from, '', { look: true });
+      const ago = Math.round((Date.now() - shotAt) / 1000);
+      this.push(`[вижу картинкой - снимок с ${shotPos.x} ${shotPos.y} ${shotPos.z}, ${ago} с назад; если ты с тех пор ушёл, это уже позади] ` + (ans || String(r.answer).slice(0, 400)), true, from, '', { look: true });
     } catch (e) {
       this.log('зрение: ' + e.message);
       this.push('[вижу картинкой] не вышло: ' + e.message.slice(0, 120), true, from, '', { look: true });
@@ -410,7 +415,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree']);
+        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));

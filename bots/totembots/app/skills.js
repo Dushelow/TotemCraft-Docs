@@ -239,6 +239,65 @@ class Skills {
     return `поставил ${name} на ${at.x} ${at.y} ${at.z}`;
   }
 
+  /** Земля под грядку рядом: dirt/grass, сверху воздух, не у чужих построек (своё можно). */
+  soilNear(r = 6, at = null) {
+    const b = this.b;
+    if (at) return [b.blockAt(at)].filter(Boolean);
+    const me = b.entity.position.floored();
+    return b.findBlocks({ matching: (bl) => /^(dirt|grass_block|dirt_path|coarse_dirt|rooted_dirt)$/.test(bl.name), maxDistance: r, count: 60 })
+      .map((p) => b.blockAt(p)).filter((k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.boundingBox === 'empty' && !/water|lava/.test(up.name) && !this.builtNear(k.position, 2); })
+      .sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me));
+  }
+
+  /** Вспахать мотыгой (как игрок: правый клик мотыгой по земле). */
+  async till(a, tok) {
+    const b = this.b, tb = this.tb;
+    const hoe = b.inventory.items().find((i) => /_hoe$/.test(i.name));
+    if (!hoe) throw new Error('нет мотыги (wooden_hoe: 2 доски + 2 палки на верстаке)');
+    const at = a.x !== undefined ? new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z)) : null;
+    const soil = this.soilNear(6, at)[0];
+    if (!soil || !/dirt|grass/.test(soil.name)) throw new Error('рядом нет земли или травы под грядку (сверху должен быть воздух)');
+    await tb.goto(new goals.GoalNear(soil.position.x, soil.position.y + 1, soil.position.z, 2), tok, 30000);
+    await b.equip(hoe, 'hand');
+    tb.busyLook = true;
+    try { await b.lookAt(soil.position.offset(0.5, 1, 0.5)); await b.activateBlock(soil, new Vec3(0, 1, 0)); await sleep(400); } finally { tb.busyLook = false; }
+    const now = b.blockAt(soil.position);
+    if (!now || now.name !== 'farmland') throw new Error(`не вспахалось (${now && now.name})`);
+    return `вспахал ${soil.position.x} ${soil.position.y} ${soil.position.z}`;
+  }
+
+  /** Посадить на грядку (семена, морковь, картошка, свёкла). */
+  async plant(a, tok) {
+    const b = this.b, tb = this.tb;
+    const name = String(a.item || a.seed || 'wheat_seeds').toLowerCase().replace(/^minecraft:/, '');
+    const seed = b.inventory.items().find((i) => i.name === name) || b.inventory.items().find((i) => /seeds$|^carrot$|^potato$/.test(i.name));
+    if (!seed) throw new Error('нечего сажать (wheat_seeds - с травы, carrot, potato, beetroot_seeds)');
+    const me = b.entity.position;
+    let land = a.x !== undefined ? b.blockAt(new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z))) : null;
+    if (!land) land = b.findBlocks({ matching: b.registry.blocksByName.farmland.id, maxDistance: 8, count: 40 }).map((p) => b.blockAt(p))
+      .filter((k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.name === 'air'; }).sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me))[0];
+    if (!land || land.name !== 'farmland') throw new Error('нет вспаханной грядки - сначала !till');
+    await tb.goto(new goals.GoalNear(land.position.x, land.position.y + 1, land.position.z, 2), tok, 30000);
+    await b.equip(seed, 'hand');
+    tb.busyLook = true;
+    try { await b.lookAt(land.position.offset(0.5, 1, 0.5)); await b.activateBlock(land, new Vec3(0, 1, 0)); await sleep(400); } finally { tb.busyLook = false; }
+    const up = b.blockAt(land.position.offset(0, 1, 0));
+    if (!up || up.name === 'air') throw new Error('не посадилось');
+    return `посадил ${seed.name} на ${land.position.x} ${land.position.y} ${land.position.z}`;
+  }
+
+  /** Огород: вспахать и засадить n клеток рядом. */
+  async farm(a, tok) {
+    const n = Math.max(1, Math.min(16, +a.count || 4));
+    let done = 0, why = '';
+    for (let i = 0; i < n; i++) {
+      this.tb.check(tok);
+      try { await this.till({}, tok); await this.plant({ item: a.item }, tok); done++; } catch (e) { if (this.tb.isCancel(e)) throw e; why = e.message; break; }
+    }
+    if (!done) throw new Error('огород не вышел: ' + why);
+    return `засадил грядок: ${done}${done < n ? ' (дальше: ' + why + ')' : ''}`;
+  }
+
   /** Сломать один блок в точке (свой поставленный или природный вдали от чужого). */
   async breakAt(a, tok) {
     const p = new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z));

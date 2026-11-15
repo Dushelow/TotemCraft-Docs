@@ -507,7 +507,7 @@ class TotemBot extends EventEmitter {
   /** Уступ рядом (до r блоков), где можно встать, - ближе к цели goal (если дана). */
   ledgeNear(r = 5, goal = null) {
     const b = this.bot, me = b.entity.position, lvl = Math.floor(me.y);
-    const ok = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|ice|leaves|glass/.test(k.name); };
+    const ok = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|leaves|glass/.test(k.name); };
     const free = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava/.test(k.name); };
     let best = null, bs = Infinity;
     for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = -1; dy <= 1; dy++) {
@@ -678,7 +678,7 @@ class TotemBot extends EventEmitter {
     if (Date.now() - this.wetSince < 15000 || Date.now() - (this.shoreTry || 0) < 10000) return;
     this.shoreTry = Date.now();
     // берег - природная земля (не чужие доски, лодки и причалы: туда из воды не залезть, да и не наше)
-    const NATURAL = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|sand|red_sand|gravel|stone|deepslate|andesite|diorite|granite|tuff|calcite|clay|mud|snow_block|moss_block|sandstone|red_sandstone|terracotta|.*_terracotta)$/;
+    const NATURAL = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|sand|red_sand|gravel|stone|deepslate|andesite|diorite|granite|tuff|calcite|clay|mud|snow_block|moss_block|sandstone|red_sandstone|terracotta|.*_terracotta|ice|packed_ice|blue_ice)$/;
     const solid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && NATURAL.test(k.name); };
     this.badShore = (this.badShore || []).filter((x) => Date.now() - x.at < 10 * 60000);
     const empty = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava/.test(k.name); };
@@ -687,7 +687,7 @@ class TotemBot extends EventEmitter {
     const lvl = Math.floor(me.y);
     let best = null;
     // сначала природный берег в 40 блоках; нет - любая твёрдая опора в 64 (причал, мостки - как игрок; не палуба над головой)
-    const anySolid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|ice|leaves|_glass|glass/.test(k.name); };
+    const anySolid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|leaves|_glass|glass/.test(k.name); };
     for (const [maxUp, R, ok] of [[1, 40, solid], [1, 64, anySolid]]) {
     for (let r = 1; r <= R && !best; r += (r < 6 ? 1 : 2)) {
       for (let a = 0; a < 32; a++) {
@@ -1508,6 +1508,9 @@ class TotemBot extends EventEmitter {
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'wander': r = await this.wander(a, tok); break;
           case 'gather': r = await this.skills.gather(a, tok); break;
+          case 'till': r = await this.skills.till(a, tok); break;
+          case 'plant': r = await this.skills.plant(a, tok); break;
+          case 'farm': r = await this.skills.farm(a, tok); break;
           case 'plan': r = require('./recipes').plan(this.bot, a.item, a.count); break;
           case 'craftable': r = require('./recipes').craftable(this.bot); break;
           case 'findSpot': { const sp = this.skills.freeSpots(5); r = sp.length ? 'места без построек: ' + sp.map((s) => `${s.x} ${s.y} ${s.z} (${Math.round(s.d)} бл. на ${s.dir})`).join('; ') : 'на карте пока нет мест без построек - !wander, чтобы разведать'; break; }
