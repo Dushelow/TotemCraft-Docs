@@ -29,7 +29,10 @@ let tab = 'bot';
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
 const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(app.getPath('userData'), 'config.json');
-let cfg = { host: '127.0.0.1', port: 25566, masters: ['Valghard'], bots: [], qwen: { chatMode: 'fast', planMode: 'auto', models: [] } };
+// по умолчанию: настоящий сервер, хозяин - владелец, боты сами заходят при запуске программы, голос Qwen
+let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bots: [], autostart: true, birthYear: '2000',
+  qwen: { chatMode: 'fast', planMode: 'auto', models: [] }, initiative: { enabled: true, minutes: 2 },
+  voice: { enabled: true, provider: 'qwen', fallback: true, local: true, plasmo: true, volume: 0.8 } };
 function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
 }
@@ -79,6 +82,8 @@ function startBot(name) {
   body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
   body.start();
+  // сознание включается сразу: через 30 с после входа - первое «свободное время» (создаётся чат Qwen, бот начинает жить)
+  body.once('event', () => setTimeout(() => { brain.lastEvent = 0; brain.idle(); }, 30000));
 }
 
 function stateForPanel() {
@@ -441,7 +446,10 @@ ipcMain.handle('qwen-login-chrome', async () => {
   }
 });
 
-app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow(); });
+app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow();
+  // боты заходят сами (настройка autostart; выключить - в config.json "autostart": false)
+  if (cfg.autostart !== false) setTimeout(() => { for (const b of cfg.bots) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
+});
 app.on('window-all-closed', () => {
   for (const l of live.values()) if (l.body) l.body.stop();
   setTimeout(() => app.quit(), 300);

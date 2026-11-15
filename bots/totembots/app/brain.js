@@ -215,7 +215,7 @@ class Brain {
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
     const following = this.body.mode === 'follow' ? ` Ты идёшь за ${this.body.followName}, далеко от него не уходи.` : '';
-    this.push(`[свободное время] ${mins} мин тебя ни о чём не просят. Чем займёшься? Придумай сам дело в мире и сделай его.${following}`, true, '@self', '', { want: ['map'] });
+    this.push(`[свободное время] ${mins > 600 ? 'ты только что зашёл на сервер.' : mins + ' мин тебя ни о чём не просят.'} Чем займёшься? Придумай сам дело в мире и сделай его.${following}`, true, '@self', '', { want: ['map'] });
     this.selfChain = 0;
   }
 
