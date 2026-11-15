@@ -315,7 +315,8 @@ class QwenBridge {
     this.captchaTimer = setInterval(async () => {
       const on = await this.wc.executeJavaScript(`(() => { const t = (document.body && document.body.innerText || '').slice(0, 20000);
         return /slide to verify|drag the slider|complete the verification|security verification|请完成|滑动验证|拖动滑块/i.test(t)
-          || !!document.querySelector('#aliyunCaptcha-window-popup, .aliyunCaptcha-mask, [id^="nc_"][id$="_wrapper"], iframe[src*="captcha"]'); })()`).catch(() => false);
+          || [...document.querySelectorAll('#aliyunCaptcha-window-popup, .aliyunCaptcha-mask, [id^="nc_"][id$="_wrapper"], iframe[src*="captcha"]')]
+            .some((el) => { const r = el.getBoundingClientRect(); const st = getComputedStyle(el); return r.width > 40 && r.height > 40 && st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0'; }); })()`).catch(() => false);
       if (!on && !this.busyDialog) {
         await this.wc.executeJavaScript(`(() => {
           for (const d of document.querySelectorAll('[role=dialog], .ant-modal-wrap, .qwen-modal')) {

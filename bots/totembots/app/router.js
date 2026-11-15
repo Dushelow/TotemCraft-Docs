@@ -79,7 +79,8 @@ class Router {
         this.log(`мозг ${b.name}: ${e.message.slice(0, 120)} - пробую следующий`);
       }
     }
-    if (this.order().every((b) => this.isResting(b.id))) throw new Error('лимит Qwen на всех моделях и других мозгов нет: ' + (last ? last.message : ''));
+    const why = this.order().map((b) => `${b.name}: ${b.id === 'qwen' ? (this.qwen.captcha ? 'проверка «не робот»' : this.qwen.resting ? 'лимит на всех моделях' : 'сбой') : this.isResting(b.id) ? 'отдыхает после ошибки' : 'сбой'}`).join('; ');
+    if (this.order().every((b) => this.isResting(b.id))) throw new Error('лимит Qwen на всех моделях / мозги недоступны - ' + why + (last ? ' (' + last.message.slice(0, 80) + ')' : ''));
     throw last || new Error('нет доступных мозгов');
   }
 

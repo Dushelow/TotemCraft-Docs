@@ -110,7 +110,8 @@ function parseCommands(text) {
   const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
   if (fence) { try { const j = JSON.parse(fence[1].slice(fence[1].indexOf('{'), fence[1].lastIndexOf('}') + 1)); for (const a of j.actions || []) if (a && a.act) acts.push(a); } catch {} }
   // в чат - только реплика персонажа: без мыслей в скобках, разметки и отчётов «команда сработала»
-  let say = raw.replace(/```[\s\S]*?```/g, '').replace(re, '').replace(/\([^()]*\)/g, '').replace(/[*_`#>]+/g, '')
+  // подписи кнопок блока кода со страницы (text / Copy / Download / Скопировать...) - не текст
+  let say = raw.replace(/```[\s\S]*?```/g, '').replace(/(^|\s)(plaintext|text|json|bash|Copy|Download|Copied|Скопировать|Скачать|Скопировано)(?=\s|$)/g, ' ').replace(re, '').replace(/\([^()]*\)/g, '').replace(/[*_`#>]+/g, '')
     .replace(/\s+([,.!?])/g, '$1').split('\n').map((l) => l.trim()).filter(Boolean).join(' ').replace(/\s{2,}/g, ' ').trim();
   const META = /команд|систем|итог|сработал|инвентар|позици|координат|задани|выполнен|не работа|^отлично|^понял|давайте|попробую|возможно|я вижу|теперь я|я дошёл|я переместил|я всё ещё/i;
   say = say.split(/(?<=[.!?])\s+/).filter((x) => x && !META.test(x)).slice(0, 2).join(' ').slice(0, 200);
