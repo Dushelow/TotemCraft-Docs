@@ -135,9 +135,9 @@ const PICK = (model, mode) => `(async () => {
     const trigger = document.querySelector('[aria-label="Select Model"]');
     if (model && trigger && trigger.textContent.trim().toLowerCase() !== model.toLowerCase()) {
       fire(trigger); await pause(400);
-      const find = () => [...document.querySelectorAll('.wms-list__item')].find((n) => String((n.querySelector('.wms-list__name-info') || {}).textContent).trim().toLowerCase() === model.toLowerCase());
+      const find = () => [...document.querySelectorAll('.wms-list__item')].find((n) => String((n.querySelector('.wms-list__name-text') || n.querySelector('.wms-list__name-info') || {}).textContent).trim().toLowerCase() === model.toLowerCase());
       const more = document.querySelector('.wms-more-entry__content');
-      if (!find() && more) { fire(more); await pause(500); }
+      if (!find() && more) { fire(more); await pause(800); }
       const item = find();
       if (item) { fire(item); await pause(500); } else { found = false; fire(trigger); }
     }
@@ -447,30 +447,59 @@ class QwenBridge {
     }
   }
 
-  /** Другие модели Qwen с сайта (на случай лимита, если свой список не задан). */
-  async autoModels(tried) {
-    const names = await this.wc.executeJavaScript(`fetch('/api/models', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
-      .then((r) => r.json()).then((j) => (j.data || []).map((m) => (m.info && m.info.name) || m.name || m.id)).catch(() => [])`).catch(() => []);
-    const cur = await this.wc.executeJavaScript(`(document.querySelector('[aria-label="Select Model"]') || {}).textContent || ''`).catch(() => '');
-    return (names || []).filter((n) => n && !tried.includes(n) && n.trim() !== String(cur).trim()).slice(0, 4);
+  /** Все модели из меню выбора Qwen, включая «Expand more models». */
+  async menuModels() {
+    return this.wc.executeJavaScript(`(async () => {
+      const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+      const fire = (el) => { for (const t of ['pointerover','mouseover','pointerenter','mouseenter','pointerdown','mousedown','pointerup','mouseup','click'])
+        el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, { bubbles: !/enter/.test(t), cancelable: true })); };
+      const trigger = document.querySelector('[aria-label="Select Model"]');
+      if (!trigger) return [];
+      fire(trigger); await pause(400);
+      const more = document.querySelector('.wms-more-entry__content');
+      if (more) { fire(more); await pause(800); }
+      const names = [...document.querySelectorAll('.wms-list__name-text')].map((n) => n.textContent.trim()).filter(Boolean);
+      fire(trigger); await pause(200);
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      return [...new Set(names)];
+    })()`).catch(() => []);
+  }
+
+  modelNow() { return this.wc.executeJavaScript(`(document.querySelector('[aria-label="Select Model"]') || {}).textContent || ''`).then((t) => String(t).trim()).catch(() => ''); }
+
+  // модели, упёршиеся в дневной лимит: до конца суток не трогаем
+  limitedToday() {
+    const day = new Date().toDateString();
+    if (!this.limited || this.limited.day !== day) this.limited = { day, set: new Set() };
+    return this.limited.set;
   }
 
   async _askModels(chatId, text, opt) {
-    const models = (opt.models && opt.models.length) ? [...opt.models] : [''];
+    const lim = this.limitedToday();
+    let models = (opt.models && opt.models.length) ? [...opt.models] : [this.goodModel || ''];
+    models = models.filter((m) => !m || !lim.has(m));
+    if (!models.length) models = [''];
     let last, auto = false;
-    for (let i = 0; i < models.length && i < 6; i++) {
+    for (let i = 0; i < models.length && i < 25; i++) {
       try {
         const r = await this._ask(chatId, text, models[i], opt.mode || '');
         // лимит Qwen приходит обычным ответом («You've reached today's chat limit...») - это не реплика бота
         if (LIMIT_TEXT.test(r.answer || '')) throw new Error('лимит Qwen: ' + String(r.answer).slice(0, 80));
-        if (models[i]) this.goodModel = models[i];
+        this.goodModel = models[i] || (await this.modelNow()) || this.goodModel;
         return r;
       } catch (e) {
         last = e;
         if (!LIMIT.test(e.message)) throw e;
-        if (i === models.length - 1 && !auto) { auto = true; models.push(...await this.autoModels(models)); }
-        if (i === models.length - 1) throw e;
-        this.onAttention(`Qwen: модель ${models[i] || '(текущая)'} упёрлась в лимит, переключаюсь на ${models[i + 1]}`);
+        const used = models[i] || (await this.modelNow());
+        if (used) lim.add(used);
+        if (this.goodModel === used) this.goodModel = '';
+        if (i === models.length - 1 && !auto) {
+          auto = true;
+          const all = await this.menuModels();
+          models.push(...all.filter((n) => !lim.has(n) && !models.includes(n)));
+        }
+        if (i === models.length - 1) { this.onAttention('Qwen: лимит на всех моделях до завтра'); throw e; }
+        this.onAttention(`Qwen: ${used || 'модель'} упёрлась в лимит (до завтра не трогаю), переключаюсь на ${models[i + 1]}`);
       }
     }
     throw last;
