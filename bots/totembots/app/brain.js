@@ -2,6 +2,8 @@
 // Qwen отвечает JSON: что сказать в чат и что сделать. Приказы с вещами и перемещением выполняются только от тех,
 // кто в списке «хозяева» (владелец и выбранные люди), остальным бот только отвечает.
 
+const { Attention } = require('./attention');
+
 const DEFAULT_PERSONA = 'Обычный игрок ванильного сервера TotemCraft. Дружелюбный, спокойный, с юмором, любит строить ' +
   'и помогать. Пишет как в игровом чате: коротко, простыми словами, чаще с маленькой буквы, без эмодзи.';
 
@@ -38,6 +40,11 @@ function warmText(cfg, bot) {
 {"act":"remember","kind":"fact","text":"..."} - запомнить факт о сервере или мире
 {"act":"remember","kind":"journal","text":"..."} - записать в свой дневник (что было, что чувствуешь, что задумал)
 {"act":"forget","kind":"place","name":"склад"} - забыть (kind: place, person, fact)
+
+Чат: я присылаю только то, что обращено к тебе: [чат личка], [чат рядом] (ближний чат), [чат общий]. Отвечаешь ты
+автоматически туда же, откуда спросили (личка - в личку, ближний - в ближний, общий - в общий). В общий чат пиши
+особенно коротко. [вокруг] - то, что ты сам слышал рядом (сказано не тебе): ты это знаешь и можешь на это опираться,
+но отдельно отвечать на это не нужно. Новости сервера из общего чата приходят сжатыми в [память] (раздел «Новости чата»).
 
 Память: я присылаю блок [память] с местами, людьми, фактами и твоим дневником, когда он меняется. Запоминай САМ, без
 просьб, всё, что пригодится потом: новые места, людей и их просьбы, договорённости, интересные события. Ты живой
@@ -99,23 +106,28 @@ class Brain {
     this.idleTimer = setInterval(() => this.idle(), 30000);
     body.on('end', () => {});
 
+    this.attn = new Attention(botCfg.name, { mode: botCfg.chatMode || 'normal', aliases: botCfg.aliases || [] });
+    this.onBackground = () => {};   // общий журнал фона (main.js) - туда весь неважный общий чат
     body.on('player-chat', (m) => this.onChat(m));
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
   }
 
   isMaster(name) { return this.cfg().masters.some((m) => m.toLowerCase() === String(name).toLowerCase()); }
 
-  onChat({ from, text, whisper }) {
-    const me = this.botCfg.name;
+  // Умный чат (CHAT.md): обращение - сразу в Qwen; «рядом» - копится до следующего обращения; фон - в общий журнал.
+  onChat({ from, text, whisper, channel }) {
+    const ch = channel || (whisper ? 'whisper' : 'global');
     const e = this.body.player(from);
-    const dist = e && this.body.bot.entity ? Math.round(e.position.distanceTo(this.body.bot.entity.position)) : null;
-    const mentioned = new RegExp(me, 'i').test(text);
-    // реагируем на личку, на обращение по имени и на разговор рядом (до 12 блоков)
-    if (!whisper && !mentioned && (dist === null || dist > 12)) return;
+    const dist = e && this.body.bot && this.body.bot.entity ? Math.round(e.position.distanceTo(this.body.bot.entity.position)) : null;
+    this.attn.mode = this.botCfg.chatMode || 'normal';
+    const kind = this.attn.classify({ from, text, channel: ch, dist, master: this.isMaster(from) });
+    if (kind === 'background') { this.onBackground({ from, text, at: Date.now() }); return; }
+    if (kind !== 'address') return;
     const at = e ? `, стоит на ${Math.floor(e.position.x)} ${Math.floor(e.position.y)} ${Math.floor(e.position.z)}` : '';
-    const where = (whisper ? 'лично тебе' : dist !== null ? `в чат, ${dist} бл. от тебя` : 'в чат') + at;
+    const label = { whisper: 'личка', local: 'рядом', global: 'общий' }[ch];
+    const where = (dist !== null ? `${dist} бл. от тебя` : 'далеко') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
-    this.push(`[чат] ${from}${role} пишет ${where}: ${text}`, true, from);
+    this.push(`[чат ${label}] ${from}${role} (${where}): ${text}`, true, from, ch);
   }
 
   order(text) {
@@ -134,9 +146,9 @@ class Brain {
 
   stop() { clearInterval(this.idleTimer); }
 
-  push(line, wake, from = '') {
+  push(line, wake, from = '', channel = '') {
     this.lastEvent = Date.now();
-    this.pending.push({ line, from });
+    this.pending.push({ line, from, channel });
     this.log('→ ' + line);
     if (wake) this.pump();
   }
@@ -156,6 +168,7 @@ class Brain {
   async pump() {
     if (this.busy || !this.pending.length) return;
     this.busy = true;
+    let batch = [];
     try {
       const wait = 2500 - (Date.now() - this.lastAsk);
       if (wait > 0) await sleep(wait);
@@ -163,8 +176,11 @@ class Brain {
       if (!this.botCfg.chatId) await this.warm();
       // вводная изменилась (обновление программы, характер, хозяева) - повторить её в этом же чате
       else if (this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg))) await this.warm(this.botCfg.chatId);
-      const batch = this.pending.splice(0);
-      let msg = batch.map((x) => x.line).join('\n') + `\n[состояние] ${this.body.stateText()}`;
+      batch = this.pending.splice(0);
+      let msg = batch.map((x) => x.line).join('\n');
+      const around = this.attn.takeNear();
+      if (around.length) { msg += '\n[вокруг] ' + around.join(' | '); this.log('[вокруг] ' + around.join(' | ')); }
+      msg += `\n[состояние] ${this.body.stateText()}`;
       // память: целиком, когда изменилась, и раз в 25 сообщений, чтобы не забывалась в длинном чате
       const mem = this.memory;
       if (mem && (this.sentDigest !== mem.version || ++this.sinceDigest >= 25)) {
@@ -186,7 +202,14 @@ class Brain {
       const master = [...batch].reverse().find((x) => x.from && x.from !== '@self' && this.isMaster(x.from));
       const self = batch.some((x) => x.from === '@self');
       if (r.say && this.voice) this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
-      if (r.say) await this.typeAndSay(r.say);
+      // ответ - туда, откуда спросили; тем, кому ответил, открывается окно разговора
+      const chs = batch.map((x) => x.channel).filter(Boolean);
+      const whisperFrom = [...batch].reverse().find((x) => x.channel === 'whisper');
+      const rc = this.attn.replyChannel(chs, whisperFrom && whisperFrom.from);
+      if (r.say) {
+        this.attn.answered(batch.filter((x) => x.channel).map((x) => x.from));
+        await this.typeAndSay(r.say, rc);
+      }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
         const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover']);
@@ -202,17 +225,20 @@ class Brain {
       }
     } catch (e) {
       this.log('Qwen: ' + e.message);
+      // сбой Qwen: один раз повторить те же сообщения (мост перезагрузит чат), чтобы игроки не остались без ответа
+      const again = batch.filter((x) => !x.retried);
+      if (again.length) { again.forEach((x) => { x.retried = true; }); this.pending.unshift(...again); this.log('повторю через 5 с'); setTimeout(() => this.pump(), 5000); }
     } finally {
       this.busy = false;
       if (this.pending.length) setTimeout(() => this.pump(), 500);
     }
   }
 
-  async typeAndSay(text) {
-    const parts = String(text).split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, 3);
+  async typeAndSay(text, rc = { channel: 'local' }) {
+    const parts = String(text).split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, rc.channel === 'global' ? 2 : 3);
     for (const p of parts) {
       await sleep(Math.min(6000, 600 + p.length * 70 * (0.7 + Math.random() * 0.6)));   // будто печатает
-      this.body.say(p.replace(/\.$/, ''));
+      this.body.say(p.replace(/\.$/, ''), rc.channel, rc.to);
     }
   }
 

@@ -13,7 +13,7 @@ const key = (s) => clean(s, 40).toLowerCase();
 class Memory {
   constructor(dir, world = 'totemcraft') {
     this.file = path.join(dir, 'memory', world + '.json');
-    this.data = { places: {}, people: {}, facts: [], bots: {} };
+    this.data = { places: {}, people: {}, facts: [], bots: {}, news: [] };
     try { this.data = { ...this.data, ...JSON.parse(fs.readFileSync(this.file, 'utf8')) }; } catch {}
     this.version = 0;
     this.listeners = [];
@@ -81,6 +81,14 @@ class Memory {
     return 'такого не помню';
   }
 
+  /** Новости из общего чата (сжатие фона служебным чатом): строки, последние 30. */
+  news(lines) {
+    this.data.news = this.data.news || [];
+    for (const l of lines) { const t = clean(l, 220); if (t) this.data.news.push({ text: t, at: now() }); }
+    this.data.news = this.data.news.slice(-30);
+    this.save();
+  }
+
   journal(botName, text) {
     const j = this.bot(botName).journal;
     const t = clean(text, 200);
@@ -119,6 +127,7 @@ class Memory {
       'Люди: ' + (people.join('; ') || 'пока нет'),
       'Факты: ' + (facts.join('; ') || 'пока нет'),
       'Твой дневник (последнее): ' + (journal.join('; ') || 'пусто'),
+      'Новости чата (сводка общего чата): ' + ((this.data.news || []).slice(-6).map((n) => `${d(n.at)} ${n.text}`).join('; ') || 'пока нет'),
     ].join('\n');
   }
 
@@ -131,6 +140,8 @@ class Memory {
     for (const p of Object.values(this.data.people).sort((a, b) => a.name.localeCompare(b.name))) out.push(`- ${p.name}: ${p.note}`);
     out.push('', '## Факты');
     for (const f of this.data.facts) out.push(`- ${f.text} (${f.by})`);
+    out.push('', '## Новости чата');
+    for (const n of this.data.news || []) out.push(`- ${d(n.at)} ${n.text}`);
     for (const [name, b] of Object.entries(this.data.bots)) {
       out.push('', `## Дневник ${name}`);
       for (const j of b.journal) out.push(`- ${d(j.at)} ${j.text}`);

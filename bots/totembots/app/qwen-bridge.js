@@ -272,6 +272,20 @@ class QwenBridge {
   hook() { return this.wc.executeJavaScript(HOOK); }
 
   /** Текст текущего (выбранного) ответа в чате - из истории Qwen, тем же запросом, что делает страница. */
+  /** Ответ Qwen на наше сообщение по истории чата: готов ли и что в нём (сообщение не старше sentAt). */
+  async historyAnswer(chatId, sentAt) {
+    if (!chatId) return null;
+    return this.wc.executeJavaScript(`(async () => {
+      const r = await fetch('/api/v2/chats/${chatId}', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+      const d = (await r.json()).data; if (!d) return null;
+      const m = d.chat.history.messages[d.currentId];
+      if (!m || m.role !== 'assistant' || (m.timestamp || 0) * 1000 < ${sentAt} - 5000) return null;
+      const parts = (m.content_list || []).filter((x) => x.phase === 'answer');
+      const finished = m.done === true || parts.some((x) => x.status === 'finished');
+      return { done: finished, text: parts.map((x) => x.content).join('') || m.content || '' };
+    })()`).catch(() => null);
+  }
+
   async lastAnswer(chatId) {
     return this.wc.executeJavaScript(`(async () => {
       const r = await fetch('/api/v2/chats/${chatId}', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
@@ -331,14 +345,17 @@ class QwenBridge {
   }
 
   currentChat() {
-    const m = /^https:\/\/chat\.qwen\.ai\/c\/([A-Za-z0-9_-]+)/.exec(this.wc.getURL());
+    // только настоящий номер чата: при создании адрес на миг бывает /c/new-chat (его принимали за номер - стенд 15.11)
+    const m = /^https:\/\/chat\.qwen\.ai\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(this.wc.getURL());
     return m ? m[1] : '';
   }
 
   async open(chatId) {
     const pid = this.projectId();
     const want = chatId ? `${ORIGIN}/c/${chatId}` : pid ? `${ORIGIN}/p/${pid}` : `${ORIGIN}/`;
-    if (chatId && this.currentChat() === chatId) return;
+    // после ошибки страница Qwen бывает в сломанном состоянии (PARENT_NOT_FOUND на каждое следующее сообщение) - перезагрузить
+    if (chatId && this.currentChat() === chatId && !this.needReload) return;
+    this.needReload = false;
     await this.wc.loadURL(want);
     await this.hook();
     await sleep(1500);
@@ -352,6 +369,10 @@ class QwenBridge {
   ask(chatId, text, opt = {}) { return this.exclusive(() => this._askWithFallback(chatId, text, opt)); }
 
   async _askWithFallback(chatId, text, opt) {
+    try { return await this._askWithFallback2(chatId, text, opt); } catch (e) { this.needReload = true; throw e; }
+  }
+
+  async _askWithFallback2(chatId, text, opt) {
     const models = (opt.models && opt.models.length) ? opt.models : [''];
     let last;
     for (let i = 0; i < models.length; i++) {
@@ -391,16 +412,27 @@ class QwenBridge {
     }
     if (sent.age) throw new Error('Qwen ждёт подтверждения возраста');
     if (sent.error) throw new Error(sent.error);
-    const until = Date.now() + 4 * 60 * 1000;
+    const sentAt = Date.now();
+    const until = sentAt + 4 * 60 * 1000;
     let started = false;
+    let lastHistory = 0;
     while (Date.now() < until) {
       await sleep(400);
       const r = await this.wc.executeJavaScript(
         `(() => { const tb = window.__tb; if (!tb) return null; const k = Object.keys(tb.done).map(Number).filter((n) => n > ${sent.rid}).sort((a,b)=>a-b)[0]; return { started: tb.rid > ${sent.rid}, done: k ? tb.done[k] : null }; })()`
       ).catch(() => null);
+      // Запасной путь: при создании нового чата страница может перезагрузиться, и перехват потока теряется.
+      // Тогда раз в 3 с смотрим историю чата: ответ Qwen на наше сообщение уже готов?
+      if ((!r || !r.started) && Date.now() - lastHistory > 3000) {
+        lastHistory = Date.now();
+        if (!r) await this.hook().catch(() => {});
+        const h = await this.historyAnswer(this.currentChat() || chatId, sentAt);
+        if (h && h.done && h.text) return { answer: h.text, chatId: this.currentChat() || chatId };
+        if (h) started = true;   // ответ пишется - ждём дальше
+      }
       if (!r) continue;
       if (r.started) started = true;
-      if (!started && Date.now() > until - 4 * 60 * 1000 + 30000) throw new Error('Qwen не начал отвечать (вход, капча, лимит?)');
+      if (!started && Date.now() > sentAt + 45000) throw new Error('Qwen не начал отвечать (вход, капча, лимит?)');
       if (r.done) {
         if (r.done.error && !r.done.answer) throw new Error(r.done.error);
         // новый чат получает адрес после первого ответа

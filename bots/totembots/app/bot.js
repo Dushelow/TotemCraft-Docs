@@ -112,9 +112,8 @@ class TotemBot extends EventEmitter {
     });
     bot.on('spawn', () => { if (this.dim && this.dim !== bot.game.dimension) this.event(`ты в другом измерении: ${this.dimName()}`); this.dim = bot.game.dimension; });
     bot.on('messagestr', (msg, pos, json, sender) => this.onMessage(msg, pos, json, sender));
-    // чат игроков (подписанный или нет): автор приходит отдельно от текста
-    bot.on('chat', (username, message) => this.playerChat(username, message, false));
-    bot.on('whisper', (username, message) => this.playerChat(username, message, true));
+    // чат разбирается в onMessage (каналы по оформлению Essentials); события mineflayer chat/whisper не используем:
+    // его шаблоны принимали личку «[ник -> я] текст» ещё и за общий чат
     bot.on('death', () => {
       const p = bot.entity.position;
       this.deathPoint = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim: bot.game.dimension, at: Date.now() };
@@ -209,26 +208,37 @@ class TotemBot extends EventEmitter {
     this.emit('chat', text);
     const pw = this.opts.password;
     const now = Date.now();
-    if (/\/reg(ister)?\b/i.test(text) && now - (this.regAt || 0) > 10000) { this.regAt = now; this.bot.chat(`/register ${pw} ${pw}`); this.log('регистрируюсь в AuthMe'); return; }
-    if (/\/l(ogin)?\b/i.test(text) && !/\/reg/i.test(text) && now - (this.loginAt || 0) > 10000) { this.loginAt = now; this.bot.chat(`/login ${pw}`); this.log('вхожу в AuthMe'); return; }
+    // запасной вход AuthMe командой - только по сообщению сервера и только пока бот не вошёл
+    // (раньше срабатывало и на «/l» в словах игроков)
+    if (pos === 'system' && !this.authed) {
+      if (/\/reg(ister)?\b/i.test(text) && now - (this.regAt || 0) > 10000) { this.regAt = now; this.bot.chat(`/register ${pw} ${pw}`); this.log('регистрируюсь в AuthMe'); return; }
+      if (/\/l(ogin)?\b/i.test(text) && !/\/reg/i.test(text) && now - (this.loginAt || 0) > 10000) { this.loginAt = now; this.bot.chat(`/login ${pw}`); this.log('вхожу в AuthMe'); return; }
+    }
+    if (/successful login|успешн.*вход|вы вошли|logged-in/i.test(text)) this.authed = true;
     if (pos === 'chat') {
-      // сообщение игрока: автор - по UUID отправителя, текст без оформления; личка - по типу чата
+      // сообщение игрока: автор - по UUID отправителя. Канал - по оформлению Essentials (unsigned):
+      // «[Рядом] <ник> текст» - ближний, «<ник> текст» - общий. Текст - без приставки «!» ближнего чата.
       const p = sender && Object.values(this.bot.players).find((x) => x.uuid === sender);
-      const whisper = /msg_command|commands\.message\.display\.incoming/.test(String(json && json.translate || ''));
-      if (p) this.playerChat(p.username, text, whisper);
+      const shown = json && json.unsigned ? String(json.unsigned.toString()) : '';
+      const local = /^\s*\[Рядом\]/i.test(shown);
+      let body = text;
+      const m = /^.*?<[^>]+>\s?(.*)$/.exec(shown);
+      if (m && m[1]) body = m[1];
+      else if (local) body = text.replace(/^!\s*/, '');
+      if (p) this.playerChat(p.username, body, false, local ? 'local' : 'global');
       return;
     }
     const parsed = this.parseChat(text);
-    if (parsed) this.playerChat(parsed.from, parsed.text, parsed.whisper);
+    if (parsed) this.playerChat(parsed.from, parsed.text, parsed.whisper, parsed.whisper ? 'whisper' : (/^\s*\[Рядом\]/i.test(text) ? 'local' : 'global'));
   }
 
-  playerChat(from, text, whisper) {
+  playerChat(from, text, whisper, channel = whisper ? 'whisper' : 'global') {
     if (!from || from === this.opts.name || !text) return;
     const key = from + '|' + text;
     const now = Date.now();
     if (this.lastChat && this.lastChat.key === key && now - this.lastChat.at < 2000) return;   // одно сообщение двумя путями
     this.lastChat = { key, at: now };
-    this.emit('player-chat', { from, text: String(text).trim(), whisper });
+    this.emit('player-chat', { from, text: String(text).trim(), whisper: channel === 'whisper', channel });
   }
 
   // Формат чата на сервере свой (префиксы, кланы, ближний чат, личка Essentials), поэтому автора ищем по нику из списка игроков
@@ -245,7 +255,15 @@ class TotemBot extends EventEmitter {
     return { from, text: text.slice(sep + 1).trim(), whisper: false };
   }
 
-  say(text) { if (this.bot && this.status === 'online') this.bot.chat(String(text).slice(0, 250)); }
+  /** Сказать в канал: личка - /msg ник, ближний - «!текст» (TotemEssentialsAddon), общий - обычный чат. */
+  say(text, channel = 'global', to = '') {
+    if (!this.bot || this.status !== 'online') return;
+    let t = String(text).replace(/^[/!]+/, '').slice(0, 240);   // своя реплика не должна стать командой
+    if (!t) return;
+    if (channel === 'whisper' && to) t = `/msg ${to} ${t}`;
+    else if (channel === 'local') t = '!' + t;
+    this.bot.chat(t);
+  }
 
   // --- состояние для Qwen
   player(name) {

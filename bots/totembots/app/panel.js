@@ -39,6 +39,12 @@ function botCard(b) {
       <label>Приказ (как написали бы ему в игре)</label>
       <div class="row"><input class="grow" data-f="order" placeholder="иди за мной / возьми 2 стака шерсти из сундука 100 64 -20 и отнеси CaptianRage">
         <button data-a="order">Отправить</button></div>
+      <label>Чат: на что бот отзывается${b.attention ? ` (обращений ${b.attention.address}, рядом ${b.attention.near}, в фон ${b.attention.background})` : ''}</label>
+      <div class="row">
+        ${[['quiet', 'Тихий: личка и имя'], ['normal', 'Обычный'], ['social', 'Общительный']].map(([v, t]) =>
+          `<button data-a="chatmode" data-v="${v}" class="${b.chatMode === v ? '' : 'sec'}">${t}</button>`).join('')}
+      </div>
+      <div class="row" style="margin-top:4px"><input class="grow" data-f="aliases" value="${esc(b.aliases || '')}" placeholder="ещё прозвища через запятую: алексик, сашка"><button data-a="aliases" class="sec">Сохранить</button></div>
       <label>Мобы</label>
       <div class="row">
         ${[['defend', 'Защищать себя и меня'], ['flee', 'Убегать ко мне'], ['off', 'Не трогать']].map(([v, t]) =>
@@ -97,7 +103,7 @@ async function refresh() {
   const st = await T.state();
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
-    $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', ');
+    $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');
     settingsFilled = true;
   }
   fillVoice(st.voice);
@@ -162,6 +168,8 @@ $('bots').addEventListener('click', (e) => {
       if (k.key === 'Escape') { inp.blur(); lastHtml = ''; refresh(); }
     });
   }
+  if (a === 'chatmode') act(async () => { await T.botChatMode({ name, mode: e.target.dataset.v }); lastHtml = ''; });
+  if (a === 'aliases') act(async () => { await T.botChatMode({ name, aliases: f('aliases').value }); f('aliases').blur(); lastHtml = ''; });
   if (a === 'combat') act(async () => { await T.botCombat({ name, combat: e.target.dataset.v }); lastHtml = ''; });
   if (a === 'newchat') act(() => T.botNewChat(name));
   if (a === 'persona') { openPersona.has(name) ? openPersona.delete(name) : openPersona.add(name); lastHtml = ''; refresh(); }
@@ -235,7 +243,7 @@ $('srvTest').onclick = () => { $('host').value = '127.0.0.1'; $('port').value = 
 $('srvLive').onclick = () => { $('host').value = 'play.totemcraft.net'; $('port').value = '20098'; };
 $('srvRu').onclick = () => { $('host').value = 'ru.totemcraft.net'; $('port').value = '20098'; };
 
-$('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value }));
+$('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }));
 $('add').onclick = () => act(async () => { await T.botAdd({ name: $('newName').value, persona: $('newPersona').value }); selected = $('newName').value.trim(); $('newName').value = ''; $('newPersona').value = ''; lastHtml = ''; });
 $('chrome').onclick = async () => { $('chrome').disabled = true; await T.qwenLoginChrome(); $('chrome').disabled = false; refreshQwen(); };
 $('reload').onclick = () => T.qwenReload();

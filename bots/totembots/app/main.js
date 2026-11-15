@@ -63,6 +63,7 @@ function startBot(name) {
   const brain = new Brain({ body, bridge, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
   brain.voice = voice;
   brain.memory = memory;
+  brain.onBackground = onBackground;
   body.memory = memory;
   body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
@@ -73,10 +74,12 @@ function stateForPanel() {
   return {
     host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {},
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
+    background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
-      return { name: b.name, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
+      return { name: b.name, chatMode: b.chatMode || 'normal', aliases: (b.aliases || []).join(', '),
+        attention: l && l.brain ? { ...l.brain.attn.count } : null, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
   };
@@ -128,6 +131,51 @@ function createWindow() {
   layout();
 }
 
+// --- фон общего чата: один журнал на всех ботов, сжатие служебным чатом Qwen (CHAT.md)
+const background = { lines: [], seen: new Map(), lastRun: Date.now(), busy: false, status: '' };
+function onBackground({ from, text, at }) {
+  const key = from + '|' + text;
+  const prev = background.seen.get(key);
+  if (prev && at - prev < 60000) return;   // одно сообщение слышат несколько ботов
+  background.seen.set(key, at);
+  if (background.seen.size > 500) background.seen.clear();
+  const t = new Date(at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  background.lines.push(`${t} ${from}: ${String(text).slice(0, 200)}`);
+  if (background.lines.length > 300) background.lines.splice(0, background.lines.length - 300);
+}
+const SERVICE_INTRO = 'Ты служебный помощник ботов сервера Minecraft TotemCraft. Я присылаю куски общего чата сервера. ' +
+  'Сожми каждый кусок в 3-6 коротких строк по-русски, без лишних слов: кто что искал или просил, о чём договорились, ' +
+  'события (рейд, ивент, гриф, ссора, поиск напарника, торговля), упоминания ботов. Пустую болтовню пропускай. ' +
+  'Только строки, каждая с новой строки, без нумерации и без markdown. Если важного нет - ответь одним словом: пусто.';
+async function summarizeBackground(force = false) {
+  const n = background.lines.length;
+  if (background.busy || !n) return;
+  if (!force && n < 60 && (n < 5 || Date.now() - background.lastRun < 15 * 60000)) return;
+  background.busy = true;
+  const chunk = background.lines.splice(0, 120);
+  try {
+    const sc = cfg.serviceChat || {};
+    const q = cfg.qwen || {};
+    const opt = { mode: 'fast', models: q.serviceModels && q.serviceModels.length ? q.serviceModels : [] };
+    if (!sc.id || (sc.uses || 0) >= 50) {   // новый служебный чат (внутри проекта, если он есть)
+      const r = await bridge.ask('', SERVICE_INTRO + '\n\nОтветь «ок».', opt);
+      sc.id = r.chatId; sc.uses = 0;
+    }
+    const { answer } = await bridge.ask(sc.id, 'Кусок общего чата:\n' + chunk.join('\n'), opt);
+    sc.uses = (sc.uses || 0) + 1;
+    cfg.serviceChat = sc; saveCfg();
+    const lines = String(answer).replace(/```[a-z]*|```/gi, '').split('\n').map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim())
+      .filter((l) => l && !/^пусто\.?$/i.test(l)).slice(0, 6);
+    if (lines.length) memory.news(lines);
+    background.status = `${new Date().toLocaleTimeString('ru-RU')}: сжато ${chunk.length} строк → ${lines.length} новостей`;
+    for (const name of live.keys()) logTo(name, 'фон чата: ' + background.status);
+  } catch (e) {
+    background.lines.unshift(...chunk);   // не потерять - попробуем позже
+    background.status = 'ошибка сжатия: ' + e.message;
+  } finally { background.busy = false; background.lastRun = Date.now(); }
+}
+setInterval(() => summarizeBackground(false).catch(() => {}), 60000);
+
 // --- проект Qwen: создать при входе, память туда - если изменилась, не чаще раза в 10 минут
 function logAll(t) { for (const name of live.keys()) logTo(name, t); }
 function dataDir() { return process.env.TOTEMBOTS_MEMORY || app.getPath('userData'); }
@@ -175,6 +223,7 @@ ipcMain.handle('save-settings', (_e, s) => {
     chatMode: MODES.includes(s.chatMode) ? s.chatMode : 'fast',
     planMode: MODES.includes(s.planMode) ? s.planMode : 'auto',
     models: String(s.models || '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean),
+    serviceModels: String(s.serviceModels || '').split(/[\n,]+/).map((x) => x.trim()).filter(Boolean),
   };
   cfg.birthYear = /^(19|20)\d\d$/.test(String(s.birthYear || '').trim()) ? String(s.birthYear).trim() : '';
   saveCfg();
@@ -233,6 +282,19 @@ ipcMain.handle('project-sync', () => projectSync(true));
 ipcMain.handle('project-open', () => { if (project.id) qwen.webContents.loadURL(`${QWEN_URL}p/${project.id}`); return true; });
 ipcMain.handle('project-enable', (_e, on) => { cfg.qwenProject = { ...(cfg.qwenProject || {}), enabled: !!on }; saveCfg(); if (on) projectSync(true); return true; });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
+ipcMain.handle('bot-chatmode', (_e, { name, mode, aliases }) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  if (!b) return false;
+  if (['quiet', 'normal', 'social'].includes(mode)) b.chatMode = mode;
+  if (aliases !== undefined) {
+    b.aliases = String(aliases).split(/[,\n]+/).map((x) => x.trim()).filter(Boolean).slice(0, 10);
+    const l = live.get(name);
+    if (l && l.brain) l.brain.attn = new (require('./attention').Attention)(b.name, { mode: b.chatMode, aliases: b.aliases });
+  }
+  saveCfg();
+  return true;
+});
+ipcMain.handle('background-now', () => summarizeBackground(true));
 ipcMain.handle('bot-newpass', (_e, name) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (b) { b.password = crypto.randomBytes(9).toString('base64url'); saveCfg(); }
