@@ -559,9 +559,9 @@ class TotemBot extends EventEmitter {
     const lvl = Math.floor(me.y);
     let best = null;
     for (const maxUp of [1]) {   // ближайший берег: на уступ в блок выход из воды теперь работает (waterExitTick)
-    for (let r = 2; r <= 40 && !best; r += 2) {
+    for (let r = 1; r <= 40 && !best; r += (r < 6 ? 1 : 2)) {
       for (let a = 0; a < 16; a++) {
-        const x = Math.floor(me.x + Math.cos(a * Math.PI / 8) * r), z = Math.floor(me.z + Math.sin(a * Math.PI / 8) * r);
+        const x = Math.floor(me.x + Math.cos(a * Math.PI / 8) * (r + 0.3)), z = Math.floor(me.z + Math.sin(a * Math.PI / 8) * (r + 0.3));
         for (let y = Math.floor(me.y) + 4; y >= Math.floor(me.y) - 3; y--) {
           const v = new Vec3(x, y, z);
           if (v.y + 1 - lvl > maxUp) continue;
@@ -576,16 +576,24 @@ class TotemBot extends EventEmitter {
     this.log(`выплываю на берег: ${best.x} ${best.y} ${best.z}`);
     this.mode = 'shore';   // пока плывёт - не «стоит без дела»
     // берег рядом - как игрок: лицом к суше, держать «вперёд» и «прыжок», пока не выйдет из воды (до 5 с)
-    if (best.y > lvl && Math.hypot(best.x + 0.5 - me.x, best.z + 0.5 - me.z) <= 5) {
+    if (Math.hypot(best.x + 0.5 - me.x, best.z + 0.5 - me.z) <= 6) {
       (async () => {
         this.busyLook = true;
         try {
-          for (let i = 0; i < 60; i++) {   // в воде плывётся медленно: до 12 с
+          // как игрок у уступа: прыжок держим всё время; у стенки внизу волны - чуть назад (всплыть, не цепляясь за
+          // край), на гребне - вперёд: упор на гребне даёт толчок через край (waterExitTick). Прижатым к стенке бот
+          // не всплывает выше 62,2 (сервер 15.11).
+          try { b.pathfinder.setGoal(null); } catch {}   // старая цель pathfinder каждый такт перебивала клавиши
+          for (let i = 0; i < 240; i++) {   // до 12 с
             const f = b.blockAt(b.entity.position);
             if (!f || !/water|kelp|seagrass/.test(f.name)) break;
-            await b.lookAt(best.offset(0.5, 1.4, 0.5), true);
-            b.setControlState('forward', true); b.setControlState('jump', true);
-            await sleep(200);
+            const q = b.entity.position, crest = q.y - Math.floor(q.y) >= 0.45;
+            if (i % 5 === 0) await b.lookAt(best.offset(0.5, 1.4, 0.5), true);
+            b.setControlState('jump', true);
+            b.setControlState('forward', crest || !b.entity.isCollidedHorizontally);
+            b.setControlState('back', !crest && b.entity.isCollidedHorizontally);
+            await sleep(50);
+            if (i % 40 === 0) this.log(`выход: ${q.x.toFixed(2)} ${q.y.toFixed(2)} ${q.z.toFixed(2)} упор ${b.entity.isCollidedHorizontally} цель pf ${b.pathfinder.goal ? 'есть' : 'нет'} вперёд ${b.getControlState('forward')} назад ${b.getControlState('back')}`);
           }
         } finally { b.clearControlStates(); this.busyLook = false; }
         const f = b.blockAt(b.entity.position);
