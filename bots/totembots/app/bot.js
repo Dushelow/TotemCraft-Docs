@@ -105,7 +105,7 @@ class TotemBot extends EventEmitter {
       mv.canDig = false;              // ничего не ломать
       mv.allow1by1towers = false;     // и не строить столбы
       mv.scafoldingBlocks = [];
-      mv.allowParkour = true;
+      mv.allowParkour = false;   // прыжки с разбега у pathfinder срываются (бот стоит перед ямой без клавиш, стенд 15.11)
       mv.allowSprinting = true;
       mv.canOpenDoors = true;
       // по образцу Baritone (maxFallHeightNoWater, blocksToAvoid, mobAvoidance, exclusionAreas)
@@ -132,6 +132,7 @@ class TotemBot extends EventEmitter {
       }
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
+      bot.pathfinder.thinkTimeout = 15000;   // путь в обход (без паркура) ищется дольше 5 с по умолчанию
       this.guard = new Guard(this);
       this.guard.mode = this.opts.combat || 'defend';
       this.guard.attach();
@@ -1314,7 +1315,17 @@ class TotemBot extends EventEmitter {
         this.check(tok);
         let r;
         switch (a.act) {
-          case 'goto': await this.goto(new goals.GoalNear(+a.x, +a.y, +a.z, 1), tok, 300000); r = `дошёл до ${a.x} ${a.y} ${a.z}`; break;
+          case 'goto': {
+            const tgt = new Vec3(+a.x, a.y !== undefined ? +a.y : this.bot.entity.position.y, +a.z);
+            try { await this.goto(a.y !== undefined ? new goals.GoalNear(tgt.x, tgt.y, tgt.z, 1) : new goals.GoalNearXZ(tgt.x, tgt.z, 1), tok, 300000); r = `дошёл до ${a.x} ${a.y ?? ''} ${a.z}`; }
+            catch (e) {
+              if (e instanceof Cancelled) throw e;
+              const left = this.bot.entity.position.distanceTo(tgt);
+              if (left > 6) throw e;
+              r = `дошёл почти до ${a.x} ${a.y ?? ''} ${a.z} (осталось ${left.toFixed(0)} бл.: ближе пути нет)`;
+            }
+            break;
+          }
           case 'come': {
             const e = this.player(a.who);
             if (!e) throw new Error(`не вижу ${a.who}`);
