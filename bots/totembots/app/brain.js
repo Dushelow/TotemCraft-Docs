@@ -34,7 +34,9 @@ function warmText(cfg, bot) {
 {"act":"recover"} - пойти на место своей смерти и забрать вещи (после смерти бот делает это сам)
 {"act":"harvest","crop":"wheat","radius":16} - собрать спелый урожай рядом и посадить обратно (crop можно не указывать: пшеница, морковь, картофель, свёкла, незерский нарост, сахарный тростник и бамбук - нижний стебель остаётся, арбуз и тыква - только плоды у стеблей)
 {"act":"wander","dir":"север","radius":48} - прогуляться, поисследовать (dir - сторона света; без dir - туда, где ещё не был)
-{"act":"look","what":["inventory","map","online","around","memory"]} - посмотреть то, чего нет в сообщении (см. ниже), ответ придёт сразу
+{"act":"travel","x":0,"z":0,"dim":"Незер"} или {"act":"travel","place":"склад"} - дальний путь: я сам выберу, пешком или через Незер по известным порталам (1 блок Незера = 8 обычного мира), пройду порталы и дойду; dim можно не писать
+{"act":"look","what":["inventory","map","online","around","memory","players","portals"]} - посмотреть то, чего нет в сообщении (см. ниже), ответ придёт сразу
+{"act":"look","what":"find","block":"diamond_ore"} - просканировать загруженные чанки вокруг: где ближайшие такие блоки
 Само по себе, без команд: ешь, когда голоден; надеваешь броню; дерёшься с мобами; всплываешь; если кто-то лёг спать ночью и рядом есть кровать - ложишься тоже (иначе ночь не пропустится); после смерти идёшь за вещами. Места с пометкой «нельзя» или «чужая база» обходишь.
 {"act":"goto_place","name":"склад"} - пойти к месту из памяти
 {"act":"remember","kind":"place","name":"склад","x":0,"y":64,"z":0,"note":"сундуки хозяина"} - запомнить место (если говорят «тут» - координаты того, кто говорит; без x y z - где стоишь ты)
@@ -53,8 +55,9 @@ function warmText(cfg, bot) {
 [карта] - приметное в 200 блоках (постройки игроков, в том числе подземные, сундуки, порталы, фермы, деревни,
 природные сооружения), когда ты ушёл далеко; [память] - когда в ней новое. Если для ответа или решения чего-то не
 хватает, не гадай: {"act":"look","what":[...]} - inventory (инвентарь), map (карта), online (кто на сервере),
-around (осмотреться: мобы, звери, вещи на земле, блоки рядом, биом), memory (вся память). Я сразу пришлю [смотрю],
-и ты ответишь уже с этим. Смотри только то, что нужно сейчас.
+around (осмотреться: мобы, звери, вещи на земле, блоки рядом, биом), memory (вся память), players (где последний
+раз видел игроков), portals (порталы рядом, куда ведут, где ты по формуле 1:8), find + block (поиск блока вокруг).
+Я сразу пришлю [смотрю], и ты ответишь уже с этим. Смотри только то, что нужно сейчас.
 
 Чат: я присылаю только то, что обращено к тебе: [чат личка], [чат рядом] (ближний чат), [чат общий]. Отвечаешь ты
 автоматически туда же, откуда спросили (личка - в личку, ближний - в ближний, общий - в общий). Если по смыслу
@@ -70,11 +73,13 @@ around (осмотреться: мобы, звери, вещи на земле, 
 персонаж: у тебя есть свои интересы и настроение, ты можешь сам предложить заняться чем-то, пошутить, рассказать,
 что видел.
 
-Свобода воли. Ты не стоишь столбом в ожидании приказов. Когда приходит [свободное время], выбери себе занятие по
-характеру и сделай его - в ответе должно быть действие (или реплика тем, кто рядом): прогуляйся и поисследуй, сходи
-посмотреть на постройку, деревню или сооружение с карты, подойди к игроку поболтать, проверь ферму, подбери вещи,
-сходи к знакомому месту, запиши в дневник, что было и что задумал. Я предлагаю варианты по обстановке, можно своё.
-Не повторяй одно и то же раз за разом. Ничего не делать можно, только если ты идёшь за кем-то и сказать нечего.
+Свобода воли. Ты не исполнитель, который ждёт приказов, а живой спутник со своим характером, вкусами и
+настроением (как хороший компаньон в RPG: замечает, что вокруг, имеет мнение, иногда что-то затевает сам). Когда
+приходит [свободное время], сам придумай, чем заняться, - что подсказывает характер, обстановка, память и дневник:
+у тебя могут быть свои маленькие цели и привычки. Не повторяйся и не делай одно и то же по кругу. Отдохнуть можно,
+если только что долго был занят. [момент] - что-то заметное (стемнело, пошёл дождь, рядом деревня, вернулся
+знакомый): отреагируй, только если тебе правда есть что сказать или сделать, иначе промолчи - живые люди не
+комментируют каждую мелочь.
 Если ничего делать не нужно, "actions": []. Если не знаешь координат, спроси в реплике и ничего не делай.
 
 Правила:
@@ -135,7 +140,6 @@ class Brain {
     this.idleSkips = 0;        // сколько раз подряд на свободное время ничего не выбрал
     this.inProgress = 0;       // сколько раз подряд Qwen ответил CHAT_IN_PROGRESS
     this.selfChain = 0;        // сколько своих дел подряд (после 3 - отдых до следующего свободного времени)
-    this.recentIdeas = [];
     this.idleTimer = setInterval(() => this.idle(), 30000);
     body.on('end', () => {});
 
@@ -153,6 +157,7 @@ class Brain {
       }).catch((e) => this.log('распознавание: ' + e.message));
     });
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
+    body.on('moment', (m) => { try { this.moment(m); } catch {} });
   }
 
   isMaster(name) { return this.cfg().masters.some((m) => m.toLowerCase() === String(name).toLowerCase()); }
@@ -180,66 +185,34 @@ class Brain {
     this.push(`[приказ хозяина ${owner} из панели] ${text}`, true, owner);
   }
 
-  // Свобода воли: долго никто ничего не просит - бот сам выбирает занятие из вариантов по обстановке
+  // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 4 };
     if (!ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 4) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
-    const ideas = this.ideas();
-    const list = ideas.map((t, i) => `${i + 1}) ${t}`).join('; ');
-    this.push(`[свободное время] тебя ни о чём не просят уже ${mins} мин. Займись чем-нибудь сам, по характеру, как живой игрок. ` +
-      `Варианты: ${list}. Можно своё. Выбери одно и сделай.`, true, '@self', '', { want: ['map'] });
+    const following = this.body.mode === 'follow' ? ` Ты идёшь за ${this.body.followName}, далеко от него не уходи.` : '';
+    this.push(`[свободное время] ${mins} мин тебя ни о чём не просят. Чем заняться - решай сам.${following}`, true, '@self', '', { want: ['map'] });
     this.selfChain = 0;
   }
 
-  /** Варианты занятий по обстановке: кто рядом, что на карте, память, время суток. Каждый раз разные. */
-  ideas() {
-    const body = this.body, b = body.bot, me = b.entity.position;
-    const wm = body.worldMap, mem = this.memory;
-    const following = body.mode === 'follow';
-    const out = [];
-    const add = (w, key, text) => { if (!this.recentIdeas.includes(key)) out.push({ w: w * (0.6 + Math.random() * 0.8), key, text }); };
-    const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-    const near = Object.values(b.players).filter((p) => p.entity && p.username !== this.botCfg.name)
-      .map((p) => ({ name: p.username, d: Math.round(p.entity.position.distanceTo(me)) })).filter((p) => p.d <= 48);
-    if (near.length) {
-      const p = pick(near);
-      add(3, 'talk:' + p.name, `подойти к ${p.name} (${p.d} бл.) и заговорить в ближнем чате: что строит, чем занят, не нужна ли помощь (come)`);
-    }
-    if (following) {
-      add(3, 'joke', `сказать что-нибудь ${body.followName}: пошутить, заметить что-то вокруг, вспомнить случай из дневника`);
-      add(1.5, 'look', 'осмотреться (look around) и прокомментировать, что видишь');
-    } else {
-      if (wm) {
-        const dir = wm.leastExplored(body);
-        add(2, 'wander:' + dir, `прогуляться на ${dir} - там ты ещё не был (wander "${dir}")`);
-        const sights = wm.nearby(body, 160, 12).filter((s) => s.d > 20 && !this.recentIdeas.includes(s.key) && s.kind !== 'ферма');
-        if (sights.length) { const s = pick(sights.slice(0, 6)); add(2.5, s.key, `сходить посмотреть: ${s.text} (goto)`); }
-        const farm = wm.nearby(body, 40, 12).find((s) => s.kind === 'ферма');
-        if (farm) add(2, 'farm', `проверить ферму рядом (${farm.text}): собрать спелое и посадить обратно (harvest)`);
-      }
-      if (mem) {
-        const dim = body.dimName();
-        const places = Object.values(mem.data.places).filter((p) => p.dim === dim && Math.hypot(p.x - me.x, p.z - me.z) > 24 && Math.hypot(p.x - me.x, p.z - me.z) < 400
-          && !/нельзя|чуж|не заход|запрет/i.test(p.name + ' ' + (p.note || '')));
-        if (places.length) { const p = pick(places); add(1.5, 'place:' + p.name, `сходить к месту «${p.name}» (goto_place)`); }
-      }
-      const drops = Object.values(b.entities).filter((e) => e.name === 'item' && e.position && e.position.distanceTo(me) < 12).length;
-      if (drops) add(2, 'pickup', `подобрать вещи с земли рядом, их ${drops} (pickup)`);
-      add(1, 'look', 'осмотреться (look around): что за место, кто вокруг');
-    }
-    add(1, 'journal', 'записать в дневник, что было и что задумал (remember journal)');
-    const news = mem && (mem.data.news || []).slice(-3);
-    if (near.length && news && news.length) add(1, 'news', `рассказать тем, кто рядом, что пишут в общем чате: «${pick(news).text}»`);
-    const masters = this.cfg().masters.filter((m) => b.players[m] && !near.some((p) => p.name === m));
-    if (masters.length && Date.now() - (this.masterPing || 0) > 45 * 60000) add(1, 'ping', `написать хозяину ${masters[0]} в личку пару слов: где ты и чем занят ("channel":"whisper","to":"${masters[0]}")`);
-    out.sort((x, y) => y.w - x.w);
-    const chosen = out.slice(0, 4);
-    if (chosen.some((c) => c.key === 'ping')) this.masterPing = Date.now();
-    this.recentIdeas = [...chosen.map((c) => c.key), ...this.recentIdeas].slice(0, 8);
-    return chosen.map((c) => c.text);
+  // «Момент» (как у компаньонов в RPG): заметное событие рядом. Не каждое: только когда есть кому услышать или с кем
+  // связано, не чаще раза в 4 мин и одного вида - раза в 15 мин. Решает реагировать или нет - нейросеть.
+  moment(m) {
+    const b = this.body.bot;
+    if (!b || !b.entity || this.busy || this.pending.length || this.body.mode === 'task') return;
+    const now = Date.now();
+    this.momentAt = this.momentAt || {};
+    if (now - (this.lastMoment || 0) < 4 * 60000 || now - (this.momentAt[m.kind] || 0) < 15 * 60000) return;
+    const me = b.entity.position;
+    const someone = Object.values(b.players).some((p) => p.entity && p.username !== this.botCfg.name && p.entity.position.distanceTo(me) <= 32);
+    if (!someone) return;
+    if (m.pos && Math.hypot(m.pos.x - me.x, m.pos.z - me.z) > 64) return;
+    // «снова рядом» - только про хозяев и тех, кого помнит
+    if (m.who && !this.isMaster(m.who) && !(this.memory && Object.values(this.memory.data.people).some((p) => p.name.toLowerCase() === String(m.who).toLowerCase()))) return;
+    this.lastMoment = now; this.momentAt[m.kind] = now;
+    this.push(`[момент] ${m.text}`, true, '@self');
   }
 
   /** Ответ на «посмотреть»: запрошенные части состояния. */
@@ -252,6 +225,10 @@ class Brain {
     if (all || what.has('online')) { out.push(`[онлайн ${P.online.length}] ${P.online.slice(0, 60).join(', ') || 'никого'}`); this.sent.online = P.online; }
     if (all || what.has('map')) { out.push(`[карта] ${P.map()}`); this.sent.mapAt = P.pos; }
     if (all || what.has('around')) out.push(`[вокруг тебя] ${this.body.lookAround()}`);
+    if (what.has('players')) out.push(`[где видел игроков] ${this.body.seenText ? this.body.seenText() : 'не знаю'}`);
+    if (what.has('portals') && this.body.travel && this.body.bot && this.body.bot.entity) out.push(`[порталы] ${this.body.travel.describe(this.body.bot.entity.position, this.body.bot.game.dimension)}`);
+    for (const q of this.findQ || []) if (this.body.worldMap) out.push(`[поиск] ${this.body.worldMap.find(this.body, q)}`);
+    this.findQ = [];
     if ((all || what.has('memory')) && this.memory) { out.push(this.memory.digest(this.botCfg.name)); this.sentDigest = this.memory.version; this.sinceDigest = 0; }
     return out.join('\n') || 'нечего показать';
   }
@@ -352,6 +329,8 @@ class Brain {
       if (looks.length && this.lookDepth < 2) {
         this.lookDepth++;
         const what = new Set(looks.flatMap((a) => [].concat(a.what || 'all')).map((w) => String(w).toLowerCase()));
+        this.findQ = looks.map((a) => a.block || a.find || (/^find:/.test(a.what) ? a.what.slice(5) : '')).filter(Boolean).slice(0, 3);
+        if (this.findQ.length) what.delete('all');
         const src = master || batch.find((x) => x.from === '@self') || [...batch].reverse().find((x) => x.from) || {};
         const ch = ([...batch].reverse().find((x) => x.channel) || {}).channel || '';
         this.log('смотрит: ' + [...what].join(', '));
@@ -378,9 +357,9 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander']);
+        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
-        if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'stop', 'harvest', 'pickup'].includes(a.act));
+        if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
         const notFromMaster = !master;
         // чужие просьбы не двигают бота дальше «подойти» и не перезаписывают места

@@ -85,6 +85,12 @@ cd C:\Users\admin\claude-spaces\totemcraft_server\repo\bots\totembots; npm insta
   После ошибки Qwen чат перезагружается (иначе PARENT_NOT_FOUND на всё следующее), сообщения повторяются один раз.
   Если Qwen оборвал ответ («Failed to fetch»), недописанный ответ навсегда запирает чат (`CHAT_IN_PROGRESS`, кнопка
   «стоп» `/api/v2/chat/completions/stop` не помогает, 15.11): после второго такого ответа бот начинает новый чат.
+- Анти-иксрей Paper на сервере шлёт боту поддельные руды и сундуки внутри камня ниже y 64: карта и поиск считают
+  их только открытыми (`XRAY_HIDDEN` в `worldmap.js`; список как hidden-blocks сервера).
+- Вход в портал: только шагами pathfinder (`portal` в `bot.js`). Частые ручные прыжки в раму - Vulcan Step C, бан.
+- Сторож застревания не должен вызывать `setGoal` (обрывает `goto`: «goal was changed»): он делает `setMovements`.
+- На стенде `tp` перехватывает Essentials (меняет только координаты): в тестах `minecraft:tp`. Сложность по мирам:
+  для Незера отдельно `execute in minecraft:the_nether run difficulty peaceful`.
 - Два окна Qwen в одной сессии (`persist:qwen`): окно бота (`qwen`, мост) и окно владельца (`mine`). Показанное лежит
   сверху, второе работает (`backgroundThrottling: false`). В окно бота из панели не грузить ничего, пока мост занят.
 - Ответ Qwen: реплика текстом, затем блок кода с `{"actions": [...]}`. Блок кода озвучка не читает.

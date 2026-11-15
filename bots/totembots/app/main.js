@@ -12,6 +12,7 @@ const { Brain, DEFAULT_PERSONA } = require('./brain');
 const { Voice, PIPER_VOICES } = require('./voice');
 const { Memory } = require('./memory');
 const { WorldMap } = require('./worldmap');
+const { Travel } = require('./travel');
 const { QwenProject, PROJECT_NAME } = require('./qwen-project');
 
 const PANEL_WIDTH = 440;
@@ -22,7 +23,7 @@ const QWEN_URL = 'https://chat.qwen.ai/';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
-let win, qwen, mine, bridge, voice, memory, project, worldMap;
+let win, qwen, mine, bridge, voice, memory, project, worldMap, travel;
 let tab = 'bot';
 
 // --- настройки
@@ -69,8 +70,12 @@ function startBot(name) {
   brain.onBackground = onBackground;
   body.memory = memory;
   body.worldMap = worldMap;
-  // деревни и спавнеры с карты - сразу в память мест
-  worldMap.attach(body, (v, dim) => memory.place({ name: `${v.kind} у ${v.x} ${v.z}`, x: v.x, y: v.y, z: v.z, dim, note: 'нашёл по карте' }, bc.name));
+  body.travel = travel;
+  // деревни, спавнеры, сооружения с карты - сразу в память мест; рядом - «момент» (может, захочет сказать)
+  worldMap.attach(body, (v, dim) => {
+    memory.place({ name: `${v.kind} у ${v.x} ${v.z}`, x: v.x, y: v.y, z: v.z, dim, note: 'нашёл по карте' }, bc.name);
+    body.emit('moment', { kind: 'место', text: `рядом ${v.kind} (${v.x} ${v.y} ${v.z})`, pos: v });
+  });
   body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
   body.start();
@@ -436,7 +441,7 @@ ipcMain.handle('qwen-login-chrome', async () => {
   }
 });
 
-app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); Menu.setApplicationMenu(null); createWindow(); });
+app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow(); });
 app.on('window-all-closed', () => {
   for (const l of live.values()) if (l.body) l.body.stop();
   setTimeout(() => app.quit(), 300);

@@ -37,6 +37,11 @@ const POI = [
   [/^bell$/, 'деревня'],
   [/^(enchanting_table|brewing_stand|beacon|respawn_anchor|lodestone)$/, 'мастерская'],
 ];
+// Анти-иксрей Paper на сервере (paper-world-defaults.yml, engine-mode 3, ниже y 64): клиенту, а значит и боту,
+// приходят поддельные руды, сундуки, обсидиан, замшелый булыжник внутри камня. Настоящие - только открытые (рядом
+// воздух, вода, прозрачный блок): открытые сервер не подделывает. Список - как hidden-blocks в конфиге сервера.
+const XRAY_HIDDEN = /^(.*_ore|raw_copper_block|raw_iron_block|raw_gold_block|mossy_cobblestone|obsidian|chest|ender_chest|clay)$/;
+const XRAY_MAX_Y = 64;
 const SCAN_MS = 20000;
 const RESCAN_MS = 10 * 60 * 1000;
 const COMPASS = ['север', 'северо-восток', 'восток', 'юго-восток', 'юг', 'юго-запад', 'запад', 'северо-запад'];
@@ -197,12 +202,14 @@ class WorldMap {
         if (!d.palette.some((id) => this.cat.has(id))) return;   // в секции нет ничего нужного
       } else if (d.value !== undefined) {
         const c = this.cat.get(d.value);
-        if (c) add(i, c, cx * 16 + 8, y0 + 8, cz * 16 + 8, 4096);
+        if (c && !(y0 < XRAY_MAX_Y && XRAY_HIDDEN.test(c.name))) add(i, c, cx * 16 + 8, y0 + 8, cz * 16 + 8, 4096);
         return;
       }
       for (let y = 0; y < 16; y++) for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
         const c = this.cat.get(col.getBlockStateId({ x, y: y0 + y, z }));
-        if (c) add(i, c, cx * 16 + x, y0 + y, cz * 16 + z);
+        if (!c) continue;
+        if (y0 + y < XRAY_MAX_Y && XRAY_HIDDEN.test(c.name) && !this.exposed(b, col, cx, cz, x, y0 + y, z)) continue;   // подделка анти-иксрея
+        add(i, c, cx * 16 + x, y0 + y, cz * 16 + z);
       }
     });
     // природные сооружения по признакам во всём чанке: в poi, их блоки не в счёт
@@ -240,6 +247,24 @@ class WorldMap {
     return out;
   }
 
+  /** Открыт ли блок (сосед - воздух, вода или прозрачный): такие анти-иксрей не подделывает. */
+  exposed(b, col, cx, cz, lx, y, lz) {
+    if (!this.clear) {
+      this.clear = new Set();
+      for (const bl of Object.values(b.registry.blocksByName)) {
+        if (bl.transparent || bl.boundingBox === 'empty' || /water|lava|glass|leaves/.test(bl.name)) for (let id = bl.minStateId; id <= bl.maxStateId; id++) this.clear.add(id);
+      }
+    }
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+      const x = lx + dx, z = lz + dz;
+      let id;
+      if (x >= 0 && x < 16 && z >= 0 && z < 16) id = col.getBlockStateId({ x, y: y + dy, z });
+      else { const c2 = b.world.getColumn(cx + Math.floor(x / 16), cz + Math.floor(z / 16)); if (!c2) continue; id = c2.getBlockStateId({ x: ((x % 16) + 16) % 16, y: y + dy, z: ((z % 16) + 16) % 16 }); }
+      if (this.clear.has(id)) return true;
+    }
+    return false;
+  }
+
   /** Земля в столбце чанка сверху вниз: первый блок, который не воздух, не рукотворный и не дерево (ветки, стволы). */
   ground(b, col, ox, oz, topY) {
     const minY = col.minY || 0;
@@ -255,6 +280,55 @@ class WorldMap {
       return y;
     }
     return null;
+  }
+
+  /**
+   * Просканировать досконально: где ближайшие блоки такого вида во всех загруженных чанках (по палитрам секций,
+   * секции без него пропускаются - быстро). q - id блока или часть («diamond_ore» найдёт и deepslate_diamond_ore).
+   */
+  find(tb, q, max = 6) {
+    const b = tb.bot;
+    if (!b || !b.entity) return 'ты не на сервере';
+    q = String(q || '').toLowerCase().replace(/^minecraft:/, '').trim();
+    if (!q) return 'что искать?';
+    const ids = new Set();
+    const names = [];
+    for (const bl of Object.values(b.registry.blocksByName)) {
+      if (bl.name === q || bl.name.endsWith('_' + q) || (q.length >= 4 && bl.name.includes(q))) {
+        names.push(bl.name);
+        for (let id = bl.minStateId; id <= bl.maxStateId; id++) ids.add(id);
+      }
+    }
+    if (!ids.size) return `не знаю блок «${q}» (нужен id Minecraft, например diamond_ore, chest, nether_portal)`;
+    const me = b.entity.position;
+    const found = [];
+    let total = 0, faked = 0;
+    const hidden = names.some((n) => XRAY_HIDDEN.test(n));
+    for (const { chunkX, chunkZ, column: col } of b.world.getColumns()) {
+      if (!col || !col.sections) continue;
+      const minY = col.minY || 0;
+      col.sections.forEach((sec, i) => {
+        if (!sec || !sec.data) return;
+        const d = sec.data;
+        if (d.palette ? !d.palette.some((id) => ids.has(id)) : !ids.has(d.value)) return;
+        const y0 = minY + i * 16;
+        for (let y = 0; y < 16; y++) for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
+          if (!ids.has(col.getBlockStateId({ x, y: y0 + y, z }))) continue;
+          if (y0 + y < XRAY_MAX_Y && hidden && !this.exposed(b, col, +chunkX, +chunkZ, x, y0 + y, z)) { faked++; continue; }
+          total++;
+          const p = { x: chunkX * 16 + x, y: y0 + y, z: chunkZ * 16 + z };
+          p.d = Math.hypot(p.x - me.x, p.y - me.y, p.z - me.z);
+          found.push(p);
+        }
+      });
+    }
+    const xr = faked ? ` (ниже ${XRAY_MAX_Y} сервер прячет такие блоки внутри камня и шлёт подделки - считаю только открытые, их видно глазами)` : '';
+    if (!total) return `${names.slice(0, 3).join(', ')}: в загруженных чанках (~${b.world.getColumns().length} чанков вокруг) открытых нет${xr}`;
+    found.sort((a, c) => a.d - c.d);
+    // соседние блоки одной жилы или одного сундука - одна запись
+    const out = [];
+    for (const p of found) { if (!out.some((o) => Math.abs(o.x - p.x) <= 2 && Math.abs(o.y - p.y) <= 2 && Math.abs(o.z - p.z) <= 2)) out.push(p); if (out.length >= max) break; }
+    return `${q}${xr}: всего ${total} бл.; ближайшие: ` + out.map((p) => `${p.x} ${p.y} ${p.z} (${Math.round(p.d)} бл. на ${compass(p.x - me.x, p.z - me.z)})`).join('; ');
   }
 
   /** В какой стороне света (в 3-12 чанках) бот видел меньше всего чанков - туда интересно сходить. */

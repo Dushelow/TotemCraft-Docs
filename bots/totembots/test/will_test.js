@@ -2,7 +2,7 @@
 // 1) карта: дом на поверхности и дом под землёй - постройки; шахта и подземелье - природные, не постройки;
 // 2) сообщения в Qwen: [я] всегда, инвентарь/онлайн/карта - только при изменении или по просьбе;
 // 3) look: бот попросил осмотреться - следующим сообщением приходит [смотрю];
-// 4) свободное время: варианты по обстановке, разные; выбранная прогулка правда ведёт бота.
+// 4) свободное время: без меню; выбранная прогулка правда ведёт бота; момент без слушателей - тишина.
 const { execSync } = require('child_process');
 const fs = require('fs'); const os = require('os'); const path = require('path');
 const { TotemBot } = require('../app/bot');
@@ -52,7 +52,7 @@ const X = 1300, Y = 150, Z = 1100;   // стенд: каменный масси�
   tb.worldMap = map;
   tb.memory = new Memory(dir);
   tb.start(); await new Promise((r) => tb.once('event', r)); await sleep(1500);
-  rcon(`tp TbAlex ${X} ${Y} ${Z}`); await sleep(4000);
+  rcon(`execute in minecraft:overworld run minecraft:tp TbAlex ${X} ${Y} ${Z}`); await sleep(4000);
   await map.scan(tb);
 
   // --- 1. карта
@@ -109,13 +109,7 @@ const X = 1300, Y = 150, Z = 1100;   // стенд: каменный масси�
   ok(sent.length - n1 <= 3, `look не зацикливается: ${sent.length - n1} сообщений`);
   answers = [];
 
-  // свободное время
-  const ideasA = brain.ideas(), ideasB = brain.ideas();
-  console.log('варианты 1:', ideasA, '\nварианты 2:', ideasB);
-  ok(ideasA.length >= 3, 'вариантов занятий 3+');
-  ok(ideasA.join() !== ideasB.join(), 'варианты не повторяются раз за разом');
-  ok(ideasA.concat(ideasB).some((t) => /прогуляться|сходить посмотреть/.test(t)), 'есть прогулка или поход к приметному месту');
-  brain.recentIdeas = [];
+  // свободное время: без меню, нейросеть придумывает сама
   answers = ['```json\n{"actions":[{"act":"wander","dir":"юг","radius":24}]}\n```'];
   const n2 = sent.length;
   const start = tb.bot.entity.position.clone();
@@ -123,7 +117,10 @@ const X = 1300, Y = 150, Z = 1100;   // стенд: каменный масси�
   brain.idle();
   await until(() => sent.length > n2); await idleBrain();
   console.log('--- свободное время:\n' + sent[n2]);
-  ok(/\[свободное время\]/.test(sent[n2] || '') && !/Можно ничего/.test(sent[n2] || ''), 'пришло [свободное время] с вариантами, без «можно ничего»');
+  ok(/\[свободное время\]/.test(sent[n2] || '') && !/Варианты|Можно ничего/.test(sent[n2] || ''), 'пришло [свободное время] без готового меню и без «можно ничего»');
+  // момент без слушателей - молчит
+  const n4 = sent.length; brain.lastMoment = 0; tb.emit('moment', { kind: 'ночь', text: 'стемнело' }); await sleep(300);
+  ok(sent.length === n4 && !brain.pending.length, 'момент, когда рядом никого, не отправляется');
   await until(() => tb.mode !== 'task' && tb.bot.entity.position.distanceTo(start) > 5, 60000);
   await until(() => tb.mode !== 'task', 60000);
   await sleep(800); await idleBrain();

@@ -121,7 +121,23 @@ class TotemBot extends EventEmitter {
       this.event('ты зашёл на сервер');
       this.loops();
     });
-    bot.on('spawn', () => { if (this.dim && this.dim !== bot.game.dimension) this.event(`ты в другом измерении: ${this.dimName()}`); this.dim = bot.game.dimension; });
+    bot.on('spawn', () => {
+      if (this.dim && this.dim !== bot.game.dimension) {
+        this.event(`ты в другом измерении: ${this.dimName()}`);
+        // прошёл портал (а не умер): стоял в портале перед этим - запомнить пару «вход -> выход»
+        const was = this.inPortal, fromDim = this.dim;
+        if (was && Date.now() - was.at < 15000 && this.travel) {
+          setTimeout(() => {
+            try {
+              const p = bot.entity.position;
+              const exit = bot.findBlock({ matching: bot.registry.blocksByName.nether_portal.id, maxDistance: 4 });
+              if (exit) { this.travel.addLink(fromDim, was.pos, bot.game.dimension, exit.position); this.log(`запомнил портал: ${was.pos.x} ${was.pos.z} -> ${Math.floor(p.x)} ${Math.floor(p.z)} (${this.dimName()})`); }
+            } catch {}
+          }, 1500);
+        }
+      }
+      this.dim = bot.game.dimension; this.inPortal = null;
+    });
     bot.on('messagestr', (msg, pos, json, sender) => this.onMessage(msg, pos, json, sender));
     // чат разбирается в onMessage (каналы по оформлению Essentials); события mineflayer chat/whisper не используем:
     // его шаблоны принимали личку «[ник -> я] текст» ещё и за общий чат
@@ -424,6 +440,7 @@ class TotemBot extends EventEmitter {
   async slowTick() {
     const b = this.bot;
     if (!b || !b.entity) return;
+    this.senseTick();
     // взгляд: на того, за кем идём, иногда по сторонам
     const owner = this.followName ? this.player(this.followName) : null;
     const nearest = Object.values(b.players).filter((p) => p.entity && p.username !== b.username)
@@ -510,7 +527,7 @@ class TotemBot extends EventEmitter {
     this.log('застрял, пробую выбраться (' + this.stuck.tries + ')');
     b.setControlState('jump', true);
     b.setControlState('back', true);
-    setTimeout(() => { try { b.setControlState('jump', false); b.setControlState('back', false); const g = b.pathfinder.goal; if (g) b.pathfinder.setGoal(g, b.pathfinder.dynamicGoal); } catch {} }, 400);
+    setTimeout(() => { try { b.setControlState('jump', false); b.setControlState('back', false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
     if (this.stuck.tries === 3) this.event('ты застрял и не можешь пройти дальше', true);
   }
 
@@ -586,6 +603,80 @@ class TotemBot extends EventEmitter {
     }
   }
 
+  // Чутьё раз в секунду, дёшево: стоит ли в портале (для пар порталов), где видел игроков (радар Xaero, но с памятью),
+  // и заметные перемены (ночь, утро, дождь, знакомый снова рядом) - мозгу как «момент», он сам решит, реагировать ли.
+  senseTick() {
+    const b = this.bot, me = b.entity.position, now = Date.now(), dim = this.dimName();
+    try {
+      const at = b.blockAt(me);
+      if (at && at.name === 'nether_portal') this.inPortal = { pos: { x: Math.floor(me.x), y: Math.floor(me.y), z: Math.floor(me.z) }, at: now };
+    } catch {}
+    this.seen = this.seen || {};
+    this.closeAt = this.closeAt || {};
+    for (const pl of Object.values(b.players)) {
+      if (!pl.entity || pl.username === b.username) continue;
+      const p = pl.entity.position;
+      this.seen[pl.username] = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim, at: now };
+      if (p.distanceTo(me) <= 16) {
+        const last = this.closeAt[pl.username];
+        if (last && now - last > 10 * 60000) this.emit('moment', { kind: 'встреча:' + pl.username, who: pl.username, text: `${pl.username} снова рядом (не виделись ${Math.round((now - last) / 60000)} мин)` });
+        if (!last) this.closeAt[pl.username] = now - 1;   // первая встреча за сеанс - без «снова»
+        this.closeAt[pl.username] = now;
+      }
+    }
+    const t = b.time && b.time.timeOfDay;
+    if (t !== undefined) {
+      const night = t >= 13000 && t < 23000;
+      if (this.wasNight !== undefined && night !== this.wasNight) this.emit('moment', night ? { kind: 'ночь', text: 'стемнело, наступает ночь' } : { kind: 'утро', text: 'рассвело' });
+      this.wasNight = night;
+    }
+    const rain = !!b.isRaining;
+    if (this.wasRain !== undefined && rain && !this.wasRain) this.emit('moment', { kind: 'дождь', text: 'пошёл дождь' + (b.thunderState > 0 ? ', гроза' : '') });
+    this.wasRain = rain;
+  }
+
+  /** Где последний раз видел игроков (по запросу мозга). */
+  seenText() {
+    const now = Date.now();
+    const list = Object.entries(this.seen || {}).filter(([n]) => n !== this.opts.name).sort((a, c) => c[1].at - a[1].at).slice(0, 15)
+      .map(([n, s]) => `${n}: ${s.x} ${s.y} ${s.z} (${s.dim}), ${now - s.at < 5000 ? 'сейчас' : Math.round((now - s.at) / 60000) + ' мин назад'}`);
+    return list.join('; ') || 'пока никого не видел';
+  }
+
+  // Дальний путь: план (пешком или через Незер) и исполнение по шагам. Цель - место из памяти или координаты.
+  async travelTo(a, tok) {
+    const b = this.bot;
+    if (!this.travel) throw new Error('нет модуля путей');
+    let dest;
+    if (a.place) {
+      const pl = this.memory && this.memory.findPlace(a.place);
+      if (!pl) throw new Error(`не знаю места «${a.place}»`);
+      dest = { x: pl.x, y: pl.y, z: pl.z, dim: pl.dim, name: pl.name };
+    } else {
+      if (a.x === undefined || a.z === undefined) throw new Error('куда? нужны x и z или место');
+      dest = { x: +a.x, y: a.y !== undefined ? +a.y : null, z: +a.z, dim: a.dim || this.dimName() };
+    }
+    const plan = this.travel.plan(b.entity.position, b.game.dimension, dest);
+    if (plan.error) throw new Error(plan.error);
+    this.log('путь: ' + plan.text);
+    this.event('путь: ' + plan.text, false);
+    const legTime = (d) => Math.max(120000, d / 3 * 1500);   // ~3 бл./с с запасом
+    for (const s of plan.steps) {
+      this.check(tok);
+      const d = Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z);
+      if (s.do === 'portal') await this.portal(s, tok);
+      else if (s.do === 'find_portal') {
+        await this.goto(new goals.GoalNearXZ(s.x, s.z, 6), tok, legTime(d));
+        const pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 40 });
+        if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет - выход надо построить`);
+        await this.portal(pb.position, tok);
+      } else if (s.y === null || s.y === undefined) await this.goto(new goals.GoalNearXZ(s.x, s.z, 2), tok, legTime(d));
+      else await this.goto(new goals.GoalNear(s.x, s.y, s.z, 2), tok, legTime(d));
+    }
+    const p = b.entity.position;
+    return `дошёл${dest.name ? ' до «' + dest.name + '»' : ''} (${plan.text}), теперь у ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}, ${this.dimName()}`;
+  }
+
   // --- действия
   cancel() {
     this.token++;
@@ -599,13 +690,23 @@ class TotemBot extends EventEmitter {
 
   async goto(goal, tok, timeoutMs = 120000) {
     const b = this.bot;
-    let timer;
-    try {
-      await Promise.race([
-        b.pathfinder.goto(goal),
-        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('не дошёл за отведённое время')), timeoutMs); }),
-      ]);
-    } finally { clearTimeout(timer); }
+    const until = Date.now() + timeoutMs;
+    // бой (отбежать от крипера, отступить к хозяину) перехватывает путь - после него идти дальше, до 6 раз
+    for (let attempt = 0; ; attempt++) {
+      let timer;
+      try {
+        await Promise.race([
+          b.pathfinder.goto(goal),
+          new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('не дошёл за отведённое время')), Math.max(1000, until - Date.now())); }),
+        ]);
+        break;
+      } catch (e) {
+        this.check(tok);
+        if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
+        for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }
+        this.log('продолжаю путь');
+      } finally { clearTimeout(timer); }
+    }
     this.check(tok);
   }
 
@@ -689,17 +790,49 @@ class TotemBot extends EventEmitter {
     return `отдал ${a.who} ${gave} ${a.item}`;
   }
 
+  // Портал: встать прямо перед ним обычной ходьбой (наискосок мешает рама), потом шагнуть внутрь тоже ходьбой
+  // pathfinder (его шаги античит принимает). Ручной прыжок - только запасной: с земли, прямо, не больше 3 раз
+  // (частые прыжки в раму Vulcan считает Step C, после 15 - бан; стенд 15.11).
   async portal(a, tok) {
     const b = this.bot;
     const from = b.game.dimension;
-    await this.goto(new goals.GoalNear(+a.x, +a.y, +a.z, 1), tok);
+    const id = b.registry.blocksByName.nether_portal.id;
+    let target = new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z));
+    const pb = b.findBlock({ point: target, matching: id, maxDistance: 6 });
+    if (pb) {
+      target = pb.position;
+      for (let i = 0; i < 4; i++) { const below = b.blockAt(target.offset(0, -1, 0)); if (below && below.name === 'nether_portal') target = target.offset(0, -1, 0); else break; }
+    }
+    const pbl = b.blockAt(target);
+    const axis = pbl && pbl.getProperties ? pbl.getProperties().axis : 'x';
+    const free = (v) => { const x = b.blockAt(v); return x && x.boundingBox === 'empty' && x.name !== 'nether_portal' && !/lava|fire/.test(x.name); };
+    const sides = [];
+    for (const s2 of [1, -1]) for (const dy of [-1, 0]) {
+      const f = target.offset(axis === 'z' ? s2 : 0, dy, axis === 'z' ? 0 : s2);
+      const below = b.blockAt(f.offset(0, -1, 0));
+      if (free(f) && free(f.offset(0, 1, 0)) && below && below.boundingBox === 'block') sides.push(f);
+    }
+    const me0 = b.entity.position;
+    sides.sort((p1, p2) => p1.distanceTo(me0) - p2.distanceTo(me0));
+    const front = sides[0] || null;
+    this.log(`к порталу ${target.x} ${target.y} ${target.z}: встаю перед ним ${front ? front.x + ' ' + front.y + ' ' + front.z : '(места перед ним не вижу)'}`);
+    if (front) await this.goto(new goals.GoalBlock(front.x, front.y, front.z), tok, 90000);
+    else await this.goto(new goals.GoalNear(target.x, target.y, target.z, 2), tok, 90000);
+    const inside = () => { const at = b.blockAt(b.entity.position); return at && at.name === 'nether_portal'; };
+    try { await this.goto(new goals.GoalBlock(target.x, target.y, target.z), tok, 8000); } catch (e) { if (e instanceof Cancelled) throw e; try { b.pathfinder.setGoal(null); } catch {} }
     this.busyLook = true;
     try {
-      await b.lookAt(new Vec3(+a.x + 0.5, +a.y + 0.5, +a.z + 0.5), true);
-      b.setControlState('forward', true);
-      await sleep(600);
-      b.setControlState('forward', false);
-      for (let i = 0; i < 40 && b.game.dimension === from; i++) { await sleep(500); this.check(tok); }
+      for (let i = 0; i < 3 && !inside() && b.game.dimension === from; i++) {
+        this.check(tok);
+        for (let w = 0; w < 20 && !b.entity.onGround; w++) await sleep(50);
+        await b.lookAt(new Vec3(target.x + 0.5, b.entity.position.y + 1.62, target.z + 0.5), true);
+        b.setControlState('forward', true);
+        if (front && front.y < target.y) { await sleep(100); b.setControlState('jump', true); await sleep(100); b.setControlState('jump', false); }
+        await sleep(600);
+        b.clearControlStates();
+        await sleep(700);
+      }
+      for (let i = 0; i < 30 && b.game.dimension === from; i++) { await sleep(500); this.check(tok); }
     } finally { b.clearControlStates(); this.busyLook = false; }
     if (b.game.dimension === from) throw new Error('портал не сработал');
     await sleep(2000);
@@ -905,6 +1038,7 @@ class TotemBot extends EventEmitter {
     this.mode = 'task';
     this.task = label || plain.map((a) => a.act).join(', ');
     const done = [];
+    const b0 = () => this.bot.entity.position;
     try {
       for (const a of plain) {
         this.check(tok);
@@ -925,10 +1059,12 @@ class TotemBot extends EventEmitter {
           case 'harvest': r = await this.harvest(a, tok); break;
           case 'remember': r = this.remember(a, label); break;
           case 'forget': r = this.memory ? this.memory.forget(a) : 'памяти нет'; break;
+          case 'travel': r = await this.travelTo(a, tok); break;
           case 'goto_place': {
             const pl = this.memory && this.memory.findPlace(a.name);
             if (!pl) throw new Error(`не знаю места «${a.name}»`);
-            if (pl.dim !== this.dimName()) throw new Error(`место «${pl.name}» в другом измерении (${pl.dim}), туда через портал`);
+            // в другом измерении или далеко - дальний путь (может, через Незер)
+            if (this.travel && (pl.dim !== this.dimName() || Math.hypot(pl.x - b0().x, pl.z - b0().z) > 300)) { r = await this.travelTo({ place: a.name }, tok); break; }
             await this.goto(new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
             r = `пришёл к месту «${pl.name}»`;
             break;
