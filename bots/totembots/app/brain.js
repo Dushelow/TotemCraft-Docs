@@ -209,7 +209,7 @@ class Brain {
 
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
-    const ini = this.cfg().initiative || { enabled: true, minutes: 2 };
+    const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
     if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length || this.bridge.resting) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
@@ -284,7 +284,7 @@ class Brain {
 
   /** Для панели: что сейчас с мозгом, понятными словами. */
   status() {
-    const ini = this.cfg().initiative || { enabled: true, minutes: 2 };
+    const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
     const next = this.lastEvent + (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips));
     return {
       thinking: this.thinking ? { secs: Math.round((Date.now() - this.thinking.since) / 1000), about: this.thinking.about } : null,
@@ -461,7 +461,7 @@ class Brain {
     // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop/remember - без отчёта
     if (actions.some((a) => !['follow', 'stop', 'remember', 'forget'].includes(a.act))) {
       // своё дело: итог - снова от себя (можно продолжить: дошёл - осмотрелся - пошёл дальше), до 3 дел подряд
-      const mine = from === 'сам' && ++this.selfChain < 3;
+      const mine = from === 'сам' && ++this.selfChain < 6;
       this.push(`[итог задания (${from || 'хозяин'})] ${result}`, true, mine ? '@self' : '');
     }
   }

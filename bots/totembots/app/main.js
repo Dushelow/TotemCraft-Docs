@@ -45,7 +45,7 @@ let tab = 'bot';
 const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(LOCAL, 'config.json');
 // по умолчанию: настоящий сервер, хозяин - владелец, боты сами заходят при запуске программы, голос Qwen
 let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bots: [], autostart: true, birthYear: '2000',
-  qwen: { chatMode: 'fast', planMode: 'auto', models: [] }, initiative: { enabled: true, minutes: 2 },
+  qwen: { chatMode: 'fast', planMode: 'auto', models: [] }, initiative: { enabled: true, minutes: 1 },
   voice: { enabled: true, provider: 'qwen', fallback: true, local: true, plasmo: true, volume: 0.8 } };
 function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
@@ -68,6 +68,7 @@ function logTo(name, text) {
   const l = live.get(name);
   if (!l) return;
   l.log.push(`${t} ${text}`);
+  try { const dir = path.join(LOCAL, 'logs'); fs.mkdirSync(dir, { recursive: true }); fs.appendFileSync(path.join(dir, name + '.log'), `${new Date().toISOString()} ${text}\n`); } catch {}
   if (l.log.length > 400) l.log.splice(0, l.log.length - 400);
 }
 

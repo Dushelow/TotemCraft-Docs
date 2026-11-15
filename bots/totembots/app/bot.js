@@ -465,6 +465,7 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     if (!b || !b.entity) return;
     this.senseTick();
+    this.handsTick().catch(() => {});
     try { this.shoreTick(); } catch {}
     // взгляд: на того, за кем идём, иногда по сторонам
     const owner = this.followName ? this.player(this.followName) : null;
@@ -754,6 +755,24 @@ class TotemBot extends EventEmitter {
     const rain = !!b.isRaining;
     if (this.wasRain !== undefined && rain && !this.wasRain) this.emit('moment', { kind: 'дождь', text: 'пошёл дождь' + (b.thunderState > 0 ? ', гроза' : '') });
     this.wasRain = rain;
+  }
+
+  /** Как игрок: в основной руке - оружие или инструмент, а не тотем и не случайный блок; тотем - во второй руке. */
+  async handsTick() {
+    const b = this.bot;
+    if (this.mode === 'task' || this.busyLook || this.eating || (this.guard && this.guard.fighting)) return;
+    if (Date.now() - (this.handsAt || 0) < 15000) return;
+    this.handsAt = Date.now();
+    const items = b.inventory.items();
+    const off = b.inventory.slots[45];
+    const totem = items.find((i) => i.name === 'totem_of_undying');
+    if (totem && (!off || off.name !== 'totem_of_undying')) { await b.equip(totem, 'off-hand'); return; }
+    const held = b.heldItem;
+    const W = ['netherite_sword', 'diamond_sword', 'iron_sword', 'stone_sword', 'golden_sword', 'wooden_sword', 'netherite_axe', 'diamond_axe', 'iron_axe', 'stone_axe'];
+    const best = W.map((n) => items.find((i) => i.name === n)).find(Boolean);
+    const odd = held && !W.includes(held.name) && !/pickaxe|shovel|_axe|hoe|fishing_rod|shield|bow|crossbow|trident|mace|spear/.test(held.name);
+    if (best && (!held || odd)) { await b.equip(best, 'hand'); return; }
+    if (!best && odd) { try { await b.unequip('hand'); } catch {} }
   }
 
   /** Где последний раз видел игроков (по запросу мозга). */
