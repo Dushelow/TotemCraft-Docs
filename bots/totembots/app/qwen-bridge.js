@@ -351,7 +351,7 @@ class QwenBridge {
   }
 
   async open(chatId) {
-    const pid = this.projectId();
+    const pid = (this.noProjectUntil || 0) > Date.now() ? '' : this.projectId();
     const want = chatId ? `${ORIGIN}/c/${chatId}` : pid ? `${ORIGIN}/p/${pid}` : `${ORIGIN}/`;
     // после ошибки страница Qwen бывает в сломанном состоянии (PARENT_NOT_FOUND на каждое следующее сообщение) - перезагрузить
     if (chatId && this.currentChat() === chatId && !this.needReload) return;
@@ -373,6 +373,20 @@ class QwenBridge {
   }
 
   async _askWithFallback2(chatId, text, opt) {
+    try {
+      return await this._askModels(chatId, text, opt);
+    } catch (e) {
+      // новый чат в проекте не отвечает (утром 15.11 так было 4 минуты подряд) - создать чат вне проекта,
+      // полчаса проект для новых чатов не трогать; бот продолжает разговаривать
+      if (chatId || !this.projectId() || !/не начал|PARENT|не принял/i.test(e.message)) throw e;
+      this.noProjectUntil = Date.now() + 30 * 60000;
+      this.onAttention('новый чат в проекте Qwen не ответил (' + e.message.slice(0, 60) + '), создаю чат вне проекта');
+      this.needReload = true;
+      return this._askModels(chatId, text, opt);
+    }
+  }
+
+  async _askModels(chatId, text, opt) {
     const models = (opt.models && opt.models.length) ? opt.models : [''];
     let last;
     for (let i = 0; i < models.length; i++) {
@@ -388,7 +402,7 @@ class QwenBridge {
   }
 
   async _ask(chatId, text, model, mode) {
-    if (!chatId) await this.beforeNewChat();
+    if (!chatId && !((this.noProjectUntil || 0) > Date.now())) await this.beforeNewChat();
     await this.open(chatId);
     await this.hook();
     if (model || mode) {
@@ -432,7 +446,8 @@ class QwenBridge {
       }
       if (!r) continue;
       if (r.started) started = true;
-      if (!started && Date.now() > sentAt + 45000) throw new Error('Qwen не начал отвечать (вход, капча, лимит?)');
+      // первое сообщение нового чата (длинная вводная, в проекте Qwen ещё читает файлы) - дать больше времени
+      if (!started && Date.now() > sentAt + (chatId ? 45000 : 90000)) throw new Error('Qwen не начал отвечать (вход, капча, лимит?)');
       if (r.done) {
         if (r.done.error && !r.done.answer) throw new Error(r.done.error);
         // новый чат получает адрес после первого ответа
