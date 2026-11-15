@@ -241,6 +241,8 @@ class Brain {
       }
     } catch (e) {
       this.log('Qwen: ' + e.message);
+      // чат сломан (PARENT_NOT_FOUND - Qwen потерял ветку разговора): начать новый, вводная прогреется заново
+      if (/PARENT_NOT_FOUND/i.test(e.message) && this.botCfg.chatId) { this.log('чат Qwen сломан, начинаю новый'); this.botCfg.chatId = ''; this.save(); }
       // сбой Qwen: один раз повторить те же сообщения (мост перезагрузит чат), чтобы игроки не остались без ответа
       const again = batch.filter((x) => !x.retried);
       if (again.length) { again.forEach((x) => { x.retried = true; }); this.pending.unshift(...again); this.log('повторю через 5 с'); setTimeout(() => this.pump(), 5000); }
