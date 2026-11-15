@@ -1064,11 +1064,20 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     const until = Date.now() + timeoutMs;
     // бой (отбежать от крипера, отступить к хозяину) перехватывает путь - после него идти дальше, до 6 раз
+    // сторож: 20 с без приближения к цели хотя бы на блок - пути отсюда нет, бросить (бот упирался в корпус корабля)
+    const gx = goal.x !== undefined ? goal.x : goal.entity ? null : null, gz = goal.z;
+    let bestD = Infinity, bestAt = Date.now();
+    const far = () => (gx === undefined || gx === null ? 0 : Math.hypot(b.entity.position.x - gx, b.entity.position.z - gz));
     for (let attempt = 0; ; attempt++) {
-      let timer;
+      let timer, watch;
       try {
         await Promise.race([
           b.pathfinder.goto(goal),
+          new Promise((_, rej) => { watch = setInterval(() => {
+            const d = far(); if (!d) return;
+            if (d < bestD - 1) { bestD = d; bestAt = Date.now(); }
+            else if (Date.now() - bestAt > 20000) rej(new Error(`отсюда не подойти: 20 с без приближения, осталось ${Math.round(d)} бл. (путь закрыт - выбери другое)`));
+          }, 1000); }),
           new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('не дошёл за отведённое время')), Math.max(1000, until - Date.now())); }),
         ]);
         break;
@@ -1084,7 +1093,7 @@ class TotemBot extends EventEmitter {
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }
         this.log('продолжаю путь');
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer); clearInterval(watch); }
     }
     this.check(tok);
   }

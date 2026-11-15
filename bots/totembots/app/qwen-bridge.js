@@ -316,6 +316,18 @@ class QwenBridge {
       const on = await this.wc.executeJavaScript(`(() => { const t = (document.body && document.body.innerText || '').slice(0, 20000);
         return /slide to verify|drag the slider|complete the verification|security verification|请完成|滑动验证|拖动滑块/i.test(t)
           || !!document.querySelector('#aliyunCaptcha-window-popup, .aliyunCaptcha-mask, [id^="nc_"][id$="_wrapper"], iframe[src*="captcha"]'); })()`).catch(() => false);
+      if (!on && !this.busyDialog) {
+        await this.wc.executeJavaScript(`(() => {
+          for (const d of document.querySelectorAll('[role=dialog], .ant-modal-wrap, .qwen-modal')) {
+            const r = d.getBoundingClientRect(); if (!r.width) continue;
+            const t = d.innerText || '';
+            if (/age|возраст|birth|рожден|verify|проверк|slide/i.test(t) || d.querySelector('textarea, input[type=text], input[type=file]')) continue;
+            const x = d.querySelector('[aria-label=Close], [aria-label=close], .ant-modal-close, button[class*=close]');
+            if (x) { x.click(); return 'закрыл'; }
+          }
+          return '';
+        })()`).then((r) => { if (r) this.onAttention('закрыл рекламное окно Qwen'); }).catch(() => {});
+      }
       if (on && !this.captcha) {
         this.captcha = true;
         await this.wc.executeJavaScript(BUSY_OFF).catch(() => {});
