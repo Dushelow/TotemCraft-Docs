@@ -2,6 +2,7 @@ const $ = (id) => document.getElementById(id);
 const T = window.totem;
 let selected = '';
 let settingsFilled = false;
+const openMap = new Set();
 const openServer = new Set();
 const showPass = new Set();
 const openChats = new Set();
@@ -54,6 +55,7 @@ function botCard(b) {
         <button data-a="chat" class="sec" ${b.chatId ? '' : 'disabled'}>Его чат в Qwen</button>
         <button data-a="newchat" class="sec">Новый чат</button>
         <button data-a="persona" class="sec">Характер</button>
+        <button data-a="map" class="sec">${openMap.has(b.name) ? '▾' : '▸'} Карта</button>
         <button data-a="server" class="sec">${openServer.has(b.name) ? '▾' : '▸'} На сервере</button>
         <button data-a="remove" class="red">Удалить</button>
       </div>
@@ -90,6 +92,8 @@ function botCard(b) {
         </div>
         <div class="muted" data-f="probe">${esc(b.probe || '')}</div>
       </div>` : ''}
+      ${openMap.has(b.name) ? `<div class="srv"><canvas data-f="map" width="392" height="392" style="width:100%;border-radius:6px;background:#111"></canvas>
+        <div class="muted" data-f="mapinfo">серое - суша, синее - вода, красное - лава, оранжевое - постройки; точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер. Бот в центре, север сверху.</div></div>` : ''}
       <div data-f="personaBox" style="display:${openPersona.has(b.name) ? 'block' : 'none'}">
         <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="4">${esc(b.persona || '')}</textarea>
         <div class="row" style="margin-top:6px"><button data-a="savePersona">Сохранить характер</button></div>
@@ -141,6 +145,7 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'stop') act(() => T.botStop(name));
   if (a === 'order') { const v = f('order').value.trim(); if (v) act(async () => { await T.botOrder({ name, text: v }); f('order').value = ''; f('order').blur(); }); }
   if (a === 'chat') act(() => T.botChat(name));
+  if (a === 'map') { openMap.has(name) ? openMap.delete(name) : openMap.add(name); lastHtml = ''; refresh().then(drawMaps); }
   if (a === 'server') { openServer.has(name) ? openServer.delete(name) : openServer.add(name); lastHtml = ''; refresh(); }
   if (a === 'pass') { showPass.has(name) ? showPass.delete(name) : showPass.add(name); lastHtml = ''; refresh(); }
   if (a === 'copy') { navigator.clipboard.writeText(e.target.dataset.cmd); e.target.textContent = 'Скопировано'; setTimeout(() => { e.target.textContent = 'Копировать'; }, 1500); }
@@ -249,6 +254,31 @@ $('chrome').onclick = async () => { $('chrome').disabled = true; await T.qwenLog
 $('reload').onclick = () => T.qwenReload();
 T.onLoginStatus((t) => { $('login').textContent = t; });
 
+// карта бота: чанки вокруг (бот в центре, север сверху)
+async function drawMaps() {
+  for (const name of openMap) {
+    const card = [...document.querySelectorAll('.bot')].find((c) => c.dataset.name === name);
+    const cv = card && card.querySelector('[data-f="map"]');
+    if (!cv) continue;
+    const v = await T.botMap(name);
+    if (!v) continue;
+    const g = cv.getContext('2d'), n = v.r * 2 + 1, s = cv.width / n;
+    g.fillStyle = '#111'; g.fillRect(0, 0, cv.width, cv.height);
+    for (const [x, z, k, built] of v.chunks) {
+      g.fillStyle = built >= 30 ? '#c8813a' : k === 'w' ? '#2f5f9e' : k === 'l' ? '#a8382c' : '#4a4d52';
+      g.fillRect((x + v.r) * s, (z + v.r) * s, s - 1, s - 1);
+    }
+    const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
+    for (const [x, z, kind] of v.poi) {
+      g.fillStyle = COL[kind] || '#fff';
+      g.beginPath(); g.arc((x + v.r + 0.5) * s, (z + v.r + 0.5) * s, Math.max(2, s / 3), 0, 7); g.fill();
+    }
+    g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(v.r * s, v.r * s, s, s);
+    const info = card.querySelector('[data-f="mapinfo"]');
+    if (info && !info.dataset.n) { info.dataset.n = 1; info.textContent = `исследовано чанков: ${v.total}. ` + info.textContent; }
+  }
+}
+setInterval(drawMaps, 5000);
 setInterval(refresh, 1000);
 setInterval(refreshQwen, 5000);
 refresh(); refreshQwen();

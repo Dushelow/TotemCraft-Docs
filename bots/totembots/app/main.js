@@ -11,6 +11,7 @@ const { TotemBot } = require('./bot');
 const { Brain, DEFAULT_PERSONA } = require('./brain');
 const { Voice, PIPER_VOICES } = require('./voice');
 const { Memory } = require('./memory');
+const { WorldMap } = require('./worldmap');
 const { QwenProject, PROJECT_NAME } = require('./qwen-project');
 
 const PANEL_WIDTH = 440;
@@ -20,7 +21,7 @@ const QWEN_URL = 'https://chat.qwen.ai/';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
-let win, qwen, bridge, voice, memory, project;
+let win, qwen, bridge, voice, memory, project, worldMap;
 
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
@@ -65,6 +66,9 @@ function startBot(name) {
   brain.memory = memory;
   brain.onBackground = onBackground;
   body.memory = memory;
+  body.worldMap = worldMap;
+  // деревни и спавнеры с карты - сразу в память мест
+  worldMap.attach(body, (v, dim) => memory.place({ name: `${v.kind} у ${v.x} ${v.z}`, x: v.x, y: v.y, z: v.z, dim, note: 'нашёл по карте' }, bc.name));
   body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
   body.start();
@@ -282,6 +286,7 @@ ipcMain.handle('project-sync', () => projectSync(true));
 ipcMain.handle('project-open', () => { if (project.id) qwen.webContents.loadURL(`${QWEN_URL}p/${project.id}`); return true; });
 ipcMain.handle('project-enable', (_e, on) => { cfg.qwenProject = { ...(cfg.qwenProject || {}), enabled: !!on }; saveCfg(); if (on) projectSync(true); return true; });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
+ipcMain.handle('bot-map', (_e, name) => { const l = live.get(name); return l && l.body && worldMap ? worldMap.view(l.body) : null; });
 ipcMain.handle('bot-chatmode', (_e, { name, mode, aliases }) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (!b) return false;
@@ -404,7 +409,7 @@ ipcMain.handle('qwen-login-chrome', async () => {
   }
 });
 
-app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); Menu.setApplicationMenu(null); createWindow(); });
+app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); Menu.setApplicationMenu(null); createWindow(); });
 app.on('window-all-closed', () => {
   for (const l of live.values()) if (l.body) l.body.stop();
   setTimeout(() => app.quit(), 300);

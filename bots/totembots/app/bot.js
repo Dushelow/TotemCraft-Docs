@@ -319,7 +319,8 @@ class TotemBot extends EventEmitter {
     const online = Object.keys(this.bot.players || {}).filter((n) => n !== this.opts.name);
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
     return `измерение: ${s.dim}, координаты ${s.pos.join(' ')}, здоровье ${s.health}/20, еда ${s.food}/20, сейчас ${doing}; ` +
-      `инвентарь: ${inv}; рядом: ${near}; на сервере онлайн ${online.length}: ${online.slice(0, 30).join(', ') || 'никого'}`;
+      `инвентарь: ${inv}; рядом: ${near}; на сервере онлайн ${online.length}: ${online.slice(0, 30).join(', ') || 'никого'}`
+      + (this.worldMap ? '; ' + this.worldMap.summary(this) : '');
   }
 
   // --- фоновое поведение: взгляд как у человека, еда, слежение за тем, за кем идём
