@@ -306,6 +306,7 @@ class WorldMap {
     const hidden = names.some((n) => XRAY_HIDDEN.test(n));
     for (const { chunkX, chunkZ, column: col } of b.world.getColumns()) {
       if (!col || !col.sections) continue;
+      if (found.length > 4000) break;
       const minY = col.minY || 0;
       col.sections.forEach((sec, i) => {
         if (!sec || !sec.data) return;
@@ -323,6 +324,13 @@ class WorldMap {
       });
     }
     const xr = faked ? ` (ниже ${XRAY_MAX_Y} сервер прячет такие блоки внутри камня и шлёт подделки - считаю только открытые, их видно глазами)` : '';
+    // брёвна: только настоящие деревья, которые можно рубить (из построек - нельзя, о них отдельно)
+    let fromBuilds = 0;
+    if (/_log$|_stem$/.test(q) && tb.skills) {
+      const ok = found.filter((p) => { const k = b.blockAt(new (require('vec3').Vec3)(p.x, p.y, p.z)); const why = k ? tb.skills.whyNot(k) : 'нет'; if (why) fromBuilds++; return !why; });
+      found.length = 0; found.push(...ok); total = ok.length;
+      if (!total) return `${q}: рядом только брёвна из построек или без листвы (${fromBuilds}) - рубить нельзя. Уйди подальше от построек (!wander) и ищи деревья там`;
+    }
     if (!total) return `${names.slice(0, 3).join(', ')}: в загруженных чанках (~${b.world.getColumns().length} чанков вокруг) открытых нет${xr}`;
     found.sort((a, c) => a.d - c.d);
     // соседние блоки одной жилы или одного сундука - одна запись

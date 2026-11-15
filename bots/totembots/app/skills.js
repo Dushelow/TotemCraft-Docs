@@ -111,7 +111,7 @@ class Skills {
       catch (e) { if (tb.isCancel(e)) throw e; skipped.add(target.position.toString()); lastWhy = e.message; }
     }
     const have = b.inventory.items().filter((it) => ids.some((id) => b.registry.blocks[id].name === it.name || (b.registry.blocks[id].drops || []).includes(it.type))).reduce((s, it) => s + it.count, 0);
-    if (!got) throw new Error(`не добыл ${q}${lastWhy ? ': ' + lastWhy : ' - рядом нет'}`);
+    if (!got) throw new Error(`не добыл ${q}${lastWhy ? ': ' + lastWhy : ' - рядом нет'}${/log|wood/.test(q) ? '. Рядом только брёвна построек - уйди от построек (!wander) и найди дерево с листвой (!find(oak_log))' : ''}`);
     return `добыл ${q}: ${got}${got < want ? ' из ' + want + (lastWhy ? ' (дальше: ' + lastWhy + ')' : '') : ''}${have ? '' : ''}`;
   }
 

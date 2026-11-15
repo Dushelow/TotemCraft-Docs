@@ -388,8 +388,16 @@ class Brain {
 
   async runActions(actions, from) {
     const label = actions.map((a) => a.act).join(' → ');
-    const result = await this.body.run(actions, label);
+    let result = await this.body.run(actions, label);
     if (!result) return;
+    // память неудач: одно и то же не вышло снова - сказать прямо, чтобы не ходил по кругу
+    if (/не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result)) {
+      const key = actions.map((a) => `${a.act}:${a.x ?? ''},${a.z ?? ''}:${a.block || a.item || a.who || a.name || ''}`).join('|');
+      this.fails = (this.fails || []).filter((f) => Date.now() - f.at < 20 * 60000);
+      const n = this.fails.filter((f) => f.key === key).length + 1;
+      this.fails.push({ key, at: Date.now() });
+      if (n >= 2) result += ` (это уже ${n}-й раз подряд не выходит - НЕ повторяй, придумай другой способ или другое место)`;
+    }
     this.log('итог: ' + result);
     // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop/remember - без отчёта
     if (actions.some((a) => !['follow', 'stop', 'remember', 'forget', 'equip', 'wait'].includes(a.act))) {
