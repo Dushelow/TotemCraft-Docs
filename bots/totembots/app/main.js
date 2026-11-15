@@ -171,6 +171,7 @@ function createWindow() {
   dsView.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: dss } } }));
   const dsChat = new WebChat(dsView.webContents, 'deepseek', (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
   dsChat.inUse = () => tab === 'deepseek';
+  ipcMain.handle('deepseek-test', async () => { try { const r = await dsChat.ask('', 'Это проверка связи. Ответь одним словом: работает'); return 'ответ: ' + r.answer + ' (чат ' + r.chatId + ')'; } catch (e) { return 'ошибка: ' + e.message; } });
   router = new Router({ qwen: bridge, cfg: () => cfg, webs: { deepseekweb: dsChat }, log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
     log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('totem', {
   qwenState: call('qwen-state'),
   qwenLoginChrome: call('qwen-login-chrome'),
   deepseekLoginChrome: call('deepseek-login-chrome'),
+  deepseekTest: call('deepseek-test'),
   onLoginStatus: (cb) => ipcRenderer.on('qwen-login-status', (_e, t) => cb(t)),
   state: call('state'),
   pause: call('pause'),
