@@ -34,7 +34,7 @@ function testConfig() {
 testConfig();
 // своё окно программы закрываем по номеру процесса; если у владельца программа открыта - не мешаем ей
 let appPid = 0;
-function killApp() { if (appPid) { try { execSync('taskkill /F /T /PID ' + appPid, { stdio: 'ignore' }); } catch {} } }
+const killApp = require('./kill_test_app');
 if (/electron.exe/i.test(execSync('tasklist /FI "IMAGENAME eq electron.exe"').toString())) {
   console.log('Программа TotemBots уже открыта (у владельца): тест не запускаю, чтобы не мешать ей. Закройте её и повторите.');
   process.exit(2);

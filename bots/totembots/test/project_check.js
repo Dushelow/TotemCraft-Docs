@@ -10,7 +10,7 @@ if (/electron\.exe/i.test(execSync('tasklist /FI "IMAGENAME eq electron.exe"').t
   const app = spawn(path.join(__dirname, '..', 'node_modules', '.bin', 'electron.cmd'), ['.', '--remote-debugging-port=9223'],
     { cwd: path.join(__dirname, '..'), shell: true, stdio: 'ignore',
       env: { ...process.env, TOTEMBOTS_CONFIG: path.join(DATA, 'config.json'), TOTEMBOTS_MEMORY: DATA, TOTEMBOTS_PROJECT_NAME: 'TotemCraft · тест' } });
-  const kill = () => { try { execSync('taskkill /F /T /PID ' + app.pid, { stdio: 'ignore' }); } catch {} };
+  const kill = require('./kill_test_app');
   try {
     let ev;
     for (let i = 0; i < 40 && !ev; i++) {
