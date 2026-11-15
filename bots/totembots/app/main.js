@@ -23,12 +23,26 @@ const QWEN_URL = 'https://chat.qwen.ai/';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
+// Всё своё (настройки, вход в Qwen, память, карта) - в папке программы local/, а не в %APPDATA%: так у владельца и
+// у Claude один и тот же файл (15.11: %APPDATA% у них оказался разным - ярлык открывал старые настройки и другой вход).
+// Первый запуск: перенести настройки из %APPDATA%/totembots, если там есть.
+const LOCAL = path.join(__dirname, '..', 'local');
+if (!process.env.TOTEMBOTS_CONFIG) {
+  try {
+    fs.mkdirSync(LOCAL, { recursive: true });
+    const old = path.join(app.getPath('appData'), 'totembots', 'config.json');
+    const neu = path.join(LOCAL, 'config.json');
+    if (!fs.existsSync(neu) && fs.existsSync(old)) fs.copyFileSync(old, neu);
+  } catch {}
+  app.setPath('userData', path.join(LOCAL, 'userdata'));
+}
+
 let win, qwen, mine, bridge, voice, memory, project, worldMap, travel;
 let tab = 'bot';
 
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
-const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(app.getPath('userData'), 'config.json');
+const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(LOCAL, 'config.json');
 // по умолчанию: настоящий сервер, хозяин - владелец, боты сами заходят при запуске программы, голос Qwen
 let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bots: [], autostart: true, birthYear: '2000',
   qwen: { chatMode: 'fast', planMode: 'auto', models: [] }, initiative: { enabled: true, minutes: 2 },
