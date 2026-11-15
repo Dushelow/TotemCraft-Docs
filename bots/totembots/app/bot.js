@@ -117,6 +117,16 @@ class TotemBot extends EventEmitter {
       }
       mv.entitiesToAvoid = new Set(['creeper']);
       mv.exclusionAreasStep = [(block) => this.forbiddenCost(block)];
+      // Ковёр (мох, шерсть) по pathfinder проходим всегда - а на уровне тела и головы это преграда: бот упирался
+      // в ковёр на бугорке впереди (боевой, 482 66 -611, 15.11). Ковёр выше ног - не проходим, путь в обход.
+      {
+        const gb = mv.getBlock.bind(mv);
+        mv.getBlock = function (pos, dx, dy, dz) {
+          const b2 = gb(pos, dx, dy, dz);
+          if (dy >= 1 && b2 && this.carpets.has(b2.type) && b2.safe) return Object.assign(Object.create(Object.getPrototypeOf(b2)), b2, { safe: false });
+          return b2;
+        };
+      }
       // Главная причина «застрял на ровном месте» (стенд-копия мира 15.11): pathfinder шагает по диагонали, если
       // свободна хотя бы ОДНА из двух соседних клеток, и тело (0,6 блока) цепляется за угол блока. Как Baritone:
       // диагональ - только если свободны обе стороны (на уровне ног и головы).
