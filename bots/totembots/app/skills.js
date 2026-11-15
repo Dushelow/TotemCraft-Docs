@@ -153,6 +153,37 @@ class Skills {
   }
 
   /** Поставить блок из инвентаря: в точку (x,y,z) или рядом с собой. Не вплотную к чужим постройкам. */
+  /**
+   * Свободные места по карте: чанки суши без построек (и соседи без построек), ближние первыми.
+   * Возвращает [{x, y, z, d, dir}] - точка на земле в середине чанка.
+   */
+  freeSpots(max = 5) {
+    const b = this.b, wm = this.tb.worldMap;
+    if (!wm) return [];
+    const m = wm.load(b.game.dimension), me = b.entity.position;
+    const out = [];
+    for (const [k, c] of Object.entries(m.chunks)) {
+      if (c.k !== 'g' || c.h === null) continue;
+      const [cx, cz] = k.split(',').map(Number);
+      const x = cx * 16 + 8, z = cz * 16 + 8;
+      if (this.builtChunk(new Vec3(x, c.h, z))) continue;
+      const d = Math.hypot(x - me.x, z - me.z);
+      if (d < 8) continue;
+      out.push({ x, y: c.h + 1, z, d });
+    }
+    const { compass } = require('./worldmap');
+    return out.sort((p, q) => p.d - q.d).slice(0, max).map((p) => ({ ...p, dir: compass(p.x - me.x, p.z - me.z) }));
+  }
+
+  /** Встать на свободное место (нет построек вокруг) - по карте, а не наугад. */
+  async goToFreeSpot(tok) {
+    const s = this.freeSpots(1)[0];
+    if (!s) throw new Error('на карте нет мест без построек - !wander, чтобы разведать');
+    this.tb.log(`иду на свободное место по карте: ${s.x} ${s.z} (${Math.round(s.d)} бл. на ${s.dir})`);
+    await this.tb.goto(new goals.GoalNearXZ(s.x, s.z, 3), tok, 180000);
+    return s;
+  }
+
   async place(a, tok) {
     const b = this.b, tb = this.tb;
     const name = String(a.block || a.item || '').toLowerCase().replace(/^minecraft:/, '');
@@ -168,8 +199,13 @@ class Skills {
       }
       if (!at) throw new Error('некуда поставить рядом');
     }
-    const near = this.builtNear(at, 3);
-    if (near && !a.master) throw new Error(`не ставлю вплотную к чужой постройке (${near.name})`);
+    let near = this.builtNear(at, 3);
+    // место не названо, а рядом чужое - сам дойти до свободного места по карте и поставить там (не искать наугад)
+    if (near && !a.master && a.x === undefined && !a._moved) {
+      await this.goToFreeSpot(tok);
+      return this.place({ ...a, _moved: true }, tok);
+    }
+    if (near && !a.master) throw new Error(`не ставлю вплотную к чужой постройке (${near.name})${a.x !== undefined ? ' - !place без координат сам найдёт свободное место' : ''}`);
     const cur = b.blockAt(at);
     if (cur && cur.boundingBox !== 'empty' && !/water|short_grass|tall_grass|snow$/.test(cur.name)) throw new Error(`место занято: ${cur.name}`);
     // опора: любой твёрдый сосед

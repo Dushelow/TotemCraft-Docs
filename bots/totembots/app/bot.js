@@ -1507,6 +1507,8 @@ class TotemBot extends EventEmitter {
           case 'gather': r = await this.skills.gather(a, tok); break;
           case 'plan': r = require('./recipes').plan(this.bot, a.item, a.count); break;
           case 'craftable': r = require('./recipes').craftable(this.bot); break;
+          case 'findSpot': { const sp = this.skills.freeSpots(5); r = sp.length ? 'места без построек: ' + sp.map((s) => `${s.x} ${s.y} ${s.z} (${Math.round(s.d)} бл. на ${s.dir})`).join('; ') : 'на карте пока нет мест без построек - !wander, чтобы разведать'; break; }
+          case 'goFree': { const s = await this.skills.goToFreeSpot(tok); r = `пришёл на свободное место ${s.x} ${s.z}`; break; }
           case 'lesson': r = this.memory ? this.memory.lesson(a.text, this.opts.name) : 'памяти нет'; break;
           case 'equip': r = await this.equipItem(a); break;
           case 'eat': r = await this.eatItem(a); break;

@@ -41,6 +41,8 @@ const C = [
   // --- знание мира и опыт
   ['plan', 'craftPlan,getCraftingPlan,howToMake,recipe', 'предмет[, сколько]', 'полный план: что добыть и что скрафтить по порядку, с учётом инвентаря', (a) => ({ act: 'plan', item: a[0], count: a[1] })],
   ['craftable', 'whatCanICraft,canCraft', '', 'что можно скрафтить прямо сейчас', () => ({ act: 'craftable' })],
+  ['findSpot', 'freeSpot,emptyPlace,findPlace', '', 'свободные места без построек по карте (для своего дома, верстака, фермы)', () => ({ act: 'findSpot' })],
+  ['goToFreeSpot', 'goFree', '', 'дойти до ближайшего места без построек', () => ({ act: 'goFree' })],
   ['lesson', 'learn,lessonLearned', 'текст', 'запомнить урок из опыта («у базы брёвна чужие - рубить в лесу на севере»)', (a) => ({ act: 'lesson', text: a[0] })],
   ['saveSkill', 'rememberSkill', 'название', 'сохранить последнюю удачную цепочку команд как свой навык', (a) => ({ act: 'saveSkill', name: a[0] })],
   ['skill', 'useSkill,doSkill', 'название', 'выполнить свой сохранённый навык', (a) => ({ act: 'skill', name: a[0] })],

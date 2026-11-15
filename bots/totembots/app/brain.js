@@ -378,7 +378,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson']);
+        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
