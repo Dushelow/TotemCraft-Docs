@@ -176,7 +176,7 @@ class WorldMap {
         if (!c && BUILT.test(bl.name)) c = 'built';
         if (!c && MARK.test(bl.name)) c = 'mark';
         if (!c) continue;
-        const v = { c, name: bl.name, built: c === 'built' || c === 'сундуки' || c === 'кровать' || c === 'мастерская' || (c === 'mark' && BUILT.test(bl.name)) };
+        const v = { c, name: bl.name, built: !/moss_carpet$/.test(bl.name) && ( c === 'built' || c === 'сундуки' || c === 'кровать' || c === 'мастерская' || (c === 'mark' && BUILT.test(bl.name))) };
         for (let id = bl.minStateId; id <= bl.maxStateId; id++) this.cat.set(id, v);
       }
     }

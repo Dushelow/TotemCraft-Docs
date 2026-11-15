@@ -30,7 +30,7 @@ class Skills {
     for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) for (let dz = -r; dz <= r; dz++) {
       const p = pos.offset(dx, dy, dz);
       const k = b.blockAt(p, false);
-      if (k && BUILT.test(k.name) && !this.mine(p)) return k;
+      if (k && BUILT.test(k.name) && !/^(pale_)?moss_carpet$/.test(k.name) && !this.mine(p)) return k;
     }
     return null;
   }
