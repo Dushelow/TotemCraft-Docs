@@ -166,6 +166,7 @@ class TotemBot extends EventEmitter {
           }, 1500);
         }
       }
+      if (this.dim && this.dim !== bot.game.dimension) this.arrivedAt = Date.now();
       this.dim = bot.game.dimension; this.inPortal = null;
     });
     bot.on('path_update', (r) => { this.lastPath = { status: r.status, path: r.path, at: Date.now() }; });
@@ -1143,6 +1144,11 @@ class TotemBot extends EventEmitter {
     if (front) await this.goto(new goals.GoalBlock(front.x, front.y, front.z), tok, 90000);
     else await this.goto(new goals.GoalNear(target.x, target.y, target.z, 2), tok, 90000);
     const inside = () => { const at = b.blockAt(b.entity.position); return at && at.name === 'nether_portal'; };
+    // только что вышел из этого портала (стоит в нём) - сервер не перенесёт снова, пока не выйдешь: шаг наружу и пауза
+    if (inside() || Date.now() - (this.arrivedAt || 0) < 5000) {
+      if (front) { try { await this.goto(new goals.GoalBlock(front.x, front.y, front.z), tok, 10000); } catch (e) { if (e instanceof Cancelled) throw e; } }
+      await sleep(2500);
+    }
     try { await this.goto(new goals.GoalBlock(target.x, target.y, target.z), tok, 8000); } catch (e) { if (e instanceof Cancelled) throw e; try { b.pathfinder.setGoal(null); } catch {} }
     this.busyLook = true;
     try {
