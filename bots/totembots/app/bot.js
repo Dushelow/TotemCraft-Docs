@@ -618,14 +618,16 @@ class TotemBot extends EventEmitter {
     // физика mineflayer не подпрыгивает (проверено на стенде 15.11), поэтому уступ - запасной
     const lvl = Math.floor(me.y);
     let best = null;
-    for (const maxUp of [1]) {   // ближайший берег: на уступ в блок выход из воды теперь работает (waterExitTick)
-    for (let r = 1; r <= 40 && !best; r += (r < 6 ? 1 : 2)) {
-      for (let a = 0; a < 16; a++) {
-        const x = Math.floor(me.x + Math.cos(a * Math.PI / 8) * (r + 0.3)), z = Math.floor(me.z + Math.sin(a * Math.PI / 8) * (r + 0.3));
-        for (let y = Math.floor(me.y) + 4; y >= Math.floor(me.y) - 3; y--) {
+    // сначала природный берег в 40 блоках; нет - любая твёрдая опора в 64 (причал, мостки - как игрок; не палуба над головой)
+    const anySolid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|ice|leaves|_glass|glass/.test(k.name); };
+    for (const [maxUp, R, ok] of [[1, 40, solid], [1, 64, anySolid]]) {
+    for (let r = 1; r <= R && !best; r += (r < 6 ? 1 : 2)) {
+      for (let a = 0; a < 32; a++) {
+        const x = Math.floor(me.x + Math.cos(a * Math.PI / 16) * (r + 0.3)), z = Math.floor(me.z + Math.sin(a * Math.PI / 16) * (r + 0.3));
+        for (let y = Math.floor(me.y) + 2; y >= Math.floor(me.y) - 3; y--) {
           const v = new Vec3(x, y, z);
           if (v.y + 1 - lvl > maxUp) continue;
-          if (solid(v) && empty(v.offset(0, 1, 0)) && empty(v.offset(0, 2, 0)) && !this.badShore.some((x) => x.v.distanceTo(v) < 3)) { best = v.offset(0, 1, 0); break; }
+          if (ok(v) && empty(v.offset(0, 1, 0)) && empty(v.offset(0, 2, 0)) && !this.badShore.some((x) => x.v.distanceTo(v) < 3)) { best = v.offset(0, 1, 0); break; }
         }
         if (best) break;
       }
