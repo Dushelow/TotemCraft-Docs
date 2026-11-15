@@ -83,9 +83,9 @@ class Attention {
       this.lastGlobalReply = Date.now();
       return { channel: 'global' };
     }
-    // сам заговорил (приказ из панели, событие, тишина): рядом есть люди - ближний, никого - общий
-    if (!this.someoneNear && Date.now() - this.lastGlobalReply >= GLOBAL_REPLY_MS) { this.lastGlobalReply = Date.now(); return { channel: 'global' }; }
-    return { channel: 'local' };
+    // сам заговорил (приказ из панели, событие, тишина): рядом есть люди - ближний; никого рядом - молчим в игре
+    // (говорить в общий чат в пустоту выглядит как разговор с самим собой; в общий - только если Qwen решил явно)
+    return this.someoneNear ? { channel: 'local' } : { channel: 'none' };
   }
 }
 

@@ -212,7 +212,7 @@ class TotemBot extends EventEmitter {
     if (pos === 'game_info') return;
     const text = String(msg).trim();
     if (!text) return;
-    this.emit('chat', text);
+    if (pos !== 'chat') this.emit('chat', text);   // сообщения игроков пишутся в журнал ниже, с ником и каналом
     const pw = this.opts.password;
     const now = Date.now();
     // запасной вход AuthMe командой - только по сообщению сервера и только пока бот не вошёл
@@ -232,6 +232,7 @@ class TotemBot extends EventEmitter {
       const m = /^.*?<[^>]+>\s?(.*)$/.exec(shown);
       if (m && m[1]) body = m[1];
       else if (local) body = text.replace(/^!\s*/, '');
+      this.emit('chat', `${local ? '[рядом] ' : ''}${p ? p.username : '?'}: ${body}`);
       if (p) this.playerChat(p.username, body, false, local ? 'local' : 'global');
       return;
     }
@@ -314,10 +315,11 @@ class TotemBot extends EventEmitter {
     const s = this.state();
     if (s.status !== 'online') return 'ты не на сервере';
     const inv = Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто';
-    const near = s.near.map((n) => `${n.name} (${n.dist} бл.)`).join(', ') || 'никого';
+    const near = s.near.map((n) => `${n.name} (${n.dist} бл.)`).join(', ') || 'никого (в 48 блоках)';
+    const online = Object.keys(this.bot.players || {}).filter((n) => n !== this.opts.name);
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
     return `измерение: ${s.dim}, координаты ${s.pos.join(' ')}, здоровье ${s.health}/20, еда ${s.food}/20, сейчас ${doing}; ` +
-      `инвентарь: ${inv}; рядом: ${near}`;
+      `инвентарь: ${inv}; рядом: ${near}; на сервере онлайн ${online.length}: ${online.slice(0, 30).join(', ') || 'никого'}`;
   }
 
   // --- фоновое поведение: взгляд как у человека, еда, слежение за тем, за кем идём

@@ -49,7 +49,9 @@ function warmText(cfg, bot) {
 Чат: я присылаю только то, что обращено к тебе: [чат личка], [чат рядом] (ближний чат), [чат общий]. Отвечаешь ты
 автоматически туда же, откуда спросили (личка - в личку, ближний - в ближний, общий - в общий). Если по смыслу
 нужен другой канал, добавь в JSON "channel": "global" | "local" | "whisper" (для whisper ещё "to": "Ник"):
-обычно все общаются в общем чате, с теми, кто рядом, - в ближнем, личное - в личку. В общий чат пиши
+обычно все общаются в общем чате, с теми, кто рядом, - в ближнем, личное - в личку.
+«Рядом» в [состояние] - только игроки в 48 блоках; кто вообще на сервере - строка «на сервере онлайн». Не пиши в чат,
+что вокруг никого нет, и не говори сам с собой: если сказать некому, оставь реплику пустой. В общий чат пиши
 особенно коротко. [вокруг] - то, что ты сам слышал рядом (сказано не тебе): ты это знаешь и можешь на это опираться,
 но отдельно отвечать на это не нужно. Новости сервера из общего чата приходят сжатыми в [память] (раздел «Новости чата»).
 
@@ -212,7 +214,6 @@ class Brain {
       // кто просил: последний автор с правами в пачке; '@self' - бот сам (инициатива)
       const master = [...batch].reverse().find((x) => x.from && x.from !== '@self' && this.isMaster(x.from));
       const self = batch.some((x) => x.from === '@self');
-      if (r.say && this.voice) this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
       // ответ - туда, откуда спросили; тем, кому ответил, открывается окно разговора
       const chs = batch.map((x) => x.channel).filter(Boolean);
       const whisperFrom = [...batch].reverse().find((x) => x.channel === 'whisper');
@@ -220,8 +221,14 @@ class Brain {
       this.attn.someoneNear = !!(me && Object.values(this.body.bot.players).some((p) => p.entity && p.username !== this.botCfg.name && p.entity.position.distanceTo(me.position) <= 32));
       let rc = this.attn.replyChannel(chs, whisperFrom && whisperFrom.from);
       // Qwen может сам выбрать канал по смыслу (поле channel в JSON)
-      if (r.channel === 'global' || r.channel === 'local') rc = { channel: r.channel };
+      if (r.channel === 'global' || r.channel === 'local') {
+        rc = { channel: r.channel };
+        if (r.channel === 'global') this.attn.lastGlobalReply = Date.now();
+      }
       else if (r.channel === 'whisper' && r.to) rc = { channel: 'whisper', to: String(r.to) };
+      if (r.say && rc.channel === 'none') { this.log('(вслух не сказал: рядом никого) ' + r.say); r.say = ''; }
+      // голос - только если реплика действительно звучит (в ближнем и личке его слышат рядом)
+      if (r.say && this.voice && rc.channel !== 'whisper') this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
       if (r.say) {
         this.attn.answered(batch.filter((x) => x.channel).map((x) => x.from));
         await this.typeAndSay(r.say, rc);
