@@ -253,8 +253,8 @@ ipcMain.handle('qwen-state', async () => {
 ipcMain.handle('state', () => stateForPanel());
 ipcMain.handle('pause', (_e, on) => { cfg.paused = !!on; saveCfg(); for (const n of live.keys()) logTo(n, on ? 'мозг на паузе (кнопка в панели)' : 'мозг снова работает'); return cfg.paused; });
 ipcMain.handle('save-settings', (_e, s) => {
-  cfg.host = String(s.host || '').trim() || '127.0.0.1';
-  cfg.port = +s.port || 25565;
+  cfg.host = String(s.host || '').trim() || 'play.totemcraft.net';
+  cfg.port = +s.port || 20098;
   cfg.masters = String(s.masters || '').split(/[\s,]+/).filter(Boolean);
   const MODES = ['fast', 'auto', 'think', ''];
   cfg.qwen = {
