@@ -523,9 +523,12 @@ class TotemBot extends EventEmitter {
     const wet = feet && /water|bubble_column|kelp|seagrass/.test(feet.name);
     if (!wet || this.mode !== 'idle' || b.pathfinder.isMoving()) { this.wetSince = wet ? (this.wetSince || Date.now()) : 0; return; }
     if (!this.wetSince) this.wetSince = Date.now();
-    if (Date.now() - this.wetSince < 15000 || Date.now() - (this.shoreTry || 0) < 30000) return;
+    if (Date.now() - this.wetSince < 15000 || Date.now() - (this.shoreTry || 0) < 10000) return;
     this.shoreTry = Date.now();
-    const solid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|ice|leaves/.test(k.name); };
+    // берег - природная земля (не чужие доски, лодки и причалы: туда из воды не залезть, да и не наше)
+    const NATURAL = /^(grass_block|dirt|coarse_dirt|rooted_dirt|podzol|mycelium|sand|red_sand|gravel|stone|deepslate|andesite|diorite|granite|tuff|calcite|clay|mud|snow_block|moss_block|sandstone|red_sandstone|terracotta|.*_terracotta)$/;
+    const solid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && NATURAL.test(k.name); };
+    this.badShore = (this.badShore || []).filter((x) => Date.now() - x.at < 10 * 60000);
     const empty = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava/.test(k.name); };
     let best = null;
     for (let r = 4; r <= 40 && !best; r += 4) {
@@ -533,14 +536,37 @@ class TotemBot extends EventEmitter {
         const x = Math.floor(me.x + Math.cos(a * Math.PI / 8) * r), z = Math.floor(me.z + Math.sin(a * Math.PI / 8) * r);
         for (let y = Math.floor(me.y) + 4; y >= Math.floor(me.y) - 3; y--) {
           const v = new Vec3(x, y, z);
-          if (solid(v) && empty(v.offset(0, 1, 0)) && empty(v.offset(0, 2, 0))) { best = v.offset(0, 1, 0); break; }
+          if (solid(v) && empty(v.offset(0, 1, 0)) && empty(v.offset(0, 2, 0)) && !this.badShore.some((x) => x.v.distanceTo(v) < 3)) { best = v.offset(0, 1, 0); break; }
         }
         if (best) break;
       }
     }
     if (!best) { this.log('в воде, берега рядом не вижу'); return; }
     this.log(`выплываю на берег: ${best.x} ${best.y} ${best.z}`);
-    b.pathfinder.setGoal(new goals.GoalNear(best.x, best.y, best.z, 1));
+    this.mode = 'shore';   // пока плывёт - не «стоит без дела»
+    const tok = this.token;
+    this.goto(new goals.GoalNear(best.x, best.y, best.z, 1), tok, 40000)
+      .catch(async (e) => {
+        // у самого берега путь из воды на уступ не строится: как человек - лицом к берегу, вперёд с прыжком, один раз
+        if (e instanceof Cancelled) throw e;
+        { const p0 = b.entity.position.floored(); const rows = [];
+          for (let dy = -1; dy <= 2; dy++) { const r = []; for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) { const k = b.blockAt(p0.offset(dx, dy, dz)); r.push(k ? k.name.replace(/_?(block|planks)$/, '').slice(0, 9) : '?'); } rows.push(`y${p0.y + dy}: ` + r.join(',')); }
+          const ents = Object.values(b.entities).filter((x) => x !== b.entity && x.position.distanceTo(b.entity.position) < 3).map((x) => x.name);
+          this.log(`у берега: я ${b.entity.position.x.toFixed(1)} ${b.entity.position.y.toFixed(1)} ${b.entity.position.z.toFixed(1)}, цель ${best.x} ${best.y} ${best.z}; ${rows.join(' | ')}; рядом: ${ents.join(',') || 'никого'}`); }
+        if (b.entity.position.distanceTo(best) > 3.5) throw e;
+        try { b.pathfinder.setGoal(null); } catch {}
+        this.busyLook = true;
+        try {
+          await b.lookAt(best.offset(0.5, 1.2, 0.5), true);
+          b.setControlState('forward', true); b.setControlState('jump', true);
+          await sleep(1200);
+        } finally { b.clearControlStates(); this.busyLook = false; }
+        const feet = b.blockAt(b.entity.position);
+        if (feet && /water/.test(feet.name)) throw e;
+      })
+      .then(() => this.log('выбрался на берег'))
+      .catch((e) => { if (e instanceof Cancelled) return; this.badShore.push({ v: best.offset(0, -1, 0), at: Date.now() }); this.log('к этому берегу не доплыл, поищу другой'); })
+      .finally(() => { if (this.mode === 'shore') { this.mode = 'idle'; try { b.pathfinder.setGoal(null); } catch {} } });
   }
 
   // Сторож застревания (Baritone: movementTimeoutTicks): путь идёт, а бот 5 с почти на месте -
