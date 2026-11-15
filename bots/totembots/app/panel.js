@@ -126,7 +126,7 @@ function renderNow(st) {
     else if (s.status === 'connecting') out.push(step('spin', `${b.name} заходит на сервер`, 'вход и пароль AuthMe - секунд 10'));
     else { out.push(step('', `${b.name} выключен`, 'кнопка «Включить» в его карточке; при запуске программы боты заходят сами')); continue; }
     if (!br) continue;
-    if (br.resting) out.push(step('bad', 'Мозг отдыхает: лимит Qwen', `на всех моделях этого аккаунта; снова попробует через ${br.resting} мин. Можно войти в другой аккаунт Google`));
+    if (br.resting) out.push(step('bad', 'Мозг отдыхает: лимит у всех нейросетей', `снова попробует через ${br.resting} мин. Можно войти в Qwen другим аккаунтом Google или добавить ключи в «Мозги»`));
     else if (br.thinking) out.push(step('spin', `Мозг думает... ${br.thinking.secs} с`, 'о чём: ' + br.thinking.about + (br.queue ? `; ещё в очереди: ${br.queue}` : '')));
     else if (!br.chat) out.push(step('spin', 'Мозг просыпается', 'скоро создастся чат в Qwen и бот начнёт жить сам'));
     else out.push(step('ok', 'Мозг на связи, ждёт', br.nextFree >= 0 ? `своё дело придумает через ${br.nextFree > 60 ? Math.ceil(br.nextFree / 60) + ' мин' : br.nextFree + ' с'}, если раньше никто не позовёт` : 'свободная воля выключена'));
@@ -140,9 +140,28 @@ function renderNow(st) {
   $('steps').innerHTML = out.join('');
 }
 $('pauseBtn').onclick = async () => { await T.pause(!pausedNow); refresh(); };
+let brainsFilled = false;
+function renderBrains(st) {
+  const B = st.brains; if (!B) return;
+  $('brainsNow').textContent = (B.now ? 'сейчас думает: ' + B.now + '. ' : '') + 'включены: ' + (B.active.join(', ') || '-');
+  if (brainsFilled) return;
+  brainsFilled = true;
+  $('brainOrder').value = B.order.join(', ');
+  $('brainKeys').innerHTML = Object.entries(B.presets).map(([k, p]) => `<label>${esc(p.name)} - ключ ${B.has[k] ? '(вставлен; пусто - оставить, «-» - удалить)' : ''} · <a href="#" data-url="${esc(p.keyUrl)}" class="keylink">где взять</a></label>
+    <div class="row"><input class="grow" data-key="${k}" placeholder="${B.has[k] ? '••••••••' : 'вставьте ключ'}"><input style="width:45%" data-model="${k}" value="${esc(B.models[k])}" title="модель"></div>`).join('');
+  document.querySelectorAll('.keylink').forEach((a) => { a.onclick = (e) => { e.preventDefault(); T.openExternal(a.dataset.url); }; });
+}
+$('brainsSave').onclick = () => act(async () => {
+  const keys = {}, models = {};
+  document.querySelectorAll('[data-key]').forEach((i) => { keys[i.dataset.key] = i.value; i.value = ''; });
+  document.querySelectorAll('[data-model]').forEach((i) => { models[i.dataset.model] = i.value; });
+  await T.brainsSave({ keys, models, order: $('brainOrder').value });
+  brainsFilled = false;
+});
 async function refresh() {
   const st = await T.state();
   renderNow(st);
+  renderBrains(st);
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');

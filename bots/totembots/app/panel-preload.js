@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('totem', {
   onLoginStatus: (cb) => ipcRenderer.on('qwen-login-status', (_e, t) => cb(t)),
   state: call('state'),
   pause: call('pause'),
+  brainsSave: call('brains-save'),
+  openExternal: call('open-external'),
   saveSettings: call('save-settings'),
   botAdd: call('bot-add'),
   botRemove: call('bot-remove'),

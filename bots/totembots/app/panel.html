@@ -103,6 +103,16 @@
 
   <div class="card">
     <details>
+      <summary>Мозги (нейросети): Qwen и другие по бесплатному ключу</summary>
+      <div class="muted" style="margin-top:6px">Бот спрашивает мозги по порядку: у одного лимит, капча или сбой - сразу следующий. Qwen работает через окно справа без ключа. Остальным нужен бесплатный ключ: откройте ссылку, войдите своим аккаунтом, создайте ключ и вставьте сюда. Ключи хранятся только на этом компьютере.</div>
+      <div id="brainKeys"></div>
+      <label>Порядок (через запятую): qwen, gemini, groq, openrouter, deepseek</label><input id="brainOrder">
+      <div class="row" style="margin-top:8px"><button id="brainsSave">Сохранить</button><span id="brainsNow" class="muted grow"></span></div>
+    </details>
+  </div>
+
+  <div class="card">
+    <details>
       <summary>Голос ботов</summary>
       <label class="chk"><input type="checkbox" id="vEnabled"> Озвучивать реплики ботов</label>
       <label>Чем озвучивать</label>

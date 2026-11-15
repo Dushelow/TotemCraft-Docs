@@ -14,6 +14,7 @@ const { Memory } = require('./memory');
 const { WorldMap } = require('./worldmap');
 const { Travel } = require('./travel');
 const { QwenProject, PROJECT_NAME } = require('./qwen-project');
+const { Router, PRESETS } = require('./router');
 
 const PANEL_WIDTH = 440;
 const TAB_H = 34;   // полоска вкладок над Qwen: «Окно бота» и «Моё окно Qwen»
@@ -37,7 +38,7 @@ if (!process.env.TOTEMBOTS_CONFIG) {
   app.setPath('userData', path.join(LOCAL, 'userdata'));
 }
 
-let win, qwen, mine, bridge, voice, memory, project, worldMap, travel;
+let win, qwen, mine, bridge, router, voice, memory, project, worldMap, travel;
 let tab = 'bot';
 
 // --- настройки
@@ -82,7 +83,7 @@ function startBot(name) {
   body.on('log', (t) => logTo(name, t));
   body.on('chat', (t) => logTo(name, '[чат] ' + t));
   body.on('end', () => logTo(name, 'бот выключен'));
-  const brain = new Brain({ body, bridge, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
+  const brain = new Brain({ body, bridge: router, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
   brain.voice = voice;
   brain.memory = memory;
   brain.onBackground = onBackground;
@@ -103,7 +104,10 @@ function startBot(name) {
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
+    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused,
+    brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
+      models: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, ((cfg.brains || {}).models || {})[k] || p.model])), presets: PRESETS,
+      now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
@@ -155,6 +159,8 @@ function createWindow() {
   qwen.webContents.loadURL(QWEN_URL);
   bridge = new QwenBridge(qwen.webContents);
   bridge.birthYear = () => cfg.birthYear || '';
+  // мозги по очереди: Qwen-сайт и нейросети по ключу (router.js)
+  router = new Router({ qwen: bridge, cfg: () => cfg, log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
     log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
   bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled !== false ? project.id : '');
@@ -170,6 +176,7 @@ function createWindow() {
     if (l && l.body) l.body.sendVoice(pcm, rate).then((ok) => logTo(name, ok ? 'голос отправлен в Plasmo Voice' : 'голос в Plasmo Voice: бот не на сервере')).catch((e) => logTo(name, 'голос в Plasmo Voice: ' + e.message));
   };
   bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); };
+  router.onAttention = bridge.onAttention;
 
   // Вход через Google открывается всплывающим окном: в том же профиле, чтобы вход сохранился.
   qwen.webContents.setWindowOpenHandler(() => ({
@@ -208,10 +215,14 @@ async function summarizeBackground(force = false) {
     const q = cfg.qwen || {};
     const opt = { mode: 'fast', models: q.serviceModels && q.serviceModels.length ? q.serviceModels : [] };
     if (!sc.id || (sc.uses || 0) >= 50) {   // новый служебный чат (внутри проекта, если он есть)
-      const r = await bridge.ask('', SERVICE_INTRO + '\n\nОтветь «ок».', opt);
+      const r = await router.ask('', SERVICE_INTRO + '\n\nОтветь «ок».', opt);
       sc.id = r.chatId; sc.uses = 0;
     }
-    const { answer } = await bridge.ask(sc.id, 'Кусок общего чата:\n' + chunk.join('\n'), opt);
+    const { answer } = await router.ask(sc.id, 'Кусок общего чата:\n' + chunk.join('\n'), opt).catch(async (e) => {
+      if (!/PARENT_NOT_FOUND/.test(e.message)) throw e;
+      const r = await router.ask('', SERVICE_INTRO + '\n\nОтветь «ок».', opt); sc.id = r.chatId; sc.uses = 0;
+      return router.ask(sc.id, 'Кусок общего чата:\n' + chunk.join('\n'), opt);
+    });
     sc.uses = (sc.uses || 0) + 1;
     cfg.serviceChat = sc; saveCfg();
     const lines = String(answer).replace(/```[a-z]*|```/gi, '').split('\n').map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim())
@@ -266,6 +277,21 @@ ipcMain.handle('qwen-state', async () => {
   }
 });
 ipcMain.handle('state', () => stateForPanel());
+// мозги: ключи (только на этом компьютере, local/config.json), модели, порядок
+ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });
+ipcMain.handle('brains-save', (_e, v) => {
+  const b = cfg.brains = cfg.brains || {};
+  b.keys = b.keys || {}; b.models = b.models || {};
+  for (const k of Object.keys(PRESETS)) {
+    const key = String((v.keys || {})[k] || '').trim();
+    if (key === '-') delete b.keys[k]; else if (key) b.keys[k] = key;   // пусто - оставить прежний, «-» - удалить
+    const m = String((v.models || {})[k] || '').trim(); if (m) b.models[k] = m;
+  }
+  const ord = String(v.order || '').split(/[\s,>]+/).map((x) => x.trim().toLowerCase()).filter((x) => x === 'qwen' || PRESETS[x]);
+  if (ord.length) b.order = [...new Set(ord)];
+  saveCfg();
+  return true;
+});
 ipcMain.handle('pause', (_e, on) => { cfg.paused = !!on; saveCfg(); for (const n of live.keys()) logTo(n, on ? 'мозг на паузе (кнопка в панели)' : 'мозг снова работает'); return cfg.paused; });
 ipcMain.handle('save-settings', (_e, s) => {
   cfg.host = String(s.host || '').trim() || 'play.totemcraft.net';

@@ -264,6 +264,7 @@ class Brain {
       // вводная изменилась (обновление программы, характер, хозяева) - повторить её в этом же чате
       else if (this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg))) await this.warm(this.botCfg.chatId);
       batch = this.pending.splice(0);
+      if (this.bridge.ensureWarm) this.bridge.ensureWarm(this.botCfg.chatId, warmText(this.cfg(), this.botCfg));
       let msg = batch.map((x) => x.line).join('\n');
       const around = this.attn.takeNear();
       if (around.length) { msg += '\n[вокруг] ' + around.join(' | '); this.log('[вокруг] ' + around.join(' | ')); }
