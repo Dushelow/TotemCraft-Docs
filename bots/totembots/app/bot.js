@@ -3,6 +3,7 @@
 // Заходит клиентом 1.21.11: его mineflayer поддерживает полностью, сервер 26.3 пускает через ViaVersion.
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
+const { Skills } = require('./skills');
 const { Vec3 } = require('vec3');
 const { EventEmitter } = require('events');
 const { Guard } = require('./guard');
@@ -742,6 +743,8 @@ class TotemBot extends EventEmitter {
   }
 
   check(tok) { if (tok !== this.token) throw new Cancelled('отменено'); }
+  isCancel(e) { return e instanceof Cancelled; }
+  get skills() { return this._skills || (this._skills = new Skills(this)); }
 
   async goto(goal, tok, timeoutMs = 120000) {
     const b = this.bot;
@@ -1126,6 +1129,10 @@ class TotemBot extends EventEmitter {
           }
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'wander': r = await this.wander(a, tok); break;
+          case 'gather': r = await this.skills.gather(a, tok); break;
+          case 'craft': r = await this.skills.craft(a, tok); break;
+          case 'place': r = await this.skills.place(a, tok); break;
+          case 'break': r = await this.skills.breakAt(a, tok); break;
           case 'look': r = 'посмотрел'; break;
           case 'follow': done.push(this.follow(a.who)); return done.join('; ');
           case 'stop': this.cancel(); return done.concat('остановился').join('; ');
