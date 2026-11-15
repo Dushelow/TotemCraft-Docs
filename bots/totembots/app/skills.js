@@ -178,14 +178,28 @@ class Skills {
     for (const [x, y, z] of dirs) { const k = b.blockAt(at.offset(x, y, z)); if (k && k.boundingBox === 'block') { ref = k; face = new Vec3(-x, -y, -z); break; } }
     if (!ref) throw new Error('не к чему приставить блок');
     if (b.entity.position.distanceTo(at.offset(0.5, 0.5, 0.5)) > 4) await tb.goto(new goals.GoalNear(at.x, at.y, at.z, 3), tok, 60000);
-    if (b.entity.position.floored().equals(at) || b.entity.position.floored().offset(0, 1, 0).equals(at)) throw new Error('стою на этом месте');
+    // блок не должен задеть бота даже краем (иначе сервер выталкивает - античит видит прыжок и полёт, бан на стенде)
+    const inMe = () => { const q = b.entity.position; return at.x < q.x + 0.35 && at.x + 1 > q.x - 0.35 && at.z < q.z + 0.35 && at.z + 1 > q.z - 0.35 && at.y < q.y + 1.85 && at.y + 1 > q.y - 0.05; };
+    if (inMe()) {
+      try { await tb.goto(new goals.GoalInvert(new goals.GoalNear(at.x, at.y, at.z, 2)), tok, 6000); } catch (e) { if (tb.isCancel(e)) throw e; }
+      try { b.pathfinder.setGoal(null); } catch {}
+      await sleep(300);
+      if (inMe()) throw new Error('стою на этом месте');
+    }
     await b.equip(it, 'hand');
     tb.busyLook = true;
-    try { await b.lookAt(at.offset(0.5, 0.5, 0.5)); await b.placeBlock(ref, face); } finally { tb.busyLook = false; }
+    // как человек: повернуться, чуть подождать, поставить, пауза (быстрые ставки подряд Vulcan видит как Bad Packets M)
+    try {
+      await b.lookAt(ref.position.offset(0.5 + face.x * 0.5, 0.5 + face.y * 0.5, 0.5 + face.z * 0.5), true);
+      await sleep(180);
+      await b.placeBlock(ref, face);
+      await sleep(250);
+    } finally { tb.busyLook = false; }
     const pl = this.placedList();
     pl.push({ x: at.x, y: at.y, z: at.z });
     if (pl.length > 3000) pl.shift();
     if (tb.memory) tb.memory.save();
+    tb.log(`поставил ${name} на ${at.x} ${at.y} ${at.z}`);
     return `поставил ${name} на ${at.x} ${at.y} ${at.z}`;
   }
 
@@ -197,6 +211,284 @@ class Skills {
     await this.digOne(k, tok);
     return `сломал ${k.name} на ${p.x} ${p.y} ${p.z}`;
   }
+  // ---------- копание по дороге (Baritone allowBreak): только природное и не там, где на карте постройки
+  builtChunk(p) {
+    const wm = this.tb.worldMap;
+    if (!wm) return false;
+    const m = wm.load(this.b.game.dimension);
+    const cx = Math.floor(p.x / 16), cz = Math.floor(p.z / 16);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) { const c = m.chunks[`${cx + dx},${cz + dz}`]; if (c && (c.b || 0) >= 12) return true; }
+    return false;
+  }
+
+  digMovements() {
+    if (this._mv) return this._mv;
+    const { Movements } = require('mineflayer-pathfinder');
+    const b = this.b, base = this.tb.movements;
+    const mv = new Movements(b);
+    Object.assign(mv, { canDig: true, allow1by1towers: false, scafoldingBlocks: [], allowParkour: true, allowSprinting: true, canOpenDoors: true, maxDropDown: 3 });
+    if (base) { mv.blocksToAvoid = base.blocksToAvoid; mv.entitiesToAvoid = base.entitiesToAvoid; mv.exclusionAreasStep = base.exclusionAreasStep; }
+    // ломать по пути можно только природное (брёвна - нет: их только с дерева через gather)
+    for (const bl of Object.values(b.registry.blocksByName)) if (!NATURAL.test(bl.name) || /_log$|_stem$|_leaves$/.test(bl.name)) mv.blocksCantBreak.add(bl.id);
+    mv.exclusionAreasBreak = [(block) => (this.builtChunk(block.position) ? 100 : 0)];
+    return (this._mv = mv);
+  }
+
+  async withDig(fn) {
+    const b = this.b;
+    b.pathfinder.setMovements(this.digMovements());
+    try { return await fn(); } finally { try { b.pathfinder.setMovements(this.tb.movements); } catch {} }
+  }
+
+  exposed(p) {
+    return [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => { const n = this.b.blockAt(p.offset(x, y, z)); return n && n.boundingBox === 'empty'; });
+  }
+
+  /** Видимая руда рядом (открытая: анти-иксрей прячет закрытую) - выкопать. */
+  async pickVisible(ids, radius, max, tok) {
+    const b = this.b;
+    let got = 0;
+    for (let i = 0; i < max; i++) {
+      this.tb.check(tok);
+      const me = b.entity.position;
+      const p = b.findBlocks({ matching: ids, maxDistance: radius, count: 40 }).filter((q) => this.exposed(q) && !this.whyNot(b.blockAt(q)))
+        .sort((p1, p2) => p1.distanceTo(me) - p2.distanceTo(me))[0];
+      if (!p) break;
+      try { await this.digOne(b.blockAt(p), tok); got++; } catch (e) { if (this.tb.isCancel(e)) throw e; break; }
+    }
+    return got;
+  }
+
+  /**
+   * Шахта (Baritone MineProcess в режиме legit): сначала видимая руда рядом; не хватило - спуститься на её высоту
+   * и копать ветку-туннель 1x2, по дороге забирая всё, что туннель открыл. Только природное, не у построек.
+   */
+  async mineOre(a, tok) {
+    const b = this.b, tb = this.tb;
+    const q = String(a.block || a.ore || '').toLowerCase().replace(/^minecraft:/, '').replace(/_ore$/, '');
+    const want = Math.max(1, Math.min(64, +a.count || 8));
+    const ids = Object.values(b.registry.blocksByName).filter((bl) => bl.name === q + '_ore' || bl.name === 'deepslate_' + q + '_ore' || bl.name === q || (q === 'debris' && bl.name === 'ancient_debris')).map((bl) => bl.id);
+    if (!ids.length) throw new Error(`не знаю руду «${q}»`);
+    const LEVEL = { diamond: -58, redstone: -58, lapis: 0, gold: -16, iron: 16, copper: 48, coal: 48, emerald: 100, ancient_debris: 15, quartz: 40, nether_gold: 40 };
+    let got = 0;
+    const left = Date.now() + Math.min(20, +a.minutes || 8) * 60000;
+    return this.withDig(async () => {
+      got += await this.pickVisible(ids, 24, want, tok);
+      if (got >= want) return `накопал ${q}: ${got}`;
+      const y = a.y !== undefined ? +a.y : (LEVEL[q] !== undefined ? LEVEL[q] : Math.floor(b.entity.position.y));
+      const me = b.entity.position.floored();
+      if (Math.abs(me.y - y) > 3) {
+        tb.log(`спускаюсь в шахту на высоту ${y}`);
+        await tb.goto(new goals.GoalNear(me.x + 2, y, me.z + 2, 1), tok, Math.max(30000, left - Date.now()));
+      }
+      const dirs = { 'север': [0, -1], 'юг': [0, 1], 'восток': [1, 0], 'запад': [-1, 0] };
+      let [dx, dz] = dirs[a.dir] || Object.values(dirs)[Math.floor(Math.random() * 4)];
+      let dug = 0;
+      while (got < want && Date.now() < left) {
+        tb.check(tok);
+        const p = b.entity.position.floored();
+        try { await tb.goto(new goals.GoalBlock(p.x + dx * 3, p.y, p.z + dz * 3), tok, 30000); }
+        catch (e) { if (tb.isCancel(e)) throw e; [dx, dz] = [-dz, dx]; if (++dug > 8) break; continue; }   // упёрлись (вода, лава, постройка) - поворот
+        got += await this.pickVisible(ids, 5, want - got, tok);
+      }
+      if (!got) throw new Error(`руды ${q} не нашёл за время`);
+      return `накопал ${q}: ${got}${got < want ? ' из ' + want : ''}`;
+    });
+  }
+
+  /** Подняться на поверхность (Baritone #surface): лестницей вверх, копая природное. */
+  async surface(a, tok) {
+    const b = this.b, tb = this.tb;
+    const me = b.entity.position.floored();
+    let top = null;
+    for (let y = me.y + 1; y < me.y + 120; y++) { const k = b.blockAt(new Vec3(me.x, y, me.z)); if (!k) break; if (k.skyLight === 15 || (k.boundingBox === 'empty' && y > 62 && b.blockAt(new Vec3(me.x, y + 1, me.z)) && b.blockAt(new Vec3(me.x, y + 1, me.z)).skyLight === 15)) { top = y; break; } }
+    if (top === null) { const c = tb.worldMap && tb.worldMap.load(b.game.dimension).chunks[`${Math.floor(me.x / 16)},${Math.floor(me.z / 16)}`]; top = c && c.h ? c.h + 1 : me.y + 30; }
+    await this.withDig(() => tb.goto(new goals.GoalY(top), tok, 180000));
+    const p = b.entity.position;
+    return `поднялся на поверхность: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`;
+  }
+
+  /** Рыбалка (Meteor AutoFish): удочка, открытая вода рядом. */
+  async fish(a, tok) {
+    const b = this.b, tb = this.tb;
+    const rod = b.inventory.items().find((i) => i.name === 'fishing_rod');
+    if (!rod) throw new Error('нет удочки (fishing_rod: 3 палки + 2 нити)');
+    const water = b.findBlock({ matching: (bl) => bl.name === 'water', maxDistance: 20, useExtraInfo: false });
+    if (!water) throw new Error('рядом нет воды');
+    const ws = b.findBlocks({ matching: b.registry.blocksByName.water.id, maxDistance: 20, count: 200 })
+      .filter((p) => { const up = b.blockAt(p.offset(0, 1, 0)); return up && up.name === 'air'; })
+      .sort((p1, p2) => p1.distanceTo(b.entity.position) - p2.distanceTo(b.entity.position));
+    if (!ws.length) throw new Error('нет открытой воды рядом');
+    const w = ws[0];
+    await tb.goto(new goals.GoalNear(w.x, w.y + 1, w.z, 3), tok, 60000);
+    const times = Math.max(1, Math.min(20, +a.count || 5));
+    let caught = 0;
+    tb.busyLook = true;
+    try {
+      for (let i = 0; i < times; i++) {
+        tb.check(tok);
+        await b.equip(rod, 'hand');
+        await b.lookAt(w.offset(0.5, 1, 0.5));
+        try { await Promise.race([b.fish(), sleep(60000).then(() => { throw new Error('не клюёт'); })]); caught++; }
+        catch (e) { if (/не клюёт/.test(e.message)) { try { b.activateItem(); } catch {} } else if (!/cancel/i.test(e.message)) throw e; }
+        await sleep(600);
+      }
+    } finally { tb.busyLook = false; }
+    await tb.pickup({ radius: 6 }, tok).catch(() => {});
+    return `порыбачил: поймал ${caught} из ${times}`;
+  }
+
+  /** Своя печь (Meteor AutoSmelter): найти свою или поставить (скрафтить из булыжника), топливо, сырьё, забрать. */
+  async smelt(a, tok) {
+    const b = this.b, tb = this.tb;
+    const inName = String(a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    const input = b.inventory.items().find((i) => i.name === inName);
+    if (!input) throw new Error(`нет в инвентаре: ${inName}`);
+    const count = Math.min(input.count, Math.max(1, +a.count || input.count));
+    const FUEL = ['coal', 'charcoal', 'coal_block', 'lava_bucket', 'blaze_rod', 'oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'oak_planks', 'spruce_planks', 'birch_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks', 'stick'];
+    const fuel = FUEL.map((n) => b.inventory.items().find((i) => i.name === n && i.name !== inName)).find(Boolean);
+    if (!fuel) throw new Error('нет топлива (уголь, доски, брёвна)');
+    const fid = b.registry.blocksByName.furnace.id;
+    let fb = b.findBlocks({ matching: fid, maxDistance: 24, count: 10 }).map((p) => b.blockAt(p)).find((k) => this.mine(k.position));
+    if (!fb) {
+      if (!b.inventory.items().some((i) => i.name === 'furnace')) await this.craft({ item: 'furnace' }, tok);
+      await this.place({ block: 'furnace' }, tok);
+      fb = b.findBlocks({ matching: fid, maxDistance: 6, count: 10 }).map((p) => b.blockAt(p)).find((k) => this.mine(k.position));
+      if (!fb) throw new Error('печь не встала');
+    }
+    await tb.goto(new goals.GoalNear(fb.position.x, fb.position.y, fb.position.z, 2), tok, 30000);
+    const f = await b.openFurnace(fb);
+    try {
+      const perFuel = /coal|charcoal/.test(fuel.name) ? 8 : /log|planks/.test(fuel.name) ? 1.5 : /block/.test(fuel.name) ? 80 : 0.5;
+      await f.putFuel(fuel.type, null, Math.min(fuel.count, Math.ceil(count / perFuel)));
+      await f.putInput(input.type, null, count);
+      const until = Date.now() + count * 10500 + 3000;
+      let out = 0;
+      while (Date.now() < until) {
+        tb.check(tok);
+        await sleep(2000);
+        if (f.outputItem()) { const it = f.outputItem(); out += it.count; await f.takeOutput(); }
+        if (out >= count) break;
+      }
+      if (f.outputItem()) { out += f.outputItem().count; await f.takeOutput(); }
+      return `переплавил ${inName}: получил ${out}`;
+    } finally { f.close(); }
+  }
+
+  /** Дикое животное поблизости (не у построек, без имени - не чьё-то). */
+  wild(e) {
+    return e && e.isValid && !e.customName && !this.builtChunk(e.position) && !this.builtNear(e.position.floored(), 5);
+  }
+
+  /** Охота (Mindcraft hunting): на дикое животное ради еды; удары - честным боем (guard). Чужой скот у построек не трогаем. */
+  async hunt(a, tok) {
+    const b = this.b, tb = this.tb;
+    const kind = String(a.animal || a.mob || 'cow').toLowerCase().replace(/^minecraft:/, '');
+    const want = Math.max(1, Math.min(8, +a.count || 1));
+    let killed = 0, refused = 0;
+    for (let i = 0; i < want; i++) {
+      tb.check(tok);
+      const me = b.entity.position;
+      const all = Object.values(b.entities).filter((e) => (e.name || '') === kind && e.position.distanceTo(me) < 40);
+      const t = all.filter((e) => this.wild(e)).sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
+      if (!t) { refused = all.length; break; }
+      tb.guard.prey = t.id;
+      const until = Date.now() + 45000;
+      try {
+        while (t.isValid && Date.now() < until) {
+          tb.check(tok);
+          if (t.position.distanceTo(b.entity.position) > 2.5) { try { await tb.goto(new goals.GoalFollow(t, 2), tok, 5000); } catch (e) { if (tb.isCancel(e)) throw e; } }
+          await sleep(300);
+        }
+      } finally { tb.guard.prey = null; try { b.pathfinder.setGoal(null); } catch {} }
+      if (!t.isValid) killed++;
+      await sleep(500);
+      await tb.pickup({ radius: 6 }, tok).catch(() => {});
+    }
+    if (!killed) throw new Error(refused ? `${kind} рядом только у чужих построек или с именем - это чужое` : `диких ${kind} рядом нет`);
+    return `охота: ${kind} ${killed}`;
+  }
+
+  /** Стрижка диких овец (Meteor AutoShearer). */
+  async shear(a, tok) {
+    const b = this.b, tb = this.tb;
+    const sh = b.inventory.items().find((i) => i.name === 'shears');
+    if (!sh) throw new Error('нет ножниц (2 железа)');
+    let n = 0;
+    for (let i = 0; i < Math.min(10, +a.count || 4); i++) {
+      tb.check(tok);
+      const me = b.entity.position;
+      const s = Object.values(b.entities).filter((e) => e.name === 'sheep' && this.wild(e) && e.position.distanceTo(me) < 32 && !(e.metadata && (e.metadata[17] & 0x10)))
+        .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
+      if (!s) break;
+      await tb.goto(new goals.GoalFollow(s, 2), tok, 20000).catch((e) => { if (tb.isCancel(e)) throw e; });
+      await b.equip(sh, 'hand');
+      await b.lookAt(s.position.offset(0, 0.8, 0));
+      await b.activateEntity(s);
+      n++;
+      await sleep(600);
+    }
+    await tb.pickup({ radius: 6 }, tok).catch(() => {});
+    if (!n) throw new Error('диких нестриженых овец рядом нет');
+    return `постриг овец: ${n}`;
+  }
+
+  /** Выбросить лишнее из инвентаря (Baritone throwaway / InventoryTweaks). */
+  async toss(a) {
+    const b = this.b;
+    const name = String(a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    const it = b.inventory.items().find((i) => i.name === name);
+    if (!it) throw new Error(`нет в инвентаре: ${name}`);
+    const n = Math.min(it.count, Math.max(1, +a.count || it.count));
+    await b.toss(it.type, null, n);
+    return `выбросил ${name} x${n}`;
+  }
+
+  /**
+   * Постройка (Baritone BuilderProcess, простые формы): house - стены, проём под дверь, крыша; wall, floor, pillar.
+   * x y z - угол на уровне пола (по умолчанию в 2 блоках от себя), w d h - размер. Блоки - из инвентаря.
+   */
+  async build(a, tok) {
+    const b = this.b, tb = this.tb;
+    const block = String(a.block || 'oak_planks').toLowerCase().replace(/^minecraft:/, '');
+    const shape = String(a.shape || 'house');
+    const w = Math.max(1, Math.min(9, +a.w || 5)), d = Math.max(1, Math.min(9, +a.d || 5)), h = Math.max(1, Math.min(6, +a.h || 3));
+    const me = b.entity.position.floored();
+    const o = a.x !== undefined ? new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z)) : me.offset(2, 0, 2);
+    const cells = [];
+    if (shape === 'floor') { for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) cells.push(o.offset(x, 0, z)); }
+    else if (shape === 'pillar') { for (let y = 0; y < h; y++) cells.push(o.offset(0, y, 0)); }
+    else if (shape === 'wall') { for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) cells.push(o.offset(x, y, 0)); }
+    else {   // house: стены по периметру, проём 1x2 посередине передней стены, плоская крыша
+      const door = Math.floor(w / 2);
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) {
+        const edge = x === 0 || z === 0 || x === w - 1 || z === d - 1;
+        if (!edge || (z === 0 && x === door && y < 2)) continue;
+        cells.push(o.offset(x, y, z));
+      }
+      for (let x = 0; x < w; x++) for (let z = 0; z < d; z++) cells.push(o.offset(x, h, z));
+    }
+    const todo = cells.filter((p) => { const k = b.blockAt(p); return k && (k.boundingBox === 'empty' || /water|short_grass|tall_grass|snow$/.test(k.name)); });
+    const have = b.inventory.items().filter((i) => i.name === block).reduce((s, i) => s + i.count, 0);
+    if (have < todo.length) throw new Error(`на ${shape} ${w}x${d}x${h} нужно ${block} x${todo.length}, есть ${have}`);
+    for (const p of todo) { const near = this.builtNear(p, 2); if (near) throw new Error(`здесь рядом чужая постройка (${near.name}) - выбери другое место`); }
+    let done = 0, skip = 0;
+    // встать снаружи перед будущим проёмом (2 блока от стены), чтобы не замуровать себя
+    if (shape === 'house') { try { await tb.goto(new goals.GoalNear(o.x + Math.floor(w / 2), o.y, o.z - 2, 0), tok, 30000); } catch (e) { if (tb.isCancel(e)) throw e; } }
+    // снизу вверх, по высоте; бот отходит наружу, если мешает
+    todo.sort((p1, p2) => p1.y - p2.y);
+    for (const p of todo) {
+      tb.check(tok);
+      try { await this.place({ block, x: p.x, y: p.y, z: p.z }, tok); done++; }
+      catch (e) {
+        if (tb.isCancel(e)) throw e;
+        if (/стою на этом месте/.test(e.message)) { await tb.goto(new goals.GoalInvert(new goals.GoalNear(p.x, p.y, p.z, 1)), tok, 8000).catch(() => {}); try { await this.place({ block, x: p.x, y: p.y, z: p.z }, tok); done++; continue; } catch {} }
+        skip++;
+      }
+    }
+    return `построил ${shape} ${w}x${d}x${h} из ${block} у ${o.x} ${o.y} ${o.z}: поставлено ${done}${skip ? ', не вышло ' + skip : ''}`;
+  }
+
 }
 
 module.exports = { Skills, NATURAL, BUILT };

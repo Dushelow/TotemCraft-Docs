@@ -61,7 +61,7 @@ class Guard {
       const n = this.name(e);
       const d = e.position.distanceTo(me);
       if (d > 16) continue;
-      const angry = (this.hurtBy.get(e.id) || 0) > Date.now() - 15000;
+      const angry = (this.hurtBy.get(e.id) || 0) > Date.now() - 15000 || this.prey === e.id;   // prey - добыча на охоте
       const hostile = this.isHostile(e) && !NEUTRAL.has(n);
       if (!hostile && !angry) continue;
       if (e.customName && !angry) continue;

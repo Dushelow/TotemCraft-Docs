@@ -153,6 +153,7 @@ const PICK = (model, mode) => `(async () => {
 
 // Ошибки, после которых пробуем следующую модель из списка
 const LIMIT = /limit|лимит|quota|too many|429|exceed|unavailable|недоступ|rate/i;
+const LIMIT_TEXT = /reached (today's|your|the) (chat |daily |usage )?limit|upgrade your (membership|plan)|chat limit|daily limit|limit reached|лимит (сообщений|чатов|на сегодня)|исчерпан/i;
 
 // Qwen иногда отвечает двумя вариантами («Which response do you prefer?») и ждёт выбора: поток тогда содержит оба
 // вперемешку. Берём текст первой карточки со страницы (реплика + JSON из блока кода) и выбираем её.
@@ -446,16 +447,30 @@ class QwenBridge {
     }
   }
 
+  /** Другие модели Qwen с сайта (на случай лимита, если свой список не задан). */
+  async autoModels(tried) {
+    const names = await this.wc.executeJavaScript(`fetch('/api/models', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } })
+      .then((r) => r.json()).then((j) => (j.data || []).map((m) => (m.info && m.info.name) || m.name || m.id)).catch(() => [])`).catch(() => []);
+    const cur = await this.wc.executeJavaScript(`(document.querySelector('[aria-label="Select Model"]') || {}).textContent || ''`).catch(() => '');
+    return (names || []).filter((n) => n && !tried.includes(n) && n.trim() !== String(cur).trim()).slice(0, 4);
+  }
+
   async _askModels(chatId, text, opt) {
-    const models = (opt.models && opt.models.length) ? opt.models : [''];
-    let last;
-    for (let i = 0; i < models.length; i++) {
+    const models = (opt.models && opt.models.length) ? [...opt.models] : [''];
+    let last, auto = false;
+    for (let i = 0; i < models.length && i < 6; i++) {
       try {
-        return await this._ask(chatId, text, models[i], opt.mode || '');
+        const r = await this._ask(chatId, text, models[i], opt.mode || '');
+        // лимит Qwen приходит обычным ответом («You've reached today's chat limit...») - это не реплика бота
+        if (LIMIT_TEXT.test(r.answer || '')) throw new Error('лимит Qwen: ' + String(r.answer).slice(0, 80));
+        if (models[i]) this.goodModel = models[i];
+        return r;
       } catch (e) {
         last = e;
-        if (!LIMIT.test(e.message) || i === models.length - 1) throw e;
-        this.onAttention(`Qwen: модель ${models[i] || '(текущая)'} не ответила (${e.message.slice(0, 80)}), пробую ${models[i + 1]}`);
+        if (!LIMIT.test(e.message)) throw e;
+        if (i === models.length - 1 && !auto) { auto = true; models.push(...await this.autoModels(models)); }
+        if (i === models.length - 1) throw e;
+        this.onAttention(`Qwen: модель ${models[i] || '(текущая)'} упёрлась в лимит, переключаюсь на ${models[i + 1]}`);
       }
     }
     throw last;

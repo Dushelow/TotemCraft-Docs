@@ -37,6 +37,13 @@ function warmText(cfg, bot) {
 {"act":"craft","item":"crafting_table","count":1} - скрафтить (верстак рядом найду или поставлю свой; если не хватает - скажу чего)
 {"act":"place","block":"cobblestone","x":0,"y":64,"z":0} - поставить блок из инвентаря (без x y z - рядом с собой); так строишь своё
 {"act":"break","x":0,"y":64,"z":0} - сломать блок: свой поставленный или природный
+{"act":"mine","block":"iron","count":8} - шахта: видимая руда рядом, иначе спуск на её высоту и туннель (diamond, iron, coal, gold, redstone, lapis, copper, emerald; dir - сторона, minutes - сколько копать)
+{"act":"surface"} - подняться на поверхность (из пещеры, шахты)
+{"act":"fish","count":5} - порыбачить (нужна удочка, рядом вода)
+{"act":"smelt","item":"raw_iron","count":8} - переплавить в своей печи (нет печи - скрафчу из 8 булыжника и поставлю)
+{"act":"hunt","animal":"cow","count":2} - охота на диких животных ради еды и кожи (скот у чужих построек и с именами - чужой, не трогаю)
+{"act":"shear","count":4} - постричь диких овец (нужны ножницы)
+{"act":"toss","item":"dirt","count":32} - выбросить лишнее
 {"act":"goal","text":"построить себе домик у берега"} - поставить себе цель (держится между делами); {"act":"goal","done":true} - цель достигнута
 {"act":"wander","dir":"север","radius":48} - прогуляться, поисследовать (dir - сторона света; без dir - туда, где ещё не был)
 {"act":"travel","x":0,"z":0,"dim":"Незер"} или {"act":"travel","place":"склад"} - дальний путь: я сам выберу, пешком или через Незер по известным порталам (1 блок Незера = 8 обычного мира), пройду порталы и дойду; dim можно не писать
@@ -131,6 +138,8 @@ function parseAnswer(text) {
   const rest = fence ? outside : (parsed ? (raw.slice(0, raw.indexOf('{')) + raw.slice(raw.lastIndexOf('}') + 1)) : raw).trim();
   if (rest) say = rest;
   say = say.split('```')[0].split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 240);
+  // служебные тексты сайта Qwen (лимит, подписка) - никогда не в чат
+  if (/reached .{0,20}limit|upgrade your|membership|chat limit|daily limit|лимит|подписк/i.test(say)) say = '';
   return { say, actions, channel, to };
 }
 
@@ -382,7 +391,7 @@ class Brain {
       r.actions = r.actions.filter((x) => !(x && x.act === 'goal'));
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break']);
+        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));

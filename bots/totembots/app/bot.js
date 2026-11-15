@@ -415,8 +415,31 @@ class TotemBot extends EventEmitter {
       try { b._client.write('tick_end', {}); } catch {}
       this.lookTick();
       if (this.guard) this.guard.combatTick();
+      this.waterExitTick();
     });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
+  }
+
+  // Выход из воды на уступ: в клиенте Minecraft, если в воде упираешься в блок, а над ним свободно, игрока
+  // подбрасывает на 0,3 (outOfLiquidImpulse). Физика mineflayer это не делает (стенд 15.11: бот не мог выйти на
+  // пляж). Даём тот же толчок, когда бот идёт вперёд или по пути; античит это видит как обычный выход (0 отметок).
+  waterExitTick() {
+    const b = this.bot, e = b.entity;
+    if (!e || e.velocity.y > 0.2) return;
+    const feet = b.blockAt(e.position);
+    if (!feet || !/water|seagrass|kelp/.test(feet.name)) return;   // ноги в воде (isInWater у края бывает false)
+    if (!b.getControlState('forward') && !b.pathfinder.isMoving()) return;
+    const yaw = e.yaw, p = e.position;
+    const front = p.offset(-Math.sin(yaw) * 0.8, 0, -Math.cos(yaw) * 0.8).floored();
+    const ledge = b.blockAt(front), up1 = b.blockAt(front.offset(0, 1, 0)), up2 = b.blockAt(front.offset(0, 2, 0));
+    if (!ledge || ledge.boundingBox !== 'block' || !up1 || up1.boundingBox !== 'empty' || !up2 || up2.boundingBox !== 'empty') return;
+    if (Math.hypot(front.x + 0.5 - p.x, front.z + 0.5 - p.z) > 1.3) return;   // уступ вплотную
+    // как в клиенте: сначала всплыть повыше (прыжок в воде), с гребня - толчок 0,3 через край
+    if (p.y - Math.floor(p.y) < 0.45) { b.setControlState('jump', true); return; }
+    // один толчок на касание, не чаще раза в секунду: толчок каждый такт Vulcan видит как полёт (Flight F, бан на стенде)
+    if (Date.now() - (this.exitAt || 0) < 1000) return;
+    this.exitAt = Date.now();
+    e.velocity.y = 0.3;
   }
 
   lookTick() {
@@ -458,7 +481,7 @@ class TotemBot extends EventEmitter {
     this.stuckTick();
     this.sleepTick().catch(() => {});
     // в воде без дела - всплывать (держать прыжок), как игрок; иначе бот тонет
-    {
+    if (!this.busyLook) {   // busyLook - бот сам ведёт движение (выход на берег, портал): не мешать прыжку
       const here = b.blockAt(b.entity.position.offset(0, 1, 0));
       const inWater = here && /water/.test(here.name);
       if (inWater && !b.pathfinder.isMoving()) { b.setControlState('jump', true); this.swimming = true; }
@@ -531,20 +554,47 @@ class TotemBot extends EventEmitter {
     const solid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && NATURAL.test(k.name); };
     this.badShore = (this.badShore || []).filter((x) => Date.now() - x.at < 10 * 60000);
     const empty = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava/.test(k.name); };
+    // сначала пологий берег (встать не выше уровня воды - выйти шагом), потом уступ в блок: из воды на уступ
+    // физика mineflayer не подпрыгивает (проверено на стенде 15.11), поэтому уступ - запасной
+    const lvl = Math.floor(me.y);
     let best = null;
-    for (let r = 4; r <= 40 && !best; r += 4) {
+    for (const maxUp of [1]) {   // ближайший берег: на уступ в блок выход из воды теперь работает (waterExitTick)
+    for (let r = 2; r <= 40 && !best; r += 2) {
       for (let a = 0; a < 16; a++) {
         const x = Math.floor(me.x + Math.cos(a * Math.PI / 8) * r), z = Math.floor(me.z + Math.sin(a * Math.PI / 8) * r);
         for (let y = Math.floor(me.y) + 4; y >= Math.floor(me.y) - 3; y--) {
           const v = new Vec3(x, y, z);
+          if (v.y + 1 - lvl > maxUp) continue;
           if (solid(v) && empty(v.offset(0, 1, 0)) && empty(v.offset(0, 2, 0)) && !this.badShore.some((x) => x.v.distanceTo(v) < 3)) { best = v.offset(0, 1, 0); break; }
         }
         if (best) break;
       }
     }
+    if (best) break;
+    }
     if (!best) { this.log('в воде, берега рядом не вижу'); return; }
     this.log(`выплываю на берег: ${best.x} ${best.y} ${best.z}`);
     this.mode = 'shore';   // пока плывёт - не «стоит без дела»
+    // берег рядом - как игрок: лицом к суше, держать «вперёд» и «прыжок», пока не выйдет из воды (до 5 с)
+    if (best.y > lvl && Math.hypot(best.x + 0.5 - me.x, best.z + 0.5 - me.z) <= 5) {
+      (async () => {
+        this.busyLook = true;
+        try {
+          for (let i = 0; i < 60; i++) {   // в воде плывётся медленно: до 12 с
+            const f = b.blockAt(b.entity.position);
+            if (!f || !/water|kelp|seagrass/.test(f.name)) break;
+            await b.lookAt(best.offset(0.5, 1.4, 0.5), true);
+            b.setControlState('forward', true); b.setControlState('jump', true);
+            await sleep(200);
+          }
+        } finally { b.clearControlStates(); this.busyLook = false; }
+        const f = b.blockAt(b.entity.position);
+        if (f && /water/.test(f.name)) { this.badShore.push({ v: best.offset(0, -1, 0), at: Date.now() }); this.log('на этот берег не вылез, поищу другой'); }
+        else this.log('вышел на берег');
+        if (this.mode === 'shore') this.mode = 'idle';
+      })();
+      return;
+    }
     const tok = this.token;
     this.goto(new goals.GoalNear(best.x, best.y, best.z, 1), tok, 40000)
       .catch(async (e) => {
@@ -581,9 +631,16 @@ class TotemBot extends EventEmitter {
     this.stuck.tries++;
     this.stuck.since = Date.now();
     this.log('застрял, пробую выбраться (' + this.stuck.tries + ')');
+    // в воде - как игрок: вперёд с прыжком (выплыть на уступ); на суше - прыжок и шаг назад
+    const feetW = b.blockAt(b.entity.position);
+    const swim = feetW && /water/.test(feetW.name);
+    // над головой блок - прыгать бесполезно (удар о потолок Vulcan видит как Jump C): только шаг назад
+    const head = b.blockAt(b.entity.position.offset(0, 2.2, 0));
+    if (!swim && head && head.boundingBox === 'block') { b.setControlState('back', true); setTimeout(() => { try { b.setControlState('back', false); if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400); return; }
+    const dir = swim ? 'forward' : 'back';
     b.setControlState('jump', true);
-    b.setControlState('back', true);
-    setTimeout(() => { try { b.setControlState('jump', false); b.setControlState('back', false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
+    b.setControlState(dir, true);
+    setTimeout(() => { try { b.setControlState('jump', false); b.setControlState(dir, false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
     if (this.stuck.tries === 3) this.event('ты застрял и не можешь пройти дальше', true);
   }
 
@@ -1133,6 +1190,14 @@ class TotemBot extends EventEmitter {
           case 'craft': r = await this.skills.craft(a, tok); break;
           case 'place': r = await this.skills.place(a, tok); break;
           case 'break': r = await this.skills.breakAt(a, tok); break;
+          case 'mine': r = await this.skills.mineOre(a, tok); break;
+          case 'surface': r = await this.skills.surface(a, tok); break;
+          case 'fish': r = await this.skills.fish(a, tok); break;
+          case 'smelt': r = await this.skills.smelt(a, tok); break;
+          case 'hunt': r = await this.skills.hunt(a, tok); break;
+          case 'shear': r = await this.skills.shear(a, tok); break;
+          case 'toss': r = await this.skills.toss(a, tok); break;
+          case 'build': r = await this.skills.build(a, tok); break;
           case 'look': r = 'посмотрел'; break;
           case 'follow': done.push(this.follow(a.who)); return done.join('; ');
           case 'stop': this.cancel(); return done.concat('остановился').join('; ');
