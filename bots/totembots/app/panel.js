@@ -314,8 +314,8 @@ let curTab = 'bot';
 function paintTabs(t, busy) {
   curTab = t || curTab;
   document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === curTab));
-  $('tabHint').textContent = curTab === 'mine'
-    ? 'ваше окно: настройки Qwen, голос, свои чаты. Боты работают в соседней вкладке'
+  $('tabHint').textContent = curTab === 'deepseek' ? 'DeepSeek - запасной мозг без ключа: войдите здесь один раз (бот спросит его, если у Qwen лимит или капча)'
+    : curTab === 'mine' ? 'ваше окно: настройки Qwen, голос, свои чаты. Боты работают в соседней вкладке'
     : (busy ? 'бот сейчас думает в этом окне - лучше не трогать' : 'окно бота: тут Qwen отвечает за ботов');
 }
 document.querySelectorAll('#tabs [data-tab]').forEach((b) => { b.onclick = async () => paintTabs(await T.qwenTab(b.dataset.tab)); });

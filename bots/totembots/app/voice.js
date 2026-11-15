@@ -87,12 +87,15 @@ class Voice {
   async speak(text, botCfg) {
     const s = this.settings();
     if (!s.enabled || !text) return;
-    const order = s.fallback ? [s.provider, ...ORDER.filter((x) => x !== s.provider)] : [s.provider];
+    // голос Windows - только если выбран сам; запасным не включается (звучит плохо - владелец 15.11)
+    const order = s.fallback ? [s.provider, ...ORDER.filter((x) => x !== s.provider && x !== 'system')] : [s.provider];
     for (const how of order) {
       try {
         if (how === 'qwen') {
-          if (!botCfg.chatId) throw new Error('у бота ещё нет чата в Qwen');
-          const a = await this.bridge.readAloud(botCfg.chatId);
+          // номер чата у бота - логический (router.js); читать вслух нужно в настоящем чате Qwen, и только ответ Qwen
+          const qid = this.qwenChat ? this.qwenChat(botCfg.chatId) : botCfg.chatId;
+          if (!qid) throw new Error('этот ответ дал не Qwen - озвучить нечем');
+          const a = await this.bridge.readAloud(qid);
           if (!a.pcm.length) throw new Error('Qwen вернул пустой звук');
           this.play(a, botCfg.name, how);
         } else if (how === 'piper') {

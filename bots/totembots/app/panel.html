@@ -64,6 +64,7 @@
 <div id="tabs">
   <button data-tab="bot" title="Здесь Qwen отвечает за ботов. Можно смотреть, лучше не трогать, пока бот думает">Окно бота</button>
   <button data-tab="mine" title="Ваш Qwen: настройки, голос, свои чаты. Бот сюда не заходит">Моё окно Qwen</button>
+  <button data-tab="deepseek" title="DeepSeek - запасной мозг без ключа. Войдите здесь один раз">DeepSeek</button>
   <span id="tabHint" class="muted hint"></span>
   <button id="tabReload" title="Обновить открытую вкладку">Обновить</button>
 </div>
@@ -106,7 +107,7 @@
       <summary>Мозги (нейросети): Qwen и другие по бесплатному ключу</summary>
       <div class="muted" style="margin-top:6px">Бот спрашивает мозги по порядку: у одного лимит, капча или сбой - сразу следующий. Qwen работает через окно справа без ключа. Остальным нужен бесплатный ключ: откройте ссылку, войдите своим аккаунтом, создайте ключ и вставьте сюда. Ключи хранятся только на этом компьютере.</div>
       <div id="brainKeys"></div>
-      <label>Порядок (через запятую): qwen, gemini, groq, openrouter, deepseek</label><input id="brainOrder">
+      <label>Порядок (через запятую): qwen, deepseekweb (DeepSeek через сайт, без ключа - войдите во вкладке «DeepSeek»), gemini, groq, openrouter, deepseek</label><input id="brainOrder">
       <div class="row" style="margin-top:8px"><button id="brainsSave">Сохранить</button><span id="brainsNow" class="muted grow"></span></div>
     </details>
   </div>

@@ -14,8 +14,8 @@ const PRESETS = {
 const LIMITED = /limit|quota|429|rate|exceed|лимит|captcha|проверк|не начал|timeout|ECONN|ETIMEDOUT|fetch failed|5\d\d/i;
 
 class Router {
-  constructor({ qwen, cfg, log }) {
-    this.qwen = qwen; this.cfg = cfg; this.log = log || (() => {});
+  constructor({ qwen, cfg, log, webs = {} }) {
+    this.qwen = qwen; this.cfg = cfg; this.log = log || (() => {}); this.webs = webs;   // webs: { deepseekweb: WebChat }
     this.chats = new Map();      // логический чат -> { warm, turns: [{q, a}], qwenId }
     this.rest = {};              // мозг -> до какого времени не трогать
     this.lastPick = null;
@@ -32,8 +32,9 @@ class Router {
   /** Мозги по порядку из настроек; Qwen-сайт - всегда есть, ключевые - только если ключ вставлен. */
   order() {
     const c = this.cfg().brains || {};
-    const list = (c.order || ['qwen', 'gemini', 'groq', 'openrouter', 'deepseek']).map((id) => {
+    const list = (c.order || ['qwen', 'deepseekweb', 'gemini', 'groq', 'openrouter', 'deepseek']).map((id) => {
       if (id === 'qwen') return c.qwen === false ? null : { id: 'qwen', name: 'Qwen (сайт)' };
+      if (this.webs[id]) return { id, name: this.webs[id].site.name, web: this.webs[id] };
       const p = PRESETS[id], k = (c.keys || {})[id];
       return p && k ? { id, name: p.name, url: p.url, key: k, model: (c.models || {})[id] || p.model } : null;
     }).filter(Boolean);
@@ -41,6 +42,9 @@ class Router {
   }
 
   isResting(id) { return (id === 'qwen' && (this.qwen.resting || this.qwen.captcha)) || (this.rest[id] || 0) > Date.now(); }
+
+  /** Настоящий чат Qwen для логического (для озвучки); пусто - последний ответ дал не Qwen. */
+  qwenIdOf(chatId) { const ch = this.chats.get(chatId); return ch && this.lastBrain === 'qwen' ? ch.qwenId : (ch ? '' : chatId); }
 
   /** Вводная для чата, который пришёл с прошлого запуска (нужна ключевым мозгам при переключении). */
   ensureWarm(chatId, warm) { const ch = this.chats.get(chatId); if (ch && !ch.warm) ch.warm = warm; }
@@ -59,7 +63,7 @@ class Router {
     for (const b of this.order()) {
       if (this.isResting(b.id)) continue;
       try {
-        const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : await this.askApi(b, ch, text);
+        const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : b.web ? await this.askWeb(b, ch, text) : await this.askApi(b, ch, text);
         if (!answer || !String(answer).trim()) throw new Error('пустой ответ');
         ch.turns.push({ q: text, a: answer }); ch.turns = ch.turns.slice(-24);
         if (this.lastBrain !== b.id) { this.lastBrain = b.id; this.onAttention('мозг сейчас: ' + b.name); }
@@ -70,6 +74,8 @@ class Router {
         // PARENT_NOT_FOUND / CHAT_IN_PROGRESS - чат Qwen сломан: следующий раз - новый чат Qwen с историей
         if (b.id === 'qwen' && /PARENT_NOT_FOUND|CHAT_IN_PROGRESS/i.test(e.message)) ch.qwenId = '';
         if (b.id !== 'qwen' && LIMITED.test(e.message)) this.rest[b.id] = Date.now() + (/429|limit|quota|rate/i.test(e.message) ? 10 : 2) * 60000;
+        if (b.web && /вход|не робот|не начал|нет поля/.test(e.message)) { this.rest[b.id] = Date.now() + 3 * 60000; this.onAttention(e.message); }
+        if (b.web && ch.webIds) delete ch.webIds[b.id];
         this.log(`мозг ${b.name}: ${e.message.slice(0, 120)} - пробую следующий`);
       }
     }
@@ -84,6 +90,16 @@ class Router {
     else if (!ch.qwenId && ch.warm && ch.warm !== text) send = ch.warm + '\n\n' + text;
     const r = await this.qwen.ask(ch.qwenId, send, opt);
     ch.qwenId = r.chatId || ch.qwenId;
+    return r.answer;
+  }
+
+  /** Сайт без ключа: свой чат; нет его - новый с вводной и последними событиями. */
+  async askWeb(b, ch, text) {
+    ch.webIds = ch.webIds || {};
+    let send = text;
+    if (!ch.webIds[b.id]) send = ch.turns.length ? this.recap(ch) + '\n\n' + text : (ch.warm && ch.warm !== text ? ch.warm + '\n\n' + text : text);
+    const r = await b.web.ask(ch.webIds[b.id] || '', send);
+    ch.webIds[b.id] = r.chatId || ch.webIds[b.id];
     return r.answer;
   }
 

@@ -42,7 +42,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * По концу фразы аддон кодирует звук в Opus средствами Plasmo Voice и проигрывает его у бота как звук от сущности:
  * игроки рядом слышат его, как обычного игрока с микрофоном. Принимается только от ников из списка bots в config.yml.
  */
-@Addon(id = "totem-voice", name = "TotemVoiceAddon", version = "1.1.0", authors = {"TotemCraft"}, scope = AddonLoaderScope.SERVER)
+@Addon(id = "totem-voice", name = "TotemVoiceAddon", version = "1.1.1", authors = {"TotemCraft"}, scope = AddonLoaderScope.SERVER)
 public final class TotemVoiceAddon extends JavaPlugin implements AddonInitializer, PluginMessageListener, Listener {
 
     static final String CHANNEL = "totem:voice";
@@ -91,6 +91,9 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
 
     @Override
     public void onAddonInitialize() {
+        // уши: подписка на речь игроков (@EventSubscribe сам не регистрировался - на боевом 15.11 ни одной фразы)
+        voice.getEventBus().register(this, this);
+        getLogger().info("уши: подписка на речь игроков включена");
         // своя «линия» звука: у игроков в настройках Plasmo Voice появится отдельная громкость «Боты»
         line = voice.getSourceLineManager()
                 .createBuilder(this, "totem_bots", "Боты", "plasmovoice:textures/icons/speaker_disc.png", 10)

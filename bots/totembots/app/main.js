@@ -15,6 +15,7 @@ const { WorldMap } = require('./worldmap');
 const { Travel } = require('./travel');
 const { QwenProject, PROJECT_NAME } = require('./qwen-project');
 const { Router, PRESETS } = require('./router');
+const { WebChat, SITES } = require('./web-chat');
 
 const PANEL_WIDTH = 440;
 const TAB_H = 34;   // полоска вкладок над Qwen: «Окно бота» и «Моё окно Qwen»
@@ -38,7 +39,7 @@ if (!process.env.TOTEMBOTS_CONFIG) {
   app.setPath('userData', path.join(LOCAL, 'userdata'));
 }
 
-let win, qwen, mine, bridge, router, voice, memory, project, worldMap, travel;
+let win, qwen, mine, dsView, bridge, router, voice, memory, project, worldMap, travel;
 let tab = 'bot';
 
 // --- настройки
@@ -105,7 +106,7 @@ function startBot(name) {
 function stateForPanel() {
   return {
     host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused,
-    brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
+    brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
       models: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, ((cfg.brains || {}).models || {})[k] || p.model])), presets: PRESETS,
       now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
@@ -125,6 +126,7 @@ function layout() {
   const r = { x: PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
   qwen.setBounds(r);
   if (mine) mine.setBounds(r);
+  if (dsView) dsView.setBounds(r);
 }
 
 // Своё окно Qwen владельца: тот же вход, отдельная страница. Бот в нём ничего не делает, поэтому там можно менять
@@ -137,8 +139,8 @@ function showTab(name) {
     mine.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: qs } } }));
     mine.webContents.loadURL(QWEN_URL);
   }
-  tab = name === 'mine' ? 'mine' : 'bot';
-  win.contentView.addChildView(tab === 'mine' ? mine : qwen);   // уже добавленное окно переносится наверх
+  tab = name === 'mine' ? 'mine' : name === 'deepseek' ? 'deepseek' : 'bot';
+  win.contentView.addChildView(tab === 'mine' ? mine : tab === 'deepseek' ? dsView : qwen);   // уже добавленное окно переносится наверх
   layout();
   return tab;
 }
@@ -160,7 +162,15 @@ function createWindow() {
   bridge = new QwenBridge(qwen.webContents);
   bridge.birthYear = () => cfg.birthYear || '';
   // мозги по очереди: Qwen-сайт и нейросети по ключу (router.js)
-  router = new Router({ qwen: bridge, cfg: () => cfg, log: (t) => { for (const name of live.keys()) logTo(name, t); } });
+  // DeepSeek через сайт: своё окно со своим входом (под окном бота; показать - вкладка «DeepSeek»)
+  const dss = session.fromPartition('persist:deepseek');
+  dss.setUserAgent(CHROME_UA);
+  dsView = new WebContentsView({ webPreferences: { session: dss, backgroundThrottling: false } });
+  win.contentView.addChildView(dsView, 0);
+  dsView.webContents.loadURL(SITES.deepseek.home);
+  dsView.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: dss } } }));
+  const dsChat = new WebChat(dsView.webContents, 'deepseek', (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
+  router = new Router({ qwen: bridge, cfg: () => cfg, webs: { deepseekweb: dsChat }, log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
     log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
   bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled !== false ? project.id : '');
@@ -171,6 +181,7 @@ function createWindow() {
   startProjectSync();
   voice = new Voice({ cfg: () => cfg, bridge, dir: app.getPath('userData'), toPanel: (ch, d) => win.webContents.send(ch, d),
     log: (name, t) => logTo(name, t) });
+  voice.qwenChat = (id) => router.qwenIdOf(id);
   voice.emitPcm = (name, pcm, rate) => {
     const l = live.get(name);
     if (l && l.body) l.body.sendVoice(pcm, rate).then((ok) => logTo(name, ok ? 'голос отправлен в Plasmo Voice' : 'голос в Plasmo Voice: бот не на сервере')).catch((e) => logTo(name, 'голос в Plasmo Voice: ' + e.message));
@@ -287,7 +298,7 @@ ipcMain.handle('brains-save', (_e, v) => {
     if (key === '-') delete b.keys[k]; else if (key) b.keys[k] = key;   // пусто - оставить прежний, «-» - удалить
     const m = String((v.models || {})[k] || '').trim(); if (m) b.models[k] = m;
   }
-  const ord = String(v.order || '').split(/[\s,>]+/).map((x) => x.trim().toLowerCase()).filter((x) => x === 'qwen' || PRESETS[x]);
+  const ord = String(v.order || '').split(/[\s,>]+/).map((x) => x.trim().toLowerCase()).filter((x) => x === 'qwen' || x === 'deepseekweb' || PRESETS[x]);
   if (ord.length) b.order = [...new Set(ord)];
   saveCfg();
   return true;
