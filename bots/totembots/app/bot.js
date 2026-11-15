@@ -115,7 +115,24 @@ class TotemBot extends EventEmitter {
     if (this.bot) this.bot.quit();
   }
 
-  reason(r) { try { return typeof r === 'string' ? r : JSON.stringify(r).slice(0, 200); } catch { return String(r); } }
+  // Причина кика приходит текстом, JSON-компонентом или NBT: собираем из неё только видимый текст
+  reason(r) {
+    const out = [];
+    const walk = (v, key) => {
+      if (typeof v === 'string') {
+        if (key === 'text' || key === '' || key === 'value' || key === undefined) {
+          try { if (/^[{[]/.test(v)) { walk(JSON.parse(v)); return; } } catch {}
+          if (!/^(compound|string|list|byte|int)$/.test(v)) out.push(v);
+        }
+        return;
+      }
+      if (Array.isArray(v)) { v.forEach((x) => walk(x)); return; }
+      if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) { if (!/^(type|color|bold|italic|underlined|strikethrough|obfuscated|translate)$/.test(k)) walk(x, k); }
+    };
+    try { walk(r); } catch {}
+    const t = out.join('').replace(/§./g, '').replace(/\s+/g, ' ').trim();
+    return (t || (typeof r === 'string' ? r : JSON.stringify(r))).slice(0, 300);
+  }
 
   dimName() {
     const d = String(this.bot && this.bot.game.dimension || '');
@@ -219,7 +236,15 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     // Сервер 1.21.2+ применяет шаги игрока только после пакета «конец тика клиента», mineflayer его не шлёт:
     // без него сервер считает, что бот стоит на месте (проверено на стенде 26.3, 15.11.2026).
-    b.on('physicsTick', () => { try { b._client.write('tick_end', {}); } catch {} this.lookTick(); });
+    // Порядок пакетов как у настоящего клиента: «конец тика» прошлого тика → действия этого тика (удар) → движение.
+    // physicsTick у mineflayer вызывается до отправки движения, поэтому tick_end здесь закрывает прошлый тик, а удар
+    // (guard.combatTick) уходит синхронно внутри этого тика. Без tick_end сервер 1.21.2+ не применяет шаги; удар вне
+    // тика (из async-кода) Vulcan отмечал как Kill Aura / Aim (стенд 15.11, 36 отметок; после правки - ноль).
+    b.on('physicsTick', () => {
+      try { b._client.write('tick_end', {}); } catch {}
+      this.lookTick();
+      if (this.guard) this.guard.combatTick();
+    });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
   }
 

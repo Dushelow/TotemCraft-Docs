@@ -13,6 +13,7 @@ const count = (sel) => +((rcon(`execute if entity ${sel}`).match(/Count: (\d+)/)
   rcon(`forceload add ${X - 32} ${Z - 32} ${X + 32} ${Z + 32}`);
   rcon(`fill ${X - 30} ${Y - 1} ${Z - 30} ${X + 30} ${Y - 1} ${Z + 30} stone`);
   rcon(`fill ${X - 30} ${Y} ${Z - 30} ${X + 30} ${Y + 4} ${Z + 30} air`);
+  rcon('difficulty peaceful');   // мобы с прошлых прогонов исчезают
   rcon('minecraft:kill @e[type=!player,distance=..60,x=1300,y=150,z=1300]');
 
   const owner = mineflayer.createBot({ host: '127.0.0.1', port: 25566, username: 'TbOwner', version: '1.21.11', auth: 'offline' });

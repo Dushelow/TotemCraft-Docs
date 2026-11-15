@@ -24,6 +24,7 @@ const X = 1300, Y = 150, Z = 1300;   // граница мира стенда ±1
   owner.on('kicked', (r) => console.log('хозяина кикнули', JSON.stringify(r).slice(0, 200)));
   await new Promise((r) => owner.once('spawn', r));
   console.log('хозяин зашёл');
+  rcon('minecraft:clear TbOwner');   // шерсть с прошлых прогонов
   await sleep(4000);
 
   const bot = new TotemBot({ name: 'TbAlex', password: 'Tb12345x', host: '127.0.0.1', port: 25566 });

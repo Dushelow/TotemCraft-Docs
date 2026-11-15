@@ -40,6 +40,8 @@
   .chatrow { margin-top: 4px; font-size: 12px; }
   .chatrow.cur b { color: #8fb8ff; }
   .chatrow button { padding: 2px 7px; }
+  .srv { background: #232428; border-radius: 6px; padding: 6px 8px; margin-top: 6px; font-size: 12px; }
+  .cmd { font: 11.5px Consolas, monospace; background: #17181a; border-radius: 4px; padding: 3px 6px; word-break: break-all; }
   #err { color: var(--bad); min-height: 16px; font-size: 12px; }
 </style>
 </head>
@@ -59,7 +61,7 @@
     <details>
       <summary>Настройки: сервер, хозяева, возраст для Qwen</summary>
       <label>Сервер</label>
-      <div class="row"><button id="srvTest" class="sec">Тестовый (на этом компьютере)</button><button id="srvLive" class="sec">TotemCraft</button></div>
+      <div class="row"><button id="srvLive" class="sec">TotemCraft (play.totemcraft.net)</button><button id="srvRu" class="sec">Российский вход</button><button id="srvTest" class="sec">Тестовый</button></div>
       <label>Адрес сервера</label><input id="host">
       <label>Порт</label><input id="port">
       <label>Хозяева (ники через запятую, первый - вы): только их приказы с действиями бот выполняет</label><input id="masters">

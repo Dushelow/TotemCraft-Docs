@@ -126,17 +126,39 @@ class Guard {
       if (tb.mode !== 'task') b.pathfinder.setGoal(new goals.GoalFollow(t, 1.5), true);   // в задании путь не перехватываем
       return;
     }
+    // вплотную - путь не нужен: он поворачивает голову по ходу шага и мешает прицелу
+    if (tb.mode !== 'task' && b.pathfinder.goal && b.pathfinder.goal.entity === t) b.pathfinder.setGoal(null);
+    // поворот и удар - в combatTick, синхронно с тиками клиента
+  }
+
+  /**
+   * Каждый тик, до отправки движения: плавный поворот к цели (не больше ~35° за тик, как рука человека) и удар,
+   * только когда прицел уже был на цели в прошлом тике (сервер видит поворот раньше удара) и оружие готово.
+   */
+  combatTick() {
+    const b = this.bot, t = this.target;
+    if (!b || !b.entity || !this.fighting || !t || !t.isValid || this.tb.eating) { this.aimed = false; return; }
+    const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0);
+    const aim = t.position.offset(0, t.height * 0.6, 0);
+    const d = aim.minus(eye);
+    const yaw = Math.atan2(-d.x, -d.z);
+    const pitch = Math.atan2(d.y, Math.sqrt(d.x * d.x + d.z * d.z));
+    let dy = yaw - b.entity.yaw;
+    while (dy > Math.PI) dy -= 2 * Math.PI;
+    while (dy < -Math.PI) dy += 2 * Math.PI;
+    const dp = pitch - b.entity.pitch;
+    const maxYaw = 0.45 + Math.random() * 0.2, maxPitch = 0.3;
+    const sy = Math.max(-maxYaw, Math.min(maxYaw, dy)), sp = Math.max(-maxPitch, Math.min(maxPitch, dp));
+    // лёгкое дрожание прицела, как у руки
+    b.look(b.entity.yaw + sy + (Math.random() - 0.5) * 0.02, b.entity.pitch + sp + (Math.random() - 0.5) * 0.015, true);
+    const wasAimed = this.aimed;
+    this.aimed = Math.abs(dy - sy) < 0.15 && Math.abs(dp - sp) < 0.15;
+    const dist = t.position.distanceTo(b.entity.position);
     const kind = this.weaponKind(b.heldItem);
-    if (this.tick - this.lastHit < COOLDOWN[kind]) {
-      await b.lookAt(t.position.offset(0, t.height * 0.6, 0), false);
-      return;
-    }
-    await b.lookAt(t.position.offset(0, t.height * 0.6, 0), true);
-    // удар с разбега отбрасывает дальше, после удара шаг назад: моб чаще промахивается (так дерутся игроки)
-    b.setControlState('sprint', true);
-    b.attack(t);
+    if (!wasAimed || dist > 3.0 || this.tick - this.lastHit < COOLDOWN[kind] + Math.floor(Math.random() * 3)) return;
+    b.attack(t);   // use_entity, затем взмах (порядок 1.9+ по признаку версии в mineflayer)
     this.lastHit = this.tick;
-    b.setControlState('sprint', false);
+    // после удара шаг назад: моб чаще промахивается (так дерутся игроки)
     b.setControlState('back', true);
     setTimeout(() => { try { b.setControlState('back', false); } catch {} }, this.name(t) === 'creeper' ? 450 : 250);
   }

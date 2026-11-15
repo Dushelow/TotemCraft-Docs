@@ -2,6 +2,8 @@ const $ = (id) => document.getElementById(id);
 const T = window.totem;
 let selected = '';
 let settingsFilled = false;
+const openServer = new Set();
+const showPass = new Set();
 const openChats = new Set();
 let voiceFilled = false;
 const openPersona = new Set();
@@ -46,6 +48,7 @@ function botCard(b) {
         <button data-a="chat" class="sec" ${b.chatId ? '' : 'disabled'}>Его чат в Qwen</button>
         <button data-a="newchat" class="sec">Новый чат</button>
         <button data-a="persona" class="sec">Характер</button>
+        <button data-a="server" class="sec">${openServer.has(b.name) ? '▾' : '▸'} На сервере</button>
         <button data-a="remove" class="red">Удалить</button>
       </div>
       <div style="margin-top:8px">
@@ -65,6 +68,21 @@ function botCard(b) {
           <button data-a="chatNote" class="sec" title="подписать">✎</button>
           <button data-a="chatForget" class="sec" title="убрать из списка (сам чат в Qwen останется)">✕</button>
         </div>`).join('')}
+      </div>` : ''}
+      ${openServer.has(b.name) ? `<div class="srv">
+        <div class="muted">Чтобы бот вошёл на сервер, один раз нужно сделать на сервере (в консоли сервера или в игре от админа, с «/» в начале):</div>
+        ${[['Аккаунт AuthMe (регистрация в игре выключена)', `authme register ${b.name} ${b.password}`],
+           ['Если аккаунт уже есть - новый пароль', `authme changepassword ${b.name} ${b.password}`],
+           ['Наш аддон античита не наказывает бота', `lp user ${b.name} permission set totemguard.bypass true`]].map(([t, c]) => `
+          <div style="margin-top:5px">${t}</div>
+          <div class="row"><span class="cmd grow">${esc(showPass.has(b.name) ? c : c.replace(b.password, '•'.repeat(8)))}</span><button data-a="copy" data-cmd="${esc(c)}" class="sec">Копировать</button></div>`).join('')}
+        <div style="margin-top:5px">Доступ к вашим сундукам LWC - через базу LWC (это делает администратор, командой не выдаётся).</div>
+        <div class="row" style="margin-top:6px">
+          <button data-a="pass" class="sec">${showPass.has(b.name) ? 'Скрыть пароль' : 'Показать пароль'}</button>
+          <button data-a="newpass" class="sec" title="новый пароль; потом выполните на сервере команду смены пароля">Новый пароль</button>
+          <button data-a="probe" class="sec" title="зайти на сервер и сразу выйти, чтобы проверить пароль и доступ">Проверить вход</button>
+        </div>
+        <div class="muted" data-f="probe">${esc(b.probe || '')}</div>
       </div>` : ''}
       <div data-f="personaBox" style="display:${openPersona.has(b.name) ? 'block' : 'none'}">
         <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="4">${esc(b.persona || '')}</textarea>
@@ -117,6 +135,11 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'stop') act(() => T.botStop(name));
   if (a === 'order') { const v = f('order').value.trim(); if (v) act(async () => { await T.botOrder({ name, text: v }); f('order').value = ''; f('order').blur(); }); }
   if (a === 'chat') act(() => T.botChat(name));
+  if (a === 'server') { openServer.has(name) ? openServer.delete(name) : openServer.add(name); lastHtml = ''; refresh(); }
+  if (a === 'pass') { showPass.has(name) ? showPass.delete(name) : showPass.add(name); lastHtml = ''; refresh(); }
+  if (a === 'copy') { navigator.clipboard.writeText(e.target.dataset.cmd); e.target.textContent = 'Скопировано'; setTimeout(() => { e.target.textContent = 'Копировать'; }, 1500); }
+  if (a === 'newpass' && confirm('Сделать новый пароль? Потом выполните на сервере команду «authme changepassword», иначе бот не войдёт.')) act(() => T.botNewPass(name));
+  if (a === 'probe') act(() => T.botProbe(name));
   if (a === 'chats') { openChats.has(name) ? openChats.delete(name) : openChats.add(name); lastHtml = ''; refresh(); }
   if (a === 'rewarm') act(() => T.chatRewarm(name));
   if (a === 'chatUse') act(async () => { await T.chatUse({ name, link: f('chatLink').value }); f('chatLink').value = ''; f('chatLink').blur(); lastHtml = ''; });
@@ -209,7 +232,8 @@ $('pSync').onclick = () => act(() => T.projectSync());
 
 // быстрый выбор сервера: тестовый в Docker или настоящий через российский вход (прямой адрес из РФ не открывается)
 $('srvTest').onclick = () => { $('host').value = '127.0.0.1'; $('port').value = '25566'; };
-$('srvLive').onclick = () => { $('host').value = 'ru.totemcraft.net'; $('port').value = '20098'; };
+$('srvLive').onclick = () => { $('host').value = 'play.totemcraft.net'; $('port').value = '20098'; };
+$('srvRu').onclick = () => { $('host').value = 'ru.totemcraft.net'; $('port').value = '20098'; };
 
 $('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value }));
 $('add').onclick = () => act(async () => { await T.botAdd({ name: $('newName').value, persona: $('newPersona').value }); selected = $('newName').value.trim(); $('newName').value = ''; $('newPersona').value = ''; lastHtml = ''; });

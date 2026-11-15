@@ -76,7 +76,7 @@ function stateForPanel() {
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
-      return { name: b.name, persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
+      return { name: b.name, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
   };
@@ -229,6 +229,35 @@ ipcMain.handle('project-sync', () => projectSync(true));
 ipcMain.handle('project-open', () => { if (project.id) qwen.webContents.loadURL(`${QWEN_URL}p/${project.id}`); return true; });
 ipcMain.handle('project-enable', (_e, on) => { cfg.qwenProject = { ...(cfg.qwenProject || {}), enabled: !!on }; saveCfg(); if (on) projectSync(true); return true; });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
+ipcMain.handle('bot-newpass', (_e, name) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  if (b) { b.password = crypto.randomBytes(9).toString('base64url'); saveCfg(); }
+  return true;
+});
+// Проверка входа: зайти и через пару секунд выйти; пишет, что ответил сервер (вошёл, неверный пароль, нет аккаунта, кик)
+ipcMain.handle('bot-probe', async (_e, name) => {
+  const b = cfg.bots.find((x) => x.name === name);
+  if (!b) throw new Error('нет такого бота');
+  const l = live.get(name);
+  if (l && l.body && l.body.bot) { b.probeText = 'бот уже на сервере - вход работает'; return true; }
+  b.probeText = `проверяю вход на ${cfg.host}:${cfg.port}...`;
+  const probe = new TotemBot({ name: b.name, password: b.password, host: cfg.host, port: +cfg.port, combat: 'off' });
+  const chat = [];
+  probe.on('chat', (t) => chat.push(t));
+  const res = await new Promise((resolve) => {
+    const done = (t) => { clearTimeout(timer); resolve(t); };
+    const timer = setTimeout(() => done('сервер не ответил за 40 с'), 40000);
+    probe.on('event', () => setTimeout(() => {
+      const wrong = chat.find((t) => /неверн|wrong|incorrect/i.test(t));
+      done(wrong ? 'вошёл в мир, но AuthMe не принял пароль: ' + wrong : 'вход работает: бот зашёл и прошёл AuthMe');
+    }, 4000));
+    probe.on('log', (t) => { if (/^кикнули/.test(t)) done(t.replace('кикнули: ', 'сервер не пустил: ').slice(0, 300)); });
+  });
+  probe.stop();
+  b.probeText = `${new Date().toLocaleTimeString('ru-RU')} ${res}`;
+  saveCfg();
+  return true;
+});
 ipcMain.handle('bot-stop', (_e, name) => { const l = live.get(name); if (l && l.body) l.body.stop(); return true; });
 ipcMain.handle('bot-order', (_e, { name, text }) => {
   const l = live.get(name);

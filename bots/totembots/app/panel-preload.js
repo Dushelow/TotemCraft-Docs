@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld('totem', {
   botRemove: call('bot-remove'),
   botPersona: call('bot-persona'),
   botStart: call('bot-start'),
+  botNewPass: call('bot-newpass'),
+  botProbe: call('bot-probe'),
   projectSync: call('project-sync'),
   projectOpen: call('project-open'),
   projectEnable: call('project-enable'),
