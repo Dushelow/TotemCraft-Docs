@@ -395,6 +395,9 @@ class TotemBot extends EventEmitter {
     };
   }
 
+  /** Снимок для зрения: вид глазами + карта сверху (PNG). */
+  snapshot() { const { Vision } = require('./vision'); return new Vision(this.bot).snapshot(); }
+
   /** Взгляд (каждое сообщение, дёшево): под ногами, перед собой, в руке, мобы и вещи в 16 блоках. */
   glance() {
     const b = this.bot, e = b.entity, p = e.position;

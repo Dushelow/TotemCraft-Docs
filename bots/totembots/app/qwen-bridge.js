@@ -554,7 +554,30 @@ class QwenBridge {
     throw last;
   }
 
-  async _ask(chatId, text, model, mode) {
+  /** Вопрос с картинкой (PNG): картинка вставляется в поле, как из буфера обмена (буфер владельца не трогаем). */
+  askImage(chatId, text, png) { return this.exclusive(() => this._ask(chatId, text, '', 'fast', png)); }
+
+  async pasteImage(png) {
+    const ok = await this.wc.executeJavaScript(`(async () => {
+      const raw = atob(${JSON.stringify(png.toString('base64'))}); const arr = new Uint8Array(raw.length); for (let i = 0; i < raw.length; i++) arr[i] = raw.charCodeAt(i);
+      const ta = document.querySelector('textarea.message-input-textarea'); if (!ta) return false;
+      const cnt = () => document.querySelectorAll('.vision-item-container, .vision-item-image').length;
+      const before = cnt();
+      const dt = new DataTransfer(); dt.items.add(new File([arr], 'vision.png', { type: 'image/png' }));
+      ta.focus(); ta.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+      let seen = false;
+      for (let i = 0; i < 120; i++) {   // до 30 с: появилась и догрузилась (в проекте грузится дольше)
+        await new Promise((r) => setTimeout(r, 250));
+        if (cnt() > before) seen = true;
+        if (seen && !document.querySelector('.vision-item-container-upload')) break;
+      }
+      await new Promise((r) => setTimeout(r, 800));
+      return seen && !document.querySelector('.vision-item-container-upload');
+    })()`).catch(() => false);
+    if (!ok) throw new Error('Qwen не принял картинку');
+  }
+
+  async _ask(chatId, text, model, mode, image) {
     if (!chatId && !((this.noProjectUntil || 0) > Date.now())) await this.beforeNewChat();
     await this.open(chatId);
     await this.hook();
@@ -563,6 +586,7 @@ class QwenBridge {
       if (r && model && !r.found) throw new Error('модель недоступна: ' + model);
       this.lastPick = r;
     }
+    if (image) await this.pasteImage(image);
     let sent = await this.wc.executeJavaScript(SEND(text));
     // Qwen спрашивает возраст: отвечает сам владелец в окне справа, ждём до 10 минут и отправляем снова
     for (let i = 0; sent.age && i < 120; i++) {

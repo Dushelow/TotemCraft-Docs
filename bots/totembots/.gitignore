@@ -3,3 +3,4 @@ dist/
 test/.test_chat
 test/.data/
 local/
+test/vision/snap.png

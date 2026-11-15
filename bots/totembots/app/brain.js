@@ -50,6 +50,10 @@ ${require('./commands').manual()}
 Жесты: рядом с репликой я пишу, на какой блок игрок смотрит и по какому ударил. «Этот», «вон тот», «сюда» - бери
 координаты оттуда. «Тут» без взгляда - где он стоит.
 
+ЗРЕНИЕ. [вижу] - коротко текстом всегда. Нужно понять обстановку целиком (где вход в дом, что за местность, куда идти,
+что за постройка) - !see(вопрос): я сделаю снимок твоего вида и карты сверху и пришлю описание [вижу картинкой].
+Снимок дорогой - не чаще, чем нужно.
+
 ЗНАНИЕ И ОПЫТ. Не знаешь, как сделать вещь, - !plan(предмет): пришлю весь путь по шагам с учётом инвентаря, выполняй
 его командами. Вышло что-то полезное из нескольких команд - !saveSkill(название), потом повторишь !skill(название).
 Понял что-то на опыте - !lesson(текст): уроки приходят в [память] и не дают ходить по кругу. Помни людей и отношения
@@ -177,6 +181,27 @@ class Brain {
     if (m.who && !this.isMaster(m.who) && !(this.memory && Object.values(this.memory.data.people).some((p) => p.name.toLowerCase() === String(m.who).toLowerCase()))) return;
     this.lastMoment = now; this.momentAt[m.kind] = now;
     this.push(`[момент] ${m.text}`, true, '@self');
+  }
+
+  /** Зрение: снимок (вид глазами + карта), Qwen описывает словами, описание - мозгу как [вижу картинкой]. */
+  async see(question, from) {
+    const qwen = this.bridge.qwen || this.bridge;
+    if (!qwen.askImage || !this.body.snapshot) return;
+    try {
+      const png = this.body.snapshot();
+      try { const dir = require('path').join(__dirname, '..', 'local', 'vision'); require('fs').mkdirSync(dir, { recursive: true }); require('fs').writeFileSync(require('path').join(dir, this.botCfg.name + '.png'), png); } catch {}
+      this.log('смотрю глазами (снимок -> Qwen)');
+      const prompt = 'Кадр из Minecraft, нарисован грубо цветами блоков: слева вид глазами персонажа, справа карта сверху на 48 блоков ' +
+        '(север вверху, белая стрелка - персонаж и куда смотрит, красные точки - игроки, жёлтые - мобы). Опиши коротко, 3-4 строки, по делу: ' +
+        'что прямо перед персонажем и вокруг, постройки, вода, лес, проходы, опасности, куда разумно идти. Отвечай только по-русски, сразу выводы, без рассуждений и вступлений.' + (question ? ' Особенно: ' + question : '');
+      const r = await qwen.askImage(this.botCfg.eyesChat || '', prompt, png);
+      if (r.chatId) { this.botCfg.eyesChat = r.chatId; this.save(); }
+      const ans = String(r.answer).replace(/^[\s\S]*?(?=[А-Яа-яЁё])/, '').replace(/\s+/g, ' ').slice(0, 600);   // английские рассуждения до первой русской фразы - отбросить
+      this.push('[вижу картинкой] ' + (ans || String(r.answer).slice(0, 400)), true, from, '', { look: true });
+    } catch (e) {
+      this.log('зрение: ' + e.message);
+      this.push('[вижу картинкой] не вышло: ' + e.message.slice(0, 120), true, from, '', { look: true });
+    }
   }
 
   /** Ответ на «посмотреть»: запрошенные части состояния. */
@@ -315,6 +340,13 @@ class Brain {
       if (self) this.idleSkips = (r.say || r.actions.length) ? 0 : this.idleSkips + 1;
       // в своё время только записал в дневник - это не дело: спросить снова через минуту, а не через две
       if (self && !r.say && r.actions.length && r.actions.every((a) => a && ['remember', 'forget', 'look'].includes(a.act))) this.lastEvent = Date.now() - 60000;
+      // зрение: картинка -> Qwen («глаза», свой чат) -> описание следующим сообщением
+      const sees = r.actions.filter((a) => a && a.act === 'see');
+      r.actions = r.actions.filter((a) => !(a && a.act === 'see'));
+      if (sees.length && this.lookDepth < 2) {
+        const src2 = master || batch.find((x) => x.from === '@self') || [...batch].reverse().find((x) => x.from) || {};
+        this.see(sees[0].q, src2.from || '');
+      }
       // «посмотреть»: прислать запрошенное следующим сообщением от того же автора и в тот же канал (до 2 раз подряд)
       const looks = r.actions.filter((a) => a && a.act === 'look');
       r.actions = r.actions.filter((a) => !(a && a.act === 'look'));

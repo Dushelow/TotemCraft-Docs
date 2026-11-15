@@ -48,6 +48,7 @@ const C = [
   ['skill', 'useSkill,doSkill', 'название', 'выполнить свой сохранённый навык', (a) => ({ act: 'skill', name: a[0] })],
   // --- мозг: смотреть, помнить, цели
   ['look', 'inspect,view,see,check', 'что', 'посмотреть подробно: inventory, around, map, players, portals, online, memory', (a) => ({ act: 'look', what: a[0] || 'around' })],
+  ['see', 'vision,watch,lookPicture', '[вопрос]', 'посмотреть глазами: картинка того, что видишь, и карта сверху -> описание словами (дорого, не чаще нужного)', (a) => ({ act: 'see', q: a[0] })],
   ['find', 'search,searchForBlock,locate', 'блок', 'просканировать чанки вокруг: где ближайшие такие блоки', (a) => ({ act: 'look', what: 'find', block: a[0] })],
   ['rememberHere', 'remember,savePlace,setWaypoint', 'название[, заметка]', 'запомнить место, где стоишь', (a) => ({ act: 'remember', kind: 'place', name: a[0], note: a[1] })],
   ['rememberPerson', 'person,aboutPlayer', 'ник, заметка', 'запомнить про человека', (a) => ({ act: 'remember', kind: 'person', name: a[0], note: a[1] })],
