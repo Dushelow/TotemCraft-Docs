@@ -38,6 +38,12 @@ const C = [
   // --- сервер
   ['command', 'cmd,serverCommand,run', '"/команда"', 'команда сервера как у обычного игрока: /home, /spawn, /tpa ник, /sethome...', (a) => ({ act: 'cmd', text: a[0] })],
   ['wait', 'pause,sleepSeconds', 'секунд', 'подождать', (a) => ({ act: 'wait', seconds: a[0] })],
+  // --- знание мира и опыт
+  ['plan', 'craftPlan,getCraftingPlan,howToMake,recipe', 'предмет[, сколько]', 'полный план: что добыть и что скрафтить по порядку, с учётом инвентаря', (a) => ({ act: 'plan', item: a[0], count: a[1] })],
+  ['craftable', 'whatCanICraft,canCraft', '', 'что можно скрафтить прямо сейчас', () => ({ act: 'craftable' })],
+  ['lesson', 'learn,lessonLearned', 'текст', 'запомнить урок из опыта («у базы брёвна чужие - рубить в лесу на севере»)', (a) => ({ act: 'lesson', text: a[0] })],
+  ['saveSkill', 'rememberSkill', 'название', 'сохранить последнюю удачную цепочку команд как свой навык', (a) => ({ act: 'saveSkill', name: a[0] })],
+  ['skill', 'useSkill,doSkill', 'название', 'выполнить свой сохранённый навык', (a) => ({ act: 'skill', name: a[0] })],
   // --- мозг: смотреть, помнить, цели
   ['look', 'inspect,view,see,check', 'что', 'посмотреть подробно: inventory, around, map, players, portals, online, memory', (a) => ({ act: 'look', what: a[0] || 'around' })],
   ['find', 'search,searchForBlock,locate', 'блок', 'просканировать чанки вокруг: где ближайшие такие блоки', (a) => ({ act: 'look', what: 'find', block: a[0] })],

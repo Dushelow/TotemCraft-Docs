@@ -89,6 +89,14 @@ class Memory {
     this.save();
   }
 
+  lesson(text, by) {
+    const t = clean(text, 200);
+    if (!t) return 'пустой урок';
+    this.data.lessons = (this.data.lessons || []).filter((l) => l.text !== t).concat({ text: t, by, at: now() }).slice(-40);
+    this.save();
+    return 'запомнил урок';
+  }
+
   journal(botName, text) {
     const j = this.bot(botName).journal;
     const t = clean(text, 200);
@@ -126,6 +134,8 @@ class Memory {
       'Места: ' + (places.join('; ') || 'пока нет'),
       'Люди: ' + (people.join('; ') || 'пока нет'),
       'Факты: ' + (facts.join('; ') || 'пока нет'),
+      'Уроки из опыта: ' + ((this.data.lessons || []).slice(-15).map((l) => l.text).join('; ') || 'пока нет'),
+      'Твои навыки (!skill): ' + (Object.keys(this.bot(botName).skills || {}).join(', ') || 'пока нет'),
       'Твой дневник (последнее): ' + (journal.join('; ') || 'пусто'),
       'Новости чата (сводка общего чата): ' + ((this.data.news || []).slice(-6).map((n) => `${d(n.at)} ${n.text}`).join('; ') || 'пока нет'),
     ].join('\n');

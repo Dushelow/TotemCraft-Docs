@@ -509,6 +509,7 @@ class TotemBot extends EventEmitter {
     if (!b || !b.entity) return;
     this.senseTick();
     this.handsTick().catch(() => {});
+    this.reflexTick().catch(() => {});
     try { this.shoreTick(); } catch {}
     // взгляд: на того, за кем идём, иногда по сторонам
     const owner = this.followName ? this.player(this.followName) : null;
@@ -897,6 +898,48 @@ class TotemBot extends EventEmitter {
     await this.goto(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), tok, 60000);
     await b.sleep(bed);
     return 'лёг спать';
+  }
+
+  /**
+   * Рефлексы (как modes в Mindcraft), без нейросети: огонь/лава - выйти на безопасное; игрок вплотную - отойти;
+   * темно и есть факелы - поставить; вещи рядом - подобрать. Только когда бот не занят заданием (кроме огня).
+   */
+  async reflexTick() {
+    const b = this.bot, e = b.entity, now = Date.now();
+    if (!e || this.busyLook) return;
+    const p = e.position, feet = b.blockAt(p), under = b.blockAt(p.offset(0, -0.5, 0));
+    const burning = (e.metadata && (e.metadata[0] & 0x01)) || (feet && /fire|lava/.test(feet.name)) || (under && /magma_block|campfire/.test(under.name));
+    if (burning && now - (this.fireAt || 0) > 3000) {
+      this.fireAt = now;
+      const water = b.findBlock({ matching: (bl) => bl.name === 'water', maxDistance: 8 });
+      let safe = water ? water.position : null;
+      if (!safe) {
+        for (let r = 2; r <= 6 && !safe; r++) for (let a = 0; a < 8 && !safe; a++) {
+          const v = p.offset(Math.round(Math.cos(a * Math.PI / 4) * r), 0, Math.round(Math.sin(a * Math.PI / 4) * r)).floored();
+          const f = b.blockAt(v), u = b.blockAt(v.offset(0, -1, 0)), h = b.blockAt(v.offset(0, 1, 0));
+          if (f && h && u && f.boundingBox === 'empty' && h.boundingBox === 'empty' && u.boundingBox === 'block' && !/fire|lava/.test(f.name) && !/magma|lava|campfire/.test(u.name)) safe = v;
+        }
+      }
+      if (safe) { this.log('горю - ухожу ' + (water ? 'в воду' : 'из огня')); try { b.pathfinder.setGoal(new goals.GoalNear(safe.x, safe.y, safe.z, 0)); } catch {} }
+      return;
+    }
+    if (this.mode === 'task') return;
+    // игрок вплотную (стоит в нас) - шаг в сторону, как живой
+    if (this.mode === 'idle' && now - (this.elbowAt || 0) > 4000) {
+      const close = Object.values(b.players).find((pl) => pl.entity && pl.username !== b.username && pl.entity.position.distanceTo(p) < 0.9);
+      if (close) { this.elbowAt = now; try { b.pathfinder.setGoal(new goals.GoalInvert(new goals.GoalNear(close.entity.position.x, close.entity.position.y, close.entity.position.z, 2))); setTimeout(() => { try { if (this.mode === 'idle') b.pathfinder.setGoal(null); } catch {} }, 1500); } catch {} return; }
+    }
+    // темно (свет блоков <= 2, неба нет) и есть факелы - поставить под ноги рядом, не у чужих построек
+    if (now - (this.torchAt || 0) > 15000 && feet && (feet.light || 0) <= 2 && (feet.skyLight || 0) <= 2 && b.inventory.items().some((i) => i.name === 'torch')) {
+      this.torchAt = now;
+      if (!this.skills.builtNear(p.floored(), 6)) this.skills.place({ block: 'torch' }, this.token).then(() => this.log('поставил факел - темно')).catch(() => {});
+      return;
+    }
+    // вещи на земле рядом - подобрать (стоит без дела)
+    if (this.mode === 'idle' && now - (this.lootAt || 0) > 10000) {
+      const drop = Object.values(b.entities).find((x) => x.name === 'item' && x.position && x.position.distanceTo(p) < 5);
+      if (drop) { this.lootAt = now; this.pickup({ radius: 5 }, this.token).catch(() => {}); }
+    }
   }
 
   /** Где последний раз видел игроков (по запросу мозга). */
@@ -1353,6 +1396,9 @@ class TotemBot extends EventEmitter {
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'wander': r = await this.wander(a, tok); break;
           case 'gather': r = await this.skills.gather(a, tok); break;
+          case 'plan': r = require('./recipes').plan(this.bot, a.item, a.count); break;
+          case 'craftable': r = require('./recipes').craftable(this.bot); break;
+          case 'lesson': r = this.memory ? this.memory.lesson(a.text, this.opts.name) : 'памяти нет'; break;
           case 'equip': r = await this.equipItem(a); break;
           case 'eat': r = await this.eatItem(a); break;
           case 'cmd': r = await this.serverCommand(a); break;

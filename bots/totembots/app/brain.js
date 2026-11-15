@@ -41,6 +41,11 @@ ${require('./commands').manual()}
 Жесты: рядом с репликой я пишу, на какой блок игрок смотрит и по какому ударил. «Этот», «вон тот», «сюда» - бери
 координаты оттуда. «Тут» без взгляда - где он стоит.
 
+ЗНАНИЕ И ОПЫТ. Не знаешь, как сделать вещь, - !plan(предмет): пришлю весь путь по шагам с учётом инвентаря, выполняй
+его командами. Вышло что-то полезное из нескольких команд - !saveSkill(название), потом повторишь !skill(название).
+Понял что-то на опыте - !lesson(текст): уроки приходят в [память] и не дают ходить по кругу. Помни людей и отношения
+с ними (!rememberPerson: друг, о чём просил, что обещал, кто обидел) - и веди себя с каждым соответственно.
+
 ТЫ СВОБОДЕН. Мир открыт: добывай, крафти, строй своё, исследуй, торгуй, помогай, дружи, пользуйся командами сервера,
 как любой игрок. Ставь себе цели (!setGoal) и доводи до конца, разбивая на шаги. Будь живым: своё мнение, юмор,
 привычки, планы. Не стой столбом и не повторяйся. Если команда не вышла - подумай почему и попробуй иначе.
@@ -141,7 +146,9 @@ class Brain {
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
     const following = this.body.mode === 'follow' ? ` Ты идёшь за ${this.body.followName}, далеко от него не уходи.` : '';
-    this.push(`[свободное время] ${mins > 600 ? 'ты только что зашёл на сервер.' : mins + ' мин тебя ни о чём не просят.'} Чем займёшься? Придумай сам дело в мире и сделай его.${following}`, true, '@self', '', { want: ['map'] });
+    const ok = (this.done || []).filter((d) => d.ok).slice(-5).map((d) => d.text), bad = (this.done || []).filter((d) => !d.ok).slice(-3).map((d) => d.text);
+    const progress = (ok.length ? ` Недавно вышло: ${ok.join('; ')}.` : '') + (bad.length ? ` Не вышло: ${bad.join('; ')}.` : '');
+    this.push(`[свободное время] ${mins > 600 ? 'ты только что зашёл на сервер.' : mins + ' мин тебя ни о чём не просят.'} Чем займёшься? Придумай сам дело в мире и сделай его - шаг вперёд от того, что уже есть (лучше инструменты, еда, дом, исследование).${progress}${following}`, true, '@self', '', { want: ['map', 'inventory'] });
     this.selfChain = 0;
   }
 
@@ -340,9 +347,28 @@ class Brain {
         this.memory.save();
       }
       r.actions = r.actions.filter((x) => !(x && x.act === 'goal'));
+      // навыки (как библиотека навыков Voyager): сохранить удачную цепочку под именем, вызвать одной командой
+      {
+        const me2 = this.memory && this.memory.bot(this.botCfg.name);
+        const out = [];
+        for (const a of r.actions) {
+          if (a && a.act === 'saveSkill' && me2) {
+            if (this.lastOk && this.lastOk.length) { me2.skills = me2.skills || {}; me2.skills[String(a.name || 'навык').slice(0, 40)] = this.lastOk; this.memory.save(); this.log('навык сохранён: ' + a.name); }
+            continue;
+          }
+          if (a && a.act === 'skill' && me2) {
+            const sk = (me2.skills || {})[a.name] || Object.entries(me2.skills || {}).find(([k]) => k.toLowerCase().includes(String(a.name || '').toLowerCase()))?.[1];
+            if (sk) { out.push(...sk.map((x) => ({ ...x }))); continue; }
+            this.pending.push({ line: `[подсказка] навыка «${a.name}» нет. Твои навыки: ${Object.keys(me2.skills || {}).join(', ') || 'пока нет'}`, from: (src || {}).from || '', fix: true });
+            continue;
+          }
+          out.push(a);
+        }
+        r.actions = out;
+      }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget']);
+        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
@@ -390,6 +416,10 @@ class Brain {
     const label = actions.map((a) => a.act).join(' → ');
     let result = await this.body.run(actions, label);
     if (!result) return;
+    const failed = /не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result);
+    if (!failed && !actions.every((a) => ['look', 'plan', 'craftable', 'lesson', 'remember', 'wait'].includes(a.act))) this.lastOk = actions.map(({ _cmd, ...x }) => x);
+    this.done = (this.done || []).concat({ ok: !failed, text: result.replace(/; задание выполнено$/, '').slice(0, 90), at: Date.now() }).slice(-12);
+    this.failStreak = failed ? (this.failStreak || 0) + 1 : 0;
     // память неудач: одно и то же не вышло снова - сказать прямо, чтобы не ходил по кругу
     if (/не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result)) {
       const key = actions.map((a) => `${a.act}:${a.x ?? ''},${a.z ?? ''}:${a.block || a.item || a.who || a.name || ''}`).join('|');
@@ -402,7 +432,10 @@ class Brain {
     // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop/remember - без отчёта
     if (actions.some((a) => !['follow', 'stop', 'remember', 'forget', 'equip', 'wait'].includes(a.act))) {
       // своё дело: итог - снова от себя (можно продолжить: дошёл - осмотрелся - пошёл дальше), до 3 дел подряд
-      const mine = from === 'сам' && ++this.selfChain < 8;
+      // своя цель - цикл без пауз (как self-prompting в Mindcraft) до 25 шагов; 3 неудачи подряд - стоп и подумать
+      const goal = this.memory && this.memory.bot(this.botCfg.name).goal;
+      if (this.failStreak >= 3 && goal) result += ` (3 неудачи подряд - остановись и подумай: !plan, !look, другой способ, или отложи цель)`;
+      const mine = from === 'сам' && ++this.selfChain < (goal ? 25 : 8) && this.failStreak < 4;
       this.push(`[итог] ${result}`, true, mine ? '@self' : (from && from !== 'сам' && this.isMaster(from) ? from : ''));
     }
   }
