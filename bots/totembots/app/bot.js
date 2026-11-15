@@ -125,6 +125,13 @@ class TotemBot extends EventEmitter {
       bot.once('spawn', () => setTimeout(() => this.afterDeath().catch(() => {}), 2500));
     });
     // кто из игроков ударил: замах рукой в последние 0,6 с в 5 блоках (удар без атакующего в событии)
+    // жесты игроков: удар по блоку и присед (чтобы показывать, а не диктовать координаты)
+    this.gestures = new Map();   // ник -> { poke: {name,x,y,z,at}, crouch: [время...] }
+    const g = (n) => { if (!this.gestures.has(n)) this.gestures.set(n, { poke: null, crouch: [] }); return this.gestures.get(n); };
+    bot.on('blockBreakProgressObserved', (block, stage, entity) => {
+      if (entity && entity.type === 'player' && entity.username) g(entity.username).poke = { name: block.name, x: block.position.x, y: block.position.y, z: block.position.z, at: Date.now() };
+    });
+    bot.on('entityCrouch', (e) => { if (e.type === 'player' && e.username) { const c = g(e.username).crouch; c.push(Date.now()); if (c.length > 6) c.shift(); } });
     // кто спит (события mineflayer по позе игрока)
     this.sleepers = new Set();
     bot.on('entitySleep', (e) => { if (e !== bot.entity) this.sleepers.add(e.id); });
@@ -256,6 +263,23 @@ class TotemBot extends EventEmitter {
   }
 
   /** Сказать в канал: личка - /msg ник, ближний - «!текст» (TotemEssentialsAddon), общий - обычный чат. */
+  /** Куда показывает игрок: блок под его взглядом (до 8 бл.), последний удар по блоку, присед за 10 с. Текстом для мозга. */
+  pointing(name) {
+    const b = this.bot, e = this.player(name);
+    if (!b || !e) return '';
+    const out = [];
+    try {
+      const eye = e.position.offset(0, 1.62, 0);
+      const dir = new Vec3(-Math.sin(e.yaw) * Math.cos(e.pitch), Math.sin(e.pitch), -Math.cos(e.yaw) * Math.cos(e.pitch));
+      const hit = b.world.raycast(eye, dir, 8);
+      if (hit && hit.name !== 'air') out.push(`смотрит на ${hit.name} ${hit.position.x} ${hit.position.y} ${hit.position.z}`);
+    } catch {}
+    const gs = this.gestures && this.gestures.get(name);
+    if (gs && gs.poke && Date.now() - gs.poke.at < 60000) out.push(`ударил рукой по ${gs.poke.name} ${gs.poke.x} ${gs.poke.y} ${gs.poke.z} (${Math.round((Date.now() - gs.poke.at) / 1000)} с назад)`);
+    if (gs) { const n = gs.crouch.filter((t) => Date.now() - t < 10000).length; if (n) out.push(`приседал ${n} раз за 10 с`); }
+    return out.join('; ');
+  }
+
   say(text, channel = 'global', to = '') {
     if (!this.bot || this.status !== 'online') return;
     let t = String(text).replace(/^[/!]+/, '').slice(0, 240);   // своя реплика не должна стать командой

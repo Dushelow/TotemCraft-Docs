@@ -41,6 +41,11 @@ function warmText(cfg, bot) {
 {"act":"remember","kind":"journal","text":"..."} - записать в свой дневник (что было, что чувствуешь, что задумал)
 {"act":"forget","kind":"place","name":"склад"} - забыть (kind: place, person, fact)
 
+Жесты: игроки не диктуют координаты, а показывают. Рядом с репликой я пишу, на какой блок игрок смотрит, по какому
+блоку недавно ударил рукой и приседал ли. «Этот сундук», «вон тот», «сюда», «отсюда» - бери координаты из того,
+на что он смотрит или по чему ударил (ударил - точнее). «Тут», «здесь» без взгляда на блок - где он стоит.
+Присел несколько раз - зовёт тебя или показывает место: подойди. Если непонятно, что имеется в виду, переспроси коротко.
+
 Чат: я присылаю только то, что обращено к тебе: [чат личка], [чат рядом] (ближний чат), [чат общий]. Отвечаешь ты
 автоматически туда же, откуда спросили (личка - в личку, ближний - в ближний, общий - в общий). В общий чат пиши
 особенно коротко. [вокруг] - то, что ты сам слышал рядом (сказано не тебе): ты это знаешь и можешь на это опираться,
@@ -123,7 +128,9 @@ class Brain {
     const kind = this.attn.classify({ from, text, channel: ch, dist, master: this.isMaster(from) });
     if (kind === 'background') { this.onBackground({ from, text, at: Date.now() }); return; }
     if (kind !== 'address') return;
-    const at = e ? `, стоит на ${Math.floor(e.position.x)} ${Math.floor(e.position.y)} ${Math.floor(e.position.z)}` : '';
+    let at = e ? `, стоит на ${Math.floor(e.position.x)} ${Math.floor(e.position.y)} ${Math.floor(e.position.z)}` : '';
+    const pt = e ? this.body.pointing(from) : '';
+    if (pt) at += ', ' + pt;
     const label = { whisper: 'личка', local: 'рядом', global: 'общий' }[ch];
     const where = (dist !== null ? `${dist} бл. от тебя` : 'далеко') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
