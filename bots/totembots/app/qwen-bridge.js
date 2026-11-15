@@ -358,7 +358,15 @@ class QwenBridge {
     this.needReload = false;
     await this.wc.loadURL(want);
     await this.hook();
-    await sleep(1500);
+    // ждать готовности страницы, а не фиксированное время: страница проекта через 1,5 с ещё пустая (модель не выбрана),
+    // и отправленное туда сообщение молча пропадало - бот молчал (15.11)
+    for (let i = 0; i < 60; i++) {
+      const ready = await this.wc.executeJavaScript(`(() => { const m = document.querySelector('[aria-label="Select Model"]');
+        return !!(document.querySelector('textarea.message-input-textarea') && m && m.textContent.trim()); })()`).catch(() => false);
+      if (ready) break;
+      await sleep(250);
+    }
+    await sleep(700);
   }
 
   /**
