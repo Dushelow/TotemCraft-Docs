@@ -210,7 +210,7 @@ class Brain {
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 2 };
-    if (!ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length || this.bridge.resting) return;
+    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length || this.bridge.resting) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
@@ -319,6 +319,7 @@ class Brain {
   }
 
   async pump() {
+    if (this.cfg().paused) { this.pending = []; return; }   // пауза из панели: к Qwen не обращаемся
     if (this.busy || !this.pending.length) return;
     this.busy = true;
     let batch = [];

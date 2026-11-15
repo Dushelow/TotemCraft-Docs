@@ -88,7 +88,7 @@ function startBot(name) {
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy),
+    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
@@ -251,6 +251,7 @@ ipcMain.handle('qwen-state', async () => {
   }
 });
 ipcMain.handle('state', () => stateForPanel());
+ipcMain.handle('pause', (_e, on) => { cfg.paused = !!on; saveCfg(); for (const n of live.keys()) logTo(n, on ? 'мозг на паузе (кнопка в панели)' : 'мозг снова работает'); return cfg.paused; });
 ipcMain.handle('save-settings', (_e, s) => {
   cfg.host = String(s.host || '').trim() || '127.0.0.1';
   cfg.port = +s.port || 25565;

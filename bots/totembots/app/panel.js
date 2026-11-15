@@ -106,8 +106,14 @@ function botCard(b) {
 let lastHtml = '', qwenOk = null;
 // «Что сейчас происходит»: шаги от входа в Qwen до мозга бота, с пояснениями
 function step(ic, title, hint) { return `<div class="step"><div class="ic ${ic}"></div><div><b>${esc(title)}</b>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div></div>`; }
+let pausedNow = false;
 function renderNow(st) {
   const out = [];
+  pausedNow = !!st.paused;
+  $('pauseBtn').textContent = st.paused ? 'Продолжить' : 'Пауза';
+  $('pauseBtn').className = st.paused ? '' : 'sec';
+  if (st.paused) out.push(step('warn', 'Мозг на паузе', 'боты стоят на сервере, но к Qwen не обращаются и сами ничего не решают. «Продолжить» - снова думать'));
+  out.push(step('', `Сервер: ${st.host}:${st.port}`, 'менять: «Настройки: сервер, хозяева...» ниже; пароль бота - в его карточке, «На сервере»'));
   out.push(qwenOk === null ? step('spin', 'Qwen: проверяю вход', '')
     : qwenOk ? step('ok', 'Qwen: вход выполнен', 'нейросеть - мозг ботов, работает в окне справа (вкладка «Окно бота»)')
       : step('bad', 'Qwen: нужен вход', 'нажмите «Войти через Chrome» ниже и войдите своим аккаунтом Google'));
@@ -132,6 +138,7 @@ function renderNow(st) {
   }
   $('steps').innerHTML = out.join('');
 }
+$('pauseBtn').onclick = async () => { await T.pause(!pausedNow); refresh(); };
 async function refresh() {
   const st = await T.state();
   renderNow(st);
