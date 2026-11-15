@@ -72,6 +72,20 @@ function splitArgs(s) {
   return out.map((x) => (/^-?\d+(\.\d+)?$/.test(x) ? +x : x)).filter((x) => x !== '');
 }
 
+// Частые ошибки нейросети - исправить по смыслу, а не отказывать
+const ORE = /^(coal|iron|gold|copper|diamond|redstone|lapis|emerald|quartz|nether_gold|ancient_debris|debris)(_ore)?$/;
+function fixAct(name, a) {
+  const num = (v) => typeof v === 'number';
+  if (a.act === 'mine' && a.block && !ORE.test(String(a.block))) return { act: 'gather', block: a.block, count: a.count };   // !mine(log) - рубить
+  if (a.act === 'break' && a.x !== undefined && !num(a.x)) return { act: 'gather', block: a.x, count: 1 };                   // !breakBlock(бревно)
+  if ((a.act === 'take' || a.act === 'put') && a.x !== undefined && !num(a.x)) return { act: a.act, item: a.x, count: num(a.y) ? a.y : undefined, nearest: true };
+  if (a.act === 'goto' && a.x !== undefined && !num(a.x)) return { act: 'goto_place', name: a.x };                        // !goTo(склад)
+  if (a.act === 'goto' && !num(a.x)) return null;
+  if (a.act === 'pickup' && a.radius !== undefined && !num(a.radius)) delete a.radius;
+  if (a.act === 'give' && num(a.who)) return null;
+  return a;
+}
+
 /**
  * Разбор ответа: реплика (текст без команд) и команды по порядку. Неизвестные команды - в unknown,
  * чтобы сразу сказать нейросети, как правильно.
@@ -84,7 +98,10 @@ function parseCommands(text) {
   while ((m = re.exec(raw))) {
     const c = BY.get(m[1].toLowerCase());
     if (!c) { unknown.push(m[1]); continue; }
-    const act = c[4](splitArgs(m[3]));
+    // упоминание в тексте («попробую !mine») - не команда: без скобок выполняются только команды без обязательных аргументов
+    if (!m[2] && c[2] && !c[2].startsWith('[')) continue;
+    const act = fixAct(c[0], c[4](splitArgs(m[3])));
+    if (!act) continue;
     for (const k of Object.keys(act)) if (act[k] === undefined) delete act[k];
     act._cmd = c[0];
     acts.push(act);
@@ -92,8 +109,11 @@ function parseCommands(text) {
   // ```json {"actions":[...]} - старый вид тоже понимаем
   const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
   if (fence) { try { const j = JSON.parse(fence[1].slice(fence[1].indexOf('{'), fence[1].lastIndexOf('}') + 1)); for (const a of j.actions || []) if (a && a.act) acts.push(a); } catch {} }
-  const say = raw.replace(/```[\s\S]*?```/g, '').replace(re, '').replace(/\s+([,.!?])/g, '$1').split('\n').map((l) => l.trim()).filter(Boolean)
-    .slice(0, 2).join(' ').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
+  // в чат - только реплика персонажа: без мыслей в скобках, разметки и отчётов «команда сработала»
+  let say = raw.replace(/```[\s\S]*?```/g, '').replace(re, '').replace(/\([^()]*\)/g, '').replace(/[*_`#>]+/g, '')
+    .replace(/\s+([,.!?])/g, '$1').split('\n').map((l) => l.trim()).filter(Boolean).join(' ').replace(/\s{2,}/g, ' ').trim();
+  const META = /команд|систем|итог|сработал|инвентар|позици|координат|задани|выполнен|не работа|^отлично|^понял|давайте|попробую|возможно|я вижу|теперь я|я дошёл|я переместил|я всё ещё/i;
+  say = say.split(/(?<=[.!?])\s+/).filter((x) => x && !META.test(x)).slice(0, 2).join(' ').slice(0, 200);
   return { say, acts, unknown };
 }
 

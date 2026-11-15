@@ -1142,7 +1142,16 @@ class TotemBot extends EventEmitter {
     } finally { this.busyLook = false; }
   }
 
+  // сундук не назван - ближайший (6 блоков)
+  nearestChest(a) {
+    if (!a.nearest && a.x !== undefined) return a;
+    const k = this.bot.findBlock({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 6 });
+    if (!k) throw new Error('рядом (6 блоков) нет сундука - нужны координаты: !takeFromChest(x, y, z, предмет, сколько)');
+    return { ...a, x: k.position.x, y: k.position.y, z: k.position.z };
+  }
+
   async take(a, tok) {
+    a = this.nearestChest(a);
     const c = await this.openAt(+a.x, +a.y, +a.z, tok);
     let left = a.count ? +a.count : Infinity, got = 0;
     try {
@@ -1159,6 +1168,7 @@ class TotemBot extends EventEmitter {
   }
 
   async put(a, tok) {
+    a = this.nearestChest(a);
     const c = await this.openAt(+a.x, +a.y, +a.z, tok);
     let left = a.count ? +a.count : Infinity, put = 0;
     try {
