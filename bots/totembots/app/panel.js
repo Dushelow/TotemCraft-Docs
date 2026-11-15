@@ -252,6 +252,19 @@ $('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').val
 $('add').onclick = () => act(async () => { await T.botAdd({ name: $('newName').value, persona: $('newPersona').value }); selected = $('newName').value.trim(); $('newName').value = ''; $('newPersona').value = ''; lastHtml = ''; });
 $('chrome').onclick = async () => { $('chrome').disabled = true; await T.qwenLoginChrome(); $('chrome').disabled = false; refreshQwen(); };
 $('reload').onclick = () => T.qwenReload();
+// вкладки над Qwen: окно бота и своё окно владельца
+let curTab = 'bot';
+function paintTabs(t, busy) {
+  curTab = t || curTab;
+  document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === curTab));
+  $('tabHint').textContent = curTab === 'mine'
+    ? 'ваше окно: настройки Qwen, голос, свои чаты. Боты работают в соседней вкладке'
+    : (busy ? 'бот сейчас думает в этом окне - лучше не трогать' : 'окно бота: тут Qwen отвечает за ботов');
+}
+document.querySelectorAll('#tabs [data-tab]').forEach((b) => { b.onclick = async () => paintTabs(await T.qwenTab(b.dataset.tab)); });
+$('tabReload').onclick = () => T.qwenTabReload();
+setInterval(async () => { try { const s = await T.state(); paintTabs(s.tab, s.botBusy); } catch {} }, 1500);
+paintTabs('bot');
 T.onLoginStatus((t) => { $('login').textContent = t; });
 
 // карта бота: чанки вокруг (бот в центре, север сверху)
@@ -265,10 +278,11 @@ async function drawMaps() {
     const g = cv.getContext('2d'), n = v.r * 2 + 1, s = cv.width / n;
     g.fillStyle = '#111'; g.fillRect(0, 0, cv.width, cv.height);
     for (const [x, z, k, built] of v.chunks) {
-      g.fillStyle = built >= 30 ? '#c8813a' : k === 'w' ? '#2f5f9e' : k === 'l' ? '#a8382c' : '#4a4d52';
+      g.fillStyle = built >= 12 ? '#c8813a' : k === 'w' ? '#2f5f9e' : k === 'l' ? '#a8382c' : '#4a4d52';
       g.fillRect((x + v.r) * s, (z + v.r) * s, s - 1, s - 1);
     }
-    const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
+    const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3',
+      'шахта': '#8a6a3f', 'подземелье': '#8a6a3f', 'крепость Края': '#9fa3a8', 'испытания': '#d08a4f', 'древний город': '#2a7f8f', 'крепость Незера': '#7a2a2a', 'бастион': '#555', 'подводный храм': '#3fb8a8' };
     for (const [x, z, kind] of v.poi) {
       g.fillStyle = COL[kind] || '#fff';
       g.beginPath(); g.arc((x + v.r + 0.5) * s, (z + v.r + 0.5) * s, Math.max(2, s / 3), 0, 7); g.fill();

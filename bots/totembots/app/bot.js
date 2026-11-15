@@ -322,6 +322,57 @@ class TotemBot extends EventEmitter {
     };
   }
 
+  /** Состояние по частям: core и near идут в каждом сообщении, остальное - когда меняется или когда бот посмотрит. */
+  stateParts() {
+    const s = this.state();
+    if (s.status !== 'online') return null;
+    const b = this.bot;
+    const t = b.time && b.time.timeOfDay;
+    const tod = t === undefined ? '' : t < 1000 ? 'утро' : t < 11500 ? 'день' : t < 13000 ? 'вечер' : t < 23000 ? 'ночь' : 'рассвет';
+    const weather = b.thunderState > 0 ? ', гроза' : b.isRaining ? ', дождь' : '';
+    const ch = this.worldMap && this.worldMap.load(b.game.dimension).chunks[`${Math.floor(s.pos[0] / 16)},${Math.floor(s.pos[2] / 16)}`];
+    const under = ch && ch.h !== null && s.pos[1] < ch.h - 6 ? ', под землёй' : '';
+    const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
+    return {
+      pos: s.pos,
+      core: `${s.dim} ${s.pos.join(' ')}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}`,
+      near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
+      inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
+      online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),
+      map: () => (this.worldMap ? this.worldMap.summary(this) : 'карты нет'),
+    };
+  }
+
+  /** Осмотреться: мобы и животные, вещи на земле, приметные блоки в 10 блоках, биом. По запросу мозга. */
+  lookAround() {
+    const b = this.bot;
+    if (!b || !b.entity) return 'ты не на сервере';
+    const me = b.entity.position;
+    const mobs = {}, players = [];
+    let drops = 0;
+    for (const e of Object.values(b.entities)) {
+      if (e === b.entity || !e.position) continue;
+      const d = e.position.distanceTo(me);
+      if (d > 24) continue;
+      if (e.type === 'player') players.push(`${e.username} ${Math.round(d)} бл.`);
+      else if (e.name === 'item') drops++;
+      else if (['hostile', 'mob', 'animal', 'passive', 'water_creature', 'ambient'].includes(e.type) || e.kind) mobs[e.name] = (mobs[e.name] || 0) + 1;
+    }
+    const blocks = {};
+    try {
+      const NOTABLE = /(chest|barrel|shulker_box|crafting_table|furnace|smoker|_door|_bed|anvil|enchanting_table|brewing_stand|wheat|carrots|potatoes|beetroots|farmland|sugar_cane|melon|pumpkin|nether_portal|spawner|_sign|lantern|torch|_ore|bell|composter|lectern)$/;
+      for (const p of b.findBlocks({ matching: (bl) => NOTABLE.test(bl.name), maxDistance: 10, count: 400 })) {
+        const nm = b.blockAt(p).name.replace(/^wall_|_wall(?=_)/, '');
+        blocks[nm] = (blocks[nm] || 0) + 1;
+      }
+    } catch {}
+    let biome = '';
+    try { const bl = b.blockAt(me); biome = bl && bl.biome && bl.biome.name ? bl.biome.name : ''; } catch {}
+    const list = (o) => Object.entries(o).sort((x, y) => y[1] - x[1]).slice(0, 12).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
+    return [biome && `биом ${biome}`, players.length && `игроки: ${players.join(', ')}`, `мобы и звери (24 бл.): ${list(mobs) || 'нет'}`,
+      drops && `вещей на земле: ${drops}`, `блоки рядом (10 бл.): ${list(blocks) || 'ничего приметного'}`].filter(Boolean).join('; ');
+  }
+
   stateText() {
     const s = this.state();
     if (s.status !== 'online') return 'ты не на сервере';
@@ -824,6 +875,21 @@ class TotemBot extends EventEmitter {
     return m.fact(a, who);
   }
 
+  /** Прогулка: пройти radius блоков в сторону света (по умолчанию - где ещё не был). Не дошёл - не беда. */
+  async wander(a, tok) {
+    const b = this.bot, me = b.entity.position.clone();
+    const DIRS = { 'север': 0, 'северо-восток': 45, 'восток': 90, 'юго-восток': 135, 'юг': 180, 'юго-запад': 225, 'запад': 270, 'северо-запад': 315 };
+    const r = Math.max(16, Math.min(96, +a.radius || 48));
+    const dir = DIRS[a.dir] !== undefined ? a.dir : (this.worldMap ? this.worldMap.leastExplored(this) : Object.keys(DIRS)[Math.floor(Math.random() * 8)]);
+    const ang = (DIRS[dir] + (Math.random() - 0.5) * 50) * Math.PI / 180;
+    const x = Math.round(me.x + Math.sin(ang) * r), z = Math.round(me.z - Math.cos(ang) * r);
+    let note = '';
+    try { await this.goto(new goals.GoalNearXZ(x, z, 3), tok, 90000); } catch (e) { if (e instanceof Cancelled) throw e; note = ' (дальше не прошёл)'; }
+    const p = b.entity.position;
+    const seen = this.worldMap ? this.worldMap.nearby(this, 48, 3).map((o) => o.text).join('; ') : '';
+    return `прогулялся на ${dir}: прошёл ${Math.round(p.distanceTo(me))} бл.${note}, теперь у ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}` + (seen ? `; рядом: ${seen}` : '');
+  }
+
   /** Выполнить список действий по порядку. Возвращает итог текстом. */
   async run(actions, label) {
     if (!this.bot || this.status !== 'online') return 'бот не на сервере';
@@ -868,6 +934,8 @@ class TotemBot extends EventEmitter {
             break;
           }
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
+          case 'wander': r = await this.wander(a, tok); break;
+          case 'look': r = 'посмотрел'; break;
           case 'follow': done.push(this.follow(a.who)); return done.join('; ');
           case 'stop': this.cancel(); return done.concat('остановился').join('; ');
           default: r = `не знаю действие ${a.act}`;

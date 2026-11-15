@@ -15,13 +15,15 @@ const { WorldMap } = require('./worldmap');
 const { QwenProject, PROJECT_NAME } = require('./qwen-project');
 
 const PANEL_WIDTH = 440;
+const TAB_H = 34;   // полоска вкладок над Qwen: «Окно бота» и «Моё окно Qwen»
 const QWEN_URL = 'https://chat.qwen.ai/';
 
 // Google не пускает вход во встроенные браузеры по метке «Electron» в user agent: показываем обычный Chrome.
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
-let win, qwen, bridge, voice, memory, project, worldMap;
+let win, qwen, mine, bridge, voice, memory, project, worldMap;
+let tab = 'bot';
 
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
@@ -76,7 +78,7 @@ function startBot(name) {
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {},
+    host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
@@ -91,8 +93,27 @@ function stateForPanel() {
 
 function layout() {
   const [w, h] = win.getContentSize();
-  qwen.setBounds({ x: PANEL_WIDTH, y: 0, width: Math.max(0, w - PANEL_WIDTH), height: h });
+  const r = { x: PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
+  qwen.setBounds(r);
+  if (mine) mine.setBounds(r);
 }
+
+// Своё окно Qwen владельца: тот же вход, отдельная страница. Бот в нём ничего не делает, поэтому там можно менять
+// настройки, голос, смотреть чаты, пока бот занят в своём окне. Окна лежат друг на друге: показанное - сверху,
+// второе продолжает работать (бот отвечает и в скрытом окне).
+function showTab(name) {
+  if (name === 'mine' && !mine) {
+    const qs = session.fromPartition('persist:qwen');
+    mine = new WebContentsView({ webPreferences: { session: qs } });
+    mine.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: qs } } }));
+    mine.webContents.loadURL(QWEN_URL);
+  }
+  tab = name === 'mine' ? 'mine' : 'bot';
+  win.contentView.addChildView(tab === 'mine' ? mine : qwen);   // уже добавленное окно переносится наверх
+  layout();
+  return tab;
+}
+function openMine(url) { showTab('mine'); mine.webContents.loadURL(url); }
 
 function createWindow() {
   win = new BrowserWindow({
@@ -210,6 +231,8 @@ function startProjectSync() {
 
 // --- панель
 ipcMain.handle('qwen-reload', () => qwen.webContents.loadURL(QWEN_URL));
+ipcMain.handle('qwen-tab', (_e, name) => showTab(name));
+ipcMain.handle('qwen-tab-reload', () => { if (tab === 'mine' && mine) mine.webContents.reload(); else qwen.webContents.reload(); return true; });
 ipcMain.handle('qwen-state', async () => {
   try {
     return await qwen.webContents.executeJavaScript('({ url: location.href, loggedIn: !!localStorage.getItem("token") })');
@@ -283,7 +306,7 @@ ipcMain.handle('voice-test', async (_e, name) => {
   return true;
 });
 ipcMain.handle('project-sync', () => projectSync(true));
-ipcMain.handle('project-open', () => { if (project.id) qwen.webContents.loadURL(`${QWEN_URL}p/${project.id}`); return true; });
+ipcMain.handle('project-open', () => { if (project.id) openMine(`${QWEN_URL}p/${project.id}`); return true; });
 ipcMain.handle('project-enable', (_e, on) => { cfg.qwenProject = { ...(cfg.qwenProject || {}), enabled: !!on }; saveCfg(); if (on) projectSync(true); return true; });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон
@@ -354,7 +377,7 @@ ipcMain.handle('chat-use', (_e, { name, link }) => {
   logTo(name, 'чат Qwen: ' + id);
   return true;
 });
-ipcMain.handle('chat-open', (_e, id) => { if (chatIdOf(id)) qwen.webContents.loadURL(`${QWEN_URL}c/${chatIdOf(id)}`); return true; });
+ipcMain.handle('chat-open', (_e, id) => { if (chatIdOf(id)) openMine(`${QWEN_URL}c/${chatIdOf(id)}`); return true; });
 ipcMain.handle('chat-forget', (_e, { name, id }) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (b) { b.chats = (b.chats || []).filter((c) => c.id !== id); if (b.chatId === id) b.chatId = ''; saveCfg(); }
@@ -381,7 +404,9 @@ ipcMain.handle('chat-rewarm', async (_e, name) => {
 });
 ipcMain.handle('bot-chat', (_e, name) => {
   const b = cfg.bots.find((x) => x.name === name);
-  if (b && b.chatId) qwen.webContents.loadURL(`${QWEN_URL}c/${b.chatId}`);
+  // чат бота - в окне бота; пока бот отвечает, страницу не трогаем
+  showTab('bot');
+  if (b && b.chatId && !bridge.busy && !qwen.webContents.getURL().includes(b.chatId)) qwen.webContents.loadURL(`${QWEN_URL}c/${b.chatId}`);
   return true;
 });
 

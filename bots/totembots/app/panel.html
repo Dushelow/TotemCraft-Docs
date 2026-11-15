@@ -43,9 +43,20 @@
   .srv { background: #232428; border-radius: 6px; padding: 6px 8px; margin-top: 6px; font-size: 12px; }
   .cmd { font: 11.5px Consolas, monospace; background: #17181a; border-radius: 4px; padding: 3px 6px; word-break: break-all; }
   #err { color: var(--bad); min-height: 16px; font-size: 12px; }
+  #tabs { position: fixed; left: 440px; right: 0; top: 0; height: 34px; display: flex; align-items: center; gap: 6px; padding: 0 8px;
+    background: #232428; border-bottom: 1px solid var(--line); }
+  #tabs button { background: #4e5058; padding: 4px 12px; }
+  #tabs button.on { background: var(--acc); }
+  #tabs .hint { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 </style>
 </head>
 <body>
+<div id="tabs">
+  <button data-tab="bot" title="Здесь Qwen отвечает за ботов. Можно смотреть, лучше не трогать, пока бот думает">Окно бота</button>
+  <button data-tab="mine" title="Ваш Qwen: настройки, голос, свои чаты. Бот сюда не заходит">Моё окно Qwen</button>
+  <span id="tabHint" class="muted hint"></span>
+  <button id="tabReload" title="Обновить открытую вкладку">Обновить</button>
+</div>
 <header><h1>TotemBots</h1></header>
 <main>
   <div class="card">
