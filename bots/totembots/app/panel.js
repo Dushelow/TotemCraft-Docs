@@ -207,6 +207,10 @@ $('pEnabled').onchange = () => act(() => T.projectEnable($('pEnabled').checked))
 $('pOpen').onclick = () => act(() => T.projectOpen());
 $('pSync').onclick = () => act(() => T.projectSync());
 
+// быстрый выбор сервера: тестовый в Docker или настоящий через российский вход (прямой адрес из РФ не открывается)
+$('srvTest').onclick = () => { $('host').value = '127.0.0.1'; $('port').value = '25566'; };
+$('srvLive').onclick = () => { $('host').value = 'ru.totemcraft.net'; $('port').value = '20098'; };
+
 $('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value }));
 $('add').onclick = () => act(async () => { await T.botAdd({ name: $('newName').value, persona: $('newPersona').value }); selected = $('newName').value.trim(); $('newName').value = ''; $('newPersona').value = ''; lastHtml = ''; });
 $('chrome').onclick = async () => { $('chrome').disabled = true; await T.qwenLoginChrome(); $('chrome').disabled = false; refreshQwen(); };
