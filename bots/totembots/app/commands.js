@@ -1,0 +1,100 @@
+// Команды бота (как в Mindcraft): нейросеть пишет их прямо в ответе, например «иду! !goTo(0, 64, 0)».
+// Один список на всё: разбор ответа, синонимы (move -> goTo, drop -> discard), руководство для нейросети.
+// Каждая команда превращается в действие тела (act для TotemBot.run) или в действие мозга (look, цель, память).
+
+const C = [
+  // [имя, синонимы, аргументы, описание, act(args) -> действие тела]
+  // --- передвижение
+  ['goTo', 'move,walk,go,goto,moveTo,walkTo,goToCoordinates', 'x, y, z', 'дойти до точки (копает природное и подставляет блоки, если надо)', (a) => ({ act: 'goto', x: a[0], y: a[1], z: a[2] })],
+  ['goToPlayer', 'come,comeTo,approach', 'игрок', 'подойти к игроку', (a) => ({ act: 'come', who: a[0] })],
+  ['follow', 'followPlayer,followMe', 'игрок', 'идти за игроком, пока не скажут !stop', (a) => ({ act: 'follow', who: a[0] })],
+  ['stop', 'stay,halt,cancel', '', 'бросить текущее дело и стоять', () => ({ act: 'stop' })],
+  ['travel', 'travelTo,goFar,navigate', 'x, z[, измерение]', 'дальний путь: сам выберу пешком или через Незер по порталам', (a) => ({ act: 'travel', x: a[0], z: a[1], dim: a[2] })],
+  ['goToPlace', 'goToRememberedPlace,gotoPlace', 'место', 'пойти к месту из памяти (далеко или в другом измерении - сам через порталы)', (a) => ({ act: 'goto_place', name: a[0] })],
+  ['enterPortal', 'portal,usePortal', '[x, y, z]', 'войти в портал (без координат - в ближайший)', (a) => ({ act: 'portal', x: a[0], y: a[1], z: a[2] })],
+  ['wander', 'explore,walkAround', '[сторона света]', 'прогуляться, поисследовать (без стороны - где ещё не был)', (a) => ({ act: 'wander', dir: a[0] })],
+  ['surface', 'goUp,toSurface', '', 'подняться на поверхность из пещеры или шахты', () => ({ act: 'surface' })],
+  // --- работа
+  ['collect', 'collectBlocks,gather,chop,mineBlock,dig', 'блок, сколько', 'добыть блоки рядом: oak_log, stone, dirt, sand... (лут подбирается)', (a) => ({ act: 'gather', block: a[0], count: a[1] })],
+  ['mine', 'mineOre,minerals', 'руда, сколько', 'шахта: iron, coal, diamond, gold, redstone, lapis, copper (спущусь и прокопаю туннель)', (a) => ({ act: 'mine', block: a[0], count: a[1] })],
+  ['craft', 'craftRecipe,make', 'предмет, сколько', 'скрафтить (верстак найду или поставлю свой); если не хватает - скажу чего', (a) => ({ act: 'craft', item: a[0], count: a[1] })],
+  ['smelt', 'smeltItem,cook', 'предмет, сколько', 'переплавить в своей печи (нет печи - сделаю)', (a) => ({ act: 'smelt', item: a[0], count: a[1] })],
+  ['place', 'placeHere,placeBlock,put_block', 'блок[, x, y, z]', 'поставить блок (без координат - рядом с собой)', (a) => ({ act: 'place', block: a[0], x: a[1], y: a[2], z: a[3] })],
+  ['breakBlock', 'break,destroy', 'x, y, z', 'сломать блок (природный или свой)', (a) => ({ act: 'break', x: a[0], y: a[1], z: a[2] })],
+  ['harvest', 'farm', '[растение]', 'собрать спелый урожай рядом и посадить обратно', (a) => ({ act: 'harvest', crop: a[0] })],
+  ['fish', 'fishing', '[сколько раз]', 'порыбачить (нужна удочка, рядом вода)', (a) => ({ act: 'fish', count: a[0] })],
+  ['hunt', 'killAnimal', 'животное, сколько', 'охота на диких животных: cow, pig, sheep, chicken...', (a) => ({ act: 'hunt', animal: a[0], count: a[1] })],
+  ['attack', 'kill,fight,attackMob', 'моб', 'напасть на моба рядом (зомби, скелет...); игроков не бью', (a) => ({ act: 'attack', mob: a[0] })],
+  ['shear', 'shearSheep', '[сколько]', 'постричь диких овец (нужны ножницы)', (a) => ({ act: 'shear', count: a[0] })],
+  ['pickup', 'pickUp,collectItems,loot', '[радиус]', 'подобрать вещи с земли рядом', (a) => ({ act: 'pickup', radius: a[0] })],
+  ['sleep', 'goToBed,bed', '', 'лечь спать в кровать рядом', () => ({ act: 'sleep' })],
+  // --- вещи
+  ['equip', 'hold,wear,wield', 'предмет', 'взять в руку или надеть (броня, щит, тотем - куда надо)', (a) => ({ act: 'equip', item: a[0] })],
+  ['eat', 'consume,food', '[еда]', 'поесть (без названия - лучшее, что есть)', (a) => ({ act: 'eat', item: a[0] })],
+  ['discard', 'drop,toss,throw,throwAway', 'предмет[, сколько]', 'выбросить из инвентаря', (a) => ({ act: 'toss', item: a[0], count: a[1] })],
+  ['give', 'givePlayer,giveItem', 'игрок, предмет, сколько', 'подойти и отдать игроку', (a) => ({ act: 'give', who: a[0], item: a[1], count: a[2] })],
+  ['takeFromChest', 'take,takeItem', 'x, y, z, предмет, сколько', 'взять из сундука (только по просьбе хозяина или из своего)', (a) => ({ act: 'take', x: a[0], y: a[1], z: a[2], item: a[3], count: a[4] })],
+  ['putInChest', 'put,store,deposit', 'x, y, z, предмет, сколько', 'положить в сундук', (a) => ({ act: 'put', x: a[0], y: a[1], z: a[2], item: a[3], count: a[4] })],
+  // --- сервер
+  ['command', 'cmd,serverCommand,run', '"/команда"', 'команда сервера как у обычного игрока: /home, /spawn, /tpa ник, /sethome...', (a) => ({ act: 'cmd', text: a[0] })],
+  ['wait', 'pause,sleepSeconds', 'секунд', 'подождать', (a) => ({ act: 'wait', seconds: a[0] })],
+  // --- мозг: смотреть, помнить, цели
+  ['look', 'inspect,view,see,check', 'что', 'посмотреть подробно: inventory, around, map, players, portals, online, memory', (a) => ({ act: 'look', what: a[0] || 'around' })],
+  ['find', 'search,searchForBlock,locate', 'блок', 'просканировать чанки вокруг: где ближайшие такие блоки', (a) => ({ act: 'look', what: 'find', block: a[0] })],
+  ['rememberHere', 'remember,savePlace,setWaypoint', 'название[, заметка]', 'запомнить место, где стоишь', (a) => ({ act: 'remember', kind: 'place', name: a[0], note: a[1] })],
+  ['rememberPerson', 'person,aboutPlayer', 'ник, заметка', 'запомнить про человека', (a) => ({ act: 'remember', kind: 'person', name: a[0], note: a[1] })],
+  ['note', 'fact,memo', 'текст', 'запомнить факт о сервере или мире', (a) => ({ act: 'remember', kind: 'fact', text: a[0] })],
+  ['journal', 'diary,log', 'текст', 'записать в свой дневник', (a) => ({ act: 'remember', kind: 'journal', text: a[0] })],
+  ['forget', 'forgetPlace', 'место', 'забыть место', (a) => ({ act: 'forget', kind: 'place', name: a[0] })],
+  ['setGoal', 'goal,newGoal', 'текст', 'поставить себе цель (видна в [я], между делами продолжай её)', (a) => ({ act: 'goal', text: a[0] })],
+  ['endGoal', 'goalDone,finishGoal', '', 'цель достигнута', () => ({ act: 'goal', done: true })],
+];
+
+const BY = new Map();
+for (const c of C) { BY.set(c[0].toLowerCase(), c); for (const s of c[1].split(',').filter(Boolean)) BY.set(s.toLowerCase(), c); }
+
+// аргументы: числа - числами, строки - без кавычек; запятые внутри кавычек не делят
+function splitArgs(s) {
+  const out = []; let cur = '', q = '';
+  for (const ch of String(s || '')) {
+    if (q) { if (ch === q) q = ''; else cur += ch; continue; }
+    if (ch === '"' || ch === "'") { q = ch; continue; }
+    if (ch === ',') { out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.map((x) => (/^-?\d+(\.\d+)?$/.test(x) ? +x : x)).filter((x) => x !== '');
+}
+
+/**
+ * Разбор ответа: реплика (текст без команд) и команды по порядку. Неизвестные команды - в unknown,
+ * чтобы сразу сказать нейросети, как правильно.
+ */
+function parseCommands(text) {
+  const raw = String(text || '');
+  const acts = [], unknown = [];
+  const re = /!([A-Za-z_]+)\s*(\(([^()]*)\))?/g;
+  let m;
+  while ((m = re.exec(raw))) {
+    const c = BY.get(m[1].toLowerCase());
+    if (!c) { unknown.push(m[1]); continue; }
+    const act = c[4](splitArgs(m[3]));
+    for (const k of Object.keys(act)) if (act[k] === undefined) delete act[k];
+    act._cmd = c[0];
+    acts.push(act);
+  }
+  // ```json {"actions":[...]} - старый вид тоже понимаем
+  const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
+  if (fence) { try { const j = JSON.parse(fence[1].slice(fence[1].indexOf('{'), fence[1].lastIndexOf('}') + 1)); for (const a of j.actions || []) if (a && a.act) acts.push(a); } catch {} }
+  const say = raw.replace(/```[\s\S]*?```/g, '').replace(re, '').replace(/\s+([,.!?])/g, '$1').split('\n').map((l) => l.trim()).filter(Boolean)
+    .slice(0, 2).join(' ').replace(/\s{2,}/g, ' ').trim().slice(0, 240);
+  return { say, acts, unknown };
+}
+
+/** Руководство по командам для нейросети (строится из списка - всегда совпадает с тем, что тело умеет). */
+function manual() {
+  return C.map((c) => `!${c[0]}(${c[2]}) - ${c[3]}`).join('\n');
+}
+
+const NAMES = C.map((c) => c[0]);
+module.exports = { parseCommands, manual, NAMES };

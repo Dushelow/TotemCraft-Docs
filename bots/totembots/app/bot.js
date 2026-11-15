@@ -96,6 +96,11 @@ class TotemBot extends EventEmitter {
 
     bot.once('spawn', () => {
       this.status = 'online';
+      // Сервер 26.3 тихо откатывает игрока, если тело касается стенки вплотную (физика mineflayer подводит его на
+      // волосок ближе, чем считает сервер): у ступенек - десятки откатов, «на земле» сбрасывается, прыжок срывается -
+      // бот «застревает на ровном месте» (стенд-копия мира 15.11: 76 откатов на одну ступеньку). Тело чуть шире -
+      // останавливается за волосок до блока, как настоящий клиент.
+      bot.physics.playerHalfWidth = 0.3005;
       const mv = new Movements(bot);
       mv.canDig = false;              // ничего не ломать
       mv.allow1by1towers = false;     // и не строить столбы
@@ -112,6 +117,19 @@ class TotemBot extends EventEmitter {
       }
       mv.entitiesToAvoid = new Set(['creeper']);
       mv.exclusionAreasStep = [(block) => this.forbiddenCost(block)];
+      // Главная причина «застрял на ровном месте» (стенд-копия мира 15.11): pathfinder шагает по диагонали, если
+      // свободна хотя бы ОДНА из двух соседних клеток, и тело (0,6 блока) цепляется за угол блока. Как Baritone:
+      // диагональ - только если свободны обе стороны (на уровне ног и головы).
+      {
+        const diag = mv.getMoveDiagonal.bind(mv);
+        mv.getMoveDiagonal = function (node, dir, neighbors) {
+          const y = this.getBlock(node, dir.x, 0, dir.z).physical ? 1 : 0;
+          for (const [dx, dz] of [[0, dir.z], [dir.x, 0]]) {
+            for (let dy = 0; dy <= y + 1; dy++) if (!this.getBlock(node, dx, dy, dz).safe) return;   // и уровень ног при прыжке
+          }
+          return diag(node, dir, neighbors);
+        };
+      }
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
       this.guard = new Guard(this);
@@ -139,7 +157,11 @@ class TotemBot extends EventEmitter {
       }
       this.dim = bot.game.dimension; this.inPortal = null;
     });
-    bot.on('messagestr', (msg, pos, json, sender) => this.onMessage(msg, pos, json, sender));
+    bot.on('path_update', (r) => { this.lastPath = { status: r.status, path: r.path, at: Date.now() }; });
+    bot.on('messagestr', (msg, pos, json, sender) => {
+      if (pos === 'system' || pos === 'game_info') { this.lastSystem = (this.lastSystem || []).concat(String(msg).slice(0, 160)).slice(-10); }
+      this.onMessage(msg, pos, json, sender);
+    });
     // чат разбирается в onMessage (каналы по оформлению Essentials); события mineflayer chat/whisper не используем:
     // его шаблоны принимали личку «[ник -> я] текст» ещё и за общий чат
     bot.on('death', () => {
@@ -356,8 +378,26 @@ class TotemBot extends EventEmitter {
       near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
       inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
       online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),
+      sees: this.glance(),
       map: () => (this.worldMap ? this.worldMap.summary(this) : 'карты нет'),
     };
+  }
+
+  /** Взгляд (каждое сообщение, дёшево): под ногами, перед собой, в руке, мобы и вещи в 16 блоках. */
+  glance() {
+    const b = this.bot, e = b.entity, p = e.position;
+    const nm = (v) => { const k = b.blockAt(v); return k ? k.name.replace(/^minecraft:/, '') : '?'; };
+    const fwd = p.offset(-Math.sin(e.yaw) * 1.5, 0, -Math.cos(e.yaw) * 1.5);
+    const mobs = {};
+    let drops = 0;
+    for (const x of Object.values(b.entities)) {
+      if (x === e || !x.position || x.type === 'player') continue;
+      if (x.position.distanceTo(p) > 16) continue;
+      if (x.name === 'item') drops++; else if (x.name && x.type !== 'object' && x.type !== 'orb') mobs[x.name] = (mobs[x.name] || 0) + 1;
+    }
+    const ml = Object.entries(mobs).sort((a2, b2) => b2[1] - a2[1]).slice(0, 5).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
+    const held = b.heldItem ? b.heldItem.name : 'пусто';
+    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; мобы: ${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '');
   }
 
   /** Осмотреться: мобы и животные, вещи на земле, приметные блоки в 10 блоках, биом. По запросу мозга. */
@@ -428,8 +468,10 @@ class TotemBot extends EventEmitter {
     if (!e || e.velocity.y > 0.2) return;
     const feet = b.blockAt(e.position);
     if (!feet || !/water|seagrass|kelp/.test(feet.name)) return;   // ноги в воде (isInWater у края бывает false)
+    const p = e.position;
+    if (process.env.TB_DEBUG) console.log('вода:', p.y.toFixed(2), 'fwd', b.getControlState('forward'), 'moving', b.pathfinder.isMoving(), 'yaw', e.yaw.toFixed(2));
     if (!b.getControlState('forward') && !b.pathfinder.isMoving()) return;
-    const yaw = e.yaw, p = e.position;
+    const yaw = e.yaw;
     const front = p.offset(-Math.sin(yaw) * 0.8, 0, -Math.cos(yaw) * 0.8).floored();
     const ledge = b.blockAt(front), up1 = b.blockAt(front.offset(0, 1, 0)), up2 = b.blockAt(front.offset(0, 2, 0));
     if (!ledge || ledge.boundingBox !== 'block' || !up1 || up1.boundingBox !== 'empty' || !up2 || up2.boundingBox !== 'empty') return;
@@ -639,6 +681,14 @@ class TotemBot extends EventEmitter {
     if (Date.now() - this.stuck.since < 5000) return;
     this.stuck.tries++;
     this.stuck.since = Date.now();
+    // запись для разбора: цель, сколько до неё, следующие шаги пути, блоки вокруг
+    {
+      const g = b.pathfinder.goal, lp = this.lastPath || {};
+      const gp = g && (g.entity ? g.entity.position : (g.x !== undefined ? new Vec3(g.x, g.y !== undefined ? g.y : p.y, g.z) : null));
+      const fl = p.floored(), around = [];
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) around.push(`${dx},${dz}:${(b.blockAt(fl.offset(dx, 0, dz)) || {}).name}/${(b.blockAt(fl.offset(dx, 1, dz)) || {}).name}`);
+      this.log(`застрял: я ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}, цель ${g ? g.constructor.name : 'нет'}${gp ? ' до неё ' + gp.distanceTo(p).toFixed(1) : ''}, путь ${lp.status || '?'} ${(lp.path || []).slice(0, 3).map((n) => `${Math.floor(n.x)},${Math.floor(n.y)},${Math.floor(n.z)}`).join(' ')}, под ногами ${(b.blockAt(fl.offset(0, -1, 0)) || {}).name}, вокруг ${around.join(' ')}, земля ${b.entity.onGround}`);
+    }
     this.log('застрял, пробую выбраться (' + this.stuck.tries + ')');
     // в воде - как игрок: вперёд с прыжком (выплыть на уступ); на суше - прыжок и шаг назад
     const feetW = b.blockAt(b.entity.position);
@@ -773,6 +823,79 @@ class TotemBot extends EventEmitter {
     const odd = held && !W.includes(held.name) && !/pickaxe|shovel|_axe|hoe|fishing_rod|shield|bow|crossbow|trident|mace|spear/.test(held.name);
     if (best && (!held || odd)) { await b.equip(best, 'hand'); return; }
     if (!best && odd) { try { await b.unequip('hand'); } catch {} }
+  }
+
+  /** Надеть или взять в руку: броня - на тело, щит и тотем - во вторую руку, остальное - в основную. */
+  async equipItem(a) {
+    const b = this.bot, q = String(a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    const it = b.inventory.items().find((i) => i.name === q) || b.inventory.items().find((i) => i.name.includes(q));
+    if (!it) throw new Error(`нет в инвентаре: ${q}`);
+    const dest = /_helmet$|turtle_helmet/.test(it.name) ? 'head' : /_chestplate$|^elytra$/.test(it.name) ? 'torso' : /_leggings$/.test(it.name) ? 'legs' : /_boots$/.test(it.name) ? 'feet' : /^(shield|totem_of_undying)$/.test(it.name) ? 'off-hand' : 'hand';
+    await b.equip(it, dest);
+    this.handsAt = Date.now() + 120000;   // сам выбрал, что держать - порядок в руках пока не трогает
+    return `надел/взял ${it.name}`;
+  }
+
+  /** Поесть: названное или лучшее из того, что есть. */
+  async eatItem(a) {
+    const b = this.bot;
+    const foods = b.registry.foodsByName || {};
+    const q = String(a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    const BAD = /rotten_flesh|spider_eye|poisonous_potato|pufferfish|chorus_fruit|suspicious_stew|raw_chicken|chicken$/;
+    const it = q ? b.inventory.items().find((i) => i.name === q)
+      : b.inventory.items().filter((i) => foods[i.name] && !BAD.test(i.name)).sort((x, y) => (foods[y.name].foodPoints || 0) - (foods[x.name].foodPoints || 0))[0];
+    if (!it) throw new Error('нечего есть');
+    if (b.food >= 20 && !/golden_apple/.test(it.name)) return 'не голоден';
+    this.eating = true;
+    try { await b.equip(it, 'hand'); await b.consume(); } finally { this.eating = false; }
+    return `съел ${it.name}`;
+  }
+
+  /** Команда сервера как у обычного игрока. Входа/пароля не касается (AuthMe - сам). */
+  async serverCommand(a) {
+    let t = String(a.text || '').trim();
+    if (!t) throw new Error('пустая команда');
+    if (!t.startsWith('/')) t = '/' + t;
+    if (/^\/(login|l|register|reg|changepassword|cp|unregister|email|logout)\b/i.test(t)) throw new Error('эту команду не пишу');
+    const before = this.lastSystem || [];
+    this.lastSystem = [];
+    this.bot.chat(t.slice(0, 250));
+    await sleep(1500);
+    const reply = (this.lastSystem || []).slice(-3).join(' | ');
+    this.lastSystem = before.concat(this.lastSystem).slice(-10);
+    return `${t}${reply ? ': сервер ответил: ' + reply.slice(0, 200) : ''}`;
+  }
+
+  /** Напасть на моба (не игрока): честный бой guard. */
+  async attackMob(a, tok) {
+    const b = this.bot, kind = String(a.mob || '').toLowerCase().replace(/^minecraft:/, '');
+    const me = b.entity.position;
+    const t = Object.values(b.entities).filter((e) => e.type !== 'player' && e.isValid && e !== b.entity && (!kind || (e.name || '') === kind || (e.name || '').includes(kind)) && e.position.distanceTo(me) < 32)
+      .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
+    if (!t) throw new Error(`рядом нет ${kind || 'мобов'}`);
+    if (!this.guard) throw new Error('бой выключен');
+    const was = this.guard.mode; if (was === 'off') this.guard.mode = 'defend';
+    this.guard.prey = t.id;
+    const until = Date.now() + 40000;
+    try {
+      while (t.isValid && Date.now() < until) {
+        this.check(tok);
+        if (t.position.distanceTo(b.entity.position) > 2.5) { try { await this.goto(new goals.GoalFollow(t, 2), tok, 4000); } catch (e) { if (e instanceof Cancelled) throw e; } }
+        await sleep(250);
+      }
+    } finally { this.guard.prey = null; this.guard.mode = was; try { b.pathfinder.setGoal(null); } catch {} }
+    await this.pickup({ radius: 6 }, tok).catch(() => {});
+    return t.isValid ? `не добил ${t.name}` : `убил ${t.name}`;
+  }
+
+  /** Лечь спать в кровать рядом (ночью или в грозу). */
+  async goSleep(tok) {
+    const b = this.bot;
+    const bed = b.findBlock({ matching: (bl) => /_bed$/.test(bl.name), maxDistance: 32 });
+    if (!bed) throw new Error('рядом нет кровати');
+    await this.goto(new goals.GoalNear(bed.position.x, bed.position.y, bed.position.z, 2), tok, 60000);
+    await b.sleep(bed);
+    return 'лёг спать';
   }
 
   /** Где последний раз видел игроков (по запросу мозга). */
@@ -939,6 +1062,11 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     const from = b.game.dimension;
     const id = b.registry.blocksByName.nether_portal.id;
+    if (a.x === undefined || a.y === undefined || a.z === undefined) {
+      const near = b.findBlock({ matching: id, maxDistance: 48 });
+      if (!near) throw new Error('рядом нет портала');
+      a = { x: near.position.x, y: near.position.y, z: near.position.z };
+    }
     let target = new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z));
     const pb = b.findBlock({ point: target, matching: id, maxDistance: 6 });
     if (pb) {
@@ -1214,6 +1342,11 @@ class TotemBot extends EventEmitter {
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'wander': r = await this.wander(a, tok); break;
           case 'gather': r = await this.skills.gather(a, tok); break;
+          case 'equip': r = await this.equipItem(a); break;
+          case 'eat': r = await this.eatItem(a); break;
+          case 'cmd': r = await this.serverCommand(a); break;
+          case 'attack': r = await this.attackMob(a, tok); break;
+          case 'sleep': r = await this.goSleep(tok); break;
           case 'craft': r = await this.skills.craft(a, tok); break;
           case 'place': r = await this.skills.place(a, tok); break;
           case 'break': r = await this.skills.breakAt(a, tok); break;
