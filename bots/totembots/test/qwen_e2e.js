@@ -26,7 +26,7 @@ function testConfig() {
   let year = '';
   try { year = JSON.parse(fs.readFileSync(path.join(process.env.APPDATA, 'totembots', 'config.json'), 'utf8')).birthYear || ''; } catch {}
   fs.writeFileSync(CFG, JSON.stringify({ host: '127.0.0.1', port: 25566, masters: ['TbOwner'], birthYear: year,
-    qwen: old.qwen || { chatMode: 'fast', planMode: 'auto', models: [] },
+    qwen: old.qwen || { chatMode: 'fast', planMode: 'auto', models: [] }, qwenProject: old.qwenProject,
     voice: { ...(old.voice || {}), enabled: process.argv.includes('--voice'), local: false },
     bots: [{ ...oldBot, name: 'TbAlex', password: 'Tb12345x', persona: '', chatId }] }, null, 2));
   if (process.argv.includes('--fresh-memory')) fs.rmSync(MEM, { recursive: true, force: true });
@@ -77,7 +77,7 @@ async function panel() {
   rcon(`tp TbOwner ${X} ${Y} ${Z - 8}`);
 
   const app = spawn(path.join(__dirname, '..', 'node_modules', '.bin', 'electron.cmd'), ['.', '--remote-debugging-port=9223'],
-    { cwd: path.join(__dirname, '..'), shell: true, stdio: 'ignore', env: { ...process.env, TOTEMBOTS_CONFIG: CFG, TOTEMBOTS_MEMORY: DATA } });
+    { cwd: path.join(__dirname, '..'), shell: true, stdio: 'ignore', env: { ...process.env, TOTEMBOTS_CONFIG: CFG, TOTEMBOTS_MEMORY: DATA, TOTEMBOTS_PROJECT_NAME: 'TotemCraft · тест' } });
   appPid = app.pid;
   const ev = await panel();
   await sleep(4000);

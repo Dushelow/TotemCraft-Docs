@@ -194,6 +194,8 @@ class QwenBridge {
     this.log = log;
     this.onAttention = () => {};
     this.birthYear = () => '';
+    this.projectId = () => '';   // новые чаты - внутри проекта Qwen
+    this.beforeNewChat = async () => {};   // убедиться, что проект есть
     this.chain = Promise.resolve();
     this.wc.on('dom-ready', () => this.hook().catch(() => {}));
     // окно возраста может выскочить когда угодно (при загрузке, после ответа): проверяем раз в 20 с
@@ -208,6 +210,17 @@ class QwenBridge {
   }
 
   hook() { return this.wc.executeJavaScript(HOOK); }
+
+  /** Текст текущего (выбранного) ответа в чате - из истории Qwen, тем же запросом, что делает страница. */
+  async lastAnswer(chatId) {
+    return this.wc.executeJavaScript(`(async () => {
+      const r = await fetch('/api/v2/chats/${chatId}', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+      const d = (await r.json()).data; if (!d) return '';
+      const m = d.chat.history.messages[d.currentId]; if (!m) return '';
+      const parts = (m.content_list || []).filter((x) => x.phase === 'answer').map((x) => x.content);
+      return parts.join('') || m.content || '';
+    })()`);
+  }
 
   // Озвучка ответа кнопкой Qwen «Read aloud». Звук берём из сети отладчиком Electron: страница шлёт запрос
   // /api/v2/tts/completions со своими подписями, мы его не подделываем, а только читаем ответ (поток base64 PCM).
@@ -268,7 +281,8 @@ class QwenBridge {
   }
 
   async open(chatId) {
-    const want = chatId ? `${ORIGIN}/c/${chatId}` : `${ORIGIN}/`;
+    const pid = this.projectId();
+    const want = chatId ? `${ORIGIN}/c/${chatId}` : pid ? `${ORIGIN}/p/${pid}` : `${ORIGIN}/`;
     if (chatId && this.currentChat() === chatId) return;
     await this.wc.loadURL(want);
     await this.hook();
@@ -303,6 +317,7 @@ class QwenBridge {
   }
 
   async _ask(chatId, text, model, mode) {
+    if (!chatId) await this.beforeNewChat();
     await this.open(chatId);
     await this.hook();
     if (model || mode) {
@@ -343,7 +358,10 @@ class QwenBridge {
         const ab = await this.wc.executeJavaScript(AB).catch(() => null);
         if (ab) {
           this.onAttention('Qwen дал два варианта ответа, выбран первый');
-          return { answer: abToAnswer(ab) || r.done.answer, chatId: id || chatId };
+          // выбранный ответ целиком (с блоком команд) - из истории чата; карточка на странице - запасной вариант
+          await sleep(1500);
+          const saved = await this.lastAnswer(id || chatId).catch(() => '');
+          return { answer: saved || abToAnswer(ab) || r.done.answer, chatId: id || chatId };
         }
         return { answer: r.done.answer, chatId: id || chatId };
       }

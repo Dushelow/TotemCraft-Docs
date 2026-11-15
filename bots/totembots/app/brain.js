@@ -32,7 +32,7 @@ function warmText(cfg, bot) {
 {"act":"recover"} - пойти на место своей смерти и забрать вещи (после смерти бот делает это сам)
 {"act":"harvest","crop":"wheat","radius":16} - собрать спелый урожай рядом и посадить обратно (crop можно не указывать)
 {"act":"goto_place","name":"склад"} - пойти к месту из памяти
-{"act":"remember","kind":"place","name":"склад","note":"сундуки хозяина"} - запомнить место (без x y z - там, где стоишь; можно дать x y z)
+{"act":"remember","kind":"place","name":"склад","x":0,"y":64,"z":0,"note":"сундуки хозяина"} - запомнить место (если говорят «тут» - координаты того, кто говорит; без x y z - где стоишь ты)
 {"act":"remember","kind":"person","name":"Ник","note":"кто это, что любит, о чём договорились"} - запомнить про человека
 {"act":"remember","kind":"fact","text":"..."} - запомнить факт о сервере или мире
 {"act":"remember","kind":"journal","text":"..."} - записать в свой дневник (что было, что чувствуешь, что задумал)
@@ -111,7 +111,8 @@ class Brain {
     const mentioned = new RegExp(me, 'i').test(text);
     // реагируем на личку, на обращение по имени и на разговор рядом (до 12 блоков)
     if (!whisper && !mentioned && (dist === null || dist > 12)) return;
-    const where = whisper ? 'лично тебе' : dist !== null ? `в чат, ${dist} бл. от тебя` : 'в чат';
+    const at = e ? `, стоит на ${Math.floor(e.position.x)} ${Math.floor(e.position.y)} ${Math.floor(e.position.z)}` : '';
+    const where = (whisper ? 'лично тебе' : dist !== null ? `в чат, ${dist} бл. от тебя` : 'в чат') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
     this.push(`[чат] ${from}${role} пишет ${where}: ${text}`, true, from);
   }

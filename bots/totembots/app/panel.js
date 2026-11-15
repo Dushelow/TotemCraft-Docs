@@ -83,6 +83,10 @@ async function refresh() {
     settingsFilled = true;
   }
   fillVoice(st.voice);
+  if (st.project) {
+    if (document.activeElement !== $('pEnabled')) $('pEnabled').checked = st.project.enabled;
+    $('pStatus').textContent = (st.project.id ? `«${st.project.name}»` : 'проект создастся сам после входа в Qwen') + (st.project.status ? ': ' + st.project.status : '');
+  }
   if (!selected && st.bots[0]) selected = st.bots[0].name;
   const box = $('bots');
   // не перерисовывать, пока человек печатает приказ или характер
@@ -198,6 +202,10 @@ T.onVoiceSystem(({ text, volume }) => {
   if (ru) u.voice = ru;
   speechSynthesis.speak(u);
 });
+
+$('pEnabled').onchange = () => act(() => T.projectEnable($('pEnabled').checked));
+$('pOpen').onclick = () => act(() => T.projectOpen());
+$('pSync').onclick = () => act(() => T.projectSync());
 
 $('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value }));
 $('add').onclick = () => act(async () => { await T.botAdd({ name: $('newName').value, persona: $('newPersona').value }); selected = $('newName').value.trim(); $('newName').value = ''; $('newPersona').value = ''; lastHtml = ''; });

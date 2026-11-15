@@ -11,6 +11,7 @@ const { TotemBot } = require('./bot');
 const { Brain, DEFAULT_PERSONA } = require('./brain');
 const { Voice, PIPER_VOICES } = require('./voice');
 const { Memory } = require('./memory');
+const { QwenProject, PROJECT_NAME } = require('./qwen-project');
 
 const PANEL_WIDTH = 440;
 const QWEN_URL = 'https://chat.qwen.ai/';
@@ -19,7 +20,7 @@ const QWEN_URL = 'https://chat.qwen.ai/';
 const CHROME_UA = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`;
 app.userAgentFallback = CHROME_UA;
 
-let win, qwen, bridge, voice, memory;
+let win, qwen, bridge, voice, memory, project;
 
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
@@ -72,6 +73,7 @@ function stateForPanel() {
   return {
     host: cfg.host, port: cfg.port, masters: cfg.masters, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {},
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
+    project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
       return { name: b.name, persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
@@ -100,6 +102,14 @@ function createWindow() {
   qwen.webContents.loadURL(QWEN_URL);
   bridge = new QwenBridge(qwen.webContents);
   bridge.birthYear = () => cfg.birthYear || '';
+  project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
+    log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
+  bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled !== false ? project.id : '');
+  bridge.beforeNewChat = async () => {
+    if (!projectEnabled()) return;
+    try { if (!project.id || !(await project.exists())) await project._ensure(); } catch (e) { logAll('проект Qwen: ' + e.message + ' (чат будет вне проекта)'); }
+  };
+  startProjectSync();
   voice = new Voice({ cfg: () => cfg, bridge, dir: app.getPath('userData'), toPanel: (ch, d) => win.webContents.send(ch, d),
     log: (name, t) => logTo(name, t) });
   bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); };
@@ -112,6 +122,34 @@ function createWindow() {
 
   win.on('resize', layout);
   layout();
+}
+
+// --- проект Qwen: создать при входе, память туда - если изменилась, не чаще раза в 10 минут
+function logAll(t) { for (const name of live.keys()) logTo(name, t); }
+function dataDir() { return process.env.TOTEMBOTS_MEMORY || app.getPath('userData'); }
+let projectState = { status: '', syncedVersion: -1, syncedAt: 0, busy: false };
+function projectEnabled() { return !cfg.qwenProject || cfg.qwenProject.enabled !== false; }
+async function projectSync(force = false) {
+  if (!projectEnabled() || projectState.busy) return;
+  if (!force && (memory.version === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
+  projectState.busy = true;
+  try {
+    const logged = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")').catch(() => false);
+    if (!logged) { projectState.status = 'ждёт входа в Qwen'; return; }
+    if (!project.id || !(await project.run(() => project.exists()))) await project.ensure();
+    const v = memory.version;
+    projectState.status = 'обновляю память...';
+    const r = await project.syncMemory(memory.markdown());
+    projectState.syncedVersion = v; projectState.syncedAt = Date.now();
+    projectState.status = r + ', ' + new Date().toLocaleTimeString('ru-RU');
+  } catch (e) {
+    projectState.status = 'ошибка: ' + e.message;
+    projectState.syncedAt = Date.now();   // не долбить при ошибке, повтор через 10 минут
+  } finally { projectState.busy = false; }
+}
+function startProjectSync() {
+  setTimeout(() => projectSync(true), 15000);
+  setInterval(() => projectSync(false), 60000);
 }
 
 // --- панель
@@ -187,6 +225,9 @@ ipcMain.handle('voice-test', async (_e, name) => {
   try { await voice.speak('Привет! Это проверка голоса бота.', b); } finally { cfg.voice.enabled = was; }
   return true;
 });
+ipcMain.handle('project-sync', () => projectSync(true));
+ipcMain.handle('project-open', () => { if (project.id) qwen.webContents.loadURL(`${QWEN_URL}p/${project.id}`); return true; });
+ipcMain.handle('project-enable', (_e, on) => { cfg.qwenProject = { ...(cfg.qwenProject || {}), enabled: !!on }; saveCfg(); if (on) projectSync(true); return true; });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
 ipcMain.handle('bot-stop', (_e, name) => { const l = live.get(name); if (l && l.body) l.body.stop(); return true; });
 ipcMain.handle('bot-order', (_e, { name, text }) => {
