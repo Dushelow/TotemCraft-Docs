@@ -467,6 +467,7 @@ class TotemBot extends EventEmitter {
       try { b._client.write('tick_end', {}); } catch {}
       this.lookTick();
       if (this.guard) this.guard.combatTick();
+      this.swimTick();
       this.waterExitTick();
     });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
@@ -475,6 +476,70 @@ class TotemBot extends EventEmitter {
   // Выход из воды на уступ: в клиенте Minecraft, если в воде упираешься в блок, а над ним свободно, игрока
   // подбрасывает на 0,3 (outOfLiquidImpulse). Физика mineflayer это не делает (стенд 15.11: бот не мог выйти на
   // пляж). Даём тот же толчок, когда бот идёт вперёд или по пути; античит это видит как обычный выход (0 отметок).
+  /**
+   * Выбраться из воды на уступ (best - клетка, где встать), как игрок: прыжок держать, у стенки внизу волны - чуть назад,
+   * на гребне - вперёд (упор на гребне - толчок через край, waterExitTick). pathfinder этот ход не умеет. true - вышел.
+   */
+  async climbOut(best) {
+    const b = this.bot;
+    this.busyLook = true;
+    try {
+      try { b.pathfinder.setGoal(null); } catch {}
+      for (let i = 0; i < 240; i++) {   // до 12 с
+        const f = b.blockAt(b.entity.position);
+        if (!f || !/water|kelp|seagrass/.test(f.name)) break;
+        const q = b.entity.position, crest = q.y - Math.floor(q.y) >= 0.45;
+        if (i === 0) await b.lookAt(best.offset(0.5, 1.4, 0.5));
+        b.setControlState('sprint', false);
+        b.setControlState('jump', true);
+        b.setControlState('forward', crest || !b.entity.isCollidedHorizontally);
+        b.setControlState('back', !crest && b.entity.isCollidedHorizontally);
+        await sleep(50);
+      }
+    } finally { b.clearControlStates(); this.busyLook = false; }
+    const f = b.blockAt(b.entity.position);
+    return !(f && /water/.test(f.name));
+  }
+
+  /** Уступ рядом (до r блоков), где можно встать, - ближе к цели goal (если дана). */
+  ledgeNear(r = 5, goal = null) {
+    const b = this.bot, me = b.entity.position, lvl = Math.floor(me.y);
+    const ok = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/water|ice|leaves|glass/.test(k.name); };
+    const free = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava/.test(k.name); };
+    let best = null, bs = Infinity;
+    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = -1; dy <= 1; dy++) {
+      const v = new Vec3(Math.floor(me.x) + dx, lvl + dy, Math.floor(me.z) + dz);
+      if (!ok(v) || !free(v.offset(0, 1, 0)) || !free(v.offset(0, 2, 0))) continue;
+      const d = Math.hypot(v.x + 0.5 - me.x, v.z + 0.5 - me.z) + (goal ? Math.hypot(v.x - goal.x, v.z - goal.z) * 0.3 : 0);
+      if (d < bs) { bs = d; best = v.offset(0, 1, 0); }
+    }
+    return best;
+  }
+
+  // Плавание как у игрока (pathfinder в воде дёргал бег на гребнях и бросал клавиши у берега, голова крутилась):
+  // держать прыжок (ровно на поверхности, вниз - только если путь уходит вниз), без бега, вперёд к следующей точке
+  // пути, которая хотя бы на полблока в стороне. Идёт после pathfinder в том же такте - его клавиши перекрываются.
+  swimTick() {
+    const b = this.bot, e = b.entity;
+    if (!e || this.busyLook || !b.pathfinder.isMoving()) return;
+    const p = e.position, feet = b.blockAt(p);
+    if (!e.isInWater && !(feet && /water/.test(feet.name))) return;
+    const path = (this.lastPath || {}).path || [];
+    if (!path.length) return;
+    const c = (n) => ({ x: Number.isInteger(n.x) ? n.x + 0.5 : n.x, y: n.y, z: Number.isInteger(n.z) ? n.z + 0.5 : n.z });
+    let i0 = 0, best = Infinity;
+    path.forEach((n, i) => { const q = c(n), d = Math.hypot(q.x - p.x, q.y - p.y, q.z - p.z); if (d < best) { best = d; i0 = i; } });
+    let nx = null;
+    for (let i = i0; i < path.length; i++) { const q = c(path[i]); if (Math.hypot(q.x - p.x, q.z - p.z) > 0.5) { nx = q; break; } }
+    if (!nx) return;
+    b.setControlState('sprint', false);
+    b.setControlState('forward', true);
+    b.setControlState('jump', nx.y >= Math.floor(p.y));
+    const yaw = Math.atan2(-(nx.x - p.x), -(nx.z - p.z));
+    let dy = yaw - e.yaw; while (dy > Math.PI) dy -= 2 * Math.PI; while (dy < -Math.PI) dy += 2 * Math.PI;
+    if (Math.abs(dy) > 0.05) b.look(e.yaw + Math.max(-0.35, Math.min(0.35, dy)), 0, true);   // плавно, без рывков
+  }
+
   waterExitTick() {
     const b = this.bot, e = b.entity;
     if (!e || e.velocity.y > 0.2) return;
@@ -502,7 +567,7 @@ class TotemBot extends EventEmitter {
 
   lookTick() {
     const b = this.bot;
-    if (!b || !b.entity || b.pathfinder.isMoving() || this.busyLook || (this.guard && this.guard.fighting)) return;
+    if (!b || !b.entity || b.pathfinder.isMoving() || this.busyLook || this.mode === 'task' || (this.guard && this.guard.fighting)) return;
     const t = this.lookTarget;
     if (!t) return;
     const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0);
@@ -639,30 +704,11 @@ class TotemBot extends EventEmitter {
     this.mode = 'shore';   // пока плывёт - не «стоит без дела»
     // берег рядом - как игрок: лицом к суше, держать «вперёд» и «прыжок», пока не выйдет из воды (до 5 с)
     if (Math.hypot(best.x + 0.5 - me.x, best.z + 0.5 - me.z) <= 6) {
-      (async () => {
-        this.busyLook = true;
-        try {
-          // как игрок у уступа: прыжок держим всё время; у стенки внизу волны - чуть назад (всплыть, не цепляясь за
-          // край), на гребне - вперёд: упор на гребне даёт толчок через край (waterExitTick). Прижатым к стенке бот
-          // не всплывает выше 62,2 (сервер 15.11).
-          try { b.pathfinder.setGoal(null); } catch {}   // старая цель pathfinder каждый такт перебивала клавиши
-          for (let i = 0; i < 240; i++) {   // до 12 с
-            const f = b.blockAt(b.entity.position);
-            if (!f || !/water|kelp|seagrass/.test(f.name)) break;
-            const q = b.entity.position, crest = q.y - Math.floor(q.y) >= 0.45;
-            if (i === 0) await b.lookAt(best.offset(0.5, 1.4, 0.5));   // повернуться один раз, плавно
-            b.setControlState('jump', true);
-            b.setControlState('forward', crest || !b.entity.isCollidedHorizontally);
-            b.setControlState('back', !crest && b.entity.isCollidedHorizontally);
-            await sleep(50);
-            if (i % 40 === 0) this.log(`выход: ${q.x.toFixed(2)} ${q.y.toFixed(2)} ${q.z.toFixed(2)} упор ${b.entity.isCollidedHorizontally} цель pf ${b.pathfinder.goal ? 'есть' : 'нет'} вперёд ${b.getControlState('forward')} назад ${b.getControlState('back')}`);
-          }
-        } finally { b.clearControlStates(); this.busyLook = false; }
-        const f = b.blockAt(b.entity.position);
-        if (f && /water/.test(f.name)) { this.badShore.push({ v: best.offset(0, -1, 0), at: Date.now() }); this.log('на этот берег не вылез, поищу другой'); }
+      this.climbOut(best).then((ok) => {
+        if (!ok) { this.badShore.push({ v: best.offset(0, -1, 0), at: Date.now() }); this.log('на этот берег не вылез, поищу другой'); }
         else this.log('вышел на берег');
         if (this.mode === 'shore') this.mode = 'idle';
-      })();
+      });
       return;
     }
     const tok = this.token;
@@ -1028,6 +1074,13 @@ class TotemBot extends EventEmitter {
         break;
       } catch (e) {
         this.check(tok);
+        // путь оборвался в воде (pathfinder не умеет вылезать на уступ) - вылезти самому и продолжить
+        const feet = b.blockAt(b.entity.position);
+        if (feet && /water/.test(feet.name) && attempt < 5 && Date.now() < until && !/goal was changed/i.test(e.message)) {
+          const g = goal.x !== undefined ? goal : null;
+          const ledge = this.ledgeNear(5, g);
+          if (ledge && await this.climbOut(ledge)) { this.log('вылез из воды, продолжаю путь'); continue; }
+        }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }
         this.log('продолжаю путь');
