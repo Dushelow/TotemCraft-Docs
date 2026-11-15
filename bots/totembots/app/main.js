@@ -447,7 +447,8 @@ ipcMain.handle('qwen-login-chrome', async () => {
   }
 });
 
-app.whenReady().then(() => { loadCfg(); memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow();
+app.whenReady().then(() => { loadCfg();
+  try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow();
   // боты заходят сами (настройка autostart; выключить - в config.json "autostart": false)
   if (cfg.autostart !== false) setTimeout(() => { for (const b of cfg.bots) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
 });
