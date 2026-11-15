@@ -210,7 +210,7 @@ class Brain {
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 2 };
-    if (!ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length) return;
+    if (!ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length || this.bridge.resting) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
@@ -406,6 +406,8 @@ class Brain {
       }
     } catch (e) {
       this.log('Qwen: ' + e.message);
+      // лимит на всех моделях: не повторять, новый чат не заводить, молчать до конца отдыха
+      if (/лимит Qwen на всех моделях/.test(e.message)) { this.pending = []; return; }
       // чат сломан: PARENT_NOT_FOUND - Qwen потерял ветку разговора; CHAT_IN_PROGRESS второй раз подряд - в чате навсегда
       // повис недописанный ответ (Qwen оборвал его и не даёт писать дальше, кнопка «стоп» не помогает - проверено 15.11).
       // Начать новый чат, вводная прогреется заново, сообщения повторятся уже там.

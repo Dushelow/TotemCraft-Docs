@@ -468,14 +468,22 @@ class QwenBridge {
   modelNow() { return this.wc.executeJavaScript(`(document.querySelector('[aria-label="Select Model"]') || {}).textContent || ''`).then((t) => String(t).trim()).catch(() => ''); }
 
   // модели, упёршиеся в дневной лимит: до конца суток не трогаем
-  limitedToday() {
-    const day = new Date().toDateString();
-    if (!this.limited || this.limited.day !== day) this.limited = { day, set: new Set() };
-    return this.limited.set;
+  // ключ - аккаунт Qwen (id из токена входа) и день: на другом аккаунте лимиты свои
+  async limitedToday() {
+    const acc = await this.wc.executeJavaScript(`(() => { try { const t = localStorage.getItem('token') || ''; const p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return p.id || p.sub || p.email || t.slice(-16); } catch { return ''; } })()`).catch(() => '');
+    const key = acc + '|' + new Date().toDateString();
+    this.limitedBy = this.limitedBy || {};
+    if (!this.limitedBy[key]) { this.limitedBy = { [key]: new Set() }; if (this.accKey && this.accKey !== acc) this.goodModel = ''; }
+    this.accKey = acc;
+    return this.limitedBy[key];
   }
 
+  /** Лимит на всех моделях этого аккаунта: не спрашивать Qwen до restUntil. */
+  get resting() { return this.restUntil && Date.now() < this.restUntil; }
+
   async _askModels(chatId, text, opt) {
-    const lim = this.limitedToday();
+    const lim = await this.limitedToday();
+    if (this.resting) throw new Error('лимит Qwen на всех моделях, отдыхаю до ' + new Date(this.restUntil).toLocaleTimeString('ru-RU'));
     let models = (opt.models && opt.models.length) ? [...opt.models] : [this.goodModel || ''];
     models = models.filter((m) => !m || !lim.has(m));
     if (!models.length) models = [''];
@@ -498,7 +506,7 @@ class QwenBridge {
           const all = await this.menuModels();
           models.push(...all.filter((n) => !lim.has(n) && !models.includes(n)));
         }
-        if (i === models.length - 1) { this.onAttention('Qwen: лимит на всех моделях до завтра'); throw e; }
+        if (i === models.length - 1) { this.restUntil = Date.now() + 30 * 60000; this.onAttention('Qwen: лимит на всех моделях этого аккаунта - 30 мин не спрашиваю (другой аккаунт - лимиты свои)'); throw new Error('лимит Qwen на всех моделях'); }
         this.onAttention(`Qwen: ${used || 'модель'} упёрлась в лимит (до завтра не трогаю), переключаюсь на ${models[i + 1]}`);
       }
     }
