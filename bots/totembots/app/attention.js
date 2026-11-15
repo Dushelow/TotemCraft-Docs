@@ -83,7 +83,9 @@ class Attention {
       this.lastGlobalReply = Date.now();
       return { channel: 'global' };
     }
-    return { channel: 'local' };   // события, тишина, приказы из панели - говорим тем, кто рядом
+    // сам заговорил (приказ из панели, событие, тишина): рядом есть люди - ближний, никого - общий
+    if (!this.someoneNear && Date.now() - this.lastGlobalReply >= GLOBAL_REPLY_MS) { this.lastGlobalReply = Date.now(); return { channel: 'global' }; }
+    return { channel: 'local' };
   }
 }
 

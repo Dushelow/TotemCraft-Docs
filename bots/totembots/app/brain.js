@@ -47,7 +47,9 @@ function warmText(cfg, bot) {
 Присел несколько раз - зовёт тебя или показывает место: подойди. Если непонятно, что имеется в виду, переспроси коротко.
 
 Чат: я присылаю только то, что обращено к тебе: [чат личка], [чат рядом] (ближний чат), [чат общий]. Отвечаешь ты
-автоматически туда же, откуда спросили (личка - в личку, ближний - в ближний, общий - в общий). В общий чат пиши
+автоматически туда же, откуда спросили (личка - в личку, ближний - в ближний, общий - в общий). Если по смыслу
+нужен другой канал, добавь в JSON "channel": "global" | "local" | "whisper" (для whisper ещё "to": "Ник"):
+обычно все общаются в общем чате, с теми, кто рядом, - в ближнем, личное - в личку. В общий чат пиши
 особенно коротко. [вокруг] - то, что ты сам слышал рядом (сказано не тебе): ты это знаешь и можешь на это опираться,
 но отдельно отвечать на это не нужно. Новости сервера из общего чата приходят сжатыми в [память] (раздел «Новости чата»).
 
@@ -76,13 +78,15 @@ function parseAnswer(text) {
   const fence = /```(?:json)?\s*([\s\S]*?)```/i.exec(raw);
   const outside = (fence ? raw.replace(fence[0], '') : raw).trim();
   const body = fence ? fence[1] : raw;
-  let say = '', actions = [];
+  let say = '', actions = [], channel = '', to = '';
   const a = body.indexOf('{'), b = body.lastIndexOf('}');
   let parsed = false;
   if (a >= 0 && b > a) {
     try {
       const j = JSON.parse(body.slice(a, b + 1));
       actions = Array.isArray(j.actions) ? j.actions : [];
+      if (typeof j.channel === 'string') channel = j.channel;
+      if (typeof j.to === 'string') to = j.to;
       if (typeof j.say === 'string') say = j.say;
       parsed = true;
     } catch {}
@@ -91,7 +95,7 @@ function parseAnswer(text) {
   const rest = fence ? outside : (parsed ? (raw.slice(0, raw.indexOf('{')) + raw.slice(raw.lastIndexOf('}') + 1)) : raw).trim();
   if (rest) say = rest;
   say = say.split('```')[0].split('\n').map((l) => l.trim()).filter(Boolean).slice(0, 2).join(' ').slice(0, 240);
-  return { say, actions };
+  return { say, actions, channel, to };
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -212,7 +216,12 @@ class Brain {
       // ответ - туда, откуда спросили; тем, кому ответил, открывается окно разговора
       const chs = batch.map((x) => x.channel).filter(Boolean);
       const whisperFrom = [...batch].reverse().find((x) => x.channel === 'whisper');
-      const rc = this.attn.replyChannel(chs, whisperFrom && whisperFrom.from);
+      const me = this.body.bot && this.body.bot.entity;
+      this.attn.someoneNear = !!(me && Object.values(this.body.bot.players).some((p) => p.entity && p.username !== this.botCfg.name && p.entity.position.distanceTo(me.position) <= 32));
+      let rc = this.attn.replyChannel(chs, whisperFrom && whisperFrom.from);
+      // Qwen может сам выбрать канал по смыслу (поле channel в JSON)
+      if (r.channel === 'global' || r.channel === 'local') rc = { channel: r.channel };
+      else if (r.channel === 'whisper' && r.to) rc = { channel: 'whisper', to: String(r.to) };
       if (r.say) {
         this.attn.answered(batch.filter((x) => x.channel).map((x) => x.from));
         await this.typeAndSay(r.say, rc);
