@@ -112,6 +112,10 @@ function createWindow() {
   startProjectSync();
   voice = new Voice({ cfg: () => cfg, bridge, dir: app.getPath('userData'), toPanel: (ch, d) => win.webContents.send(ch, d),
     log: (name, t) => logTo(name, t) });
+  voice.emitPcm = (name, pcm, rate) => {
+    const l = live.get(name);
+    if (l && l.body) l.body.sendVoice(pcm, rate).then((ok) => logTo(name, ok ? 'голос отправлен в Plasmo Voice' : 'голос в Plasmo Voice: бот не на сервере')).catch((e) => logTo(name, 'голос в Plasmo Voice: ' + e.message));
+  };
   bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); };
 
   // Вход через Google открывается всплывающим окном: в том же профиле, чтобы вход сохранился.
@@ -208,7 +212,7 @@ ipcMain.handle('bot-combat', (_e, { name, combat }) => {
 ipcMain.handle('voice-save', (_e, v) => {
   const PROVIDERS = ['qwen', 'piper', 'system'];
   cfg.voice = {
-    enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local,
+    enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local, plasmo: !!v.plasmo,
     provider: PROVIDERS.includes(v.provider) ? v.provider : 'qwen',
     volume: Math.max(0, Math.min(1, +v.volume || 0)),
     piperVoice: PIPER_VOICES[v.piperVoice] ? v.piperVoice : 'ru_RU-denis-medium',

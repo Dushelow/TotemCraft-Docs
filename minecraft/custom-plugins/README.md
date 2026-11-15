@@ -11,6 +11,7 @@
 | [TotemSimpleClansAddon](TotemSimpleClansAddon) | SimpleClans | теги кланов в чате видят только клановые и админы |
 | [TotemEssentialsAddon](TotemEssentialsAddon) | EssentialsChat | ближний чат `!`, `/l`, `/g`; «Рядом никого нет»; ближнее не уходит в Discord; строка слежки |
 | [TotemMobRules](TotemMobRules) | свой (WorldGuard по желанию) | поведение мобов: временный огонь, взрывы без разрушений, правила урона (кто от кого не получает урон и где) |
+| [TotemVoiceAddon](TotemVoiceAddon) | Plasmo Voice | голос ботов TotemBots звучит в мире у бота (канал `totem:voice`, только ники из списка) |
 | [TotemWipeBorder](TotemWipeBorder) | свой | сообщения на границе центра мира (зоны вайпа) |
 | [TotemPacketEventsAddon](TotemPacketEventsAddon) | PacketEvents | принтер Litematica без кика за лишние пакеты движения |
 | [TotemAdvancedBanX](TotemAdvancedBanX) | AdvancedBanX | своя сборка 3.1.0: сообщения снова видны на 26.x |

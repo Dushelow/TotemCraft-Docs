@@ -727,6 +727,32 @@ class TotemBot extends EventEmitter {
     return done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет';
   }
 
+  /**
+   * Голос в Plasmo Voice через аддон TotemVoiceAddon на сервере: речь уходит обычными пакетами игры по каналу
+   * totem:voice - [1] начало, [2]+PCM 48 кГц моно 16 бит кусками до 30 КБ, [3] конец. Аддон проигрывает её у бота.
+   */
+  async sendVoice(pcm, rate) {
+    const b = this.bot;
+    if (!b || this.status !== 'online') return false;
+    // перевод в 48 кГц линейной интерполяцией (Qwen даёт 24 кГц, Piper - 22,05 кГц)
+    const inN = Math.floor(pcm.length / 2);
+    const outN = Math.floor(inN * 48000 / rate);
+    const out = Buffer.alloc(outN * 2);
+    for (let i = 0; i < outN; i++) {
+      const pos = i * rate / 48000, j = Math.floor(pos), f = pos - j;
+      const a = pcm.readInt16LE(Math.min(j, inN - 1) * 2), c = pcm.readInt16LE(Math.min(j + 1, inN - 1) * 2);
+      out.writeInt16LE(Math.round(a + (c - a) * f), i * 2);
+    }
+    const send = (type, data) => b._client.write('custom_payload', { channel: 'totem:voice', data: Buffer.concat([Buffer.from([type]), data || Buffer.alloc(0)]) });
+    send(1);
+    for (let off = 0; off < out.length; off += 30000) {
+      send(2, out.subarray(off, off + 30000));
+      await sleep(15);
+    }
+    send(3);
+    return true;
+  }
+
   /** remember: place (без координат - где стою), person, fact. */
   remember(a, by) {
     const m = this.memory;

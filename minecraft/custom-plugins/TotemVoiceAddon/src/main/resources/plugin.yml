@@ -1,0 +1,8 @@
+name: TotemVoiceAddon
+version: '${project.version}'
+main: net.totemcraft.voiceaddon.TotemVoiceAddon
+api-version: '1.21'
+depend: [PlasmoVoice]
+authors: [TotemCraft]
+website: https://totemcraft.net
+description: Аддон TotemCraft к Plasmo Voice - голос ботов TotemBots звучит в мире у бота

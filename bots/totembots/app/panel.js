@@ -182,7 +182,7 @@ function fillVoice(v) {
   if (!v || !v.piper) return;
   if (!voiceFilled) {
     $('vEnabled').checked = !!v.enabled; $('vProvider').value = v.provider; $('vFallback').checked = !!v.fallback;
-    $('vLocal').checked = !!v.local; $('vVolume').value = v.volume;
+    $('vLocal').checked = !!v.local; $('vPlasmo').checked = !!v.plasmo; $('vVolume').value = v.volume;
     $('vPiperVoice').innerHTML = v.piper.voices.map((n) => `<option value="${n}">${VOICE_NAMES[n] || n}</option>`).join('');
     $('vPiperVoice').value = v.piperVoice;
     voiceFilled = true;
@@ -190,7 +190,7 @@ function fillVoice(v) {
   if (!$('vStatus').dataset.busy) $('vStatus').textContent = piperText(v.piper);
 }
 const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked,
-  local: $('vLocal').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value });
+  local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value });
 $('vSave').onclick = () => act(() => T.voiceSave(voiceForm()));
 $('vInstall').onclick = () => act(async () => {
   await T.voiceSave(voiceForm());

@@ -34,7 +34,7 @@ class Voice {
   }
 
   settings() {
-    return { enabled: false, provider: 'qwen', fallback: true, local: true, volume: 0.9, piperVoice: 'ru_RU-denis-medium', ...(this.cfg().voice || {}) };
+    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', ...(this.cfg().voice || {}) };
   }
 
   // --- Piper
@@ -98,7 +98,7 @@ class Voice {
         } else if (how === 'piper') {
           this.play(await this.piper(text), botCfg.name, how);
         } else if (how === 'system') {
-          if (!s.local) throw new Error('голоса Windows звучат только в колонках, а колонки выключены');
+          if (!s.local) throw new Error('голоса Windows звучат только в колонках (в Plasmo Voice их не передать), а колонки выключены');
           this.toPanel('voice-system', { text, volume: s.volume });
           this.log(botCfg.name, `голос (Windows): ${text}`);
         }
@@ -113,7 +113,7 @@ class Voice {
     const s = this.settings();
     this.log(name, `голос (${how}): ${(pcm.length / 2 / rate).toFixed(1)} с`);
     if (s.local) this.toPanel('voice-pcm', { pcm: new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.length), rate, volume: s.volume });
-    this.emitPcm && this.emitPcm(name, pcm, rate);   // для Plasmo Voice (следующий шаг)
+    if (s.plasmo && this.emitPcm) this.emitPcm(name, pcm, rate);   // в Plasmo Voice на сервере (аддон TotemVoiceAddon)
   }
 }
 
