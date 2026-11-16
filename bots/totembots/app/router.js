@@ -33,12 +33,14 @@ class Router {
   /** Мозги по порядку из настроек; Qwen-сайт - всегда есть, ключевые - только если ключ вставлен. */
   order() {
     const c = this.cfg().brains || {};
-    const list = (c.order || ['qwen', 'deepseekweb', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'geminiweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek']).map((id) => {
+    const list = (c.order || ['deepseekweb', 'geminiweb', 'arenaweb', 'qwen', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'geminiweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek']).map((id) => {
       if (id === 'qwen') return c.qwen === false ? null : { id: 'qwen', name: 'Qwen (сайт)' };
       if (/web$/.test(id)) { const w = this.webFor ? this.webFor(id.replace(/web$/, '')) : this.webs[id]; return w ? { id, name: w.site.name, web: w } : null; }
       const p = PRESETS[id], k = (c.keys || {})[id];
       return p && k ? { id, name: p.name, url: p.url, key: k, model: (c.models || {})[id] || p.model } : null;
     }).filter(Boolean);
+    // выбран вручную (панель, «Мозг») - он первый, остальные запасные только если включено «запасные»
+    if (c.pin) { const i = list.findIndex((x) => x.id === c.pin); if (i > 0) list.unshift(...list.splice(i, 1)); if (i >= 0 && c.pinOnly) list.splice(1); }
     return list.length ? list : [{ id: 'qwen', name: 'Qwen (сайт)' }];
   }
 

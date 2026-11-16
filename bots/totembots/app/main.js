@@ -59,6 +59,12 @@ let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bot
   voice: { enabled: true, provider: 'qwen', fallback: true, local: true, plasmo: true, volume: 0.8 } };
 function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
+  const b = cfg.brains = cfg.brains || {};
+  if (!b.freeFirst) {
+    const old = b.order || ['qwen', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek'];
+    b.order = ['deepseekweb', 'geminiweb', 'arenaweb', ...old.filter((x) => !['deepseekweb', 'geminiweb', 'arenaweb'].includes(x))];
+    b.freeFirst = true;
+  }
 }
 function saveCfg() {
   // история чатов каждого бота: новые сверху, до 30
@@ -121,6 +127,9 @@ function stateForPanel() {
     view,
     brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'geminiweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
       models: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, ((cfg.brains || {}).models || {})[k] || p.model])), presets: PRESETS,
+      pin: (cfg.brains || {}).pin || '', pinOnly: !!(cfg.brains || {}).pinOnly, pinModel: pinModel((cfg.brains || {}).pin),
+      choices: [{ id: 'qwen', name: 'Qwen' }, ...Object.entries(SITES).map(([k, x]) => ({ id: k + 'web', name: x.name.replace(/ \(сайт\)$/, '') })),
+        ...Object.entries(PRESETS).filter(([k]) => ((cfg.brains || {}).keys || {})[k]).map(([k, p]) => ({ id: k, name: p.name + ' (ключ)' }))],
       now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
@@ -169,7 +178,7 @@ function showView(mode, site) {
 // старые названия вкладок: bot - окно бота Qwen, mine - моё окно Qwen, имя сайта - окно бота на сайте
 function showTab(name) { return name === 'mine' ? showView('mine', 'qwen') : showView('work', name === 'bot' ? 'qwen' : name); }
 function openMine(url) { showView('mine', 'qwen'); myViews.qwen.webContents.loadURL(url); }
-function brainOrder() { return (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb']; }
+function brainOrder() { return (cfg.brains && cfg.brains.order) || ['deepseekweb', 'geminiweb', 'arenaweb', 'qwen']; }
 // вошёл ли владелец на сайтах (по окнам бота, которые уже открыты)
 setInterval(async () => {
   try { if (qwen) siteLogged.qwen = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")'); } catch {}
@@ -183,6 +192,7 @@ function webView(site) {
   ses.setUserAgent(CHROME_UA);
   const v = new WebContentsView({ webPreferences: { session: ses, backgroundThrottling: false } });
   win.contentView.addChildView(v, 0);
+  v.webContents.setAudioMuted(true);
   v.webContents.loadURL(SITES[site].home);
   v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
   webViews[site] = v;
@@ -209,6 +219,7 @@ function createWindow() {
   qwen = new WebContentsView({ webPreferences: { session: qs, backgroundThrottling: false } });
   win.contentView.addChildView(qwen);
   qwen.webContents.loadURL(QWEN_URL);
+  qwen.webContents.setAudioMuted(true);   // сайт сам не звучит: голос идёт только туда, где выбрано в «Голосе»
   bridge = new QwenBridge(qwen.webContents);
   bridge.birthYear = () => cfg.birthYear || '';
   // мозги по очереди: Qwen-сайт и нейросети по ключу (router.js)
@@ -346,6 +357,19 @@ ipcMain.handle('qwen-state', async () => {
   }
 });
 ipcMain.handle('state', () => stateForPanel());
+// Ручной выбор мозга: этот - первым (или только он), модель - для Qwen и для мозгов по ключу; у сайтов модель
+// выбирается на самом сайте («Мои окна»: выбранная там модель остаётся и для окна бота - вход общий).
+function pinModel(id) { return id === 'qwen' ? ((cfg.qwen || {}).models || [])[0] || '' : PRESETS[id] ? ((cfg.brains || {}).models || {})[id] || PRESETS[id].model : ''; }
+ipcMain.handle('brain-pin', (_e, { id, only, model }) => {
+  const b = cfg.brains = cfg.brains || {};
+  b.pin = id || ''; b.pinOnly = !!only;
+  if (id && router) router.rest[id] = 0;   // выбрал сам - не ждать, пока он «отдохнёт»
+  if (model !== undefined && id === 'qwen') { const m = String(model).trim(); cfg.qwen = cfg.qwen || {}; cfg.qwen.models = m ? [m, ...(cfg.qwen.models || []).filter((x) => x !== m)] : (cfg.qwen.models || []); if (bridge) { bridge.limitedBy = {}; bridge.goodModel = ''; } }
+  if (model !== undefined && PRESETS[id] && String(model).trim()) { b.models = b.models || {}; b.models[id] = String(model).trim(); }
+  saveCfg();
+  logAll(id ? `мозг выбран вручную: ${id}${only ? ' (только он)' : ' (остальные - запасные)'}` : 'мозг: автоматически по порядку');
+  return true;
+});
 // мозги: ключи (только на этом компьютере, local/config.json), модели, порядок
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });
 ipcMain.handle('brains-save', (_e, v) => {

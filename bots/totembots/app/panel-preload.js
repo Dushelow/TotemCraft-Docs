@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('totem', {
   viewShow: call('view-show'),
   viewNav: call('view-nav'),
   siteLogin: call('site-login'),
+  brainPin: call('brain-pin'),
   qwenTabReload: call('qwen-tab-reload'),
   qwenState: call('qwen-state'),
   qwenLoginChrome: call('qwen-login-chrome'),

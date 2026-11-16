@@ -78,6 +78,24 @@ function paintTop() {
 }
 $('pauseBtn').onclick = () => act(() => T.pause(!pausedNow), $('pauseBtn'));
 
+// ---------- ручной выбор мозга
+let pinFilled = '';
+function paintPin() {
+  const B = st.brains; if (!B || !B.choices) return;
+  const sig = JSON.stringify([B.choices, B.pin, B.pinOnly, B.pinModel]);
+  if (pinFilled === sig || document.activeElement === $('pinModel') || document.activeElement === $('pinSel')) return;
+  pinFilled = sig;
+  $('pinSel').innerHTML = `<option value="">Авто (по порядку)</option>` + B.choices.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('pinSel').value = B.pin || '';
+  $('pinOnly').checked = !!B.pinOnly;
+  $('pinModel').value = B.pinModel || '';
+  paintPinModel();
+}
+function paintPinModel() { const id = $('pinSel').value; $('pinModel').style.display = id === 'qwen' || (id && !/web$/.test(id)) ? '' : 'none'; $('pinOnly').parentElement.style.display = id ? '' : 'none'; }
+$('pinSel').onchange = paintPinModel;
+$('pinSave').onclick = () => act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').style.display === 'none' ? undefined : $('pinModel').value }), $('pinSave'),
+  $('pinSel').value ? 'мозг выбран: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто');
+
 // ---------- «Что сейчас происходит»
 function step(ic, title, hint) { return `<div class="step"><div class="ic ${ic}"></div><div><b>${esc(title)}</b>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div></div>`; }
 function renderNow() {
@@ -370,7 +388,7 @@ setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); },
 // ---------- общий цикл
 async function refresh() {
   try { st = await T.state(); } catch { return; }
-  paintTop(); paintStrip(); renderNow(); renderBrains(); fillVoice(st.voice);
+  paintTop(); paintPin(); paintStrip(); renderNow(); renderBrains(); fillVoice(st.voice);
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');

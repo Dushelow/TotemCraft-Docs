@@ -132,6 +132,13 @@
       <span class="chip" id="srvChip" title="Сервер, на который заходят боты. Поменять - «Настройки»"></span>
       <button id="pauseBtn" class="sec small" title="Пауза: боты стоят на сервере, но не обращаются к нейросетям и сами ничего не решают">Пауза</button>
     </div>
+    <div class="row" id="pinRow" style="margin-top:10px" title="Каким мозгом думает бот. Авто - по порядку из раздела «Мозги», при лимите или сбое сам переходит к следующему">
+      <span class="muted">Мозг</span>
+      <select id="pinSel" style="width:auto;flex:1;min-width:0"></select>
+      <input id="pinModel" placeholder="модель" style="width:120px" title="Для Qwen и мозгов по ключу. У сайтов модель выбирается на самом сайте: «Мои окна»">
+      <label class="chk" style="margin:0" title="Только выбранный: без перехода на запасные"><input type="checkbox" id="pinOnly">только он</label>
+      <button id="pinSave" class="small">OK</button>
+    </div>
     <nav id="nav">
       <button data-sec="bots" class="on">Боты</button>
       <button data-sec="brains">Мозги<span class="badge" id="brainsBadge" style="display:none"></span></button>

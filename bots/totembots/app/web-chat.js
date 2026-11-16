@@ -35,6 +35,7 @@ Object.assign(SITES, {
   grok: GEN('Grok (сайт)', 'https://grok.com/', 'textarea, div[contenteditable=true]', 'button[aria-label=Submit], button[type=submit]', '.response-content-markdown, .message-bubble .markdown'),
   chatgpt: GEN('ChatGPT (сайт)', 'https://chatgpt.com/', '#prompt-textarea, textarea[name=prompt], div[contenteditable=true]', '#composer-submit-button, button[data-testid=send-button], button[aria-label="Send message"]', '[data-message-author-role=assistant] .markdown, [data-message-author-role=assistant]'),
   gemini: GEN('Gemini (сайт)', 'https://gemini.google.com/app', 'rich-textarea .ql-editor, div[contenteditable=true]', 'button.send-button, button[aria-label*=Send i], button[aria-label*=Отправ]', 'model-response .markdown, message-content .markdown'),
+  arena: GEN('LMArena (сайт)', 'https://lmarena.ai/?mode=direct', 'textarea[name=message], textarea', 'button[type=submit], button[aria-label*=Send i]', '.prose, [class*=message] [class*=markdown]'),
   copilot: GEN('Copilot (сайт)', 'https://copilot.microsoft.com/', 'textarea#userInput, textarea', 'button[aria-label*=Submit i], button[type=submit]', '[data-content=ai-message], [class*=ai-message]'),
 });
 
