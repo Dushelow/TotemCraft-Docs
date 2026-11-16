@@ -451,7 +451,8 @@ class Skills {
     const inName = String(a.item || '').toLowerCase().replace(/^minecraft:/, '');
     const input = b.inventory.items().find((i) => i.name === inName);
     if (!input) throw new Error(`нет в инвентаре: ${inName}`);
-    const count = Math.min(input.count, Math.max(1, +a.count || input.count));
+    // партия до 8 штук: 64 сразу - это 11 минут стоять у печи (16.11 стояла у чужой коптильни и смотрела в стену)
+    const count = Math.min(input.count, 8, Math.max(1, +a.count || 8));
     const FUEL = ['coal', 'charcoal', 'coal_block', 'lava_bucket', 'blaze_rod', 'oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'oak_planks', 'spruce_planks', 'birch_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks', 'stick'];
     const fuel = FUEL.map((n) => b.inventory.items().find((i) => i.name === n && i.name !== inName)).find(Boolean);
     if (!fuel) throw new Error('нет топлива (уголь, доски, брёвна)');
@@ -486,7 +487,8 @@ class Skills {
       const perFuel = /coal|charcoal/.test(fuel.name) ? 8 : /log|planks/.test(fuel.name) ? 1.5 : /block/.test(fuel.name) ? 80 : 0.5;
       await f.putFuel(fuel.type, null, Math.min(fuel.count, Math.ceil(count / perFuel)));
       await f.putInput(input.type, null, count);
-      const until = Date.now() + count * 10500 + 3000;
+      const fast = /smoker|blast_furnace/.test(fb.name);   // коптильня и плавильня - вдвое быстрее
+      const until = Date.now() + count * (fast ? 5300 : 10500) + 3000;
       let out = 0;
       while (Date.now() < until) {
         tb.check(tok);
