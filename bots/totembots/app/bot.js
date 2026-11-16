@@ -522,6 +522,10 @@ class TotemBot extends EventEmitter {
     for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) for (let dy = -1; dy <= 1; dy++) {
       const v = new Vec3(Math.floor(me.x) + dx, lvl + dy, Math.floor(me.z) + dz);
       if (!ok(v) || !free(v.offset(0, 1, 0)) || !free(v.offset(0, 2, 0))) continue;
+      if ((this.badShore || []).some((x) => Date.now() - x.at < 10 * 60000 && x.v.distanceTo(v) < 1.5)) continue;   // сюда уже не вылез
+      // проход к уступу: в клетке между ботом и уступом над водой есть место для головы (не ледяной потолок)
+      const mx = Math.round((v.x + 0.5 + me.x) / 2 - 0.5), mz = Math.round((v.z + 0.5 + me.z) / 2 - 0.5);
+      if (!free(new Vec3(mx, lvl + 2, mz)) && !(b.blockAt(new Vec3(mx, lvl + 2, mz)) || {}).name?.includes('water')) continue;
       const d = Math.hypot(v.x + 0.5 - me.x, v.z + 0.5 - me.z) + (goal ? Math.hypot(v.x - goal.x, v.z - goal.z) * 0.3 : 0);
       if (d < bs) { bs = d; best = v.offset(0, 1, 0); }
     }
@@ -1115,7 +1119,10 @@ class TotemBot extends EventEmitter {
         if (feet && /water/.test(feet.name) && attempt < 5 && Date.now() < until && !/goal was changed/i.test(e.message)) {
           const g = goal.x !== undefined ? goal : null;
           const ledge = this.ledgeNear(5, g);
-          if (ledge && await this.climbOut(ledge)) { this.log('вылез из воды, продолжаю путь'); continue; }
+          if (ledge) {
+            if (await this.climbOut(ledge)) { this.log('вылез из воды, продолжаю путь'); continue; }
+            (this.badShore = this.badShore || []).push({ v: ledge.offset(0, -1, 0), at: Date.now() });   // в следующий раз - другой уступ
+          }
         }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }

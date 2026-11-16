@@ -33,9 +33,9 @@ class Router {
   /** Мозги по порядку из настроек; Qwen-сайт - всегда есть, ключевые - только если ключ вставлен. */
   order() {
     const c = this.cfg().brains || {};
-    const list = (c.order || ['qwen', 'deepseekweb', 'gemini', 'groq', 'openrouter', 'deepseek']).map((id) => {
+    const list = (c.order || ['qwen', 'deepseekweb', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'geminiweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek']).map((id) => {
       if (id === 'qwen') return c.qwen === false ? null : { id: 'qwen', name: 'Qwen (сайт)' };
-      if (this.webs[id]) return { id, name: this.webs[id].site.name, web: this.webs[id] };
+      if (/web$/.test(id)) { const w = this.webFor ? this.webFor(id.replace(/web$/, '')) : this.webs[id]; return w ? { id, name: w.site.name, web: w } : null; }
       const p = PRESETS[id], k = (c.keys || {})[id];
       return p && k ? { id, name: p.name, url: p.url, key: k, model: (c.models || {})[id] || p.model } : null;
     }).filter(Boolean);

@@ -141,7 +141,27 @@ function renderNow(st) {
 }
 $('pauseBtn').onclick = async () => { await T.pause(!pausedNow); refresh(); };
 let brainsFilled = false;
+let sitesFilled = '';
+function renderSites(st) {
+  if (!st.sites) return;
+  const sig = JSON.stringify(st.sites);
+  if (sig === sitesFilled) return;
+  sitesFilled = sig;
+  $('siteList').innerHTML = Object.entries(st.sites).map(([k, s]) => `<div class="row" style="margin-top:4px"><span class="grow">${esc(s.name)} ${s.logged ? '<span style="color:var(--ok)">вошёл</span>' : '<span class="muted">не вошёл</span>'}</span>
+    <button class="sec" data-site-open="${k}">Открыть</button><button class="sec" data-site-login="${k}">Войти через Chrome</button><button class="sec" data-site-mark="${k}" title="уже вошли во вкладке сайта">Я вошёл</button><button class="sec" data-site-test="${k}">Проверить</button></div>`).join('');
+  const sel = $('siteTab');
+  if (sel.options.length <= 1) for (const [k, s] of Object.entries(st.sites)) if (k !== 'deepseek') { const o = document.createElement('option'); o.value = k; o.textContent = s.name; sel.appendChild(o); }
+}
+document.addEventListener('click', (e) => {
+  const t = e.target;
+  if (t.dataset.siteOpen) T.qwenTab(t.dataset.siteOpen).then(paintTabs);
+  if (t.dataset.siteLogin) act(() => T.siteLoginChrome(t.dataset.siteLogin));
+  if (t.dataset.siteMark) act(() => T.siteMarkLogged(t.dataset.siteMark));
+  if (t.dataset.siteTest) { t.textContent = '...'; T.siteTest(t.dataset.siteTest).then((r) => { t.textContent = 'Проверить'; $('brainsNow').textContent = r; }); }
+});
+$('siteTab').onchange = () => { const v = $('siteTab').value; if (v) T.qwenTab(v).then(paintTabs); $('siteTab').value = ''; };
 function renderBrains(st) {
+  renderSites(st);
   const B = st.brains; if (!B) return;
   $('brainsNow').textContent = (B.now ? 'сейчас думает: ' + B.now + '. ' : '') + 'включены: ' + (B.active.join(', ') || '-');
   if (brainsFilled) return;
@@ -315,7 +335,7 @@ let curTab = 'bot';
 function paintTabs(t, busy) {
   curTab = t || curTab;
   document.querySelectorAll('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === curTab));
-  $('tabHint').textContent = curTab === 'deepseek' ? 'DeepSeek - запасной мозг без ключа: войдите здесь один раз (бот спросит его, если у Qwen лимит или капча)'
+  $('tabHint').textContent = curTab !== 'bot' && curTab !== 'mine' ? 'сайт-мозг без ключа: войдите здесь один раз (бот спросит его, если у Qwen лимит или капча)'
     : curTab === 'mine' ? 'ваше окно: настройки Qwen, голос, свои чаты. Боты работают в соседней вкладке'
     : (busy ? 'бот сейчас думает в этом окне - лучше не трогать' : 'окно бота: тут Qwen отвечает за ботов');
 }

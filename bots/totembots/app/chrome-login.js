@@ -51,6 +51,12 @@ const SITES = {
     ready: '(!/sign_in|login/.test(location.pathname) && localStorage.getItem("userToken") && localStorage.getItem("userToken").length > 20) ? localStorage.getItem("userToken") : ""' },
 };
 
+// остальные сайты: вход = на странице есть поле ввода чата; берём куки и весь localStorage
+for (const [id, s] of Object.entries(require('./web-chat').SITES)) {
+  if (SITES[id]) continue;
+  SITES[id] = { url: s.home, name: s.name, all: true, ready: `(document.querySelector(${JSON.stringify(s.input)}) && !/sign_in|login|auth/.test(location.pathname)) ? JSON.stringify(Object.assign({}, localStorage)) : ''` };
+}
+
 async function sitePage(url) {
   const list = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
   return list.find((t) => t.type === 'page' && t.url.startsWith(url));
@@ -80,7 +86,7 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
         const r = await c.send('Runtime.evaluate', { expression: S.ready, returnByValue: true });
         const token = r.result && r.result.value;
         if (!token) continue;
-        const { cookies } = await c.send('Network.getCookies', { urls: [S.url] });
+        const { cookies } = await c.send('Network.getCookies', S.all ? {} : { urls: [S.url] });
         onStatus('Вход получен, закрываю Chrome');
         return { cookies, token };
       } finally {
@@ -93,4 +99,4 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   }
 }
 
-module.exports = { loginViaChrome, findChrome };
+module.exports = { loginViaChrome, findChrome, SITES };

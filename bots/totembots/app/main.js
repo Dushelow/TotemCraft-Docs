@@ -106,7 +106,8 @@ function startBot(name) {
 function stateForPanel() {
   return {
     host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused,
-    brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
+    sites: Object.fromEntries(Object.entries(SITES).map(([k, s]) => [k, { name: s.name, logged: k === 'deepseek' || !!(cfg.webLogged || {})[k] }])),
+    brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'geminiweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
       models: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, ((cfg.brains || {}).models || {})[k] || p.model])), presets: PRESETS,
       now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
@@ -126,7 +127,7 @@ function layout() {
   const r = { x: PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
   qwen.setBounds(r);
   if (mine) mine.setBounds(r);
-  if (dsView) dsView.setBounds(r);
+  for (const v of Object.values(webViews)) v.setBounds(r);
 }
 
 // Своё окно Qwen владельца: тот же вход, отдельная страница. Бот в нём ничего не делает, поэтому там можно менять
@@ -139,12 +140,32 @@ function showTab(name) {
     mine.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: qs } } }));
     mine.webContents.loadURL(QWEN_URL);
   }
-  tab = name === 'mine' ? 'mine' : name === 'deepseek' ? 'deepseek' : 'bot';
-  win.contentView.addChildView(tab === 'mine' ? mine : tab === 'deepseek' ? dsView : qwen);   // уже добавленное окно переносится наверх
+  tab = name === 'mine' ? 'mine' : SITES[name] ? name : 'bot';
+  win.contentView.addChildView(tab === 'mine' ? mine : SITES[tab] ? webView(tab) : qwen);   // уже добавленное окно переносится наверх
   layout();
   return tab;
 }
 function openMine(url) { showTab('mine'); mine.webContents.loadURL(url); }
+
+const webViews = {}, webChats = {};
+function webView(site) {
+  if (webViews[site]) return webViews[site];
+  const ses = session.fromPartition('persist:' + site);
+  ses.setUserAgent(CHROME_UA);
+  const v = new WebContentsView({ webPreferences: { session: ses, backgroundThrottling: false } });
+  win.contentView.addChildView(v, 0);
+  v.webContents.loadURL(SITES[site].home);
+  v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
+  webViews[site] = v;
+  layout();
+  return v;
+}
+function webChat(site) {
+  if (webChats[site]) return webChats[site];
+  const w = new WebChat(webView(site).webContents, site, (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
+  w.inUse = () => tab === site;
+  return (webChats[site] = w);
+}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -162,17 +183,12 @@ function createWindow() {
   bridge = new QwenBridge(qwen.webContents);
   bridge.birthYear = () => cfg.birthYear || '';
   // мозги по очереди: Qwen-сайт и нейросети по ключу (router.js)
-  // DeepSeek через сайт: своё окно со своим входом (под окном бота; показать - вкладка «DeepSeek»)
-  const dss = session.fromPartition('persist:deepseek');
-  dss.setUserAgent(CHROME_UA);
-  dsView = new WebContentsView({ webPreferences: { session: dss, backgroundThrottling: false } });
-  win.contentView.addChildView(dsView, 0);
-  dsView.webContents.loadURL(SITES.deepseek.home);
-  dsView.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: dss } } }));
-  const dsChat = new WebChat(dsView.webContents, 'deepseek', (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
-  dsChat.inUse = () => tab === 'deepseek';
+  // DeepSeek и другие сайты: у каждого своё окно со своим входом (под окном бота; показать - вкладка сайта).
+  // Окно создаётся, когда нужно: вход, вкладка или сайт уже входил (cfg.webLogged) - чтобы не грузить все сайты сразу.
+  dsView = webView('deepseek');
+  const dsChat = webChat('deepseek');
   ipcMain.handle('deepseek-test', async () => { try { const r = await dsChat.ask('', 'Это проверка связи. Ответь одним словом: работает'); return 'ответ: ' + r.answer + ' (чат ' + r.chatId + ')'; } catch (e) { return 'ошибка: ' + e.message; } });
-  router = new Router({ qwen: bridge, cfg: () => cfg, webs: { deepseekweb: dsChat }, save: () => saveCfg(), log: (t) => { for (const name of live.keys()) logTo(name, t); } });
+  router = new Router({ qwen: bridge, cfg: () => cfg, webs: {}, save: () => saveCfg(), log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
     log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
   bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled !== false ? project.id : '');
@@ -190,6 +206,7 @@ function createWindow() {
   };
   bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); };
   router.onAttention = bridge.onAttention;
+  router.webFor = (site) => (site === 'deepseek' || (cfg.webLogged || {})[site]) && SITES[site] ? webChat(site) : null;
 
   // Вход через Google открывается всплывающим окном: в том же профиле, чтобы вход сохранился.
   qwen.webContents.setWindowOpenHandler(() => ({
@@ -300,7 +317,7 @@ ipcMain.handle('brains-save', (_e, v) => {
     if (key === '-') delete b.keys[k]; else if (key) b.keys[k] = key;   // пусто - оставить прежний, «-» - удалить
     const m = String((v.models || {})[k] || '').trim(); if (m) b.models[k] = m;
   }
-  const ord = String(v.order || '').split(/[\s,>]+/).map((x) => x.trim().toLowerCase()).filter((x) => x === 'qwen' || x === 'deepseekweb' || PRESETS[x]);
+  const ord = String(v.order || '').split(/[\s,>]+/).map((x) => x.trim().toLowerCase()).filter((x) => x === 'qwen' || (/web$/.test(x) && SITES[x.replace(/web$/, '')]) || PRESETS[x]);
   if (ord.length) b.order = [...new Set(ord)];
   saveCfg();
   return true;
@@ -474,6 +491,28 @@ ipcMain.handle('bot-chat', (_e, name) => {
   if (b && b.chatId && !bridge.busy && !qwen.webContents.getURL().includes(b.chatId)) qwen.webContents.loadURL(`${QWEN_URL}c/${b.chatId}`);
   return true;
 });
+
+// Вход в любой сайт через настоящий Chrome: куки и localStorage - в окно сайта; сайт отмечается «вошёл»
+ipcMain.handle('site-login-chrome', async (_e, site) => {
+  const status = (t) => win.webContents.send('qwen-login-status', t);
+  if (!SITES[site]) return { ok: false };
+  try {
+    const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login-' + site), status, site);
+    const v = webView(site), ses = v.webContents.session;
+    for (const c of cookies) {
+      try { await ses.cookies.set({ url: 'https://' + c.domain.replace(/^\./, '') + c.path, name: c.name, value: c.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: SAME_SITE[c.sameSite] || 'unspecified', ...(c.expires > 0 ? { expirationDate: c.expires } : {}) }); } catch {}
+    }
+    await v.webContents.loadURL(SITES[site].home);
+    try { const ls = JSON.parse(token); for (const [k, val] of Object.entries(ls)) await v.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(val)})`); } catch {}
+    await v.webContents.loadURL(SITES[site].home);
+    cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg();
+    status(`Готово: ${SITES[site].name} вошёл в программе`); win.focus();
+    return { ok: true };
+  } catch (e) { status(`${SITES[site].name}: не вышло - ${e.message}`); return { ok: false, error: e.message }; }
+});
+// вошли прямо во вкладке сайта - отметить вручную
+ipcMain.handle('site-mark-logged', (_e, site) => { if (SITES[site]) { cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg(); } return true; });
+ipcMain.handle('site-test', async (_e, site) => { try { const r = await webChat(site).ask('', 'Это проверка связи. Ответь одним словом: работает'); return 'ответ: ' + String(r.answer).slice(0, 80); } catch (e) { return 'ошибка: ' + e.message; } });
 
 // Вход в DeepSeek через настоящий Chrome (встроенное окно Google не пускает): куки и userToken - в окно DeepSeek
 ipcMain.handle('deepseek-login-chrome', async () => {
