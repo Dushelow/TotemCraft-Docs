@@ -1661,6 +1661,10 @@ class TotemBot extends EventEmitter {
     // одиночные мгновенные: идти за кем-то, стоп
     if (plain.length === 1 && plain[0].act === 'follow') return this.follow(plain[0].who);
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
+    // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
+    // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
+    const LIGHT = new Set(['look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
+    const resume = this.mode === 'follow' && plain.every((a) => LIGHT.has(a.act)) ? this.followName : '';
     this.cancel();
     const tok = this.token;
     this.mode = 'task';
@@ -1752,7 +1756,7 @@ class TotemBot extends EventEmitter {
       if (e instanceof Cancelled) return done.concat('задание отменено').join('; ');
       return done.concat('не получилось: ' + e.message).join('; ');
     } finally {
-      if (tok === this.token) { this.mode = 'idle'; this.task = ''; try { this.bot.pathfinder.setGoal(null); } catch {} }
+      if (tok === this.token) { this.mode = 'idle'; this.task = ''; try { this.bot.pathfinder.setGoal(null); } catch {} if (resume) this.follow(resume); }
     }
   }
 }

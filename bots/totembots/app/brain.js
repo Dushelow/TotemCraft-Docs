@@ -481,7 +481,9 @@ class Brain {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
         const FREE = new Set(['mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
-        if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
+        // идёт за кем-то и сам решил чем-то заняться - не уходить: своё только то, что делается на ходу или рядом
+        // (16.11: шла за хозяином и сама ушла копать камень)
+        if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => ['look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'toss', 'wait', 'findSpot'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
         const notFromMaster = !master;
         // чужие просьбы не двигают бота дальше «подойти» и не перезаписывают места
@@ -489,6 +491,10 @@ class Brain {
           ? r.actions.filter((a) => a && a.act && FREE.has(a.act) && (self || ['remember', 'stop', 'come', 'follow'].includes(a.act))
             && !(a.act === 'remember' && (a.kind || 'place') === 'place' && !self))
           : r.actions;
+        // идёт за хозяином - чужие слова не останавливают и не уводят к другому
+        if (notFromMaster && !self && this.body.mode === 'follow' && this.isMaster(this.body.followName)) {
+          for (let i = allowed.length - 1; i >= 0; i--) if (['stop', 'come', 'follow'].includes(allowed[i].act)) allowed.splice(i, 1);
+        }
         if (NEED_MASTER.length && notFromMaster) this.log('отклонено (нужен хозяин): ' + NEED_MASTER.map((a) => a.act).join(', '));
         if (allowed.length) this.runActions(allowed, master ? master.from : self ? 'сам' : '');
       }
