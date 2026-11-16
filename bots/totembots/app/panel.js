@@ -156,6 +156,8 @@ function botCard(b) {
     <div class="muted" style="margin-top:4px">Тихий - только личка и имя. Обычный - ещё ближний чат и хозяин рядом. Общительный - сам заговаривает с теми, кто рядом.</div>
     <label>Прозвища, на которые откликается (через запятую)</label>
     <div class="row"><input class="grow" data-f="aliases" value="${esc(b.aliases || '')}" placeholder="алексик, сашка"><button data-a="aliases" class="sec">Сохранить</button></div>
+    <label>Как близко идти за вами: <b data-f="fdv">${b.followDist || 3}</b> бл. (в игре можно сказать «ближе» или «подальше»)</label>
+    <input type="range" data-f="fd" min="1.5" max="10" step="0.5" value="${b.followDist || 3}">
     <label>Мобы</label>
     <div class="seg">${[['defend', 'Защищать себя и меня'], ['flee', 'Убегать ко мне'], ['off', 'Не трогать']].map(([v, t]) => `<button data-a="combat" data-v="${v}" class="${b.combat === v ? 'on' : ''}">${t}</button>`).join('')}</div>`;
   if (tab === 'chats') body = `
@@ -246,6 +248,8 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'savePersona') act(async () => { await T.botPersona({ name, persona: f('persona').value }); f('persona').blur(); re(); }, t, 'характер сохранён');
   if (a === 'remove' && confirm(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
 });
+$('bots').addEventListener('input', (e) => { if (e.target.dataset.f === 'fd') { const c = e.target.closest('.bot'); c.querySelector('[data-f="fdv"]').textContent = e.target.value; } });
+$('bots').addEventListener('change', (e) => { if (e.target.dataset.f === 'fd') { const name = e.target.closest('.bot').dataset.name; e.target.blur(); act(async () => { await T.botFollowDist({ name, dist: +e.target.value }); lastHtml = ''; }); } });
 $('bots').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.dataset.f === 'order') { e.preventDefault(); e.target.closest('.bot').querySelector('[data-a="order"]').click(); }
 });

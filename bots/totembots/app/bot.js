@@ -658,7 +658,7 @@ class TotemBot extends EventEmitter {
         if (!this.lostReported) { this.lostReported = true; this.event(`ты потерял из виду ${this.followName} (далеко или в другом измерении)`, true); }
       } else if (this.lostReported) {
         this.lostReported = false;
-        b.pathfinder.setGoal(new goals.GoalFollow(owner, rnd(2.2, 3.5)), true);
+        b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true);
       }
     }
   }
@@ -1325,8 +1325,16 @@ class TotemBot extends EventEmitter {
     this.mode = 'follow';
     this.followName = name;
     this.lostReported = false;
-    this.bot.pathfinder.setGoal(new goals.GoalFollow(e, rnd(2.2, 3.5)), true);
+    this.bot.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true);
     return `иду за ${name}`;
+  }
+
+  /** Как близко идти следом (блоков): настройка бота «Поведение», меняется и словами («ближе», «подальше»). */
+  followDist() { const d = +this.opts.followDist || 3; return Math.max(1.2, d + rnd(-0.3, 0.3)); }
+  setFollowDist(d) {
+    this.opts.followDist = Math.max(1.5, Math.min(12, +d || 3));
+    if (this.mode === 'follow' && this.followName) { const e = this.player(this.followName); if (e) this.bot.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true); }
+    return this.opts.followDist;
   }
 
   matchItems(list, want) {
@@ -1339,7 +1347,7 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     const block = b.blockAt(new Vec3(x, y, z));
     if (!block) throw new Error(`блок ${x} ${y} ${z} не загружен (далеко)`);
-    await this.goto(new goals.GoalGetToBlock(x, y, z), tok);
+    await this.goto(new goals.GoalLookAtBlock(block.position, b.world, { reach: 4 }), tok);   // видеть сундук, а не открывать сквозь стену (16.11)
     this.busyLook = true;
     try {
       await b.lookAt(block.position.offset(0.5, 0.5, 0.5));
@@ -1663,7 +1671,7 @@ class TotemBot extends EventEmitter {
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
     // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
     // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
-    const LIGHT = new Set(['look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
+    const LIGHT = new Set(['followDist', 'look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
     const resume = this.mode === 'follow' && plain.every((a) => LIGHT.has(a.act)) ? this.followName : '';
     this.cancel();
     const tok = this.token;
@@ -1727,6 +1735,7 @@ class TotemBot extends EventEmitter {
           case 'cmd': r = await this.serverCommand(a); break;
           case 'attack': r = await this.attackMob(a, tok); break;
           case 'sleep': r = await this.goSleep(tok); break;
+          case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
           case 'mount': r = await this.mount(a, tok); break;
           case 'dismount': r = await this.dismount(); break;
           case 'drive': r = await this.drive(a, tok); break;

@@ -122,6 +122,8 @@ function quickOrder(text, from) {
   if (/(садись|сядь|залезай|залазь|прыгай) (ко мне )?(в лодку|в мою лодку|ко мне)|^в лодку$/.test(t)) return [{ act: 'mount', who: from }];
   if (/(садись|сядь|залезай) на (лошадь|коня|лошадку)/.test(t)) return [{ act: 'mount', what: 'horse' }];
   if (/^(слезай|вылезай|выходи из лодки|слезь|вылезь)$/.test(t)) return [{ act: 'dismount' }];
+  if (/^(ближе|иди ближе|держись ближе|держись рядом|рядом)$/.test(t)) return [{ act: 'followDist', d: 'closer' }];
+  if (/^(подальше|дальше|отойди|не так близко|держись подальше)$/.test(t)) return [{ act: 'followDist', d: 'farther' }];
   if (/^(выкинь|выброси|скинь) (вс[её]|всё говно|все вещи|вообще вс[её])/.test(t)) return [{ act: 'discardAll' }];
   return null;
 }

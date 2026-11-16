@@ -94,7 +94,8 @@ function startBot(name) {
   let l = live.get(name);
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
-  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend' });
+  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3 });
+  body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
   body.on('log', (t) => logTo(name, t));
   body.on('chat', (t) => logTo(name, '[чат] ' + t));
   body.on('end', () => logTo(name, 'бот выключен'));
@@ -137,7 +138,7 @@ function stateForPanel() {
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
       return { name: b.name, chatMode: b.chatMode || 'normal', aliases: (b.aliases || []).join(', '),
-        attention: l && l.brain ? { ...l.brain.attn.count } : null, brain: l && l.brain && l.body && l.body.bot ? l.brain.status() : null, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', state: l && l.body ? l.body.state() : { status: 'off' },
+        attention: l && l.brain ? { ...l.brain.attn.count } : null, brain: l && l.brain && l.body && l.body.bot ? l.brain.status() : null, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', followDist: b.followDist || 3, state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
   };
@@ -421,6 +422,12 @@ ipcMain.handle('bot-persona', (_e, { name, persona }) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (b) { b.persona = String(persona || '').trim() || DEFAULT_PERSONA; b.chatId = ''; saveCfg(); }   // новый характер - новый чат
   return true;
+});
+ipcMain.handle('bot-follow-dist', (_e, { name, dist }) => {
+  const b = cfg.bots.find((x) => x.name === name); if (!b) return false;
+  const l = live.get(name);
+  b.followDist = l && l.body ? l.body.setFollowDist(dist) : Math.max(1.5, Math.min(12, +dist || 3));
+  saveCfg(); return b.followDist;
 });
 ipcMain.handle('bot-combat', (_e, { name, combat }) => {
   const b = cfg.bots.find((x) => x.name === name);

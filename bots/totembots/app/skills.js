@@ -146,7 +146,7 @@ class Skills {
         const list = Object.entries(need).map(([k, v]) => k + ' x' + v).join(', ');
         throw new Error(`для ${name} ${list ? 'не хватает: ' + list : 'нужен верстак рядом'}${best.requiresTable && !table ? (list ? ' (и нужен верстак)' : '') : ''}`);
       }
-      await tb.goto(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), tok, 30000);
+      await tb.goto(new goals.GoalLookAtBlock(table.position, b.world, { reach: 4 }), tok, 30000);
     }
     const r = recipes[0];
     const times = Math.ceil(count / (r.result.count || 1));
@@ -467,7 +467,7 @@ class Skills {
     for (const k of cands()) {
       tb.check(tok);
       try {
-        await tb.goto(new goals.GoalNear(k.position.x, k.position.y, k.position.z, 2), tok, 30000);
+        await tb.goto(new goals.GoalLookAtBlock(k.position, b.world, { reach: 4 }), tok, 30000);   // видеть печь, не сквозь стену
         const ff = await b.openFurnace(k);
         if (!this.mine(k.position) && (ff.inputItem() || ff.fuelItem() || ff.outputItem())) { ff.close(); why = 'печи рядом заняты'; continue; }
         if (this.mine(k.position) && ff.outputItem()) await ff.takeOutput();
