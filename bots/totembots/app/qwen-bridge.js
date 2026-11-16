@@ -152,7 +152,9 @@ const PICK = (model, mode) => `(async () => {
 })()`;
 
 // Ошибки, после которых пробуем следующую модель из списка
-const LIMIT = /limit|лимит|quota|too many|429|exceed|unavailable|недоступ|rate/i;
+// лимит - только по настоящим словам лимита (раньше «rate» ловил «generate», а «недоступна модель» тоже считалась лимитом)
+const LIMIT = /limit|лимит|quota|too many requests|429|exceeded/i;
+const MODEL_GONE = /модель недоступна/i;
 const LIMIT_TEXT = /reached (today's|your|the) (chat |daily |usage )?limit|upgrade your (membership|plan)|chat limit|daily limit|limit reached|лимит (сообщений|чатов|на сегодня)|исчерпан/i;
 
 // Qwen иногда отвечает двумя вариантами («Which response do you prefer?») и ждёт выбора: поток тогда содержит оба
@@ -538,6 +540,7 @@ class QwenBridge {
         return r;
       } catch (e) {
         last = e;
+        if (MODEL_GONE.test(e.message)) { if (i === models.length - 1) throw e; continue; }   // модели нет в меню - просто следующая
         if (!LIMIT.test(e.message)) throw e;
         const used = models[i] || (await this.modelNow());
         if (used) lim.add(used);

@@ -11,7 +11,7 @@ const PRESETS = {
   openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-chat-v3-0324:free', keyUrl: 'https://openrouter.ai/keys' },
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com/api_keys' },
 };
-const LIMITED = /limit|quota|429|rate|exceed|лимит|captcha|проверк|не начал|timeout|ECONN|ETIMEDOUT|fetch failed|5\d\d/i;
+const LIMITED = /limit|quota|429|exceeded|лимит|captcha|не робот/i;
 
 class Router {
   constructor({ qwen, cfg, log, webs = {}, save = () => {} }) {
@@ -80,8 +80,9 @@ class Router {
         last = e;
         // PARENT_NOT_FOUND / CHAT_IN_PROGRESS - чат Qwen сломан: следующий раз - новый чат Qwen с историей
         if (b.id === 'qwen' && /PARENT_NOT_FOUND|CHAT_IN_PROGRESS/i.test(e.message)) ch.qwenId = '';
-        if (b.id !== 'qwen' && LIMITED.test(e.message)) this.rest[b.id] = Date.now() + (/429|limit|quota|rate/i.test(e.message) ? 10 : 2) * 60000;
-        if (b.web && /вход|не робот|не начал|нет поля/.test(e.message)) { this.rest[b.id] = Date.now() + 3 * 60000; this.onAttention(e.message); }
+        // отдых: настоящий лимит - 10 мин; нужен вход - 3 мин; обычный сбой - 20 с (не полчаса, как раньше)
+        if (b.id !== 'qwen') this.rest[b.id] = Date.now() + (LIMITED.test(e.message) ? 10 * 60000 : /нужен вход|нет поля/.test(e.message) ? 3 * 60000 : 20000);
+        if (b.web && /вход|не робот|нет поля/.test(e.message)) this.onAttention(e.message);
         if (b.web && ch.webIds) delete ch.webIds[b.id];
         this.log(`мозг ${b.name}: ${e.message.slice(0, 120)} - пробую следующий`);
       }

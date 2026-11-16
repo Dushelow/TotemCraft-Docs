@@ -8,7 +8,7 @@ const { Vec3 } = require('vec3');
 const { EventEmitter } = require('events');
 const { Guard } = require('./guard');
 
-const VERSION = '1.21.11';
+const VERSION = process.env.TB_VERSION || '1.21.11';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (a, b) => a + Math.random() * (b - a);
 

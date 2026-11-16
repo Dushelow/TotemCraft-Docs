@@ -57,9 +57,11 @@ class WebChat {
   ask(chatId, text) { return this.exclusive(() => this._ask(chatId, text)); }
 
   async _ask(chatId, text) {
+    this._r1 = this._r2 = false;
     const s = this.site;
     // окно открыто у владельца (вход, своё) или вход не сделан - страницу не трогаем вообще
-    if (this.inUse && this.inUse()) throw new Error(`${s.name}: окно открыто у владельца - не трогаю`);
+    // владелец печатает в этом окне (поле в фокусе и не пустое) - подождать, а не отказывать
+    for (let i = 0; i < 30 && this.inUse && this.inUse() && await this.js(`(() => { const t = document.activeElement; return !!(t && (t.value || t.innerText || '').trim() && /TEXTAREA|DIV/.test(t.tagName)); })()`).catch(() => false); i++) await sleep(1000);
     for (let i = 0; i < 40 && !(await this.loggedIn()); i++) await sleep(400);   // окно могло только что открыться
     if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через Chrome»`);
     const want = chatId && s.chatUrl ? s.chatUrl(chatId) : (chatId && this.wc.getURL().includes(chatId) ? this.wc.getURL() : s.home);
@@ -91,7 +93,25 @@ class WebChat {
       await sleep(500);
       if (await this.captcha()) { this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке`); throw new Error(`${s.name}: проверка «не робот»`); }
       const r = (await readNow()) || { n: 0, t: '' };
-      if (r.n <= before + (s.history ? 1 : 0) || !r.t) { if (Date.now() - t0 > 45000) throw new Error(`${s.name}: не начал отвечать (лимит, вход?)`); continue; }
+      if (r.n <= before + (s.history ? 1 : 0) || !r.t) {
+        // не ушло или сайт показал ошибку - как человек: нажать «повторить» (у DeepSeek - значок повторной отправки),
+        // а если сообщения нет совсем - отправить ещё раз; на 12-й и 30-й секунде
+        const el = Date.now() - t0;
+        if ((el > 12000 && !this._r1) || (el > 30000 && !this._r2)) {
+          if (el > 30000) this._r2 = true; else this._r1 = true;
+          const how = await this.js(`(() => {
+            const vis = (e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0; };
+            const re = /retry|regenerate|resend|try again|повтор|ещё раз|重试|重新/i;
+            const btn = [...document.querySelectorAll('button, [role=button], .ds-icon-button')].reverse().find((b) => vis(b) && re.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')));
+            if (btn) { btn.click(); return 'повтор'; }
+            const ta = document.querySelector(${JSON.stringify(s.input)});
+            if (ta && (ta.value || ta.innerText || '').trim()) { let box = ta; for (let i = 0; i < 6 && box; i++) box = box.parentElement; const b = (box || document).querySelector(${JSON.stringify(s.send)}); if (b) { b.click(); return 'отправил снова'; } }
+            return ''; })()`).catch(() => '');
+          if (how) this.onAttention(`${s.name}: сообщение не ушло - ${how}`);
+        }
+        if (el > 60000) throw new Error(`${s.name}: не начал отвечать`);
+        continue;
+      }
       if (r.done) { last = r.t; break; }
       if (r.t !== last) { last = r.t; stableSince = Date.now(); continue; }
       if (Date.now() - stableSince > 3000) break;
