@@ -14,6 +14,9 @@ const C = [
   ['enterPortal', 'portal,usePortal', '[x, y, z]', 'войти в портал (без координат - в ближайший)', (a) => ({ act: 'portal', x: a[0], y: a[1], z: a[2] })],
   ['wander', 'explore,walkAround', '[сторона света]', 'прогуляться, поисследовать (без стороны - где ещё не был)', (a) => ({ act: 'wander', dir: a[0] })],
   ['surface', 'goUp,toSurface', '', 'подняться на поверхность из пещеры или шахты', () => ({ act: 'surface' })],
+  ['mount', 'ride,board,getIn,sit,enterBoat,mountHorse', '[что или игрок]', 'сесть в лодку или на лошадь рядом (boat, horse); с ником игрока - к нему в лодку пассажиром', (a) => (a[0] && /^[A-Za-z0-9_]{3,16}$/.test(String(a[0])) && !/^(boat|horse|donkey|mule|camel|pig|minecart|raft|llama|strider)$/i.test(String(a[0])) ? { act: 'mount', who: a[0] } : { act: 'mount', what: a[0] })],
+  ['dismount', 'getOut,leaveBoat,unmount', '', 'слезть с лошади, выйти из лодки', () => ({ act: 'dismount' })],
+  ['drive', 'row,steer,rideTo,sail', 'x, z', 'сидишь в лодке или на лошади за рулём - плыть/ехать к точке', (a) => ({ act: 'drive', x: a[0], z: a[1] })],
   // --- работа
   ['collect', 'collectBlocks,gather,chop,mineBlock,dig', 'блок, сколько', 'добыть блоки рядом: oak_log, stone, dirt, sand... (лут подбирается)', (a) => ({ act: 'gather', block: a[0], count: a[1] })],
   ['mine', 'mineOre,minerals', 'руда, сколько', 'шахта: iron, coal, diamond, gold, redstone, lapis, copper (спущусь и прокопаю туннель)', (a) => ({ act: 'mine', block: a[0], count: a[1] })],
@@ -27,7 +30,8 @@ const C = [
   ['farm', 'makeFarm,garden', 'семена, сколько', 'огород: вспахать и засадить несколько клеток рядом', (a) => ({ act: 'farm', item: a[0], count: a[1] })],
   ['fish', 'fishing', '[сколько раз]', 'порыбачить (нужна удочка, рядом вода)', (a) => ({ act: 'fish', count: a[0] })],
   ['hunt', 'killAnimal', 'животное, сколько', 'охота на диких животных: cow, pig, sheep, chicken...', (a) => ({ act: 'hunt', animal: a[0], count: a[1] })],
-  ['attack', 'kill,fight,attackMob', 'моб', 'напасть на моба рядом (зомби, скелет...); игроков не бью', (a) => ({ act: 'attack', mob: a[0] })],
+  ['attack', 'kill,fight,attackMob', 'моб', 'напасть на моба рядом (зомби, ведьма, скелет...)', (a) => ({ act: 'attack', mob: a[0] })],
+  ['duel', 'pvp,fightPlayer', 'игрок', 'дуэль с игроком - только если хозяин попросил и игрок согласен (60 с, сдаюсь при 6 здоровья)', (a) => ({ act: 'duel', who: a[0] })],
   ['shear', 'shearSheep', '[сколько]', 'постричь диких овец (нужны ножницы)', (a) => ({ act: 'shear', count: a[0] })],
   ['pickup', 'pickUp,collectItems,loot', '[радиус]', 'подобрать вещи с земли рядом', (a) => ({ act: 'pickup', radius: a[0] })],
   ['sleep', 'goToBed,bed', '', 'лечь спать в кровать рядом', () => ({ act: 'sleep' })],
@@ -35,6 +39,7 @@ const C = [
   ['equip', 'hold,wear,wield', 'предмет', 'взять в руку или надеть (броня, щит, тотем - куда надо)', (a) => ({ act: 'equip', item: a[0] })],
   ['eat', 'consume,food', '[еда]', 'поесть (без названия - лучшее, что есть)', (a) => ({ act: 'eat', item: a[0] })],
   ['discard', 'drop,toss,throw,throwAway', 'предмет[, сколько]', 'выбросить из инвентаря', (a) => ({ act: 'toss', item: a[0], count: a[1] })],
+  ['discardAll', 'dropAll,tossAll,emptyInventory', '[что оставить]', 'выбросить вообще всё, и броню (по просьбе хозяина «выкинь всё»)', (a) => ({ act: 'discardAll', keep: a.join(',') })],
   ['give', 'givePlayer,giveItem', 'игрок, предмет, сколько', 'подойти и отдать игроку', (a) => ({ act: 'give', who: a[0], item: a[1], count: a[2] })],
   ['takeFromChest', 'take,takeItem', 'x, y, z, предмет, сколько', 'взять из сундука (только по просьбе хозяина или из своего)', (a) => ({ act: 'take', x: a[0], y: a[1], z: a[2], item: a[3], count: a[4] })],
   ['putInChest', 'put,store,deposit', 'x, y, z, предмет, сколько', 'положить в сундук', (a) => ({ act: 'put', x: a[0], y: a[1], z: a[2], item: a[3], count: a[4] })],
@@ -49,6 +54,9 @@ const C = [
   ['lesson', 'learn,lessonLearned', 'текст', 'запомнить урок из опыта («у базы брёвна чужие - рубить в лесу на севере»)', (a) => ({ act: 'lesson', text: a[0] })],
   ['saveSkill', 'rememberSkill', 'название', 'сохранить последнюю удачную цепочку команд как свой навык', (a) => ({ act: 'saveSkill', name: a[0] })],
   ['skill', 'useSkill,doSkill', 'название', 'выполнить свой сохранённый навык', (a) => ({ act: 'skill', name: a[0] })],
+  ['defineSkill', 'newSkill,makeSkill,teachSkill', 'название, "!команда1; !команда2; ..."', 'создать себе новый навык из команд (не выполняя сейчас): когда упёрся, придумай способ и сохрани', (a) => ({ act: 'defineSkill', name: a[0], body: a.slice(1).join(', ') })],
+  ['rule', 'myRule,selfInstruction,instruction', 'текст', 'добавить себе постоянное правило поведения (видно в каждой [память]): чему научился, как поступать', (a) => ({ act: 'rule', text: a.join(', ') })],
+  ['forgetRule', 'dropRule', 'часть текста', 'убрать своё правило', (a) => ({ act: 'forgetRule', text: a.join(', ') })],
   // --- мозг: смотреть, помнить, цели
   ['look', 'inspect,view,see,check', 'что', 'посмотреть подробно: inventory, around, map, players, portals, online, memory', (a) => ({ act: 'look', what: a[0] || 'around' })],
   ['see', 'vision,watch,lookPicture', '[вопрос]', 'посмотреть глазами: картинка того, что видишь, и карта сверху -> описание словами (дорого, не чаще нужного)', (a) => ({ act: 'see', q: a[0] })],
@@ -99,14 +107,17 @@ function fixAct(name, a) {
 function parseCommands(text) {
   const raw = String(text || '');
   const acts = [], unknown = [];
-  const re = /!([A-Za-z_]+)\s*(\(([^()]*)\))?/g;
+  const re = /!([A-Za-z_]+)\s*(\(((?:[^()]|\([^()]*\))*)\))?/g;   // одна вложенная пара скобок: !defineSkill(x, "!collect(a, 1)")
   let m;
   while ((m = re.exec(raw))) {
     const c = BY.get(m[1].toLowerCase());
     if (!c) { unknown.push(m[1]); continue; }
     // упоминание в тексте («попробую !mine») - не команда: без скобок выполняются только команды без обязательных аргументов
     if (!m[2] && c[2] && !c[2].startsWith('[')) continue;
-    const act = fixAct(c[0], c[4](splitArgs(m[3])));
+    const args = splitArgs(m[3]);
+    // !collect() без аргументов - не выполнять пустым («не знаю руду «»», 15.11), а сказать, что нужно
+    if (c[2] && !c[2].startsWith('[') && !args.length) { unknown.push(`${c[0]} без аргументов (нужно: ${c[2]})`); continue; }
+    const act = fixAct(c[0], c[4](args));
     if (!act) continue;
     for (const k of Object.keys(act)) if (act[k] === undefined) delete act[k];
     act._cmd = c[0];

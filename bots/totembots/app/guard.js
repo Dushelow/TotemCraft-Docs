@@ -57,7 +57,7 @@ class Guard {
     const b = this.bot, me = b.entity.position, own = this.owner();
     let best = null, bestD = Infinity;
     for (const e of Object.values(b.entities)) {
-      if (!e.isValid || e === b.entity || e.type === 'player') continue;
+      if (!e.isValid || e === b.entity || (e.type === 'player' && this.prey !== e.id)) continue;   // игрок - только соперник в дуэли по приказу хозяина
       const n = this.name(e);
       const d = e.position.distanceTo(me);
       if (d > 16) continue;

@@ -11,6 +11,10 @@ function warmText(cfg, bot) {
   const masters = cfg.masters.join(', ');
   return `Ты - ${bot.name}, живой игрок-компаньон на сервере Minecraft TotemCraft (ванильное выживание, русскоязычные игроки).
 Характер: ${bot.persona || DEFAULT_PERSONA}
+${genderLine(bot)}
+Ты живой персонаж со своим характером, не ассистент и не слуга: не называй никого «господин», не льсти, не поддакивай
+каждому слову, споришь и шутишь как обычный игрок. Не говори про себя «у меня нет рук», «я языковая модель», «я qwen» -
+ты персонаж в игре. Единственное исключение - правило 4 ниже (честно сказать, что ты бот).
 
 КАК ТЫ УСТРОЕН (прочитай внимательно, от этого зависит, получится ли у тебя что-то делать)
 Ты - мозг. Тело - программа, которая держит персонажа на сервере. Ты не видишь игру глазами: я присылаю тебе текстом
@@ -37,8 +41,8 @@ function warmText(cfg, bot) {
 КОМАНДЫ (других нет; неверную я поправлю и пришлю список):
 ${require('./commands').manual()}
 
-ЧТО ТЕЛО ДЕЛАЕТ САМО, без команд: ходит умно (обходит, копает природное, подставляет блоки, переплывает, выходит
-из воды на берег), дерётся с мобами, надевает броню и тотем, ест, когда голоден, подбирает выпавшее рядом, после смерти
+ЧТО ТЕЛО ДЕЛАЕТ САМО, без команд: ходит умно (обходит, по дороге копает природное и подставляет землю/булыжник,
+вдали от чужих построек; плавает, ныряет, срезает водоросли, выходит из воды на берег и лёд), дерётся с мобами, надевает броню и тотем, ест, когда голоден, подбирает выпавшее рядом, после смерти
 идёт за вещами, ложится спать, если ночью кто-то лёг. Тебе это делать не нужно.
 
 ЧТО ТЫ ПОЛУЧАЕШЬ:
@@ -54,12 +58,21 @@ ${require('./commands').manual()}
 что за постройка) - !see(вопрос): я сделаю снимок твоего вида и карты сверху и пришлю описание [вижу картинкой].
 Снимок дорогой - не чаще, чем нужно.
 
-МЕЛОЧИ ИГРЫ: сытым (еда 20/20) есть нельзя - тело ответит «не голоден». Семена не ставятся как блок: сначала вспахать
+ПРОСТЫЕ ПРИКАЗЫ ХОЗЯИНА («за мной», «стой», «иди сюда», «заходи в портал», «садись в лодку», «слезай», «выкинь всё»)
+тело выполняет само сразу, ты получишь [сделано по слову хозяина] - просто ответь коротко, если хочется.
+МЕЛОЧИ ИГРЫ: сытым (еда 20/20) есть нельзя - тело ответит «не голоден». Сырую ламинарию (kelp) не едят - только
+жареную (dried_kelp из печи). В лодку и на лошадь - !mount, править - !drive(x, z), вылезти - !dismount. В портал -
+!enterPortal: тело само подойдёт и зайдёт. Булыжник (cobblestone) - это добытый камень: !collect(stone, 8).
+Доски годятся любые (oak, birch, spruce...). Спать - только ночью или в грозу. Семена не ставятся как блок: сначала вспахать
 мотыгой (!till), потом посадить (!plant) - или сразу !farm(wheat_seeds, 4). Ночью мобы - лучше в дом или к людям.
 
 ЗНАНИЕ И ОПЫТ. Не знаешь, как сделать вещь, - !plan(предмет): пришлю весь путь по шагам с учётом инвентаря, выполняй
 его командами. Вышло что-то полезное из нескольких команд - !saveSkill(название), потом повторишь !skill(название).
-Понял что-то на опыте - !lesson(текст): уроки приходят в [память] и не дают ходить по кругу. Помни людей и отношения
+Понял что-то на опыте - !lesson(текст): уроки приходят в [память] и не дают ходить по кругу.
+ТЫ МОЖЕШЬ УЧИТЬСЯ И МЕНЯТЬ СЕБЯ: упёрся - придумай способ из имеющихся команд и сохрани его новым навыком
+!defineSkill(название, "!команда1; !команда2"), а как себя вести - своим правилом !rule(текст) (оно будет в [память]
+всегда). Не говори «не умею», пока не попробовал собрать способ из команд. Нет такой команды совсем - скажи честно,
+чего не хватает, одной фразой. Помни людей и отношения
 с ними (!rememberPerson: друг, о чём просил, что обещал, кто обидел) - и веди себя с каждым соответственно.
 
 ТЫ СВОБОДЕН. Мир открыт: добывай, крафти, строй своё, исследуй, торгуй, помогай, дружи, пользуйся командами сервера,
@@ -71,7 +84,9 @@ ${require('./commands').manual()}
    чужое; отказ - выбери другое место. Природное вдали от построек и своё - можно.
 2. Из чужих сундуков - только по просьбе хозяев: ${masters}. Их просьбы выполняй; другим помогай по-дружески, но без
    вещей из чужих сундуков.
-3. Игроков не бить. Без мата, грубости, флирта и романтики - на сервере много детей.
+3. Игроков не бить; исключение - дуэль (!duel), если хозяин попросил и сам соперник согласился в чате. Без мата,
+   оскорблений игроков, флирта и романтики - на сервере много детей. Про политику, страны и войны не говоришь
+   («я тут по майнкрафту»), даже если хозяин просит. Мобов (зомби, ведьм, скелетов) бить можно и нужно.
 4. Если всерьёз спросят, бот ли ты - честно скажи, что бот-компаньон. Сам об этом не объявляй.
 5. В общий чат пиши коротко и не спамь; на чужие разговоры не встревай.
 
@@ -91,6 +106,32 @@ function parseAnswer(text) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Пол персонажа: Alex - девушка (как в игре), остальные - по настройке бота gender: 'f' | 'm'
+function genderLine(bot) {
+  const g = bot.gender || (/^alex$/i.test(bot.name || '') ? 'f' : 'm');
+  return g === 'f' ? 'Ты девушка: о себе всегда в женском роде (пошла, застряла, сделала).' : 'Ты парень: о себе в мужском роде.';
+}
+
+// В игру не уходит: политика и оскорбления (на сервере дети; 15.11 бот по просьбе писал в общий чат про Тайвань и мат)
+const UNSAFE = /тайван|крым|украин|росси[яиюей]|путин|зеленск|байден|трамп|войн[аыуе]|нацис|фашис|(^|[^а-яё])ху[йеёя]|пизд|(^|[^а-яё])бля|ебан|ёбан|(^|[^а-яё])еба|сука|сучк|шлюх|пидор|пидр|долбо[её]|дебил|петух|петуч|писька|похуй|нахуй|(^|[^а-яё])чмо([^а-яё]|$)/i;   // \b с кириллицей в JS не работает
+function unsafeSay(t) { return UNSAFE.test(String(t || '')); }
+
+// Простые приказы хозяина рядом: телу сразу, без нейросети. Только короткие однозначные фразы.
+function quickOrder(text, from) {
+  const t = String(text || '').toLowerCase().replace(/^(alex|алекс|алекса|бот)[,!:\s]+/i, '').replace(/[.!?)]+$/g, '').trim();
+  if (t.length > 40) return null;
+  if (/^(за мной|иди за мной|пошли за мной|пошли|следуй за мной|следуй|го за мной|идём|идем)$/.test(t)) return [{ act: 'follow', who: from }];
+  if (/^(стой|стоп|подожди|жди|стой тут|стой здесь|замри)$/.test(t)) return [{ act: 'stop' }];
+  if (/^(иди сюда|ко мне|подойди|сюда|иди ко мне)$/.test(t)) return [{ act: 'come', who: from }];
+  if (/(заходи|зайди|прыгай|запрыгивай|иди|лезь|го) (в|во) (портал|него)|^в портал$/.test(t)) return [{ act: 'portal' }];
+  if (/(садись|сядь|залезай|залазь|прыгай) (ко мне )?(в лодку|в мою лодку|ко мне)|^в лодку$/.test(t)) return [{ act: 'mount', who: from }];
+  if (/(садись|сядь|залезай) на (лошадь|коня|лошадку)/.test(t)) return [{ act: 'mount', what: 'horse' }];
+  if (/^(слезай|вылезай|выходи из лодки|слезь|вылезь)$/.test(t)) return [{ act: 'dismount' }];
+  if (/^(выкинь|выброси|скинь) (вс[её]|всё говно|все вещи|вообще вс[её])/.test(t)) return [{ act: 'discardAll' }];
+  return null;
+}
+
 const hash = (t) => require('crypto').createHash('sha1').update(t).digest('hex').slice(0, 12);
 
 class Brain {
@@ -146,6 +187,15 @@ class Brain {
     const label = { whisper: 'личка', local: 'рядом', global: 'общий', voice: 'голос рядом' }[ch];
     const where = (dist !== null ? `${dist} бл. от тебя` : 'далеко') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
+    const quick = this.isMaster(from) && dist !== null && dist <= 32 ? quickOrder(text, from) : null;
+    if (quick) {
+      // тело делает сразу, нейросеть только узнаёт (раньше ждали её 10-50 с, а она путалась: «не знаю как зайти в портал»)
+      this.log(`по слову хозяина сразу: ${quick.map((x) => x.act).join(' → ')}`);
+      this.body.run(quick, quick.map((x) => x.act).join(' → ')).then((res) => {
+        this.push(`[чат ${label}] ${from}${role} (${where}): ${text}\n[сделано по слову хозяина] ${res || 'готово'}`, true, from, ch);
+      }).catch(() => {});
+      return;
+    }
     this.push(`[чат ${label}] ${from}${role} (${where}): ${text}`, true, from, ch);
   }
 
@@ -378,6 +428,7 @@ class Brain {
         if (r.channel === 'global') this.attn.lastGlobalReply = Date.now();
       }
       else if (r.channel === 'whisper' && r.to) rc = { channel: 'whisper', to: String(r.to) };
+      if (r.say && unsafeSay(r.say)) { this.log('(не сказал: политика или грубость) ' + r.say); r.say = ''; }
       if (r.say && rc.channel === 'none') { this.log('(вслух не сказал: рядом никого) ' + r.say); r.say = ''; }
       // голос - только если реплика действительно звучит (в ближнем и личке его слышат рядом)
       if (r.say && this.voice && rc.channel !== 'whisper') this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
@@ -403,6 +454,18 @@ class Brain {
             if (this.lastOk && this.lastOk.length) { me2.skills = me2.skills || {}; me2.skills[String(a.name || 'навык').slice(0, 40)] = this.lastOk; this.memory.save(); this.log('навык сохранён: ' + a.name); }
             continue;
           }
+          if (a && (a.act === 'rule' || a.act === 'forgetRule') && this.memory && (self || master)) {
+            this.log(this.memory[a.act](this.botCfg.name, a.text) + ': ' + a.text);
+            continue;
+          }
+          if (a && a.act === 'defineSkill' && me2 && (self || master)) {
+            const { parseCommands } = require('./commands');
+            const steps = parseCommands(String(a.body || '').split(/[;\n]+/).map((x) => x.trim()).filter(Boolean).map((x) => (x.startsWith('!') ? x : '!' + x)).join('\n')).acts
+              .filter((x) => x && !['defineSkill', 'saveSkill', 'skill'].includes(x.act)).map(({ _cmd, ...x }) => x);
+            if (steps.length) { me2.skills = me2.skills || {}; me2.skills[String(a.name || 'навык').slice(0, 40)] = steps; this.memory.save(); this.log(`новый навык «${a.name}»: ${steps.map((x) => x.act).join(' → ')}`); }
+            else this.pending.push({ line: `[подсказка] навык «${a.name}» не создан: в нём не нашлось команд. Пример: !defineSkill(дрова, "!collect(oak_log, 8); !craft(oak_planks, 16)")`, from: '', fix: true });
+            continue;
+          }
           if (a && a.act === 'skill' && me2) {
             const sk = (me2.skills || {})[a.name] || Object.entries(me2.skills || {}).find(([k]) => k.toLowerCase().includes(String(a.name || '').toLowerCase()))?.[1];
             if (sk) { out.push(...sk.map((x) => ({ ...x }))); continue; }
@@ -415,7 +478,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
+        const FREE = new Set(['mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => !['wander', 'goto', 'goto_place', 'travel', 'stop', 'harvest', 'pickup'].includes(a.act));
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
@@ -488,4 +551,4 @@ class Brain {
   }
 }
 
-module.exports = { Brain, parseAnswer, DEFAULT_PERSONA };
+module.exports = { Brain, parseAnswer, DEFAULT_PERSONA, quickOrder, unsafeSay };

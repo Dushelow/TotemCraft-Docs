@@ -85,7 +85,10 @@ class Skills {
   /** Добыть count блоков такого вида поблизости (дерево - целиком снизу вверх). */
   async gather(a, tok) {
     const b = this.b, tb = this.tb;
-    const q = String(a.block || a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    let q = String(a.block || a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    // просят то, что выпадает, а не блок в мире: булыжник - это камень, сланцевый булыжник - глубинный сланец
+    const SRC = { cobblestone: 'stone', cobbled_deepslate: 'deepslate', flint: 'gravel', clay_ball: 'clay', snowball: 'snow_block', wheat_seeds: 'short_grass', seeds: 'short_grass', planks: 'log', wood: 'log' };
+    if (SRC[q]) q = SRC[q];
     const want = Math.max(1, Math.min(64, +a.count || 8));
     const ids = Object.values(b.registry.blocksByName).filter((bl) => bl.name === q || bl.name.endsWith('_' + q) || (q === 'log' && /_log$/.test(bl.name)) || (q === 'wood' && /_log$/.test(bl.name))).map((bl) => bl.id);
     if (!ids.length) throw new Error(`не знаю блок «${q}»`);
@@ -102,7 +105,8 @@ class Skills {
         const k = b.blockAt(p);
         // открытый блок (анти-иксрей прячет руду внутри камня и шлёт подделки - их не копаем)
         const open = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => { const n = b.blockAt(p.offset(x, y, z)); return n && n.boundingBox === 'empty'; });
-        const why = !open ? 'закрыт со всех сторон' : this.whyNot(k);
+        const fakeable = /_ore$|ancient_debris|chest/.test(k.name);   // анти-иксрей подделывает руду и сундуки, не камень
+        const why = !open && fakeable ? 'закрыт со всех сторон (может быть подделкой анти-иксрея)' : this.whyNot(k);
         if (why) { skipped.add(p.toString()); lastWhy = why; continue; }
         target = k; break;
       }
@@ -132,9 +136,15 @@ class Skills {
       if (!recipes.length) {
         const all = b.recipesAll(item.id, null, true);
         if (!all.length) throw new Error(`${name} не крафтится`);
+        // рецепт, которому меньше всего не хватает (а не первый попавшийся: «нужны cherry_planks», когда есть дубовые)
+        const have = new Map(); for (const it of b.inventory.items()) have.set(it.name, (have.get(it.name) || 0) + it.count);
+        const lack = (r) => (r.delta || []).filter((d) => d.count < 0).reduce((s, d) => { const n = (b.registry.items[d.id] || {}).name; return s + Math.max(0, -d.count - (have.get(n) || 0)); }, 0);
+        const best = all.slice().sort((x, y) => lack(x) - lack(y))[0];
+        const generic = (n) => (/_planks$/.test(n) ? 'любые доски' : /^(cobblestone|cobbled_deepslate|blackstone)$/.test(n) ? 'булыжник (cobblestone или cobbled_deepslate)' : /_log$/.test(n) ? 'любые брёвна' : n);
         const need = {};
-        for (const ing of (all[0].delta || []).filter((d) => d.count < 0)) { const n = b.registry.items[ing.id]; need[n ? n.name : ing.id] = -ing.count; }
-        throw new Error(`для ${name} не хватает: ${Object.entries(need).map(([k, v]) => k + ' x' + v).join(', ')}${all[0].requiresTable && !table ? ' (и нужен верстак)' : ''}`);
+        for (const ing of (best.delta || []).filter((d) => d.count < 0)) { const n = (b.registry.items[ing.id] || {}).name || ing.id; const k = generic(n); const miss = Math.max(0, -ing.count - (have.get(n) || 0)); if (miss) need[k] = (need[k] || 0) + miss; }
+        const list = Object.entries(need).map(([k, v]) => k + ' x' + v).join(', ');
+        throw new Error(`для ${name} ${list ? 'не хватает: ' + list : 'нужен верстак рядом'}${best.requiresTable && !table ? (list ? ' (и нужен верстак)' : '') : ''}`);
       }
       await tb.goto(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), tok, 30000);
     }
@@ -187,6 +197,8 @@ class Skills {
   async place(a, tok) {
     const b = this.b, tb = this.tb;
     const name = String(a.block || a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    // семена как блок не ставятся (Server refused to place wheat_seeds, 4 раза 15.11) - это посадка на грядку
+    if (/_seeds$|^(carrot|potato|beetroot_seeds|melon_seeds|pumpkin_seeds|torchflower_seeds)$/.test(name)) return this.plant({ item: name, x: a.x, y: a.y !== undefined ? +a.y - 1 : undefined, z: a.z }, tok).catch(async (e) => { if (/нет вспаханной/.test(e.message)) return this.farm({ item: name, count: 1 }, tok); throw e; });
     const it = b.inventory.items().find((x) => x.name === name);
     if (!it) throw new Error(`нет в инвентаре: ${name}`);
     let at;

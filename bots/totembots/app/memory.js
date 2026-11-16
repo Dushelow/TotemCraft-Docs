@@ -97,6 +97,23 @@ class Memory {
     return 'запомнил урок';
   }
 
+  /** Своё правило поведения (бот сам себе пишет инструкцию: чему научился, как поступать). До 25 штук. */
+  rule(botName, text) {
+    const t = clean(text, 220);
+    if (!t) return 'пустое правило';
+    const me = this.bot(botName);
+    me.rules = (me.rules || []).filter((r) => r !== t).concat(t).slice(-25);
+    this.save();
+    return 'правило записал';
+  }
+
+  forgetRule(botName, text) {
+    const me = this.bot(botName), q = clean(text, 120).toLowerCase(), n = (me.rules || []).length;
+    me.rules = (me.rules || []).filter((r) => !r.toLowerCase().includes(q));
+    this.save();
+    return n === me.rules.length ? 'такого правила нет' : 'правило убрал';
+  }
+
   journal(botName, text) {
     const j = this.bot(botName).journal;
     const t = clean(text, 200);
@@ -131,6 +148,7 @@ class Memory {
     const journal = this.bot(botName).journal.slice(-10).map((j) => `${d(j.at)} ${j.text}`);
     return [
       '[память]',
+      'Твои правила (ты сам их написал, соблюдай): ' + ((this.bot(botName).rules || []).join('; ') || 'пока нет'),
       'Места: ' + (places.join('; ') || 'пока нет'),
       'Люди: ' + (people.join('; ') || 'пока нет'),
       'Факты: ' + (facts.join('; ') || 'пока нет'),
