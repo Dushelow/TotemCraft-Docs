@@ -50,7 +50,7 @@ class Router {
   qwenIdOf(chatId) { const ch = this.chats.get(chatId); return ch && this.lastBrain === 'qwen' ? ch.qwenId : (ch ? '' : chatId); }
 
   /** Вводная для чата, который пришёл с прошлого запуска (нужна ключевым мозгам при переключении). */
-  ensureWarm(chatId, warm) { this.restore(chatId); const ch = this.chats.get(chatId); if (ch && !ch.warm) ch.warm = warm; }
+  ensureWarm(chatId, warm) { this.restore(chatId); (this.warms = this.warms || {})[chatId] = warm; const ch = this.chats.get(chatId); if (ch && !ch.warm) ch.warm = warm; }
 
   /**
    * Логический чат с прошлого запуска: чаты сайтов и последние реплики - из настроек. Раньше реплики жили только в
@@ -74,7 +74,8 @@ class Router {
     if (!id) id = 'L-' + crypto.randomUUID();
     let ch = this.chats.get(id);
     if (!ch) {   // новый чат (или старый Qwen-чат с прошлого запуска - его история у Qwen)
-      ch = { warm: chatId ? '' : text, turns: [], qwenId: chatId && !chatId.startsWith('L-') ? chatId : '' };
+      // вводная из ensureWarm: без неё сайт (DeepSeek) получал голое сообщение без команд и памяти (16.11)
+      ch = { warm: chatId ? ((this.warms || {})[chatId] || '') : text, turns: [], qwenId: chatId && !chatId.startsWith('L-') ? chatId : '' };
       this.chats.set(id, ch);
     }
     let last;
@@ -123,6 +124,7 @@ class Router {
   async askWeb(b, ch, text) {
     ch.webIds = ch.webIds || {};
     let send = text;
+    if (!ch.webIds[b.id] && !ch.warm) ch.warm = Object.values(this.warms || {}).pop() || '';
     if (!ch.webIds[b.id]) send = ch.turns.length ? this.recap(ch) + '\n\n' + text : (ch.warm && ch.warm !== text ? ch.warm + '\n\n' + text : text);
     const r = await b.web.ask(ch.webIds[b.id] || '', send);
     ch.webIds[b.id] = r.chatId || ch.webIds[b.id];
