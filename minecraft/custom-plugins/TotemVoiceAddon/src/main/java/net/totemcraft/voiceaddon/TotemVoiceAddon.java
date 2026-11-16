@@ -60,7 +60,8 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
     private final Map<UUID, ServerEntitySource> sources = new ConcurrentHashMap<>();
     private final Map<UUID, AudioSender> senders = new ConcurrentHashMap<>();
     // уши: речь каждого игрока до конца фразы
-    private static final class Speech { AudioDecoder decoder; final List<short[]> parts = new ArrayList<>(); int samples; long last; }
+    private static final class Speech { AudioDecoder decoder; final List<short[]> parts = new ArrayList<>(); int samples; long last; int packets; int errors; }
+    private long lastEarsError;
     private final Map<UUID, Speech> speech = new ConcurrentHashMap<>();
     private boolean ears;
     private int earsDistance;
@@ -161,6 +162,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
         String name = vp.getInstance().getName();
         if (bots.contains(name.toLowerCase(Locale.ROOT))) return;   // бот себя не слушает
         Speech sp = speech.computeIfAbsent(id, k -> new Speech());
+        if (sp.packets++ == 0 && getConfig().getBoolean("log", true)) getLogger().info("уши: " + name + " говорит");
         try {
             if (sp.decoder == null) { sp.decoder = voice.createOpusDecoder(false); sp.decoder.open(); }
             byte[] opus = voice.getDefaultEncryption().decrypt(event.getPacket().getData());
@@ -168,7 +170,10 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
             if (sp.samples + pcm.length <= EARS_MAX_SAMPLES) { sp.parts.add(pcm); sp.samples += pcm.length; }
             sp.last = System.currentTimeMillis();
         } catch (Exception e) {
-            getLogger().fine("уши: " + e.getMessage());
+            sp.errors++;
+            // раньше ошибка уходила в скрытый журнал (fine) - 16.11 речь молча терялась; теперь видно, раз в 30 с
+            long now = System.currentTimeMillis();
+            if (now - lastEarsError > 30000) { lastEarsError = now; getLogger().warning("уши: не разобрал звук " + name + ": " + e.getClass().getSimpleName() + ": " + e.getMessage()); }
         }
     }
 
@@ -183,7 +188,8 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
         Speech sp = speech.remove(id);
         if (sp == null) return;
         if (sp.decoder != null) sp.decoder.close();
-        if (sp.samples < 48000 / 3) return;   // короче трети секунды - не речь
+        boolean log = getConfig().getBoolean("log", true);
+        if (sp.samples < 48000 / 3) { if (log) getLogger().info("уши: фраза пропущена - звука " + sp.samples + " отсчётов из " + sp.packets + " пакетов, ошибок " + sp.errors); return; }
         Player speaker = Bukkit.getPlayer(id);
         if (speaker == null) return;
         List<Player> listeners = new ArrayList<>();
@@ -191,7 +197,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
             if (!bots.contains(p.getName().toLowerCase(Locale.ROOT)) || p.getWorld() != speaker.getWorld()) continue;
             if (p.getLocation().distance(speaker.getLocation()) <= earsDistance) listeners.add(p);
         }
-        if (listeners.isEmpty()) return;
+        if (listeners.isEmpty()) { if (log) getLogger().info("уши: " + speaker.getName() + " сказал, но бота нет ближе " + earsDistance + " блоков"); return; }
         ByteBuffer all = ByteBuffer.allocate(sp.samples * 2).order(ByteOrder.LITTLE_ENDIAN);
         for (short[] part : sp.parts) for (short v : part) all.putShort(v);
         byte[] pcm = all.array();

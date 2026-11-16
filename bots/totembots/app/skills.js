@@ -130,7 +130,7 @@ class Skills {
     let table = null;
     if (!recipes.length) {
       const tableId = b.registry.blocksByName.crafting_table.id;
-      table = b.findBlock({ matching: tableId, maxDistance: 24 });
+      table = b.findBlock({ matching: tableId, maxDistance: 32 });   // любой верстак рядом, и чужой: им можно пользоваться
       if (!table && b.inventory.items().some((it) => it.name === 'crafting_table')) { await this.place({ block: 'crafting_table' }, tok); table = b.findBlock({ matching: tableId, maxDistance: 6 }); }
       recipes = table ? b.recipesFor(item.id, null, 1, table) : [];
       if (!recipes.length) {
@@ -455,16 +455,33 @@ class Skills {
     const FUEL = ['coal', 'charcoal', 'coal_block', 'lava_bucket', 'blaze_rod', 'oak_log', 'spruce_log', 'birch_log', 'jungle_log', 'acacia_log', 'dark_oak_log', 'mangrove_log', 'cherry_log', 'oak_planks', 'spruce_planks', 'birch_planks', 'jungle_planks', 'acacia_planks', 'dark_oak_planks', 'stick'];
     const fuel = FUEL.map((n) => b.inventory.items().find((i) => i.name === n && i.name !== inName)).find(Boolean);
     if (!fuel) throw new Error('нет топлива (уголь, доски, брёвна)');
-    const fid = b.registry.blocksByName.furnace.id;
-    let fb = b.findBlocks({ matching: fid, maxDistance: 24, count: 10 }).map((p) => b.blockAt(p)).find((k) => this.mine(k.position));
-    if (!fb) {
+    // Печь: своя или любая свободная рядом, в том числе чужая (как игрок: зашёл, переплавил своё, забрал своё).
+    // Свободная - все три ячейки пусты: чужое топливо и чужую переплавку не трогаем. Под замком LWC - не откроется, следующая.
+    // Еду лучше в коптильне, руду - в плавильне: они быстрее и подходят тоже.
+    const kinds = ['furnace', /^(beef|porkchop|chicken|mutton|rabbit|cod|salmon|potato|kelp)$/.test(inName) ? 'smoker' : 'blast_furnace']
+      .map((n) => b.registry.blocksByName[n]).filter(Boolean).map((x) => x.id);
+    const cands = () => b.findBlocks({ matching: kinds, maxDistance: 32, count: 20 }).map((p) => b.blockAt(p))
+      .sort((p, q) => (this.mine(q.position) - this.mine(p.position)) || p.position.distanceTo(b.entity.position) - q.position.distanceTo(b.entity.position));
+    let f = null, fb = null, why = '';
+    for (const k of cands()) {
+      tb.check(tok);
+      try {
+        await tb.goto(new goals.GoalNear(k.position.x, k.position.y, k.position.z, 2), tok, 30000);
+        const ff = await b.openFurnace(k);
+        if (!this.mine(k.position) && (ff.inputItem() || ff.fuelItem() || ff.outputItem())) { ff.close(); why = 'печи рядом заняты'; continue; }
+        if (this.mine(k.position) && ff.outputItem()) await ff.takeOutput();
+        f = ff; fb = k; break;
+      } catch (e) { if (tb.isCancel(e)) throw e; why = 'печь не открылась (под замком?)'; }
+    }
+    if (!f) {
+      tb.log(`свободной печи рядом нет (${why || 'не нашёл'}) - ставлю свою`);
       if (!b.inventory.items().some((i) => i.name === 'furnace')) await this.craft({ item: 'furnace' }, tok);
       await this.place({ block: 'furnace' }, tok);
-      fb = b.findBlocks({ matching: fid, maxDistance: 6, count: 10 }).map((p) => b.blockAt(p)).find((k) => this.mine(k.position));
+      fb = b.findBlocks({ matching: b.registry.blocksByName.furnace.id, maxDistance: 6, count: 10 }).map((p) => b.blockAt(p)).find((k) => this.mine(k.position));
       if (!fb) throw new Error('печь не встала');
-    }
-    await tb.goto(new goals.GoalNear(fb.position.x, fb.position.y, fb.position.z, 2), tok, 30000);
-    const f = await b.openFurnace(fb);
+      await tb.goto(new goals.GoalNear(fb.position.x, fb.position.y, fb.position.z, 2), tok, 30000);
+      f = await b.openFurnace(fb);
+    } else tb.log(`переплавляю в ${this.mine(fb.position) ? 'своей' : 'чужой свободной'} печи ${fb.position.x} ${fb.position.y} ${fb.position.z}`);
     try {
       const perFuel = /coal|charcoal/.test(fuel.name) ? 8 : /log|planks/.test(fuel.name) ? 1.5 : /block/.test(fuel.name) ? 80 : 0.5;
       await f.putFuel(fuel.type, null, Math.min(fuel.count, Math.ceil(count / perFuel)));
@@ -478,6 +495,8 @@ class Skills {
         if (out >= count) break;
       }
       if (f.outputItem()) { out += f.outputItem().count; await f.takeOutput(); }
+      // в чужой печи своё не оставлять: недоплавленное и остаток топлива - забрать
+      if (!this.mine(fb.position)) { try { if (f.inputItem()) await f.takeInput(); if (f.fuelItem()) await f.takeFuel(); } catch {} }
       return `переплавил ${inName}: получил ${out}`;
     } finally { f.close(); }
   }

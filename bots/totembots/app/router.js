@@ -50,14 +50,25 @@ class Router {
   qwenIdOf(chatId) { const ch = this.chats.get(chatId); return ch && this.lastBrain === 'qwen' ? ch.qwenId : (ch ? '' : chatId); }
 
   /** Вводная для чата, который пришёл с прошлого запуска (нужна ключевым мозгам при переключении). */
-  ensureWarm(chatId, warm) { const ch = this.chats.get(chatId); if (ch && !ch.warm) ch.warm = warm; }
+  ensureWarm(chatId, warm) { this.restore(chatId); const ch = this.chats.get(chatId); if (ch && !ch.warm) ch.warm = warm; }
+
+  /**
+   * Логический чат с прошлого запуска: чаты сайтов и последние реплики - из настроек. Раньше реплики жили только в
+   * памяти программы: после перезапуска новый мозг (другой сайт) получал одну вводную, и бот «начинал жизнь с нуля»
+   * (16.11: вчера поселились в домике, сегодня он о нём не вспомнил).
+   */
+  restore(chatId) {
+    if (!chatId || !chatId.startsWith('L-') || this.chats.has(chatId)) return;
+    const saved = (this.cfg().routerChats || {})[chatId];
+    if (!saved) return;
+    this.chats.set(chatId, { warm: '', turns: saved.turns || [], qwenId: saved.qwenId || '', webIds: saved.webIds || {}, resumed: true });
+  }
 
   async ask(chatId, text, opt = {}) {
     // логический чат с прошлого запуска: чат Qwen (и сайтов) помнится в настройках - продолжаем там же
     if (chatId && chatId.startsWith('L-') && !this.chats.has(chatId)) {
-      const saved = (this.cfg().routerChats || {})[chatId];
-      if (!saved || !saved.qwenId) throw new Error('PARENT_NOT_FOUND: чат с прошлого запуска');
-      this.chats.set(chatId, { warm: '', turns: [], qwenId: saved.qwenId, webIds: saved.webIds || {} });
+      this.restore(chatId);
+      if (!this.chats.has(chatId)) throw new Error('PARENT_NOT_FOUND: чат с прошлого запуска');
     }
     let id = chatId;
     if (!id) id = 'L-' + crypto.randomUUID();
@@ -73,8 +84,12 @@ class Router {
         const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : b.web ? await this.askWeb(b, ch, text) : await this.askApi(b, ch, text);
         if (!answer || !String(answer).trim()) throw new Error('пустой ответ');
         ch.turns.push({ q: text, a: answer }); ch.turns = ch.turns.slice(-24);
-        { const c = this.cfg(); c.routerChats = c.routerChats || {}; const prev = c.routerChats[id] || {};
-          if (prev.qwenId !== ch.qwenId || JSON.stringify(prev.webIds || {}) !== JSON.stringify(ch.webIds || {})) { c.routerChats[id] = { qwenId: ch.qwenId, webIds: ch.webIds || {}, at: Date.now() }; const keys = Object.keys(c.routerChats); if (keys.length > 40) delete c.routerChats[keys[0]]; this.save(); } }
+        // чаты сайтов и последние 12 реплик - в настройки: переживут перезапуск программы и смену мозга
+        { const c = this.cfg(); c.routerChats = c.routerChats || {};
+          c.routerChats[id] = { qwenId: ch.qwenId, webIds: ch.webIds || {}, at: Date.now(),
+            turns: ch.turns.slice(-12).map((x) => ({ q: String(x.q).slice(0, 700), a: String(x.a).slice(0, 500) })) };
+          const keys = Object.keys(c.routerChats); if (keys.length > 40) delete c.routerChats[keys[0]];
+          this.save(); }
         if (this.lastBrain !== b.id) { this.lastBrain = b.id; this.onAttention('мозг сейчас: ' + b.name); }
         this.lastPick = { model: b.id === 'qwen' ? (this.qwen.lastPick || {}).model || 'Qwen' : `${b.name} ${b.model}`, mode: b.id === 'qwen' ? (this.qwen.lastPick || {}).mode || '' : 'api' };
         return { answer, chatId: id };
@@ -116,7 +131,7 @@ class Router {
 
   recap(ch) {
     const t = ch.turns.slice(-8).map((x) => `[было] ${String(x.q).slice(0, 400)}\n[ты ответил] ${String(x.a).slice(0, 300)}`).join('\n');
-    return `${ch.warm}\n\n(продолжение разговора, который шёл в другом чате; последние события:)\n${t}`;
+    return `${ch.warm}\n\n(продолжение твоей жизни: разговор шёл в другом чате или до перезапуска программы; последние события:)\n${t}`;
   }
 
   /** Ключевой мозг (формат OpenAI): вводная - system, история - по очереди, ответ - текст. */
