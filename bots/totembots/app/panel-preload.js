@@ -5,6 +5,9 @@ const call = (ch) => (arg) => ipcRenderer.invoke(ch, arg);
 contextBridge.exposeInMainWorld('totem', {
   qwenReload: call('qwen-reload'),
   qwenTab: call('qwen-tab'),
+  viewShow: call('view-show'),
+  viewNav: call('view-nav'),
+  siteLogin: call('site-login'),
   qwenTabReload: call('qwen-tab-reload'),
   qwenState: call('qwen-state'),
   qwenLoginChrome: call('qwen-login-chrome'),

@@ -192,27 +192,10 @@ function abToAnswer(text) {
 // Заглушка поверх Qwen, пока программа сама работает в окне (пара секунд): щелчки и клавиши владельца не попадают
 // в поле ввода и меню. Наши действия идут мимо неё: скрипты вызывают события прямо на элементах, а перед настоящим
 // щелчком отладчиком заглушка на миг прячется.
-const BUSY_ON = `(() => {
-  let o = document.getElementById('tb-busy');
-  if (!o) {
-    o = document.createElement('div'); o.id = 'tb-busy'; o.tabIndex = -1;
-    o.style.cssText = 'position:fixed;inset:0;z-index:2147483647;background:rgba(20,20,24,.18);cursor:progress;display:flex;align-items:flex-end;justify-content:center;outline:none';
-    o.innerHTML = '<div style="margin-bottom:18px;padding:6px 14px;border-radius:8px;background:#2b2d31;color:#e6e6e6;font:13px Segoe UI,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.4)">Бот работает с Qwen, подождите пару секунд</div>';
-    for (const t of ['mousedown','mouseup','click','dblclick','wheel','contextmenu','keydown','keypress','keyup'])
-      o.addEventListener(t, (e) => { if (e.isTrusted && !window.__tbPass) { e.preventDefault(); e.stopPropagation(); } }, true);
-    document.documentElement.appendChild(o);
-  }
-  if (!window.__tbKeys) {   // клавиши владельца не уходят в поле ввода, пока заглушка на месте
-    window.__tbKeys = true;
-    for (const t of ['keydown', 'keypress', 'keyup', 'paste'])
-      window.addEventListener(t, (e) => { if (e.isTrusted && document.getElementById('tb-busy') && !window.__tbPass) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
-  }
-  o.style.display = 'flex';
-  if (document.activeElement && document.activeElement !== o) document.activeElement.blur();
-  o.focus();
-  return 1;
-})()`;
-const BUSY_OFF = `(() => { const o = document.getElementById('tb-busy'); if (o) o.remove(); return 1; })()`;
+// Замок окна (lock.js): щелчки и клавиши владельца не проходят, прокрутка - проходит.
+const { lockOn, LOCK_OFF } = require('./lock');
+const BUSY_ON = lockOn('Бот работает с Qwen в этом окне: листать можно, нажимать и печатать нельзя');
+const BUSY_OFF = LOCK_OFF;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -363,7 +346,7 @@ class QwenBridge {
   }
 
   /** Перед настоящим щелчком отладчиком - пропустить его сквозь заглушку. */
-  passThrough(on) { return this.wc.executeJavaScript(`window.__tbPass = ${on ? 'true' : 'false'}; (() => { const o = document.getElementById('tb-busy'); if (o) o.style.pointerEvents = ${on ? "'none'" : "'auto'"}; })()`).catch(() => {}); }
+  passThrough(on) { return this.wc.executeJavaScript(`window.__tbPass = ${on ? 'true' : 'false'}; 1`).catch(() => {}); }
 
   hook() { return this.wc.executeJavaScript(HOOK); }
 

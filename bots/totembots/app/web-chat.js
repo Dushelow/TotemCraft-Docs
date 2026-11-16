@@ -1,5 +1,6 @@
 // Нейросеть через сайт без ключа (DeepSeek и т.п.): своё окно со своим входом, вопрос - в поле ввода, ответ - текст
 // последнего сообщения, когда он перестал меняться. Проверку «не робот ли вы» проходит человек (программа ждёт).
+const { lockOn, LOCK_OFF } = require('./lock');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SITES = {
@@ -41,9 +42,19 @@ class WebChat {
   constructor(wc, siteId, onAttention = () => {}) {
     this.wc = wc; this.site = SITES[siteId]; this.id = siteId; this.onAttention = onAttention;
     this.chain = Promise.resolve();
+    this.busy = 0;
+    wc.on('dom-ready', () => { if (this.busy) this.js(lockOn()).catch(() => {}); });
   }
 
-  exclusive(fn) { const p = this.chain.then(fn, fn); this.chain = p.catch(() => {}); return p; }
+  // пока программа работает в окне - замок (lock.js): владелец может листать, но не нажимать и не печатать
+  exclusive(fn) {
+    const run = async () => {
+      this.busy = (this.busy || 0) + 1;
+      this.js(lockOn(`Бот работает с ${this.site.name.replace(/ \(сайт\)$/, '')} в этом окне: листать можно, нажимать и печатать нельзя`)).catch(() => {});
+      try { return await fn(); } finally { if (--this.busy === 0) this.js(LOCK_OFF).catch(() => {}); }
+    };
+    const p = this.chain.then(run, run); this.chain = p.catch(() => {}); return p;
+  }
 
   js(code) { return this.wc.executeJavaScript(code); }
 
@@ -66,7 +77,7 @@ class WebChat {
     if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через Chrome»`);
     const want = chatId && s.chatUrl ? s.chatUrl(chatId) : (chatId && this.wc.getURL().includes(chatId) ? this.wc.getURL() : s.home);
     if (!this.wc.getURL().startsWith(want) || !chatId) { await this.wc.loadURL(want); await sleep(1500); }
-    if (await this.captcha()) throw new Error(`${s.name}: проверка «не робот» - пройдите её во вкладке`);
+    if (await this.captcha()) { await this.js(LOCK_OFF).catch(() => {}); throw new Error(`${s.name}: проверка «не робот» - пройдите её в окне бота`); }
     // поле ввода
     let ok = false;
     for (let i = 0; i < 40 && !ok; i++) { ok = await this.js(`!!document.querySelector(${JSON.stringify(s.input)})`).catch(() => false); if (!ok) await sleep(250); }
@@ -91,7 +102,7 @@ class WebChat {
     let last = '', stableSince = 0;
     while (Date.now() - t0 < 120000) {
       await sleep(500);
-      if (await this.captcha()) { this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке`); throw new Error(`${s.name}: проверка «не робот»`); }
+      if (await this.captcha()) { await this.js(LOCK_OFF).catch(() => {}); this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке`); throw new Error(`${s.name}: проверка «не робот»`); }
       const r = (await readNow()) || { n: 0, t: '' };
       if (r.n <= before + (s.history ? 1 : 0) || !r.t) {
         // не ушло или сайт показал ошибку - как человек: нажать «повторить» (у DeepSeek - значок повторной отправки),

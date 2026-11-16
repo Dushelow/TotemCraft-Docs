@@ -18,7 +18,7 @@ const { Router, PRESETS } = require('./router');
 const { WebChat, SITES } = require('./web-chat');
 
 const PANEL_WIDTH = 440;
-const TAB_H = 34;   // полоска вкладок над Qwen: «Окно бота» и «Моё окно Qwen»
+const TAB_H = 68;   // полоска над окнами сайтов: «Окна бота / Мои окна», вкладки сайтов, подсказка
 const QWEN_URL = 'https://chat.qwen.ai/';
 
 // Google не пускает вход во встроенные браузеры по метке «Electron» в user agent: показываем обычный Chrome.
@@ -39,8 +39,16 @@ if (!process.env.TOTEMBOTS_CONFIG) {
   app.setPath('userData', path.join(LOCAL, 'userdata'));
 }
 
-let win, qwen, mine, dsView, bridge, router, voice, memory, project, worldMap, travel;
-let tab = 'bot';
+let win, qwen, dsView, bridge, router, voice, memory, project, worldMap, travel;
+// Что показано справа: окно бота на сайте (mode 'work', там работает программа) или своё окно владельца (mode 'mine',
+// тот же вход, бот туда не заходит). Одинаково для всех сайтов: Qwen, DeepSeek, Kimi...
+let view = { mode: 'work', site: 'qwen' };
+const siteLogged = {};   // id сайта -> вошёл ли (проверка окна бота раз в 10 с)
+function siteList() {
+  return [{ id: 'qwen', name: 'Qwen', home: QWEN_URL, part: 'persist:qwen' },
+    ...Object.entries(SITES).map(([id, s]) => ({ id, name: s.name.replace(/ \(сайт\)$/, ''), home: s.home, part: 'persist:' + id }))];
+}
+const siteOf = (id) => siteList().find((x) => x.id === id);
 
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
@@ -107,9 +115,13 @@ function stateForPanel() {
   return {
     host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused,
     sites: Object.fromEntries(Object.entries(SITES).map(([k, s]) => [k, { name: s.name, logged: k === 'deepseek' || !!(cfg.webLogged || {})[k] }])),
+    siteList: siteList().map((x) => ({ id: x.id, name: x.name, logged: x.id === 'qwen' ? !!siteLogged.qwen : (siteLogged[x.id] ?? !!(cfg.webLogged || {})[x.id]),
+      busy: x.id === 'qwen' ? !!(bridge && bridge.busy) : !!(webChats[x.id] && webChats[x.id].busy),
+      captcha: x.id === 'qwen' ? !!(bridge && bridge.captcha) : false, open: x.id === 'qwen' || !!webViews[x.id], mine: !!myViews[x.id], inOrder: brainOrder().some((o) => o === x.id || o === x.id + 'web') })),
+    view,
     brains: { order: (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'geminiweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek'], has: Object.fromEntries(Object.keys(PRESETS).map((k) => [k, !!((cfg.brains || {}).keys || {})[k]])),
       models: Object.fromEntries(Object.entries(PRESETS).map(([k, p]) => [k, ((cfg.brains || {}).models || {})[k] || p.model])), presets: PRESETS,
-      now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, tab, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
+      now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
     voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
@@ -126,26 +138,43 @@ function layout() {
   const [w, h] = win.getContentSize();
   const r = { x: PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
   qwen.setBounds(r);
-  if (mine) mine.setBounds(r);
   for (const v of Object.values(webViews)) v.setBounds(r);
+  for (const v of Object.values(myViews)) v.setBounds(r);
 }
 
-// Своё окно Qwen владельца: тот же вход, отдельная страница. Бот в нём ничего не делает, поэтому там можно менять
-// настройки, голос, смотреть чаты, пока бот занят в своём окне. Окна лежат друг на друге: показанное - сверху,
-// второе продолжает работать (бот отвечает и в скрытом окне).
-function showTab(name) {
-  if (name === 'mine' && !mine) {
-    const qs = session.fromPartition('persist:qwen');
-    mine = new WebContentsView({ webPreferences: { session: qs } });
-    mine.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: qs } } }));
-    mine.webContents.loadURL(QWEN_URL);
-  }
-  tab = name === 'mine' ? 'mine' : SITES[name] ? name : 'bot';
-  win.contentView.addChildView(tab === 'mine' ? mine : SITES[tab] ? webView(tab) : qwen);   // уже добавленное окно переносится наверх
+// Окна лежат друг на друге: показанное - сверху, остальные продолжают работать (бот отвечает и в скрытом окне).
+// «Моё окно» сайта - отдельная страница с тем же входом: там владелец меняет настройки, голос, пишет сам, а бот
+// туда не заходит. Создаётся при первом открытии.
+const myViews = {};
+function myView(site) {
+  if (myViews[site]) return myViews[site];
+  const x = siteOf(site);
+  const ses = session.fromPartition(x.part);
+  const v = new WebContentsView({ webPreferences: { session: ses } });
+  win.contentView.addChildView(v, 0);
+  v.webContents.loadURL(x.home);
+  v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
+  myViews[site] = v;
   layout();
-  return tab;
+  return v;
 }
-function openMine(url) { showTab('mine'); mine.webContents.loadURL(url); }
+function viewOf(mode, site) { return mode === 'mine' ? myView(site) : site === 'qwen' ? qwen : webView(site); }
+function showView(mode, site) {
+  if (!siteOf(site)) site = 'qwen';
+  view = { mode: mode === 'mine' ? 'mine' : 'work', site };
+  win.contentView.addChildView(viewOf(view.mode, site));   // уже добавленное окно переносится наверх
+  layout();
+  return view;
+}
+// старые названия вкладок: bot - окно бота Qwen, mine - моё окно Qwen, имя сайта - окно бота на сайте
+function showTab(name) { return name === 'mine' ? showView('mine', 'qwen') : showView('work', name === 'bot' ? 'qwen' : name); }
+function openMine(url) { showView('mine', 'qwen'); myViews.qwen.webContents.loadURL(url); }
+function brainOrder() { return (cfg.brains && cfg.brains.order) || ['qwen', 'deepseekweb']; }
+// вошёл ли владелец на сайтах (по окнам бота, которые уже открыты)
+setInterval(async () => {
+  try { if (qwen) siteLogged.qwen = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")'); } catch {}
+  for (const [id, w] of Object.entries(webChats)) { try { siteLogged[id] = await w.loggedIn(); } catch {} }
+}, 10000);
 
 const webViews = {}, webChats = {};
 function webView(site) {
@@ -163,7 +192,7 @@ function webView(site) {
 function webChat(site) {
   if (webChats[site]) return webChats[site];
   const w = new WebChat(webView(site).webContents, site, (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
-  w.inUse = () => tab === site;
+  w.inUse = () => view.mode === 'work' && view.site === site;
   return (webChats[site] = w);
 }
 
@@ -298,7 +327,17 @@ function startProjectSync() {
 // --- панель
 ipcMain.handle('qwen-reload', () => qwen.webContents.loadURL(QWEN_URL));
 ipcMain.handle('qwen-tab', (_e, name) => showTab(name));
-ipcMain.handle('qwen-tab-reload', () => { if (tab === 'mine' && mine) mine.webContents.reload(); else qwen.webContents.reload(); return true; });
+ipcMain.handle('view-show', (_e, { mode, site }) => showView(mode, site));
+ipcMain.handle('view-nav', (_e, what) => {
+  const wc = viewOf(view.mode, view.site).webContents;
+  // окно бота, пока он там работает, не перезагружать - сорвётся ответ
+  if (view.mode === 'work' && ((view.site === 'qwen' && bridge.busy) || (webChats[view.site] && webChats[view.site].busy))) return 'бот сейчас работает в этом окне - подождите';
+  if (what === 'back' && wc.navigationHistory.canGoBack()) wc.navigationHistory.goBack();
+  else if (what === 'home') wc.loadURL(siteOf(view.site).home);
+  else if (what === 'reload') wc.reload();
+  return '';
+});
+ipcMain.handle('site-login', (_e, site) => (site === 'qwen' ? loginQwen() : site === 'deepseek' ? loginDeepseek() : loginSite(site)));
 ipcMain.handle('qwen-state', async () => {
   try {
     return await qwen.webContents.executeJavaScript('({ url: location.href, loggedIn: !!localStorage.getItem("token") })');
@@ -487,13 +526,14 @@ ipcMain.handle('chat-rewarm', async (_e, name) => {
 ipcMain.handle('bot-chat', (_e, name) => {
   const b = cfg.bots.find((x) => x.name === name);
   // чат бота - в окне бота; пока бот отвечает, страницу не трогаем
-  showTab('bot');
+  showView('work', 'qwen');
   if (b && b.chatId && !bridge.busy && !qwen.webContents.getURL().includes(b.chatId)) qwen.webContents.loadURL(`${QWEN_URL}c/${b.chatId}`);
   return true;
 });
 
 // Вход в любой сайт через настоящий Chrome: куки и localStorage - в окно сайта; сайт отмечается «вошёл»
-ipcMain.handle('site-login-chrome', async (_e, site) => {
+ipcMain.handle('site-login-chrome', (_e, site) => loginSite(site));
+async function loginSite(site) {
   const status = (t) => win.webContents.send('qwen-login-status', t);
   if (!SITES[site]) return { ok: false };
   try {
@@ -509,13 +549,14 @@ ipcMain.handle('site-login-chrome', async (_e, site) => {
     status(`Готово: ${SITES[site].name} вошёл в программе`); win.focus();
     return { ok: true };
   } catch (e) { status(`${SITES[site].name}: не вышло - ${e.message}`); return { ok: false, error: e.message }; }
-});
+}
 // вошли прямо во вкладке сайта - отметить вручную
 ipcMain.handle('site-mark-logged', (_e, site) => { if (SITES[site]) { cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg(); } return true; });
 ipcMain.handle('site-test', async (_e, site) => { try { const r = await webChat(site).ask('', 'Это проверка связи. Ответь одним словом: работает'); return 'ответ: ' + String(r.answer).slice(0, 80); } catch (e) { return 'ошибка: ' + e.message; } });
 
 // Вход в DeepSeek через настоящий Chrome (встроенное окно Google не пускает): куки и userToken - в окно DeepSeek
-ipcMain.handle('deepseek-login-chrome', async () => {
+ipcMain.handle('deepseek-login-chrome', () => loginDeepseek());
+async function loginDeepseek() {
   const status = (t) => win.webContents.send('qwen-login-status', t);
   try {
     const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login-deepseek'), status, 'deepseek');
@@ -531,11 +572,12 @@ ipcMain.handle('deepseek-login-chrome', async () => {
     win.focus();
     return { ok: true };
   } catch (e) { status('DeepSeek: не вышло - ' + e.message); return { ok: false, error: e.message }; }
-});
+}
 
 // Вход через настоящий Chrome: забираем куки и token Qwen в профиль программы.
 const SAME_SITE = { Strict: 'strict', Lax: 'lax', None: 'no_restriction' };
-ipcMain.handle('qwen-login-chrome', async () => {
+ipcMain.handle('qwen-login-chrome', () => loginQwen());
+async function loginQwen() {
   const status = (t) => win.webContents.send('qwen-login-status', t);
   try {
     const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login'), status);
@@ -557,7 +599,7 @@ ipcMain.handle('qwen-login-chrome', async () => {
     status('Не вышло: ' + e.message);
     return { ok: false, error: e.message };
   }
-});
+}
 
 app.whenReady().then(() => { loadCfg();
   try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow();
