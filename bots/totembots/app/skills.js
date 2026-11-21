@@ -333,6 +333,7 @@ class Skills {
     const { Movements } = require('mineflayer-pathfinder');
     const b = this.b, base = this.tb.movements;
     const mv = new Movements(b);
+    require('./house-moves').install(mv, b);
     Object.assign(mv, { canDig: true, allow1by1towers: false, scafoldingBlocks: [], allowParkour: true, allowSprinting: true, canOpenDoors: true, maxDropDown: 3 });
     if (base) { mv.blocksToAvoid = base.blocksToAvoid; mv.entitiesToAvoid = base.entitiesToAvoid; mv.exclusionAreasStep = base.exclusionAreasStep; }
     // ломать по пути можно только природное (брёвна - нет: их только с дерева через gather)

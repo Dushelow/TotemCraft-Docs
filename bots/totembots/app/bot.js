@@ -157,6 +157,7 @@ class TotemBot extends EventEmitter {
           return diag(node, dir, neighbors);
         };
       }
+      require('./house-moves').install(mv, bot);   // ступеньки и плиты - шагом, люки - открыть по пути
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
       bot.pathfinder.thinkTimeout = 15000;   // путь в обход (без паркура) ищется дольше 5 с по умолчанию
@@ -554,6 +555,7 @@ class TotemBot extends EventEmitter {
       if (this.guard) this.guard.combatTick();
       this.swimTick();
       this.waterExitTick();
+      if ((this._tk = (this._tk || 0) + 1) % 4 === 0) require('./house-moves').trapdoorTick(this);
     });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
   }
