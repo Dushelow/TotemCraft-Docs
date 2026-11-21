@@ -26,7 +26,7 @@ const BAD = /^(water|lava|fire|soul_fire|cobweb|bubble_column|sweet_berry_bush|p
 function install(mv, bot) {
   const base = mv.getNeighbors.bind(mv);
   const Block = require('prismarine-block')(mv.bot.registry);
-  const cache = new Map();   // коробки блока по координатам; сбрасывается раз в 3 с (мир меняется)
+  const cache = new Map();   // коробки блока по координатам; сбрасывается раз в 3 с и при изменении блока
   let cacheAt = 0, ox = 0, oz = 0;   // числовой ключ кэша - от точки отсчёта (строки в 5 раз медленнее)
   const blk = (x, y, z) => mv.bot.blockAt(new Vec3(x, y, z), false);
 
@@ -120,7 +120,7 @@ function install(mv, bot) {
   }
 
   mv.getNeighbors = function (node) {
-    if (Date.now() - cacheAt > 3000) { cache.clear(); cacheAt = Date.now(); ox = node.x; oz = node.z; }
+    if (Date.now() - cacheAt > 3000) { cache.clear(); cacheAt = Date.now(); ox = node.x; oz = node.z; cache.ox = ox; cache.oz = oz; }
     const out = [];
     // ходы модуля пути: с ломанием или стройкой, вертикальные (лестницы, лианы, столбы) и в воде - оставить
     for (const m of base(node)) {
@@ -151,7 +151,9 @@ function install(mv, bot) {
         const w2 = walk(cx, fy, cz, nx + 0.5, nz + 0.5, flip);
         if (!w2 || w2.hit.length) continue;
         const done = new Set();
-        for (const c of w.hit) { const pk = pairKey(c); if (pk && done.has(pk)) continue; done.add(c.k); toPlace.push({ x: c.at[0], y: c.at[1], z: c.at[2], dx: 0, dy: 0, dz: 0, useOne: true }); }
+        // не через toPlace модуля пути: у него после открытия ошибка, путь пересчитывается, и калитка закрывалась
+        // обратно (21.11 спам открыть-закрыть). Ход помнит нужное положение, открывает тело само (ниже).
+        for (const c of w.hit) { const pk = pairKey(c); if (pk && done.has(pk)) continue; done.add(c.k); const pr = c.b.getProperties(); toPlace.push({ x: c.at[0], y: c.at[1], z: c.at[2], want: !(pr.open === true || pr.open === 'true') }); }
         w = { ...w2, opened: true };
       }
       if (!w) continue;
@@ -163,13 +165,15 @@ function install(mv, bot) {
       const k = `${nx},${ny},${nz}`;
       if (seen.has(k)) continue;
       seen.add(k);
-      const m = new Move(nx, ny, nz, node.remainingBlocks, cost, [], toPlace);
+      const m = new Move(nx, ny, nz, node.remainingBlocks, cost, [], []);
+      if (toPlace.length) m.opens = toPlace;
       m.feet = w.feet; m.cell = [nx, nz];   // настоящая высота ног и клетка: точку маршрута ставим по ним (см. ниже)
       out.push(m);
     }
     return out;
   };
   mv._nav = { support, body, walk, cell };
+  if (bot) (bot._navCaches = bot._navCaches || []).push(cache);
   // Точки маршрута. Модуль пути после поиска ставит точку «на верх блока» в клетке; у открытого люка или двери у края
   // клетки это верх тонкой стенки - точка на блок выше пола и смещена к краю, бот до неё «не доходит» и стоит (сбой
   // по «stuck» через 3,5 с). Наши шаги знают настоящую высоту ног - ставим точку в центр клетки на эту высоту.
@@ -178,6 +182,24 @@ function install(mv, bot) {
     bot.on('path_update', (r) => {
       // и после двери тоже: там модуль пути оставлял угол клетки вместо центра
       for (const p of r.path || []) if (p.cell) { p.x = p.cell[0] + 0.5; p.z = p.cell[1] + 0.5; p.y = p.feet; }
+      bot._navPath = r.path;
+    });
+    // блок изменился (открыли калитку) - забыть его старую форму сразу, а не через 3 с
+    bot.on('blockUpdate', (o, n) => { const v = (n || o) && (n || o).position; if (v) for (const c of bot._navCaches || []) c.delete(((v.x - c.ox + 1048576) * 2097152 + (v.z - c.oz + 1048576)) * 1024 + (v.y + 512)); });
+    // двери, калитки, люки на ближайших шагах: открыть (закрыть), только если сейчас не в нужном положении
+    const tog = new Map();
+    bot.on('physicsTick', () => {
+      const path = bot._navPath, me = bot.entity && bot.entity.position;
+      if (!path || !me) return;
+      for (const m of path.slice(0, 2)) for (const o of m.opens || []) {
+        if (Math.hypot(o.x + 0.5 - me.x, o.z + 0.5 - me.z) > 3) continue;
+        const k = `${o.x},${o.y},${o.z}`, b = bot.blockAt(new Vec3(o.x, o.y, o.z));
+        if (!b || !OPENABLE.test(b.name)) continue;
+        const pr = b.getProperties(), open = pr.open === true || pr.open === 'true';
+        if (open === o.want || Date.now() - (tog.get(k) || 0) < 1500) continue;
+        tog.set(k, Date.now());
+        bot.activateBlock(b).catch(() => {});
+      }
     });
   }
 }

@@ -60,7 +60,7 @@ function replay(bot, from, r) {
   const g = bot.blockAt(new Vec3(from[0], from[1], from[2]));   // старт на кровати, плите, люке - ноги выше клетки
   if (g.shapes && g.shapes.length) ent.position.y = from[1] + Math.max(...g.shapes.map((s) => s[4]));
   for (const m of r.path) {
-    for (const p of m.toPlace) if (p.useOne) bot.toggle(p.x, p.y, p.z);
+    for (const p of m.opens || []) bot.toggle(p.x, p.y, p.z);
     if (!walkTo(bot, ent, m)) return `физически не прошла к ${m.x},${m.y},${m.z} (стоит на ${ent.position.x.toFixed(2)},${ent.position.y.toFixed(2)},${ent.position.z.toFixed(2)})`;
   }
   return null;
@@ -76,7 +76,7 @@ function check(name, build, from, goal, wantPath, extra) {
     if (ok && extra) { const e = extra(r.path); if (e) { ok = false; note = ' - ' + e; } }
   }
   results.push(ok);
-  console.log(`${ok ? 'да ' : 'НЕТ'} ${name}: ${r.status}${r.status === 'success' ? ' через ' + r.path.slice(0, 5).map((p) => `${p.x},${p.y},${p.z}${p.toPlace.length ? '(откр.)' : ''}`).join(' ') : ''}${note}`);
+  console.log(`${ok ? 'да ' : 'НЕТ'} ${name}: ${r.status}${r.status === 'success' ? ' через ' + r.path.slice(0, 5).map((p) => `${p.x},${p.y},${p.z}${p.opens ? '(откр.)' : ''}`).join(' ') : ''}${note}`);
 }
 const wall = (set, x, h = 3) => { for (let z = -6; z <= 6; z++) for (let y = 65; y < 65 + h; y++) set(x, y, z, 'stone'); };
 const T = (half, open, facing = 'east') => ({ facing, half, open, powered: false, waterlogged: false });
