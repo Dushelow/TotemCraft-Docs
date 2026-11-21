@@ -64,13 +64,15 @@ function trapdoorTick(tb) {
   path.forEach((q, i) => { const d = Math.abs(q.x - b.entity.position.x) + Math.abs(q.y - b.entity.position.y) + Math.abs(q.z - b.entity.position.z); if (d < bd) { bd = d; i0 = i; } });
   const next = path[i0 + 1] || path[i0];
   const cands = [p.offset(0, 2, 0)];
+  // путь вниз (в подвал под люком): люк под ногами и в клетке следующего шага - открыть (21.11 стояла на люке 4 мин)
+  if (next && next.y < p.y) { cands.push(p, p.offset(0, -1, 0), new (p.constructor)(Math.floor(next.x), p.y, Math.floor(next.z)), new (p.constructor)(Math.floor(next.x), p.y - 1, Math.floor(next.z))); }
   if (next) { const nx = Math.floor(next.x), nz = Math.floor(next.z); cands.push(new (p.constructor)(nx, p.y + 1, nz), new (p.constructor)(nx, p.y + 2, nz)); }
   for (const v of cands) {
     const k = b.blockAt(v);
     if (!k || !WOOD_TRAPDOOR(k.name) || !k.getProperties) continue;
     const pr = k.getProperties();
     if (pr.open) continue;
-    if (pr.half === 'top' && next && next.y <= p.y) continue;   // путь не вверх - не трогать
+    if (pr.half === 'top' && next && next.y <= p.y && v.y > p.y) continue;   // люк сверху, а путь не вверх - не трогать
     tb.trapAt = Date.now();
     b.activateBlock(k).then(() => tb.log(`открыл люк ${v.x} ${v.y} ${v.z}`)).catch(() => {});
     return;
