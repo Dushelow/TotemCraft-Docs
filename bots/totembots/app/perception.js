@@ -155,6 +155,7 @@ class Perception {
     const room = this.houseText() || this.roomText();
     let objs = ''; try { objs = require('./objects').describe(this); } catch {}
     let dk = ''; try { dk = this.darkness(); } catch {}
+    try { const hs = this.heardText && this.heardText(); if (hs) dk = dk ? dk + '; ' + hs : hs; } catch {}
     return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; ${rd.text ? '' : 'мобы: '}${ml}` : '') + (dk ? `; ${dk}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
   }
 

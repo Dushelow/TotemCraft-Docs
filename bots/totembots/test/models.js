@@ -164,3 +164,17 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const d = tb.district();
   console.log('--- районы: ' + (d === 'ты у места «торговый зал»; таблички рядом: «Спавн TotemCraft»' ? d : 'НЕТ: ' + d));
 }
+
+// слух: шипение крипера сзади - в мозг сразу и рефлекс отбежать; бытовые звуки - не говорить
+{
+  const { Hearing } = require('../app/hearing');
+  const { Vec3 } = require('vec3');
+  const tb = Object.create(Hearing.prototype), events = [];
+  tb.bot = { entity: { position: new Vec3(0, 64, 0), yaw: 0 } }; tb.event = (t) => events.push(t);
+  tb.hear('entity.creeper.primed', new Vec3(0, 64, 4));   // yaw 0 - смотрит на север (-z), звук с юга - сзади
+  tb.hear('block.wooden_door.open', new Vec3(3, 64, 0));
+  tb.hear('entity.zombie.ambient', new Vec3(-10, 64, 0));
+  const t = tb.heardText();
+  const ok = events[0] === 'слышу: шипит крипер сзади 4 бл.' && tb.heardPrime && /шипит крипер сзади 4 бл., зомби (слева|справа) 10 бл./.test(t) && !/дверь/.test(t);
+  console.log('--- слух: ' + (ok ? t : 'НЕТ: ' + events.join('|') + ' / ' + t));
+}

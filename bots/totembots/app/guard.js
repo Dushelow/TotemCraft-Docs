@@ -103,8 +103,10 @@ class Guard {
 
     // крипер: пока не шипит - бьём и отскакиваем (как игроки), зашипел или варден - отбегаем
     const swelling = (e) => this.name(e) === 'creeper' && (e.metadata[16] === 1 || e.metadata[18] === true);
+    const heard = tb.heardPrime && Date.now() - tb.heardPrime.at < 1500 ? tb.heardPrime.pos : null;   // шипение слышно (hearing.js)
     const scary = Object.values(b.entities).find((e) => FLEE.has(this.name(e)) && e.position.distanceTo(me) < 6
-      && (this.name(e) === 'warden' || swelling(e) || b.health <= 6));
+      && (this.name(e) === 'warden' || swelling(e) || b.health <= 6 || (heard && this.name(e) === 'creeper' && e.position.distanceTo(heard) < 2)))
+      || (heard ? { position: heard, name: 'creeper' } : null);
     if (scary) {
       const away = me.minus(scary.position).normalize().scaled(10).plus(me);
       if (!this.fleeing) { this.fleeing = true; tb.log('отбегаю от ' + this.name(scary)); }
