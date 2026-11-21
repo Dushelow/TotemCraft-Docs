@@ -31,3 +31,15 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const bad = r.filter((x) => x[1] !== x[2]);
   console.log(`--- жизнь тела: ${r.length - bad.length} из ${r.length}${bad.length ? ' НЕ ТАК: ' + bad.map((x) => x[0] + ' -> ' + x[1]).join(', ') : ''}`);
 }
+
+// умные предметы: правила тела
+(async () => {
+  const o = require('../app/objects');
+  const { Vec3 } = require('vec3');
+  const tb = (name, source) => ({ runSource: source, bot: { blockAt: (v) => ({ name, position: v }) } });
+  const r = [];
+  try { await o.use(tb('lever', 'self'), { x: 1, y: 64, z: 1 }); r.push(['рычаг сам', 'нажала']); } catch (e) { r.push(['рычаг сам', /по просьбе хозяина/.test(e.message) ? 'отказ' : e.message]); }
+  try { await o.use(tb('anvil', 'master'), { x: 1, y: 64, z: 1 }); r.push(['наковальня', 'вышло']); } catch (e) { r.push(['наковальня', /не умею/.test(e.message) ? 'не умею' : e.message]); }
+  const ok = r[0][1] === 'отказ' && r[1][1] === 'не умею';
+  console.log(`--- умные предметы: ${ok ? 'правила соблюдены' : 'НЕ ТАК: ' + JSON.stringify(r)}`);
+})();

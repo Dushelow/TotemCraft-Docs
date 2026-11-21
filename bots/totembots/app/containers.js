@@ -1,0 +1,112 @@
+// Сундуки: открыть (и под замком), взять, положить, отдать.
+// Вынесено из bot.js (разбивка большого файла, 21.11.2026): методы подмешиваются в TotemBot, this - тело бота.
+const { goals } = require('mineflayer-pathfinder');
+const { Vec3 } = require('vec3');
+const { BUILT } = require('./skills');
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const rnd = (a, b) => a + Math.random() * (b - a);
+const isCancel = (e) => e && e.constructor && e.constructor.name === 'Cancelled';
+
+class Containers {
+  matchItems(list, want) {
+    const w = String(want || '').toLowerCase().replace(/^minecraft:/, '').trim();
+    if (!w || w === 'all' || w === 'все' || w === 'всё') return list;
+    return list.filter((i) => i.name === w || i.name.endsWith('_' + w) || i.name.startsWith(w + '_') || i.name.includes(w));
+  }
+
+  async openAt(x, y, z, tok) {
+    const b = this.bot;
+    const block = b.blockAt(new Vec3(x, y, z));
+    if (!block) throw new Error(`блок ${x} ${y} ${z} не загружен (далеко)`);
+    await this.goto(new goals.GoalLookAtBlock(block.position, b.world, { reach: 4 }), tok);   // видеть сундук, а не открывать сквозь стену (16.11)
+    this.busyLook = true;
+    try {
+      await b.lookAt(block.position.offset(0.5, 0.5, 0.5));
+      return await b.openContainer(block);
+    } finally { this.busyLook = false; }
+  }
+
+  /**
+   * Открыть сундук; под замком LWC сервер пишет «принадлежит другому игроку» и окно не открывается (ждали 20 с, а бот
+   * думал, что сундуки «переполнены», 21.11). Такой сундук запоминается чужим и больше не выбирается.
+   */
+  async openLocked(x, y, z, tok) {
+    const before = (this.lastSystem || []).length;
+    try { return await this.openAt(x, y, z, tok); }
+    catch (e) {
+      const said = (this.lastSystem || []).slice(before).join(' ');
+      if (/принадлежит другому|protected|locked|заблокирован/i.test(said) || /windowOpen did not fire/.test(e.message)) {
+        (this.lockedChests = this.lockedChests || new Set()).add(`${x},${y},${z}`);
+        throw new Error(`сундук ${x} ${y} ${z} чужой, под замком - класть туда нельзя, нужен свой сундук`);
+      }
+      throw e;
+    }
+  }
+
+  // сундук не назван - ближайший (6 блоков)
+  nearestChest(a) {
+    if (!a.nearest && a.x !== undefined) return a;
+    const lk = this.lockedChests || new Set();
+    let k = this.bot.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$|shulker_box$/.test(bl.name), maxDistance: 6, count: 20 }).map((p) => this.bot.blockAt(p)).find((x) => !lk.has(`${x.position.x},${x.position.y},${x.position.z}`));
+    // в доме - и на другом этаже (16.11: «на втором этаже сундуки, подойди» - бот искал только в 6 блоках)
+    if (!k && this.house()) { const h = this.house(); const free = h.chests.find((v) => !lk.has(`${v.x},${v.y},${v.z}`)); if (free) k = this.bot.blockAt(free); }
+    if (!k) throw new Error('рядом нет сундука - нужны координаты: !takeFromChest(x, y, z, предмет, сколько)');
+    return { ...a, x: k.position.x, y: k.position.y, z: k.position.z };
+  }
+
+  async take(a, tok) {
+    a = this.nearestChest(a);
+    const c = await this.openAt(+a.x, +a.y, +a.z, tok);
+    let left = a.count ? +a.count : Infinity, got = 0;
+    try {
+      for (const it of this.matchItems(c.containerItems(), a.item)) {
+        if (left <= 0) break;
+        const n = Math.min(left, it.count);
+        await c.withdraw(it.type, null, n);
+        left -= n; got += n;
+        await sleep(rnd(150, 400));
+      }
+    } finally { c.close(); }
+    if (!got) throw new Error(`в сундуке ${a.x} ${a.y} ${a.z} нет ${a.item}`);
+    return `взял ${got} ${a.item} из ${a.x} ${a.y} ${a.z}`;
+  }
+
+  async put(a, tok) {
+    a = this.nearestChest(a);
+    const c = await this.openLocked(+a.x, +a.y, +a.z, tok);
+    let left = a.count ? +a.count : Infinity, put = 0;
+    try {
+      for (const it of this.matchItems(this.bot.inventory.items(), a.item)) {
+        if (left <= 0) break;
+        const n = Math.min(left, it.count);
+        await c.deposit(it.type, null, n);
+        left -= n; put += n;
+        await sleep(rnd(150, 400));
+      }
+    } finally { c.close(); }
+    if (!put) throw new Error(`нет у меня ${a.item}`);
+    return `положил ${put} ${a.item} в ${a.x} ${a.y} ${a.z}`;
+  }
+
+  async give(a, tok) {
+    const b = this.bot;
+    const e = this.player(a.who);
+    if (!e) throw new Error(`не вижу ${a.who} (далеко или в другом измерении)`);
+    await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, 2), tok);
+    const e2 = this.player(a.who);
+    if (e2) await b.lookAt(e2.position.offset(0, 1.2, 0));
+    let left = a.count ? +a.count : Infinity, gave = 0;
+    for (const it of this.matchItems(b.inventory.items(), a.item)) {
+      if (left <= 0) break;
+      const n = Math.min(left, it.count);
+      await b.toss(it.type, null, n);
+      left -= n; gave += n;
+      await sleep(rnd(200, 500));
+    }
+    if (!gave) throw new Error(`нет у меня ${a.item}`);
+    return `отдал ${a.who} ${gave} ${a.item}`;
+  }
+
+}
+
+module.exports = { Containers };
