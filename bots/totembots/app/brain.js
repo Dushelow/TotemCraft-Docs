@@ -170,7 +170,10 @@ class Brain {
       this.bridge.transcribe(pcm).then((text) => {
         if (!text) { this.log('голос не разобрал'); return; }
         this.log(`[голос] ${from}: ${text}`);
-        this.onChat({ from, text, channel: 'voice' });
+        // распознавание Qwen само угадывает язык и на коротких фразах выдаёт китайское «喂» или английское «Bye soon»
+        // вместо русской речи (21.11: бот попрощался «пока, Мастер», говорил про «смесь языков») - без русских букв не верим
+        if (!/[а-яё]/i.test(text)) { this.log('голос распознан не по-русски - пропускаю (скорее всего ошибка распознавания)'); return; }
+        this.onChat({ from, text: text + ' (распознано из голоса автоматически, возможны ошибки - бессмыслицу не принимай всерьёз)', channel: 'voice' });
       }).catch((e) => this.log('распознавание: ' + e.message));
     });
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
