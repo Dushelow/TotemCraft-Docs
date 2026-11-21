@@ -33,11 +33,13 @@ const KINDS = [
   ['obsidian', /obsidian/, [32, 20, 48]],
   ['stone', /stone|andesite|diorite|granite|tuff|calcite|deepslate|cobble|ore$|bedrock|clay|dripstone|amethyst/, [128, 128, 128]],
   ['other', /./, [140, 140, 120]],
+  ['wall', /^$/, [44, 44, 48]],   // стена в срезе (по имени не ищется; в конце - номера прежних видов не сдвигаются)
 ];
+const WALL = KINDS.length - 1, WATER = KINDS.findIndex((k) => k[0] === 'water');
 const KIND_INDEX = new Map();
 function kindOf(name) {
   let i = KIND_INDEX.get(name);
-  if (i === undefined) { i = KINDS.findIndex(([, re]) => re.test(name)); if (i < 0) i = KINDS.length - 1; KIND_INDEX.set(name, i); }
+  if (i === undefined) { i = KINDS.findIndex(([, re]) => re.test(name)); if (i < 0) i = KINDS.length - 2; KIND_INDEX.set(name, i); }
   return i;
 }
 const COLORS = KINDS.map((k) => k[2]);
@@ -65,7 +67,7 @@ function surface(b, col, airIds, nether) {
     }
     const k = found < 0 ? 0 : kindOf(name);
     let depth = 0;
-    if (k === 1) {   // вода: глубина до дна (до 15)
+    if (k === WATER) {   // вода: глубина до дна (до 15)
       for (let yy = found - 1; yy >= minY && depth < 15; yy--) { const bl = b.registry.blocksByStateId[col.getBlockStateId({ x, y: yy, z })]; if (!bl || !/water|kelp|seagrass|bubble_column/.test(bl.name)) break; depth++; }
       anyWater = true;
     }
@@ -73,6 +75,31 @@ function surface(b, col, airIds, nether) {
     px += A64[k]; hy += A64[hv >> 6] + A64[hv & 63]; wd += A64[depth];
   }
   return { px, hy: hy, wd: anyWater ? wd : undefined, my: minY };
+}
+
+/**
+ * Срез на высоте y0 (как режим пещер у Xaero): в каждой точке - пол, на котором можно стоять от y0+2 до y0-6
+ * (над ним два блока воздуха), или стена (на уровне y0 и y0+1 сплошное), или пусто (обрыв). Для пещер, шахт,
+ * многоэтажных баз и ярусов Незера: видно ходы на уровне бота, а не крышу над ним.
+ */
+function slice(b, col, airIds, y0) {
+  const minY = col.minY || 0;
+  const solid = (x, y, z) => { if (y < minY) return true; const id = col.getBlockStateId({ x, y, z }); if (airIds.has(id)) return false; const bl = b.registry.blocksByStateId[id]; return !!bl && bl.boundingBox === 'block' && !/water|lava/.test(bl.name); };
+  let px = '', hy = '';
+  for (let z = 0; z < 16; z++) for (let x = 0; x < 16; x++) {
+    let k = 0, hv = 0;
+    if (solid(x, y0, z) && solid(x, y0 + 1, z)) { k = WALL; hv = y0 - minY + 1; }   // стена
+    else for (let y = y0 + 2; y >= y0 - 6; y--) {
+      if (solid(x, y, z) && !solid(x, y + 1, z) && !solid(x, y + 2, z)) {
+        const bl = b.registry.blocksByStateId[col.getBlockStateId({ x, y, z })];
+        k = kindOf(bl ? bl.name : ''); hv = y - minY + 1; break;
+      }
+      const bl = b.registry.blocksByStateId[col.getBlockStateId({ x, y, z })];
+      if (bl && /water|lava/.test(bl.name)) { k = kindOf(bl.name); hv = y - minY + 1; break; }
+    }
+    px += A64[k]; hy += A64[hv >> 6] + A64[hv & 63];
+  }
+  return { px, hy, my: minY };
 }
 
 /** Разбор строк чанка для картинки и для тела. */
@@ -88,4 +115,4 @@ function decode(c) {
   return { k, h, d };
 }
 
-module.exports = { surface, decode, KINDS, COLORS, kindOf, A64 };
+module.exports = { surface, slice, decode, KINDS, COLORS, kindOf, A64, WALL };

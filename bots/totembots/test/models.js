@@ -89,3 +89,27 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const got = [at(0, 0), at(0, 6), at(5, 9), at(12, 6)].join(' '), want = 'water@64/1 grass@64 wood@70 path@64';
   console.log('--- карта по блокам: ' + (got === want ? 'вода с глубиной, трава, дом, тропа - верно' : 'НЕТ: ' + got));
 }
+
+// подземный слой: срез на высоте бота - видит ходы пещеры (восток длинный, север короткий), а не крышу
+{
+  const R = path.resolve(__dirname, '../node_modules');
+  const registry = require(R + '/prismarine-registry')('1.21.4'); const Chunk = require(R + '/prismarine-chunk')(registry); const { Vec3 } = require(R + '/vec3');
+  const { WorldMap } = require('../app/worldmap');
+  const cols = new Map(), id = (n) => registry.blocksByName[n].defaultState;
+  for (let cx = -2; cx <= 3; cx++) for (let cz = -2; cz <= 2; cz++) {
+    const col = new Chunk({ minY: -64, worldHeight: 384 });
+    for (let x = 0; x < 16; x++) for (let z = 0; z < 16; z++) for (let y = 30; y <= 70; y++) {
+      const X = cx * 16 + x, Z = cz * 16 + z;
+      const tunnel = (y === 40 || y === 41) && ((Z === 0 && X >= -10 && X <= 45) || (X === 0 && Z <= 0 && Z >= -12));
+      col.setBlockStateId(new Vec3(x, y, z), id(tunnel ? 'air' : y === 70 ? 'grass_block' : 'stone'));
+    }
+    cols.set(`${cx},${cz}`, col);
+  }
+  const wm = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'cv')));
+  wm.airIds = new Set(); for (const n of ['air', 'cave_air', 'void_air']) { const b = registry.blocksByName[n]; for (let i = b.minStateId; i <= b.maxStateId; i++) wm.airIds.add(i); }
+  wm.load('overworld').chunks['0,0'] = { t: Date.now(), k: 'g', h: 70, b: 0 };
+  const tb = { bot: { registry, entity: { position: new Vec3(0.5, 40, 0.5) }, game: { dimension: 'overworld' }, world: { getColumn: (x, z) => cols.get(`${x},${z}`) } } };
+  const t = wm.tunnels(tb);
+  const ok = /восток 4\d бл/.test(t) && /север 1\d бл/.test(t) && /запад 10 бл/.test(t) && /подземный слой/.test(wm.layerMode(tb));
+  console.log('--- подземный слой: ' + (ok ? 'ходы пещеры видны (' + t + ')' : 'НЕТ: ' + t));
+}

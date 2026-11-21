@@ -565,7 +565,7 @@ async function drawMap() {
   const mx = v.r * 16 + (v.me ? v.me[0] : 8), mz = v.r * 16 + (v.me ? v.me[1] : 8);
   g.fillStyle = '#fff'; g.strokeStyle = '#e5484d'; g.lineWidth = 2; g.beginPath(); g.arc(mx + 0.5, mz + 0.5, 5, 0, 7); g.fill(); g.stroke();
   const info = card.querySelector('[data-f="mapinfo"]');
-  if (info) info.textContent = `исследовано чанков: ${v.total}. Север сверху, бот - белая точка. Точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер.`;
+  if (info) info.textContent = `${v.layer ? 'Показан ' + v.layer + ' (тёмное - стены, чёрное - обрыв). ' : ''}исследовано чанков: ${v.total}. Север сверху, бот - белая точка. Точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер.`;
 }
 setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); }, 5000);
 

@@ -34,6 +34,7 @@ class Perception {
       else if (roof && built && roof.position.y - b.entity.position.y < 8) under = ', в помещении (постройка)';
       else if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй' + (ch && ch.h !== null && ch.h - s.pos[1] > 6 ? ` (поверхность около y ${ch.h}, ты на ${ch.h - s.pos[1]} ниже)` : '');
       // высоко над землёй (гора, башня, мост, небо) - тоже сказать: иначе «рядом» постройки и точки внизу путаются
+      if (under && this.worldMap && this.worldMap.tunnels) { try { const t = this.worldMap.tunnels(this); if (t) under += '; ' + t; } catch {} }
       if (/overworld/.test(b.game.dimension || '') && ch && ch.h !== null && s.pos[1] - ch.h > 12 && !under) under = `, высоко: земля здесь около y ${ch.h}, ты на ${s.pos[1] - ch.h} выше`;
     }
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : 'стоишь';

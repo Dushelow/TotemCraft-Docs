@@ -437,6 +437,51 @@ class WorldMap {
     return `${where}; исследовано ${explored} чанков` + (towns.length ? '; поселения: ' + towns.join('; ') : '') + (out.length ? '; ' + out.map((o) => o.text).join('; ') : '');
   }
 
+  /** Под землёй (крыша над головой, ниже поверхности чанка на 6+) или в Незере - показывать срез на высоте бота. */
+  layerMode(tb) {
+    const b = tb.bot, p = b.entity.position, d = String(b.game.dimension);
+    if (/nether/.test(d)) return `ярус Незера на высоте ${Math.floor(p.y)}`;
+    const c = this.load(d).chunks[`${Math.floor(p.x / 16)},${Math.floor(p.z / 16)}`];
+    if (c && c.h !== null && p.y < c.h - 6) return `подземный слой на высоте ${Math.floor(p.y)} (поверхность около ${c.h})`;
+    return '';
+  }
+
+  /**
+   * Ходы вокруг под землёй (для мозга): по срезу на высоте бота - куда можно пройти и как далеко (до 48 бл.),
+   * поиском в ширину по клеткам с полом. «Ходы: север 30 бл., восток 12 бл.; тупик на западе».
+   */
+  tunnels(tb) {
+    const b = tb.bot, p = b.entity.position, air = this.airIds;
+    if (!air || !this.layerMode(tb)) return '';
+    const y0 = Math.floor(p.y), mg = require('./mapgrid');
+    const cells = new Map();
+    const get = (x, z) => {
+      const cx = Math.floor(x / 16), cz = Math.floor(z / 16), k = `${cx},${cz}`;
+      if (!cells.has(k)) { const col = b.world.getColumn(cx, cz); cells.set(k, col ? mg.decode(mg.slice(b, col, air, y0)) : null); }
+      const d = cells.get(k); if (!d) return null;
+      const i = (((z % 16) + 16) % 16) * 16 + (((x % 16) + 16) % 16);
+      return d.k[i] > 0 && d.k[i] !== mg.WALL && !/water|lava/.test(mg.KINDS[d.k[i]][0]) ? d.h[i] : null;   // пол (не стена, не обрыв, не жидкость)
+    };
+    const sx = Math.floor(p.x), sz = Math.floor(p.z), seen = new Set([`${sx},${sz}`]), q = [[sx, sz, get(sx, sz) ?? y0 - 1]];
+    const far = {};
+    while (q.length && seen.size < 6000) {
+      const [x, z, h] = q.shift();
+      const dx = x - sx, dz = z - sz, dist = Math.hypot(dx, dz);
+      if (dist > 48) continue;
+      const dir = compass(dx, dz);
+      if (dist > (far[dir] || 0)) far[dir] = dist;
+      for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const nx = x + ax, nz = z + az, k = `${nx},${nz}`;
+        if (seen.has(k)) continue;
+        const nh = get(nx, nz);
+        if (nh === null || Math.abs(nh - h) > 1) continue;   // ступень больше блока - не проход
+        seen.add(k); q.push([nx, nz, nh]);
+      }
+    }
+    const open = Object.entries(far).filter(([, d]) => d >= 8).sort((a, c) => c[1] - a[1]).map(([d, n]) => `${d} ${Math.round(n)} бл.`);
+    return open.length ? 'ходы вокруг: ' + open.join(', ') : 'вокруг тупик (на твоём уровне ходов нет дальше 8 бл.)';
+  }
+
   /** Данные для картинки в панели: чанки и точки вокруг (cx,cz бота в центре). */
   view(tb, radiusChunks = 16) {
     const b = tb.bot;
@@ -451,7 +496,19 @@ class WorldMap {
     const poi = Object.values(m.poi).map((v) => [Math.floor(v.x / 16) - pcx, Math.floor(v.z / 16) - pcz, v.kind])
       .filter(([x, z]) => Math.abs(x) <= radiusChunks && Math.abs(z) <= radiusChunks);
     const p = b.entity.position;
-    return { r: radiusChunks, chunks, poi, total: Object.keys(m.chunks).length, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
+    // под землёй или в Незере - срез на уровне бота (ходы вокруг), а не крыша: ближние 5 чанков, считается на лету
+    const layer = this.layerMode(tb);
+    if (layer) {
+      const air = this.airIds;
+      if (air) for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) {
+        const col = b.world.getColumn(pcx + dx, pcz + dz);
+        if (!col) continue;
+        let s; try { s = require('./mapgrid').slice(b, col, air, Math.floor(p.y)); } catch { continue; }
+        const i = chunks.findIndex((c) => c[0] === dx && c[1] === dz), row = [dx, dz, 'g', 0, s.px, s.hy, '', s.my];
+        if (i >= 0) chunks[i] = row; else chunks.push(row);
+      }
+    }
+    return { r: radiusChunks, chunks, poi, total: Object.keys(m.chunks).length, layer, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
   }
 }
 
