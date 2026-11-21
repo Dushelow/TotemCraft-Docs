@@ -1407,8 +1407,9 @@ class TotemBot extends EventEmitter {
             // в другом измерении или далеко - дальний путь (может, через Незер)
             if (this.travel && (pl.dim !== this.dimName() || Math.hypot(pl.x - b0().x, pl.z - b0().z) > 300)) { r = await this.travelTo({ place: a.name }, tok); break; }
             // дальше 48 бл. - тропами, обычной ходьбой, разведкой (walkTo); рядом - просто подойти
-            if (Math.hypot(pl.x - b0().x, pl.z - b0().z) > 48) await this.walkTo({ x: pl.x, y: pl.y, z: pl.z }, tok, 600000);
-            else await this.goto(new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
+            const noY = /высота неизвестна/.test(pl.note || '');   // метка из чата без высоты - идти по x z
+            if (Math.hypot(pl.x - b0().x, pl.z - b0().z) > 48) await this.walkTo({ x: pl.x, y: noY ? null : pl.y, z: pl.z }, tok, 600000);
+            else await this.goto(noY ? new goals.GoalNearXZ(pl.x, pl.z, 2) : new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
             r = `пришёл к месту «${pl.name}»`;
             break;
           }

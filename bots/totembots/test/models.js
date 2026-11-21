@@ -113,3 +113,13 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = /восток 4\d бл/.test(t) && /север 1\d бл/.test(t) && /запад 10 бл/.test(t) && /подземный слой/.test(wm.layerMode(tb));
   console.log('--- подземный слой: ' + (ok ? 'ходы пещеры видны (' + t + ')' : 'НЕТ: ' + t));
 }
+
+// метки из чата: название + координаты от хозяина - место; приказы и количества - нет
+{
+  const { parse } = require('../app/chatpoints');
+  const cases = [['наш портал 250 64 -300', 'наш портал'], ['база в незере 120 -40', 'база'], ['запомни склад 1200 70 -560', 'склад'], ['ферма слизней: 1500, -2300', 'ферма слизней'],
+    ['иди на 100 200', null], ['дай 2 стака 64', null], ['кинь 64 и 32 шерсти', null], ['привет как дела', null]];
+  const bad = cases.filter(([t, n]) => { const r = parse(t); return n === null ? r !== null : !r || r.name !== n; });
+  const nether = parse('база в незере 120 -40');
+  console.log(`--- метки из чата: ${cases.length - bad.length} из ${cases.length}${bad.length ? ' НЕТ: ' + bad.map((x) => x[0]).join(', ') : ''}${nether && nether.dim === 'Незер' ? '' : ' НЕТ: незер не узнан'}`);
+}

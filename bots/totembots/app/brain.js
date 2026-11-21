@@ -203,6 +203,17 @@ class Brain {
     this.attn.mode = this.botCfg.chatMode || 'normal';
     // «отвечай только мне»: чужие сообщения - только в фон (19.11 бот отвечал всем, хотя хозяин велел только ему)
     if (this.botCfg.onlyMaster && !this.isMaster(from)) { this.onBackground({ from, text, at: Date.now() }); return; }
+    // метка из чата: хозяин написал название и координаты - запомнить место (как «точка из чата» у Xaero)
+    let mark = '';
+    if (this.isMaster(from) && this.memory) {
+      const p = require('./chatpoints').parse(text);
+      if (p) {
+        const r = this.memory.place({ name: p.name, x: p.x, y: p.y ?? 64, z: p.z, dim: p.dim, note: p.y === undefined ? 'высота неизвестна' : '' }, `${this.botCfg.name} (из чата ${from})`);
+        mark = `
+[метка] ${r}`;
+        this.log('метка из чата: ' + r);
+      }
+    }
     const kind = this.attn.classify({ from, text, channel: ch, dist, master: this.isMaster(from) });
     if (kind === 'background') { this.onBackground({ from, text, at: Date.now() }); return; }
     if (kind !== 'address') return;
@@ -231,7 +242,7 @@ class Brain {
       }).catch(() => {});
       return;
     }
-    this.push(`[чат ${label}] ${from}${role} (${where}): ${text}`, true, from, replyCh);
+    this.push(`[чат ${label}] ${from}${role} (${where}): ${text}${mark}`, true, from, replyCh);
   }
 
   order(text) {
