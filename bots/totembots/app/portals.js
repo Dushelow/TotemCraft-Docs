@@ -128,11 +128,15 @@ class Portals {
    * Нужен выход здесь (в пути): рамка рядом - починить и зажечь; нет - построить, если есть из чего.
    * true - портал есть и горит.
    */
-  async portalHere(tok) {
+  async portalHere(tok, why = '') {
     const f = this.portalFrames(24)[0];
     if (f && f.lit) return true;
+    // защита от ошибки: свой портал - не чаще раза в час и с сообщением хозяину (чтобы не настроить порталов по миру)
+    if (!f && Date.now() - (this.portalBuiltAt || 0) < 3600000) { this.log('портал уже строила в этот час - второй не строю'); return false; }
+    const boss = (this.errand && this.errand() && this.errand().from) || (this.masters && this.masters[0]);
+    if (!f && why && boss) this.say(why, 'whisper', boss);
     if (f) { try { this.log('рядом рамка портала - чиню и зажигаю: ' + await this.portalFix({}, tok)); return true; } catch (e) { if (this.isCancel(e)) throw e; this.log('рамку не вышло: ' + e.message); } }
-    try { this.log(await this.portalBuild({}, tok)); return true; } catch (e) { if (this.isCancel(e)) throw e; this.log('построить портал не вышло: ' + e.message); return false; }
+    try { this.log(await this.portalBuild({}, tok)); this.portalBuiltAt = Date.now(); return true; } catch (e) { if (this.isCancel(e)) throw e; this.log('построить портал не вышло: ' + e.message); return false; }
   }
 }
 

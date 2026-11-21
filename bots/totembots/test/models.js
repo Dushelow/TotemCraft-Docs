@@ -357,3 +357,14 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
     console.log('--- постройка портала: ' + (obs === 10 && cob === 4 && f && f.lit ? `${r}: 10 обсидиана, 4 угла булыжником, горит` : `НЕТ: обсидиан ${obs}, углы ${cob}, ${f ? (f.lit ? 'горит' : 'не горит') : 'рамки нет'} - ${r}`));
   }).catch((e) => console.log('--- постройка портала: НЕТ: ' + e.message));
 }
+
+// в дороге: враг впереди на пути (ближе 3 бл.) - ударить; сбоку или сзади - не отвлекаться; крипер - не трогать
+{
+  const { Guard } = require('../app/guard');
+  const { Vec3 } = require('vec3');
+  const g = Object.create(Guard.prototype);
+  g.tb = { bot: { entity: { position: new Vec3(0, 64, 0) }, _navPath: [{ x: 1, y: 64, z: 0 }, { x: 4, y: 64, z: 0 }] } };
+  const e = (name, x, z) => ({ name, position: new Vec3(x, 64, z) });
+  const r = [g.blocking(e('zombie', 2, 0.3), 2), g.blocking(e('zombie', 0, 2.5), 2.5), g.blocking(e('zombie', -2, 0), 2), g.blocking(e('creeper', 2, 0), 2), g.blocking(e('magma_cube', 2.5, -1), 2.7)];
+  console.log('--- мобы на пути: ' + (r.join() === 'true,false,false,false,true' ? 'впереди - ударить, сбоку и сзади - идти дальше, крипер - не трогать' : 'НЕТ: ' + r.join()));
+}

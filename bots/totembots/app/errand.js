@@ -190,7 +190,7 @@ class Errands {
           if (!at && s.x !== undefined) at = { x: s.x, z: s.z };
           if (!at) throw new Error(`${s.who} не ответил, где он${b.players[s.who] ? '' : ' (не в игре)'}`);
           try { this.autoMark('у ' + s.who, { x: at.x, y: at.y ?? 64, z: at.z }, { kind: 'встреча ' + s.who, radius: 64, ttl: 86400000, dim: at.dim }); } catch {}
-          await run([{ act: 'travel', x: at.x, y: at.y, z: at.z, dim: at.dim && at.dim !== 'обычный мир' ? at.dim : undefined }]);
+          await run([{ act: 'travel', x: at.x, y: at.y, z: at.z, dim: at.dim && at.dim !== 'обычный мир' ? at.dim : undefined, who: s.who }]);
         }
         for (let i = 0; i < 40 && !this.player(s.who); i++) {   // до 2 минут: подождать и спросить
           if (i === 0) this.say(`Я у ${Math.floor(b.entity.position.x)} ${Math.floor(b.entity.position.z)}, принесла вам вещи от хозяина. Где вы?`, 'whisper', s.who);

@@ -54,6 +54,16 @@ class Guard {
     if (near) this.hurtBy.set(near.id, Date.now());
   }
 
+  /** Враг стоит на пути (впереди по ходу, ближе 3 бл., не крипер): в дороге его выгоднее ударить, чем стоять. */
+  blocking(e, d) {
+    if (d > 3 || FLEE.has(this.name(e))) return false;
+    const path = this.bot._navPath, me = this.bot.entity.position, next = path && path.find((p) => Math.hypot(p.x - me.x, p.z - me.z) > 1.5);
+    if (!next) return false;
+    const ax = next.x - me.x, az = next.z - me.z, bx = e.position.x - me.x, bz = e.position.z - me.z;
+    const cos = (ax * bx + az * bz) / (Math.hypot(ax, az) * Math.hypot(bx, bz) || 1);
+    return cos > 0.5;   // в пределах ~60° от направления пути
+  }
+
   owner() { return this.tb.followName ? this.tb.player(this.tb.followName) : null; }
 
   pick() {
@@ -71,7 +81,7 @@ class Guard {
       if (/^(ghast|phantom)$/.test(n) && (e.position.y - me.y > 2.5 || n === 'ghast')) continue;
       // в дороге (поручение, дальний путь) не отвлекаться: драться только с тем, кто бьёт сейчас и стоит вплотную;
       // остальные - идти дальше (22.11: вместо путешествия стояла и дралась с мобами рядом)
-      if (this.tb.travelling && this.mode !== 'off' && !(((this.hurtBy.get(e.id) || 0) > Date.now() - 5000 && d < 4) || this.prey === e.id)) continue;
+      if (this.tb.travelling && this.mode !== 'off' && !(((this.hurtBy.get(e.id) || 0) > Date.now() - 5000 && d < 4) || this.prey === e.id || this.blocking(e, d))) continue;
       if (e.customName && !angry) continue;
       // защищаем: себя (до 8 блоков) и хозяина (моб в 6 блоках от него)
       const nearOwner = own && e.position.distanceTo(own.position) < 6;
@@ -103,6 +113,9 @@ class Guard {
     const b = this.bot, tb = this.tb;
     if (!b || !b.entity || this.mode === 'off' || tb.eating || tb.busyLook) return;
     const me = b.entity.position;
+    // огненный шар гаста летит рядом - отбить ударом (как игроки), иначе взорвёт мост под ногами
+    const fb = Object.values(b.entities).find((e) => /^(fireball)$/.test(this.name(e)) && e.position.distanceTo(me) < 4.5);
+    if (fb && Date.now() - (this.fbAt || 0) > 400) { this.fbAt = Date.now(); try { await b.lookAt(fb.position, true); b.attack(fb); tb.log('отбила огненный шар'); } catch {} }
 
     // крипер: пока не шипит - бьём и отскакиваем (как игроки), зашипел или варден - отбегаем
     const swelling = (e) => this.name(e) === 'creeper' && (e.metadata[16] === 1 || e.metadata[18] === true);

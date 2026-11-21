@@ -151,6 +151,15 @@ class TotemBot extends EventEmitter {
         let lava = false;
         for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ay of [-1, 0]) { const k = bot.blockAt(new Vec3(x + ax, y + ay, z + az), false); if (k && k.name === 'lava') lava = true; }
         if (lava) return 2;
+        // враги рядом с клеткой (по чувствам, senses.js): обойти, если обход дешевле; в узком проходе - пройти, а
+        // мешающего на пути ударит guard.js (22.11: «магма-куб или зомби на пути - обойти или ударить, что выгоднее»)
+        let foe = 1;
+        for (const t of (this.tracks || new Map()).values()) {
+          if (t.kind !== 'enemy' || t.d > 24) continue;
+          const dd = Math.hypot(t.pos.x - x - 0.5, t.pos.z - z - 0.5);
+          if (dd < 2 && Math.abs(t.pos.y - y) < 3) foe = Math.max(foe, t.name === 'creeper' ? 6 : 2.5); else if (dd < 4 && Math.abs(t.pos.y - y) < 3) foe = Math.max(foe, t.name === 'creeper' ? 3 : 1.4);
+        }
+        if (foe > 1) return foe;
         const d = require('./travel').dkey(bot.game.dimension);
         if (this.travel.trails.heat(d, x, y, z) >= 2) return 1;
         if (!NATURAL.test(under) && !/leaves|farmland/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
@@ -229,6 +238,19 @@ class TotemBot extends EventEmitter {
     });
     bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
     if (this.on('hearing')) this.listen(bot);   // слух (hearing.js)
+    // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
+    bot.on('blockUpdate', (o, n) => {
+      try {
+        if (!n || n.name !== 'lava' || !bot.entity || this.paused) return;
+        const me = bot.entity.position, d = n.position.offset(0.5, 0, 0.5).distanceTo(me);
+        if (d > 3 || Date.now() - (this.lavaFleeAt || 0) < 1500) return;
+        this.lavaFleeAt = Date.now();
+        const away = me.minus(n.position.offset(0.5, 0, 0.5)); away.y = 0;
+        const k = 4 / (Math.hypot(away.x, away.z) || 1), to = me.offset(away.x * k, 0, away.z * k);
+        this.log(`рядом течёт лава (${n.position.x} ${n.position.y} ${n.position.z}) - отхожу`);
+        bot.pathfinder.setGoal(new goals.GoalNearXZ(to.x, to.z, 1));
+      } catch {}
+    });
     bot.on('error', (e) => this.log('ошибка: ' + e.message));
     bot.on('end', (r) => {
       this.log('отключён: ' + (r || ''));
@@ -894,7 +916,7 @@ class TotemBot extends EventEmitter {
       dest = { x: pl.x, y: pl.y, z: pl.z, dim: pl.dim, name: pl.name };
     } else {
       if (a.x === undefined || a.z === undefined) throw new Error('куда? нужны x и z или место');
-      dest = { x: +a.x, y: a.y !== undefined ? +a.y : null, z: +a.z, dim: a.dim || this.dimName() };
+      dest = { x: +a.x, y: a.y !== undefined ? +a.y : null, z: +a.z, dim: a.dim || this.dimName(), who: a.who };
     }
     let plan = this.travel.plan(b.entity.position, b.game.dimension, dest);
     // портал не знает (или цель очень далеко, а идти только пешком) - найти портал самой: спросить в чате и
@@ -919,13 +941,44 @@ class TotemBot extends EventEmitter {
           const q = this.passCacheShared.nearest(String(b.game.dimension).replace(/^minecraft:/, ''), /^nether_portal$/, { x: s.x, y: b.entity.position.y, z: s.z }, 1, 400)[0];
           if (q) { this.log(`у ${s.x} ${s.z} портала нет - иду к ближайшему виденному ${q.x} ${q.z}`); await this.walkTo({ x: q.x, y: q.y, z: q.z }, tok, legTime(Math.hypot(q.x - s.x, q.z - s.z))); pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 16 }); }
         }
-        if (!pb && await this.portalHere(tok)) pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 24 });
+        // порталы к базам часто не точно на /8: в стороне, в ответвлении ветки. Прежде чем строить свой -
+        // спросить того, к кому иду, и обойти окрестности (чанки грузятся - кэш видит порталы до ~150 бл.)
+        if (!pb) pb = await this.searchExit(s, dest, tok);
+        if (!pb && await this.portalHere(tok, `у ${s.x} ${s.z} в Незере не нашла портал к цели - строю свой`)) pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 24 });
         if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет, рядом не видела, а построить не из чего (нужно 10 обсидиана и огниво)`);
         await this.portal(pb.position, tok);
       } else await this.walkTo(s, tok, legTime(d));
     }
     const p = b.entity.position;
     return `дошёл${dest.name ? ' до «' + dest.name + '»' : ''} (${plan.text}), теперь у ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}, ${this.dimName()}`;
+  }
+
+  /**
+   * Выход у цели не на расчётной точке: (1) спросить того, к кому иду, где его портал в Незере (ответ с координатами);
+   * (2) обойти окрестности кольцом (4 точки в 120 бл.), после каждой - ближайший портал в кэше мира в 400 бл.
+   * Возвращает блок портала рядом или null. Свой портал строится только после этого (portalHere).
+   */
+  async searchExit(s, dest, tok) {
+    const b = this.bot, dim = String(b.game.dimension).replace(/^minecraft:/, ''), id = b.registry.blocksByName.nether_portal.id;
+    const near = () => b.findBlock({ matching: id, maxDistance: 48 });
+    const go = async (q) => { try { await this.walkTo({ x: q.x, y: q.y, z: q.z }, tok, 180000); } catch (e) { if (this.isCancel(e)) throw e; } return near(); };
+    const cached = (at) => (this.passCacheShared ? this.passCacheShared.nearest(dim, /^nether_portal$/, { x: at.x, y: b.entity.position.y, z: at.z }, 1, 400)[0] : null);
+    if (dest.who && b.players[dest.who]) {
+      this.say('Я в Незере рядом с вами. Где ваш портал в Незере? Напишите координаты (x z).', 'whisper', dest.who);
+      const reply = await this.waitReply(dest.who, 90000);
+      const p = reply && require('./chatpoints').parse('метка ' + reply);
+      if (p) { this.log(`${dest.who} подсказал портал: ${p.x} ${p.z}`); const pb = await go({ x: p.x, y: p.y, z: p.z }); if (pb) return pb; }
+    }
+    for (const [ax, az] of [[1, 0], [0, 1], [-1, 0], [0, -1]]) {
+      this.check(tok);
+      const q = cached(s);
+      if (q) { const pb = await go(q); if (pb) return pb; }
+      this.log(`ищу выход к цели: обхожу ${ax ? (ax > 0 ? 'восток' : 'запад') : (az > 0 ? 'юг' : 'север')} от ${s.x} ${s.z}`);
+      const pb = await go({ x: s.x + ax * 120, z: s.z + az * 120 });
+      if (pb) return pb;
+    }
+    const q = cached(s);
+    return q ? go(q) : null;
   }
 
   /**
