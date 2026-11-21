@@ -3,7 +3,7 @@
 // Заходит клиентом 1.21.11: его mineflayer поддерживает полностью, сервер 26.3 пускает через ViaVersion.
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
-const { Skills, NATURAL } = require('./skills');
+const { Skills, NATURAL, BUILT } = require('./skills');
 const { Vec3 } = require('vec3');
 const { EventEmitter } = require('events');
 const { Guard } = require('./guard');
@@ -397,7 +397,9 @@ class TotemBot extends EventEmitter {
     const b = this.bot;
     const t = b.time && b.time.timeOfDay;
     const tod = t === undefined ? '' : t < 1000 ? 'утро' : t < 11500 ? 'день' : t < 13000 ? 'вечер' : t < 23000 ? 'ночь' : 'рассвет';
-    const weather = b.thunderState > 0 ? ', гроза' : b.isRaining ? ', дождь' : '';
+    // погода: флаг isRaining через ViaVersion застревал (19.11 «дождь» в доме и даже в Незере) - по силе дождя и только в обычном мире
+    const over = /overworld/.test(b.game.dimension || '');
+    const weather = !over ? '' : (b.thunderState || 0) > 0.3 ? ', гроза' : (b.rainState || 0) > 0.3 ? ', дождь' : '';
     const ch = this.worldMap && this.worldMap.load(b.game.dimension).chunks[`${Math.floor(s.pos[0] / 16)},${Math.floor(s.pos[2] / 16)}`];
     // «под землёй» - только если над головой нет неба (свет неба у головы < 8, и над головой твёрдое в 40 блоках);
     // средняя высота чанка врёт у ледяных шипов, гор и деревьев (боевой 15.11: на льду «под землёй»)
@@ -405,9 +407,13 @@ class TotemBot extends EventEmitter {
     {
       const head = b.blockAt(b.entity.position.offset(0, 1.6, 0));
       const sky = head && typeof head.skyLight === 'number' ? head.skyLight : null;
-      let roof = false;
-      for (let dy = 2; dy <= 40 && !roof; dy++) { const k = b.blockAt(b.entity.position.offset(0, dy, 0)); if (k && k.boundingBox === 'block' && !/leaves|glass|ice/.test(k.name)) roof = true; }
-      if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй';
+      let roof = null;
+      for (let dy = 2; dy <= 40 && !roof; dy++) { const k = b.blockAt(b.entity.position.offset(0, dy, 0)); if (k && k.boundingBox === 'block' && !/leaves|glass|ice/.test(k.name)) roof = k; }
+      // крыша - постройка (доски, кирпич...) или рядом стены постройки: это дом, а не «под землёй» (19.11 в доме - «под землёй»)
+      const built = roof && (BUILT.test(roof.name) || !!this.skills.builtNear(b.entity.position.floored(), 2));
+      if (!/overworld/.test(b.game.dimension || '')) under = '';   // в Незере и Энде неба нет всегда - не «под землёй»
+      else if (roof && built && roof.position.y - b.entity.position.y < 8) under = ', в помещении (постройка)';
+      else if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй';
     }
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
     return {
@@ -438,7 +444,57 @@ class TotemBot extends EventEmitter {
     }
     const ml = Object.entries(mobs).sort((a2, b2) => b2[1] - a2[1]).slice(0, 5).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
     const held = b.heldItem ? b.heldItem.name : 'пусто';
-    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; мобы: ${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '');
+    const room = this.roomText();
+    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; мобы: ${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '');
+  }
+
+  /**
+   * Комната вокруг (19.11: «не видит стены, не понимает, в помещении ли, не может осознать структуру дома»).
+   * Только когда над головой крыша в 6 блоках. Стены по сторонам света на уровне головы, потолок, двери и калитки
+   * (открыта/закрыта), люки, ступеньки и лестницы с тем, куда ведут (выше/ниже), сундуки, кровати, окна.
+   */
+  roomText() {
+    const b = this.bot, p = b.entity.position.floored();
+    let ceil = 0;
+    for (let dy = 2; dy <= 6 && !ceil; dy++) { const k = b.blockAt(p.offset(0, dy, 0)); if (k && k.boundingBox === 'block') ceil = dy; }
+    if (!ceil) return '';
+    const { compass } = require('./worldmap');
+    const solid = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'block' && !/_door$|_gate$/.test(k.name); };
+    const walls = [];
+    for (const [dx, dz, nm] of [[0, -1, 'С'], [1, 0, 'В'], [0, 1, 'Ю'], [-1, 0, 'З']]) {
+      let d = 0;
+      for (let i = 1; i <= 8; i++) { if (solid(p.offset(dx * i, 1, dz * i))) { d = i; break; } }
+      walls.push(`${nm} ${d ? d + ' бл.' : 'открыто'}`);
+    }
+    const seen = [], mark = new Set();
+    const R = 6;
+    for (let dx = -R; dx <= R; dx++) for (let dz = -R; dz <= R; dz++) for (let dy = -3; dy <= 4; dy++) {
+      const v = p.offset(dx, dy, dz), k = b.blockAt(v);
+      if (!k) continue;
+      const n = k.name;
+      let what = '';
+      const pr = () => (k.getProperties ? k.getProperties() : {});
+      if (/_door$/.test(n)) { if (pr().half === 'upper') continue; what = `дверь (${pr().open ? 'открыта' : 'закрыта'})`; }
+      else if (/_fence_gate$/.test(n)) what = `калитка (${pr().open ? 'открыта' : 'закрыта'})`;
+      else if (/_trapdoor$/.test(n)) what = `люк (${pr().open ? 'открыт' : 'закрыт'})`;
+      else if (/_stairs$/.test(n)) { if (dy < -1 || dy > 3) continue; what = 'ступеньки'; }
+      else if (n === 'ladder' || n === 'scaffolding') what = 'лестница-приставная';
+      else if (/^(chest|trapped_chest|barrel)$|shulker_box$/.test(n)) what = 'сундук';
+      else if (/_bed$/.test(n)) { if (pr().part === 'head') continue; what = 'кровать'; }
+      else if (/^(furnace|smoker|blast_furnace|crafting_table)$/.test(n)) what = n === 'crafting_table' ? 'верстак' : 'печь';
+      else continue;
+      const key = what.split(' ')[0] + Math.round(dx / 2) + ',' + Math.round(dy / 2) + ',' + Math.round(dz / 2);
+      if (mark.has(key)) continue;
+      mark.add(key);
+      const d = Math.round(Math.hypot(dx, dz));
+      const lvl = dy >= 2 ? `, выше на ${dy}` : dy <= -2 ? `, ниже на ${-dy}` : '';
+      seen.push({ d, t: `${what} ${d ? d + ' бл. на ' + compass(dx, dz) : 'здесь'}${lvl} (${v.x} ${v.y} ${v.z})` });
+    }
+    // ступеньки: куда ведут - вверх, если дальше по лестнице блоки выше
+    const stairs = seen.filter((x) => x.t.startsWith('ступеньки'));
+    const up = stairs.some((x) => / выше на /.test(x.t)) ? '; ступеньки ведут на этаж выше' : '';
+    const list = seen.sort((a, c) => a.d - c.d).slice(0, 10).map((x) => x.t).join('; ');
+    return `в помещении: потолок ${ceil} бл.; стены на уровне головы: ${walls.join(', ')}${up}${list ? '; рядом: ' + list : ''}`;
   }
 
   /** Осмотреться: мобы и животные, вещи на земле, приметные блоки в 10 блоках, биом. По запросу мозга. */
@@ -934,7 +990,7 @@ class TotemBot extends EventEmitter {
       if (this.wasNight !== undefined && night !== this.wasNight) this.emit('moment', night ? { kind: 'ночь', text: 'стемнело, наступает ночь' } : { kind: 'утро', text: 'рассвело' });
       this.wasNight = night;
     }
-    const rain = !!b.isRaining;
+    const rain = /overworld/.test(b.game.dimension || '') && (b.rainState || 0) > 0.3;
     if (this.wasRain !== undefined && rain && !this.wasRain) this.emit('moment', { kind: 'дождь', text: 'пошёл дождь' + (b.thunderState > 0 ? ', гроза' : '') });
     this.wasRain = rain;
   }
