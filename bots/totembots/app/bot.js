@@ -1337,6 +1337,7 @@ class TotemBot extends EventEmitter {
           }
           case 'take': r = await this.take(a, tok); break;
           case 'put': r = await this.put(a, tok); break;
+          case 'undoPut': r = await this.undoPut(a, tok); break;
           case 'give': r = await this.give(a, tok); break;
           case 'portal': r = await this.portal(a, tok); break;
           case 'pickup': r = await this.pickup(a, tok); break;

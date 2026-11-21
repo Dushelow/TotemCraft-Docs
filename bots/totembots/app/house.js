@@ -91,7 +91,7 @@ class House {
       try { c = await this.openLocked(v.x, v.y, v.z, tok); } catch (e) { if (isCancel(e)) throw e; continue; }
       try {
         for (const it of out()) {
-          try { await c.deposit(it.type, null, it.count); put += it.count; await sleep(rnd(120, 300)); } catch { break; }   // сундук полон - следующий
+          try { await c.deposit(it.type, null, it.count); this.noteDeposit(v, it.name, it.count); put += it.count; await sleep(rnd(120, 300)); } catch { break; }   // сундук полон - следующий
         }
       } finally { c.close(); }
     }

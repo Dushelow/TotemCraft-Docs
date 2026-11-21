@@ -124,7 +124,7 @@ function paintTop() {
 }
 $('srvChip').onclick = () => goSection('settings');
 $('pauseBtn').onclick = () => act(() => T.pause(!pausedNow), $('pauseBtn'));
-$('startBtn').onclick = () => act(() => T.botsStart(), $('startBtn'), 'боты заходят на сервер');
+$('startBtn').onclick = () => act(() => T.botsStart(st.bots.map((b) => b.name)), $('startBtn'), 'боты заходят на сервер');
 $('stopBtn').onclick = () => {
   const was = st.bots.filter((b) => (b.state || {}).status && b.state.status !== 'off').map((b) => b.name);
   act(() => T.botsStop(), $('stopBtn'), 'боты вышли с сервера', { fn: () => T.botsStart(was), done: 'боты заходят обратно' });
@@ -145,7 +145,7 @@ function renderStart() {
   const sites = st.siteList || [];
   const ready = sites.filter((s) => s.inOrder && s.logged);
   const cap = sites.filter((s) => s.captcha);
-  const picked = st.bots.filter((b) => b.pick);
+  const picked = st.bots;   // запуск - всех сразу; дальше у каждого бота свой выключатель в карточке
   const B = st.brains || {};
   const pinName = B.pin ? ((B.choices || []).find((c) => c.id === B.pin) || {}).name || B.pin : '';
   const out = [
@@ -153,20 +153,19 @@ function renderStart() {
     cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="pri sm" data-go="brains">Войти</button>'),
-    st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Ботов к запуску: ${picked.length}` : 'Отметьте, кого запустить', 'нажмите на ник, чтобы включить или убрать')
-      + `<div class="picks">${st.bots.map((b) => `<label class="${b.pick ? 'on' : ''}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}>${esc(b.name)}</label>`).join('')}</div>`
+    st.bots.length ? check('ok', (st.bots.length > 1 ? 'Боты: ' : 'Бот: ') + st.bots.map((b) => b.name).join(', '), '')
       : check('warn', 'Ботов нет', 'добавьте первого внизу: «Добавить бота»'),
   ];
   const html = out.join('');
   if ($('startChecks').dataset.html !== html) { $('startChecks').dataset.html = html; $('startChecks').innerHTML = html; }
   $('startGo').disabled = !picked.length;
-  $('startGo').lastElementChild.textContent = picked.length > 1 ? `Запустить (${picked.length})` : 'Запустить';
+  $('startGo').lastElementChild.textContent = picked.length > 1 ? 'Запустить всех' : picked.length ? 'Запустить ' + picked[0].name : 'Запустить';
   if (document.activeElement !== $('startAuto')) $('startAuto').checked = !!st.startOnLaunch;
 }
 function goSection(sec) { const b = document.querySelector(`#nav button[data-sec="${sec}"]`); if (b) b.click(); }
 $('startChecks').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) goSection(g.dataset.go); });
 $('startChecks').addEventListener('change', (e) => { const n = e.target.dataset.pick; if (n) act(() => T.botPick({ name: n, pick: e.target.checked })); });
-$('startGo').onclick = () => act(() => T.botsStart(), $('startGo'), 'боты заходят на сервер');
+$('startGo').onclick = () => act(() => T.botsStart(st.bots.map((b) => b.name)), $('startGo'), 'боты заходят на сервер');
 $('startAuto').onchange = () => act(() => T.startOnLaunch($('startAuto').checked), null, $('startAuto').checked ? 'при включении программы боты зайдут сами' : 'запуск только кнопкой');
 
 // ---------- ручной выбор мозга
@@ -268,7 +267,7 @@ function botCard(b) {
   const s = b.state || {};
   const on = s.status === 'online', conn = s.status === 'connecting', off = !on && !conn;
   const where = on ? `${s.dim} · ${s.pos.join(' ')}` : conn ? 'заходит на сервер…' : 'выключен';
-  const power = off ? `<button data-a="start" class="go sm" title="Зайти на сервер">${icon('play', 14)}Включить</button>`
+  const power = off && !st.running ? '' : off ? `<button data-a="start" class="go sm" title="Зайти на сервер">${icon('play', 14)}Включить</button>`
     : `<button data-a="stop" class="ghost sm" title="Бот выйдет с сервера">${icon('power', 14)}Выключить</button>`;
   const head = `<div class="bothead"><div class="ava">${esc(b.name[0] || '?').toUpperCase()}<span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span></div>
     <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}</div>`;

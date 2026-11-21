@@ -665,7 +665,7 @@ async function loginQwen() {
 app.whenReady().then(() => { loadCfg();
   try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow();
   // боты заходят по кнопке «Старт»; сами - только если на стартовом экране отмечено «запускать сразу»
-  if (cfg.startOnLaunch) setTimeout(() => { cfg.paused = false; for (const b of cfg.bots) if (b.pick !== false) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
+  if (cfg.startOnLaunch) setTimeout(() => { cfg.paused = false; for (const b of cfg.bots) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
 });
 app.on('window-all-closed', () => {
   for (const l of live.values()) if (l.body) l.body.stop();

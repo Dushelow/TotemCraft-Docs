@@ -80,12 +80,51 @@ class Containers {
         if (left <= 0) break;
         const n = Math.min(left, it.count);
         await c.deposit(it.type, null, n);
+        this.noteDeposit(a, it.name, n);
         left -= n; put += n;
         await sleep(rnd(150, 400));
       }
     } finally { c.close(); }
     if (!put) throw new Error(`нет у меня ${a.item}`);
     return `положил ${put} ${a.item} в ${a.x} ${a.y} ${a.z}`;
+  }
+
+  /** Запомнить, что и куда положила (для «верни обратно»): последняя раскладка, 10 мин. */
+  noteDeposit(v, name, n) {
+    const now = Date.now();
+    if (!this.lastDeposit || now - this.lastDeposit.at > 60000) this.lastDeposit = { at: now, list: [] };
+    this.lastDeposit.at = now;
+    const k = `${v.x},${v.y},${v.z}`;
+    let e = this.lastDeposit.list.find((x) => x.k === k);
+    if (!e) this.lastDeposit.list.push(e = { k, x: +v.x, y: +v.y, z: +v.z, items: {} });
+    e.items[name] = (e.items[name] || 0) + n;
+  }
+
+  /** «Верни обратно»: забрать из сундуков то, что сама положила последней раскладкой (не старше 10 мин). */
+  async undoPut(a, tok) {
+    const d = this.lastDeposit;
+    if (!d || Date.now() - d.at > 600000) throw new Error('нечего возвращать: в последние 10 минут я ничего не клала в сундуки');
+    let got = 0;
+    for (const e of d.list) {
+      this.check(tok);
+      const c = await this.openAt(e.x, e.y, e.z, tok);
+      try {
+        for (const [name, want] of Object.entries(e.items)) {
+          let left = want;
+          for (const it of c.containerItems().filter((i) => i.name === name)) {
+            if (left <= 0) break;
+            const n = Math.min(left, it.count);
+            try { await c.withdraw(it.type, null, n); } catch { break; }   // инвентарь полон
+            left -= n; got += n; e.items[name] -= n;
+            await sleep(rnd(150, 350));
+          }
+        }
+      } finally { c.close(); }
+    }
+    d.list = d.list.filter((e) => Object.values(e.items).some((n) => n > 0));
+    if (!d.list.length) this.lastDeposit = null;
+    if (!got) throw new Error('не вышло забрать: вещей уже нет в сундуках или инвентарь полон');
+    return `забрала обратно ${got} шт.` + (this.lastDeposit ? ' (не всё поместилось)' : '');
   }
 
   async give(a, tok) {
