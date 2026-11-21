@@ -880,6 +880,11 @@ class TotemBot extends EventEmitter {
 
   // Дальний путь: план (пешком или через Незер) и исполнение по шагам. Цель - место из памяти или координаты.
   async travelTo(a, tok) {
+    this.travelling = true;   // в дороге - не отвлекаться на мобов (guard.js)
+    try { return await this.travelToInner(a, tok); } finally { this.travelling = false; }
+  }
+
+  async travelToInner(a, tok) {
     const b = this.bot;
     if (!this.travel) throw new Error('нет модуля путей');
     let dest;
@@ -914,7 +919,8 @@ class TotemBot extends EventEmitter {
           const q = this.passCacheShared.nearest(String(b.game.dimension).replace(/^minecraft:/, ''), /^nether_portal$/, { x: s.x, y: b.entity.position.y, z: s.z }, 1, 400)[0];
           if (q) { this.log(`у ${s.x} ${s.z} портала нет - иду к ближайшему виденному ${q.x} ${q.z}`); await this.walkTo({ x: q.x, y: q.y, z: q.z }, tok, legTime(Math.hypot(q.x - s.x, q.z - s.z))); pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 16 }); }
         }
-        if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет, и рядом я порталов не видела - выход надо построить или подсказать, где он`);
+        if (!pb && await this.portalHere(tok)) pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 24 });
+        if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет, рядом не видела, а построить не из чего (нужно 10 обсидиана и огниво)`);
         await this.portal(pb.position, tok);
       } else await this.walkTo(s, tok, legTime(d));
     }
@@ -1069,7 +1075,7 @@ class TotemBot extends EventEmitter {
           }
         }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
-        for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }
+        for (let i = 0; i < (this.travelling ? 8 : 30) && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }   // в дороге бой короткий
         this.log('продолжаю путь');
       } finally { clearTimeout(timer); clearInterval(watch); }
     }
@@ -1441,6 +1447,9 @@ class TotemBot extends EventEmitter {
           case 'errand': r = this.startErrand({ ...a, from: a.from || this.runFrom }); return done.concat(r).join('; ');
           case 'errandStop': r = this.cancelErrand(); break;
           case 'trades': r = await this.lookTrades(a, tok); break;
+          case 'portalFix': r = await this.portalFix(a, tok); break;
+          case 'portalBuild': r = await this.portalBuild(a, tok); break;
+          case 'portalBreak': r = await this.portalBreak({ ...a, master: source === 'master' }, tok); break;
           case 'where': { const pc = this.passCacheShared; if (!pc) { r = 'кэша мира нет'; break; } const list = pc.nearest(String(this.bot.game.dimension).replace(/^minecraft:/, ''), a.what || 'chest', this.bot.entity.position, 5); r = list.length ? `ближайшие ${a.what}: ` + list.map((x) => `${x.name} ${x.x} ${x.y} ${x.z} (${Math.round(x.d)} бл.)`).join('; ') : `не видела ${a.what} поблизости (смотрю только там, где была)`; break; }
           case 'trade': r = await this.doTrade(a, tok); break;
           case 'errandGo': r = this.resumeErrand(); return done.concat(r).join('; ');
@@ -1531,7 +1540,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

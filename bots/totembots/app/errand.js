@@ -93,6 +93,7 @@ class Errands {
     try {
       for (;;) {
         const e = this.errand();
+        this.travelling = !!(e && e.state === 'run');   // поручение - в дороге, на мобов не отвлекаться
         if (!e || e.state !== 'run') return;
         if (this.status !== 'online' || !this.bot || !this.bot.entity) return;   // вернётся после входа (spawn)
         if (this.paused) { await sleep(3000); continue; }
@@ -131,7 +132,7 @@ class Errands {
         if (this.brainHook) this.brainHook(`[поручение застряло] ${msg} Можешь предложить хозяину, как быть.`);
         return;
       }
-    } finally { this._errandBusy = false; }
+    } finally { this._errandBusy = false; this.travelling = false; }
   }
 
   /** Один шаг. Возвращает итог строкой или бросает ошибку. Шаги с ходьбой - через run (судья, сторожа, проверки). */
@@ -252,6 +253,9 @@ class Errands {
           for (const it of c.containerItems()) {
             if (foods[it.name] && foodN() < 16 && !/rotten|spider_eye|poison|pufferfish/.test(it.name)) { const n = Math.min(it.count, 16 - foodN()); await c.withdraw(it.type, null, n); got.push(`${n} ${it.name}`); await sleep(200); }
             else if (/^(cobblestone|dirt|cobbled_deepslate|netherrack)$/.test(it.name) && blockN() < 32) { const n = Math.min(it.count, 32 - blockN()); await c.withdraw(it.type, null, n); got.push(`${n} ${it.name}`); await sleep(200); }
+            // на случай, если у цели нет портала: 10 обсидиана и огниво (если есть)
+            else if (it.name === 'obsidian' && (have().obsidian || 0) < 10) { const n = Math.min(it.count, 10 - (have().obsidian || 0)); await c.withdraw(it.type, null, n); got.push(`${n} obsidian`); await sleep(200); }
+            else if (it.name === 'flint_and_steel' && !have().flint_and_steel) { await c.withdraw(it.type, null, 1); got.push('огниво'); await sleep(200); }
           }
         } catch {} finally { c.close(); }
       }

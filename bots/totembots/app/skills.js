@@ -64,9 +64,9 @@ class Skills {
   }
 
   /** Сломать один блок честно (как игрок) и подобрать, что выпало. */
-  async digOne(block, tok) {
+  async digOne(block, tok, force = false) {
     const b = this.b, tb = this.tb;
-    const why = this.whyNot(block);
+    const why = force ? '' : this.whyNot(block);   // force - по слову хозяина (например сломать портал)
     if (why) throw new Error('не ломаю: ' + why);
     await tb.goto(new goals.GoalLookAtBlock(block.position, b.world, { reach: 4 }), tok, 60000);
     const tool = this.bestTool(block);
@@ -315,7 +315,7 @@ class Skills {
     const p = new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z));
     const k = this.b.blockAt(p);
     if (!k || k.boundingBox === 'empty') return 'там пусто';
-    await this.digOne(k, tok);
+    await this.digOne(k, tok, !!a.force);
     return `сломал ${k.name} на ${p.x} ${p.y} ${p.z}`;
   }
   // ---------- копание по дороге (Baritone allowBreak): только природное и не там, где на карте постройки

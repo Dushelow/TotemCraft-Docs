@@ -313,3 +313,47 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = !pl.error && pl.steps[0].do === 'portal' && pl.steps[0].x === 250 && pl.steps[1].do === 'find_portal' && pl.steps[1].x === 1250;
   console.log('--- сама до цели без координат: ' + (ok ? pl.text : 'НЕТ: ' + JSON.stringify(pl).slice(0, 300)));
 }
+
+// порталы: рамка рядом - видит, сколько обсидиана не хватает, горит ли; строит план места
+{
+  const { world } = require('./navlib');
+  const { Portals, frameCells } = require('../app/portals');
+  const { Vec3 } = require('vec3');
+  const mk = (missing, lit) => world((set) => {
+    const f = frameCells(new Vec3(3, 65, 0), 'x');
+    f.frame.forEach((v, i) => { if (i >= missing) set(v.x, v.y, v.z, 'obsidian'); });
+    if (lit) f.inner.forEach((v) => set(v.x, v.y, v.z, 'nether_portal', { axis: 'x' }));
+  });
+  const scan = (bot) => (opt) => { const out = []; for (let x = -6; x <= 12; x++) for (let y = 60; y <= 72; y++) for (let z = -6; z <= 6; z++) { const v = new Vec3(x, y, z); if (opt.matching(bot.blockAt(v))) out.push(v); } return out; };
+  const res = [[0, false], [2, false], [0, true], [6, false]].map(([miss, lit]) => {
+    const bot = mk(miss, lit); bot.findBlocks = scan(bot);
+    const tb = Object.create(Portals.prototype); tb.bot = bot;
+    const f = tb.portalFrames(24)[0];
+    return f ? `${f.missing.length}${f.lit ? 'г' : ''}` : 'нет';
+  });
+  const ok = res.join(',') === '0,2,0г,нет';
+  console.log('--- порталы: ' + (ok ? 'целая рамка, без 2 обсидиана, горящая, развалины (6 нет) - узнаны верно' : 'НЕТ: ' + res.join(',')));
+}
+
+// постройка портала: 10 обсидиана + углы булыжником, порядок снизу вверх, потом огниво - рамка правильная и горит
+{
+  const { world } = require('./navlib');
+  const { Portals, frameCells } = require('../app/portals');
+  const { Vec3 } = require('vec3');
+  let S; const bot = world((set) => { S = set; });
+  bot.findBlocks = (opt) => { const out = []; for (let x = -8; x <= 8; x++) for (let y = 62; y <= 72; y++) for (let z = -8; z <= 8; z++) { const v = new Vec3(x, y, z); if (opt.matching(bot.blockAt(v))) out.push(v); } return out; };
+  const placed = [];
+  const tb = Object.create(Portals.prototype);
+  Object.assign(tb, { bot, log() {}, dimName: () => 'обычный мир', opts: { name: 'Alex' }, memory: null, busyLook: false,
+    invCounts: () => ({ obsidian: 10, cobblestone: 16 }), goto: async () => {}, isCancel: () => false,
+    skills: { builtNear: () => null, place: async ({ block, x, y, z }) => { const under = [[0, -1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0]].some(([a, b2, c]) => bot.blockAt(new Vec3(x + a, y + b2, z + c)).boundingBox === 'block'); if (!under) throw new Error('не к чему приставить ' + [x, y, z]); S(x, y, z, block); placed.push(block); } } });
+  bot.entity.position = new Vec3(0.5, 65, 0.5);
+  bot.inventory = { items: () => [{ name: 'flint_and_steel' }] };
+  bot.equip = async () => {}; bot.lookAt = async () => {};
+  bot.activateBlock = async (bl) => { const f = tb.portalFrames(8)[0]; if (f && !f.missing.length) f.inner.forEach((v) => S(v.x, v.y, v.z, 'nether_portal', { axis: f.axis })); };
+  tb.portalBuildMarkDummy = 1; tb.portalBuiltMark = () => {};
+  tb.portalBuild({}, 1).then((r) => {
+    const obs = placed.filter((x) => x === 'obsidian').length, cob = placed.filter((x) => x === 'cobblestone').length, f = tb.portalFrames(8)[0];
+    console.log('--- постройка портала: ' + (obs === 10 && cob === 4 && f && f.lit ? `${r}: 10 обсидиана, 4 угла булыжником, горит` : `НЕТ: обсидиан ${obs}, углы ${cob}, ${f ? (f.lit ? 'горит' : 'не горит') : 'рамки нет'} - ${r}`));
+  }).catch((e) => console.log('--- постройка портала: НЕТ: ' + e.message));
+}
