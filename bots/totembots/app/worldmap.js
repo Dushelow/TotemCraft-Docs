@@ -530,7 +530,14 @@ class WorldMap {
     const ents = [];
     try { for (const [x, z, g] of tb.radar(64).list) ents.push([x - (pcx - radiusChunks) * 16, z - (pcz - radiusChunks) * 16, g]); } catch {}
     for (const pl of Object.values(b.players)) if (pl.entity && pl.username !== b.username) ents.push([Math.floor(pl.entity.position.x) - (pcx - radiusChunks) * 16, Math.floor(pl.entity.position.z) - (pcz - radiusChunks) * 16, 'player']);
-    return { r: radiusChunks, chunks, poi, ents, total: Object.keys(m.chunks).length, layer, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
+    const ox0 = (pcx - radiusChunks) * 16, oz0 = (pcz - radiusChunks) * 16, W = (radiusChunks * 2 + 1) * 16;
+    const labels = [];
+    if (tb.memory) for (const pl of Object.values(tb.memory.data.places || {})) {
+      if (pl.dim !== tb.dimName() || /^табличка/.test(pl.name)) continue;
+      const x = pl.x - ox0, z = pl.z - oz0;
+      if (x >= 0 && z >= 0 && x < W && z < W) labels.push([x, z, pl.name]);
+    }
+    return { r: radiusChunks, chunks, poi, ents, labels, total: Object.keys(m.chunks).length, layer, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
   }
 }
 

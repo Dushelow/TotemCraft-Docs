@@ -153,3 +153,14 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const dk = tb.darkness();
   console.log('--- биомы и темнота: ' + (okB && /темно: 81 из 81/.test(dk) ? 'биомы рядом и тёмный подвал узнаны' : 'НЕТ: ' + bt + ' / ' + dk));
 }
+
+// районы по названиям: место от хозяина рядом и таблички
+{
+  const { Perception } = require('../app/perception');
+  const { Vec3 } = require('vec3');
+  const tb = Object.create(Perception.prototype);
+  tb.memory = { data: { places: { a: { name: 'торговый зал', x: 10, y: 64, z: 0, dim: 'обычный мир' }, b: { name: 'мой дом', x: 2, y: 64, z: 0, dim: 'обычный мир' } }, signs: { s: { text: 'Спавн TotemCraft', x: 5, y: 65, z: 5, dim: 'обычный мир' } } } };
+  tb.bot = { entity: { position: new Vec3(0, 64, 0) } }; tb.dimName = () => 'обычный мир';
+  const d = tb.district();
+  console.log('--- районы: ' + (d === 'ты у места «торговый зал»; таблички рядом: «Спавн TotemCraft»' ? d : 'НЕТ: ' + d));
+}

@@ -40,7 +40,7 @@ class Perception {
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : 'стоишь';
     return {
       pos: s.pos,
-      core: `${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}${this.errandText && this.errandText() ? '; ' + this.errandText() : ''}`,
+      core: `${(() => { try { const d = this.district(); return d ? d + '; ' : ''; } catch { return ''; } })()}${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}${this.errandText && this.errandText() ? '; ' + this.errandText() : ''}`,
       near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
       inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
       online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),
@@ -114,6 +114,28 @@ class Perception {
     }
     if (!total || dark < 4) return '';
     return `темно: ${dark} из ${total} мест вокруг без света - тут могут появиться мобы${night && dark === total ? ' (ночь)' : ''}`;
+  }
+
+  /**
+   * Где я по названиям (как подписи районов на веб-картах): ближайшее место, которое назвал хозяин или запомнила
+   * сама (48 бл.), и таблички рядом (24 бл.) - «спавн», «торговый зал», «ферма слизней».
+   */
+  district() {
+    const m = this.memory, b = this.bot;
+    if (!m || !b || !b.entity) return '';
+    const me = b.entity.position, dim = this.dimName();
+    const parts = [];
+    let best = null, bd = 48;
+    for (const p of Object.values(m.data.places || {})) {
+      if (p.dim !== dim || /^мой дом$|^табличка/.test(p.name)) continue;
+      const d = Math.hypot(p.x - me.x, p.z - me.z);
+      if (d < bd) { bd = d; best = p; }
+    }
+    if (best) parts.push(`${bd < 16 ? 'ты у места' : 'рядом место'} «${best.name}»${bd >= 16 ? ` (${Math.round(bd)} бл.)` : ''}`);
+    const signs = Object.values(m.data.signs || {}).filter((s) => s.dim === dim && Math.hypot(s.x - me.x, s.z - me.z) <= 24)
+      .sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z)).slice(0, 3).map((s) => `«${s.text.slice(0, 40)}»`);
+    if (signs.length) parts.push('таблички рядом: ' + signs.join(', '));
+    return parts.join('; ');
   }
 
   glance() {

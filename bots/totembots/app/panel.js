@@ -561,6 +561,12 @@ async function drawMap() {
   g.putImageData(img, 0, 0);
   const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
   for (const [x, z, kind] of v.poi) { g.fillStyle = COL[kind] || '#bbb'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc((x + v.r) * 16 + 8, (z + v.r) * 16 + 8, 3.5, 0, 7); g.fill(); g.stroke(); }
+  // подписи мест (что назвал хозяин или запомнила сама)
+  g.font = '600 13px Segoe UI, sans-serif'; g.textAlign = 'center';
+  for (const [x, z, name] of v.labels || []) {
+    g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(x, z - 6); g.lineTo(x + 5, z); g.lineTo(x, z + 6); g.lineTo(x - 5, z); g.closePath(); g.fill();
+    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(name, x, z - 10); g.fillStyle = '#fff'; g.fillText(name, x, z - 10);
+  }
   // радар: враги - красные, животные - белые, жители - зелёные, транспорт - коричневые, игроки - синие
   const EC = { enemy: '#ff4d4d', animal: '#f2f2f2', villager: '#58d68d', vehicle: '#a0703c', player: '#5fa8ff' };
   for (const [x, z, k] of v.ents || []) { g.fillStyle = EC[k] || '#ccc'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.rect(x - 2, z - 2, 5, 5); g.fill(); g.stroke(); }
