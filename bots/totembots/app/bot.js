@@ -1394,10 +1394,12 @@ class TotemBot extends EventEmitter {
           this.check(tok);
           if (Math.hypot(p.x - b.entity.position.x, p.z - b.entity.position.z) < 3) continue;
           try { await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, Math.max(20000, until - Date.now())); }
-          catch (e) { if (e instanceof Cancelled) throw e; this.log('с тропы сбился: ' + e.message.slice(0, 80) + ' - дальше напрямик'); break; }
+          catch (e) { if (e instanceof Cancelled) throw e; this.log('с тропы сбился: ' + e.message.slice(0, 80) + ' - дальше разведкой'); break; }
         }
       }
     }
+    // дальше знакомых троп - разведка: тело само прокладывает путь отрезками (scout.js), пройденное станет тропой
+    if (Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z) > 48) await require('./scout').explore(this, s.x, s.z, tok, ms);
     await this.goto(goal, tok, ms);
   }
 

@@ -5,7 +5,8 @@
   "main": "app/main.js",
   "private": true,
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "test": "node test/models.js"
   },
   "devDependencies": {
     "electron": "^39.8.10"
