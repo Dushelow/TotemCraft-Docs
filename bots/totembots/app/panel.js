@@ -83,9 +83,9 @@ function paintStrip() {
   let text, cls = '';
   if (v.mode === 'mine') text = `Ваше окно ${cur.name}: тот же вход, бот сюда не заходит. Здесь можно писать, менять настройки и голос.`;
   else if (cur.captcha) { text = `${cur.name} просит пройти проверку «не робот»: пройдите её прямо здесь, программа ждёт и ничего не нажимает.`; cls = 'bad'; }
-  else if (cur.busy) { text = `Бот сейчас работает в этом окне: листать можно, нажимать и печатать нельзя. Писать самому - «Мои окна».`; cls = 'busy'; }
+  else if (cur.busy) { text = `Бот сейчас работает в этом окне: листать можно, нажимать и печатать нельзя. Писать самому - «Моё окно».`; cls = 'busy'; }
   else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Войдите здесь или кнопкой «Войти через Chrome» в разделе «Мозги».`; cls = 'bad'; }
-  else text = `Окно бота ${cur.name}: бот может начать работу в любой момент. Писать самому лучше в «Мои окна».`;
+  else text = `Окно бота ${cur.name}: бот может начать работу в любой момент. Писать самому - «Моё окно».`;
   $('stripText').textContent = text;
   if ($('stripHint').className !== 'r2 ' + cls) {
     $('stripHint').className = 'r2 ' + cls;
@@ -115,7 +115,7 @@ function paintTop() {
   const run = !st.running ? ['', 'остановлено'] : st.paused ? ['warn', 'пауза'] : ['ok', 'работает'];
   const rp = `<span class="dot ${run[0]}${run[0] === 'ok' ? ' pulse' : ''}"></span>${run[1]}`;
   if ($('runPill').innerHTML !== rp) { $('runPill').innerHTML = rp; $('runPill').className = 'pill ' + run[0]; }
-  const srv = `${icon('server', 14)}<b>${esc(srvName(st.host))}</b>`;
+  const srv = `${icon('server', 14)}<span>Сервер</span><b>${esc(srvName(st.host))}</b>`;
   if ($('srvChip').innerHTML !== srv) $('srvChip').innerHTML = srv;
   const need = (st.siteList || []).filter((s) => s.inOrder && !s.logged).length + ((st.siteList || []).some((s) => s.captcha) ? 1 : 0);
   $('brainsBadge').style.display = need ? '' : 'none';
@@ -176,7 +176,7 @@ function paintPin() {
   const sig = JSON.stringify([B.choices, B.pin, B.pinOnly, B.pinModel]);
   if (pinFilled === sig || document.activeElement === $('pinModel') || document.activeElement === $('pinSel')) return;
   pinFilled = sig;
-  $('pinSel').innerHTML = `<option value="">Мозг: авто (по порядку)</option>` + B.choices.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('pinSel').innerHTML = `<option value="">Авто (по порядку)</option>` + B.choices.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   $('pinSel').value = B.pin || '';
   $('pinOnly').checked = !!B.pinOnly;
   $('pinModel').value = B.pinModel || '';
@@ -208,7 +208,7 @@ function renderNow() {
   const out = [];
   const sites = st.siteList || [];
   const cap = sites.filter((s) => s.captcha);
-  if (cap.length) out.push(step('bad', `${cap.map((s) => s.name).join(', ')}: просит пройти проверку`, 'откройте вкладку сайта справа («Окна бота») и пройдите её - программа ждёт'));
+  if (cap.length) out.push(step('bad', `${cap.map((s) => s.name).join(', ')}: просит пройти проверку`, 'откройте вкладку сайта справа («Окно бота») и пройдите её - программа ждёт'));
   if (st.paused) out.push(step('warn', 'Пауза', 'боты стоят на сервере и ничего не делают сами, к нейросетям не обращаются; сообщения игроков копятся. «Продолжить» вверху - ответят и продолжат'));
   const logged = sites.filter((s) => s.inOrder && s.logged);
   out.push(logged.length ? step('ok', 'Мозги готовы: ' + logged.map((s) => s.name).join(', '), st.brains && st.brains.now ? 'сейчас думает через ' + st.brains.now : 'список и вход - раздел «Мозги»')
@@ -253,7 +253,7 @@ const logFilter = new Map();   // ник -> что показывать в жу�
 const LOGF = [['all', 'Всё', 'list-checks'], ['chat', 'Чат', 'message-square'], ['brain', 'Мозг', 'brain'], ['body', 'Тело', 'footprints'], ['err', 'Ошибки', 'triangle-alert']];
 function logLines(b) { const f = logFilter.get(b.name) || 'all'; return b.log.filter((l) => f === 'all' || logKind(l) === f); }
 function errCount(b) { return b.log.filter((l) => logKind(l) === 'err').length; }
-const TABS = [['log', 'Журнал', 'scroll-text'], ['behave', 'Поведение', 'smile'], ['chats', 'Чаты', 'message-circle'], ['persona', 'Характер', 'sparkles'], ['map', 'Карта', 'map'], ['server', 'Сервер', 'server']];
+const TABS = [['log', 'Журнал', 'scroll-text'], ['behave', 'Поведение', 'smile'], ['chats', 'Чаты', 'message-circle'], ['persona', 'Характер', 'sparkles'], ['map', 'Карта', 'map'], ['server', 'Доступ', 'key-round']];
 function meter(ic, val, label) {
   const v = Math.max(0, Math.min(20, +val || 0)), cls = v <= 6 ? 'bad' : v <= 12 ? 'warn' : '';
   return `<div class="meter ${cls}" title="${label} ${v} из 20">${icon(ic, 14)}<div class="bar"><i style="width:${v * 5}%"></i></div><span>${v}</span></div>`;
@@ -267,7 +267,7 @@ function botCard(b) {
   const on = s.status === 'online', conn = s.status === 'connecting', off = !on && !conn;
   const where = on ? `${s.dim} · ${s.pos.join(' ')}` : conn ? 'заходит на сервер…' : 'выключен';
   const power = off ? `<button data-a="start" class="go sm" title="Зайти на сервер">${icon('play', 14)}Включить</button>`
-    : `<button data-a="stop" class="ghost icon sm" title="Выйти с сервера" aria-label="Выключить">${icon('power', 14)}</button>`;
+    : `<button data-a="stop" class="ghost sm" title="Бот выйдет с сервера">${icon('power', 14)}Выключить</button>`;
   const head = `<div class="bothead"><div class="ava">${esc(b.name[0] || '?').toUpperCase()}<span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span></div>
     <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}</div>`;
   const stats = on ? `<div class="meters">${meter('heart', s.health, 'здоровье')}${meter('drumstick', s.food, 'еда')}

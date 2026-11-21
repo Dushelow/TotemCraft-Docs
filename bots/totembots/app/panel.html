@@ -190,8 +190,8 @@
 
 <div id="strip">
   <div class="r1">
-    <div class="seg" id="modeSeg" title="Окна бота - там работает программа. Мои окна - ваши, с тем же входом: бот туда не заходит">
-      <button data-mode="work"><i data-i="bot" data-s="14"></i>Окна бота</button><button data-mode="mine"><i data-i="user" data-s="14"></i>Мои окна</button>
+    <div class="seg" id="modeSeg" title="«Окно бота» - сайт, через который думает бот (смотреть можно, мешать нельзя). «Моё окно» - тот же сайт для вас: писать самому, менять настройки">
+      <button data-mode="work"><i data-i="bot" data-s="14"></i>Окно бота</button><button data-mode="mine"><i data-i="user" data-s="14"></i>Моё окно</button>
     </div>
     <div id="siteTabs"></div>
     <div id="nav2">
@@ -217,7 +217,7 @@
     <div class="ctx">
       <div class="field" id="srvChip" title="Сервер, на который заходят боты. Нажмите, чтобы сменить"></div>
       <div class="field grow" title="Каким мозгом думает бот. Авто - по порядку из раздела «Мозги», при лимите или сбое сам переходит к следующему">
-        <i data-i="cpu" data-s="14"></i><select id="pinSel"></select>
+        <i data-i="cpu" data-s="14"></i><span>Мозг</span><select id="pinSel"></select>
       </div>
     </div>
     <nav id="nav">
@@ -259,7 +259,7 @@
         <h2><i data-i="cpu"></i>Какой мозг думает</h2>
         <p class="lead" id="pinLead" style="margin:0"></p>
         <div class="row" id="pinRow" style="margin-top:var(--s3)">
-          <input id="pinModel" class="grow" placeholder="модель (для Qwen и мозгов по ключу)" title="У сайтов модель выбирается на самом сайте: «Мои окна»">
+          <input id="pinModel" class="grow" placeholder="модель (для Qwen и мозгов по ключу)" title="У сайтов модель выбирается на самом сайте: «Моё окно»">
           <label class="chk" style="margin:0" title="Только выбранный: без перехода на запасные"><input type="checkbox" id="pinOnly">только он</label>
           <button id="pinSave" class="pri"><i data-i="check"></i>Сохранить</button>
         </div>
