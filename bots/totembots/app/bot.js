@@ -200,6 +200,7 @@ class TotemBot extends EventEmitter {
       this.deathPoint = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim: bot.game.dimension, at: Date.now() };
       this.resumeFollow = this.followName || this.resumeFollow;
       this.log(`умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z}`);
+      this.ev('смерть', {});
       // опасное место: путь будет его обходить сутки (память опасности, как у мобов и NPC)
       if (this.memory) { const dd = this.memory.data.danger = (this.memory.data.danger || []).filter((x) => Date.now() - x.at < 86400000); dd.push({ ...this.deathPoint, dim: this.dimName() }); if (dd.length > 50) dd.shift(); this.memory.save(); }
       if (this.memory) this.memory.journal(this.opts.name, `умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z} (${this.dimName()})`);
@@ -906,6 +907,7 @@ class TotemBot extends EventEmitter {
       this.log(`застрял: я ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}, цель ${g ? g.constructor.name : 'нет'}${gp ? ' до неё ' + gp.distanceTo(p).toFixed(1) : ''}, путь ${lp.status || '?'} ${(lp.path || []).slice(0, 3).map((n) => `${Math.floor(n.x)},${Math.floor(n.y)},${Math.floor(n.z)}`).join(' ')}, под ногами ${(b.blockAt(fl.offset(0, -1, 0)) || {}).name}, вокруг ${around.join(' ')}, земля ${b.entity.onGround}`);
     }
     this.log('застрял, пробую выбраться (' + this.stuck.tries + ')');
+    this.ev('застрял', { tries: this.stuck.tries, goal: b.pathfinder.goal ? b.pathfinder.goal.constructor.name : '' });
     // водоросли и трава в воде держат тело («застрял в водорослях», 15.11): срезать их вокруг - ломаются мгновенно, природное
     {
       const fl = p.floored(), weeds = [];
@@ -1140,146 +1142,6 @@ class TotemBot extends EventEmitter {
     } finally { this.guard.prey = null; this.guard.mode = was; try { b.pathfinder.setGoal(null); } catch {} }
     await this.pickup({ radius: 6 }, tok).catch(() => {});
     return t.isValid ? `не добил ${t.name}` : `убил ${t.name}`;
-  }
-
-  // --- транспорт: лодка, лошадь и прочее, на чём ездят (раньше команды не было: «не умею садиться в лодку», 15.11)
-  static get RIDE() { return /boat|raft|^(horse|donkey|mule|camel|pig|strider|llama|skeleton_horse|zombie_horse|minecart|happy_ghast)$/; }
-
-  /** Сесть: в лодку или на животное рядом; who - к этому игроку (в его лодку, свободное место). */
-  async mount(a, tok) {
-    const b = this.bot, me = b.entity.position, RIDE = TotemBot.RIDE;
-    if (b.vehicle) return 'уже сижу';
-    const kind = String(a.what || '').toLowerCase();
-    let target = null;
-    const who = a.who ? this.player(a.who) : null;
-    if (who) {
-      target = who.vehicle || Object.values(b.entities).filter((e) => RIDE.test(e.name || '') && e.position.distanceTo(who.position) < 4)
-        .sort((x, y) => x.position.distanceTo(who.position) - y.position.distanceTo(who.position))[0];
-      if (!target) throw new Error(`${a.who} ни на чём не сидит, и рядом с ним нет лодки`);
-    } else {
-      target = Object.values(b.entities).filter((e) => RIDE.test(e.name || '') && (!kind || (e.name || '').includes(kind)) && e.position.distanceTo(me) < 24)
-        .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
-      if (!target && (!kind || /boat|raft/.test(kind))) target = await this.placeBoat(tok);
-      if (!target) throw new Error(`рядом нет ${kind || 'лодки или животного'}, на что сесть`);
-    }
-    const seats = /boat|raft/.test(target.name || '') ? (/chest/.test(target.name) ? 1 : 2) : 1;
-    if ((target.passengers || []).length >= seats) throw new Error(`в ${target.name} нет места`);
-    for (let i = 0; i < 3 && !b.vehicle; i++) {
-      this.check(tok);
-      if (target.position.distanceTo(b.entity.position) > 2.5) {
-        try { await this.goto(new goals.GoalFollow(target, 1.5), tok, 20000); } catch (e) { if (e instanceof Cancelled) throw e; }
-        try { b.pathfinder.setGoal(null); } catch {}
-      }
-      this.busyLook = true;
-      try { await b.lookAt(target.position.offset(0, 0.4, 0), true); b.mount(target); } finally { this.busyLook = false; }
-      for (let w = 0; w < 20 && !b.vehicle; w++) await sleep(100);
-    }
-    if (!b.vehicle) throw new Error(`не сел в ${target.name}${/horse|donkey|mule|camel/.test(target.name) ? ' (лошадь должна быть приручена и под седлом)' : ''}`);
-    if (this.mode !== 'task') this.mode = 'ride';
-    const driver = !(target.passengers || []).some((x) => x !== b.entity);
-    return `сел в ${target.name}${driver ? ' (я за рулём: !drive(x, z))' : ' пассажиром'}`;
-  }
-
-  /** Поставить свою лодку на воду или лёд рядом (как игрок: лодка в руке, правый клик по блоку). */
-  async placeBoat(tok) {
-    const b = this.bot;
-    const it = b.inventory.items().find((i) => /_boat$|_raft$/.test(i.name) && !/chest/.test(i.name)) || b.inventory.items().find((i) => /_boat$|_raft$/.test(i.name));
-    if (!it) return null;
-    const me = b.entity.position;
-    const spot = b.findBlocks({ matching: (bl) => /^(water|ice|packed_ice|blue_ice)$/.test(bl.name), maxDistance: 4, count: 30 }).map((p) => b.blockAt(p))
-      .filter((k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.boundingBox === 'empty' && !/water/.test(up.name); })
-      .sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me))[0];
-    if (!spot) throw new Error('лодку ставить некуда: рядом нет воды или льда');
-    this.check(tok);
-    await b.equip(it, 'hand');
-    this.busyLook = true;
-    try { await b.lookAt(spot.position.offset(0.5, 1, 0.5), true); await b.placeEntity(spot, new Vec3(0, 1, 0)); } finally { this.busyLook = false; }
-    await sleep(400);
-    const e = Object.values(b.entities).filter((x) => /boat|raft/.test(x.name || '') && x.position.distanceTo(spot.position) < 3).sort((x, y) => x.position.distanceTo(spot.position) - y.position.distanceTo(spot.position))[0];
-    if (e) this.log(`поставил лодку на ${spot.position.x} ${spot.position.y} ${spot.position.z}`);
-    return e || null;
-  }
-
-  async dismount() {
-    const b = this.bot;
-    if (!b.vehicle) return 'я ни на чём не сижу';
-    try { b.dismount(); } catch {}
-    for (let w = 0; w < 20 && b.vehicle; w++) await sleep(100);
-    if (this.mode === 'ride') this.mode = 'idle';
-    return b.vehicle ? 'не смог слезть' : 'слез';
-  }
-
-  /** Вести лодку или лошадь к точке (x, z). Лошадь идёт по взгляду; лодку поворачивают «влево/вправо». */
-  async drive(a, tok) {
-    const b = this.bot;
-    if (!b.vehicle) throw new Error('я ни на чём не сижу - сначала !mount');
-    const x = +a.x, z = +a.z;
-    if (!isFinite(x) || !isFinite(z)) throw new Error('куда? нужны x и z');
-    const boat = /boat|raft/.test(b.vehicle.name || '');
-    const until = Date.now() + Math.min(600, +a.seconds || 180) * 1000;
-    let flip = 1, lastErr = null, errAt = Date.now();
-    this.busyLook = true;
-    try {
-      while (Date.now() < until) {
-        this.check(tok);
-        if (!b.vehicle) throw new Error('меня выкинуло из ' + (boat ? 'лодки' : 'седла'));
-        const v = b.vehicle.position, d = Math.hypot(x - v.x, z - v.z);
-        if (d < 3) break;
-        const want = Math.atan2(-(x - v.x), -(z - v.z));
-        await b.look(want, 0, true);
-        let err = want - (b.vehicle.yaw || 0); while (err > Math.PI) err -= 2 * Math.PI; while (err < -Math.PI) err += 2 * Math.PI;
-        // направление поворота лодки на 26.x не проверено: ошибка за 2 с выросла - поворачиваем в другую сторону
-        if (boat && Date.now() - errAt > 2000) { if (lastErr !== null && Math.abs(err) > Math.abs(lastErr) + 0.2) flip = -flip; lastErr = err; errAt = Date.now(); }
-        const turn = boat && Math.abs(err) > 0.25 ? Math.sign(err) * flip : 0;
-        const go = !boat || Math.abs(err) < 1.2;
-        b.setControlState('forward', go);
-        b.setControlState('left', turn > 0);
-        b.setControlState('right', turn < 0);
-        try { b.moveVehicle(turn, go ? 1 : 0); } catch {}
-        await sleep(100);
-      }
-    } finally { b.clearControlStates(); try { b.moveVehicle(0, 0); } catch {} this.busyLook = false; }
-    const v = b.vehicle ? b.vehicle.position : b.entity.position;
-    return `доплыл/доехал до ${Math.floor(v.x)} ${Math.floor(v.z)}`;
-  }
-
-  /** Выбросить всё (и броню, и вторую руку), кроме keep: «выкинь всё, я тебя переодену». */
-  async discardAll(a) {
-    const b = this.bot;
-    const keep = String(a.keep || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
-    const kept = (n) => keep.some((k) => n.includes(k));
-    for (const slot of ['head', 'torso', 'legs', 'feet', 'off-hand']) { try { await b.unequip(slot); await sleep(150); } catch {} }
-    let n = 0;
-    for (const it of b.inventory.items()) {
-      if (kept(it.name)) continue;
-      try { await b.tossStack(it); n += it.count; await sleep(120); } catch {}
-    }
-    this.handsAt = Date.now() + 120000;
-    return n ? `выбросил всё (${n} шт.)${keep.length ? ', оставил ' + keep.join(', ') : ''}` : 'выбрасывать нечего';
-  }
-
-  /**
-   * Дуэль с игроком: только по приказу хозяина (проверяет мозг), честным боем guard, не дольше 60 с;
-   * своё здоровье 6 и меньше - сдаюсь. На !stop - сразу конец.
-   */
-  async duel(a, tok) {
-    const b = this.bot, t = this.player(a.who);
-    if (!t) throw new Error(`не вижу ${a.who} рядом`);
-    if (!this.guard) throw new Error('бой выключен');
-    const was = this.guard.mode; if (was === 'off') this.guard.mode = 'defend';
-    this.guard.prey = t.id;
-    const until = Date.now() + 60000;
-    let why = 'время вышло';
-    try {
-      while (Date.now() < until) {
-        this.check(tok);
-        if (!t.isValid) { why = 'соперник выбыл'; break; }
-        if (b.health <= 6) { why = 'у меня мало здоровья - сдаюсь'; break; }
-        if (t.position.distanceTo(b.entity.position) > 2.5) { try { await this.goto(new goals.GoalFollow(t, 2), tok, 4000); } catch (e) { if (e instanceof Cancelled) throw e; } }
-        await sleep(250);
-      }
-    } finally { this.guard.prey = null; this.guard.mode = was; try { b.pathfinder.setGoal(null); } catch {} }
-    return `дуэль с ${a.who} окончена: ${why}`;
   }
 
   /** Подойти к кровати вплотную (сервер пускает лечь только в ~2 блоках: «the bed is too far» с GoalNear 2 по диагонали и через этаж). */
@@ -1518,118 +1380,6 @@ class TotemBot extends EventEmitter {
     this.lostReported = false;
     this.bot.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true);
     return `иду за ${name}`;
-  }
-
-  /**
-   * Дом, в котором стоит бот (тело, без нейросети): этажи, сундуки, кровати, печи, лестницы, двери - в 16 блоках,
-   * только если над головой крыша-постройка. Кэш 20 с. Этаж - уровень пола (y ног), этажи - уровни, где есть пол и
-   * что-то из обстановки.
-   */
-  house() {
-    const b = this.bot, p = b.entity.position.floored();
-    if (this._house && Date.now() - this._house.at < 20000 && this._house.pos.distanceTo(p) < 6) return this._house.h;
-    let roof = null;
-    for (let dy = 2; dy <= 8 && !roof; dy++) { const k = b.blockAt(p.offset(0, dy, 0)); if (k && k.boundingBox === 'block') roof = k; }
-    let h = null;
-    // дом - крыша-постройка И стены хотя бы с трёх сторон в 6 блоках (открытая коробка или навес - не дом)
-    const wallSide = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter(([dx, dz]) => { for (let i = 1; i <= 6; i++) { const k = b.blockAt(p.offset(dx * i, 1, dz * i)); if (k && k.boundingBox === 'block') return BUILT.test(k.name) || /_log$|stone|deepslate/.test(k.name); } return false; }).length;
-    if (roof && (BUILT.test(roof.name) || this.skills.builtNear(p, 2)) && wallSide >= 3) {
-      // этажи - по перекрытиям в этом же столбце: снизу от земли до крыши (а не по высотам сундуков соседних домов)
-      const layers = [];
-      let air = 0;
-      for (let y = p.y - 1; y >= p.y - 24; y--) {
-        const k = b.blockAt(new Vec3(p.x, y, p.z));
-        if (!k) break;
-        if (k.boundingBox !== 'block') { air++; continue; }
-        if (!BUILT.test(k.name)) break;                 // дошли до земли
-        if (air >= 2 || !layers.length) layers.push(y);
-        air = 0;
-      }
-      const floorNo = layers.length;                    // 1 - пол на земле, 2 - второй этаж...
-      let upper = 0; air = 0;
-      for (let y = p.y + 2; y <= p.y + 24; y++) {
-        const k = b.blockAt(new Vec3(p.x, y, p.z));
-        if (!k) break;
-        if (k.boundingBox !== 'block') { air++; continue; }
-        if (air >= 2) upper++;
-        air = 0;
-      }
-      // обстановка этого дома: в 10 блоках по горизонтали и под крышей (над ней в 6 блоках - постройка)
-      const roofed = (v) => { for (let dy = 1; dy <= 6; dy++) { const k = b.blockAt(v.offset(0, dy, 0)); if (k && k.boundingBox === 'block' && BUILT.test(k.name)) return true; } return false; };
-      const find = (re, n = 60) => b.findBlocks({ matching: (bl) => re.test(bl.name), maxDistance: 12, count: n })
-        .filter((v) => Math.abs(v.y - p.y) <= 10 && Math.hypot(v.x - p.x, v.z - p.z) <= 10 && roofed(v));
-      const byDist = (q, c) => q.distanceTo(p) - c.distanceTo(p);
-      const chests = find(/^(chest|trapped_chest|barrel)$|shulker_box$/).sort(byDist);
-      const beds = find(/_bed$/, 20).filter((v) => { const k = b.blockAt(v); return !k.getProperties || k.getProperties().part !== 'head'; }).sort(byDist);
-      const work = find(/^(furnace|smoker|blast_furnace|crafting_table)$/, 20).sort(byDist);
-      const stairs = find(/_stairs$|^ladder$|_trapdoor$/, 80);
-      h = { chests, beds, work, stairs, floor: Math.max(1, floorNo), floors: Math.max(1, floorNo) + upper };
-    }
-    this._house = { at: Date.now(), pos: p, h };
-    return h;
-  }
-
-  /** Коротко для мозга: «дом: 2 этажа (y 67, 71), сундуков 9 (5 на втором), кровать на втором, печи 2». */
-  houseText() {
-    const h = this.house();
-    if (!h) return '';
-    return `в доме: этажей ${h.floors}, ты на ${h.floor}-м; сундуков ${h.chests.length}, кроватей ${h.beds.length}, верстак и печи ${h.work.length}; лестниц ${h.stairs.length ? 'есть' : 'не видно'} - тело само ходит по этажам (!goTo, !putInChest, !stash, !sleep)`;
-  }
-
-  /**
-   * Выложить лишнее в сундуки дома (16.11 «выложи всё лишнее в сундуки дома, оставь инструменты, броню, еду» -
-   * бот вышел на улицу). Оставляет: инструменты и оружие, броню, щит, тотем, до 16 лучшей еды, факелы, лодку.
-   * Сундуки - ближние по пути, полный - следующий.
-   */
-  async stash(a, tok) {
-    const b = this.bot, h = this.house();
-    // только свои сундуки: поставленные самой или в своём доме («мой дом» в памяти, 16 бл.) - не в чужие
-    // (21.11 выложила 250 вещей в сундуки чужого амбара и «поблагодарила за помощь»)
-    const myHome = require('./life').home(this);
-    const own = (v) => this.skills.mine(v) || (myHome && Math.hypot(myHome.x - v.x, myHome.z - v.z) <= 16 && Math.abs(myHome.y - v.y) <= 12);
-    const chests = (h && h.chests.length ? h.chests : b.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 8, count: 10 })).filter(own);
-    if (!chests.length) throw new Error(myHome ? `своих сундуков рядом нет: мои - в моём доме (${myHome.x} ${myHome.z}) или те, что поставила сама` : 'своих сундуков нет - поставь свой сундук или запомни свой дом');
-    const KEEP = /(_pickaxe|_axe|_shovel|_hoe|_sword|bow|crossbow|trident|mace|shield|shears|fishing_rod|flint_and_steel|_helmet|_chestplate|_leggings|_boots|elytra|totem_of_undying|torch|_boat|_raft|compass|clock|map)$/;
-    const foods = b.registry.foodsByName || {};
-    const keepFood = new Set(b.inventory.items().filter((i) => foods[i.name]).sort((x, y) => (foods[y.name].foodPoints || 0) - (foods[x.name].foodPoints || 0)).slice(0, 1).map((i) => i.slot));
-    const extra = String(a.keep || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
-    const out = () => b.inventory.items().filter((i) => !KEEP.test(i.name) && !keepFood.has(i.slot) && !extra.some((k) => i.name.includes(k)));
-    let put = 0;
-    for (const v of chests) {
-      this.check(tok);
-      if (!out().length) break;
-      let c;
-      if ((this.lockedChests || new Set()).has(`${v.x},${v.y},${v.z}`)) continue;
-      try { c = await this.openLocked(v.x, v.y, v.z, tok); } catch (e) { if (e instanceof Cancelled) throw e; continue; }
-      try {
-        for (const it of out()) {
-          try { await c.deposit(it.type, null, it.count); put += it.count; await sleep(rnd(120, 300)); } catch { break; }   // сундук полон - следующий
-        }
-      } finally { c.close(); }
-    }
-    if (!put) throw new Error('выкладывать нечего или сундуки полны');
-    const left = out().reduce((s, i) => s + i.count, 0);
-    return `выложил ${put} шт. в сундуки дома${left ? `, не поместилось ещё ${left}` : ''}; оставил инструменты, броню и еду`;
-  }
-
-  /**
-   * Что сейчас падает с неба там, где бот: 'дождь', 'снег' или '' (ясно, или биом без осадков - пустыня, саванна).
-   * Как в игре: идёт ли непогода (сила дождя от сервера) + биом под ногами: холодный (температура < 0,15,
-   * в горах ниже с высотой) - снег. 21.11 зимой в заснеженной тайге бот говорил «дождь».
-   */
-  precip() {
-    const b = this.bot;
-    if (!/overworld/.test(b.game.dimension || '') || (b.rainState || 0) <= 0.3) return '';
-    try {
-      const k = b.blockAt(b.entity.position), name = k && k.biome && k.biome.name;
-      const bio = name && b.registry.biomesByName[name];
-      if (bio) {
-        if (bio.has_precipitation === false || bio.precipitation === 'none') return '';
-        const temp = (bio.temperature ?? 0.8) - Math.max(0, b.entity.position.y - 80) * 0.00125;
-        if (temp < 0.15 || /snowy|frozen|ice_spikes|grove|jagged_peaks|frozen_peaks|snowy_slopes/.test(name)) return 'снег';
-      }
-    } catch {}
-    return 'дождь';
   }
 
   /** Таблички рядом (8 блоков): текст с обеих сторон. */
@@ -2000,8 +1750,36 @@ class TotemBot extends EventEmitter {
   }
 
   /** Выполнить список действий по порядку. Возвращает итог текстом. */
-  async run(actions, label) {
+  /**
+   * Судья дел (кто главнее): хозяин (3) > мозг по просьбе игрока (2) > мозг сам (1) > жизнь тела (0).
+   * Младший не прерывает дело старшего, пока оно идёт (не дольше 5 мин): иначе своё «свободное время» мозга
+   * обрывало поручение хозяина, а жизнь тела - решения мозга (16-21.11).
+   */
+  claim(source) {
+    const rank = { master: 3, player: 2, self: 1, life: 0 }[source] ?? 2;
+    const cur = this.taskOwner;
+    if (cur && this.mode === 'task' && Date.now() - cur.at < 300000 && rank < cur.rank) return `занята делом поважнее (${cur.label}) - сделаю после`;
+    this.taskOwner = { rank, at: Date.now() };
+    return '';
+  }
+
+  /** Единый журнал событий тела (JSON по строке): для разбора игры и сценариев. */
+  ev(type, data = {}) {
+    try {
+      const p = this.bot && this.bot.entity ? this.bot.entity.position : null;
+      const line = JSON.stringify({ t: new Date().toISOString(), type, pos: p ? [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)] : null, dim: this.bot && this.bot.game && this.bot.game.dimension, ...data });
+      require('fs').appendFileSync(require('path').join(__dirname, '..', 'local', 'logs', `${this.opts.name}.events.jsonl`), line + '\n');
+    } catch {}
+  }
+
+  /** Сколько каких вещей сейчас (для проверки итога действия). */
+  invCounts() { const m = {}; for (const i of (this.bot && this.bot.inventory ? this.bot.inventory.items() : [])) m[i.name] = (m[i.name] || 0) + i.count; return m; }
+
+  async run(actions, label, source = 'player') {
     if (!this.bot || this.status !== 'online') return 'бот не на сервере';
+    const busy = this.claim(source);
+    if (busy) { this.ev('отказ_судьи', { source, label }); return busy; }
+    if (this.taskOwner) this.taskOwner.label = label || actions.map((a) => a && a.act).join(', ');
     this.lastRunAt = Date.now();   // для жизни тела: мозг занят - не перебивать
     let plain = actions.filter((a) => a && a.act);
     if (!plain.length) return '';
@@ -2020,6 +1798,7 @@ class TotemBot extends EventEmitter {
     this.task = label || plain.map((a) => a.act).join(', ');
     const done = [];
     const b0 = () => this.bot.entity.position;
+    let inv0 = this.invCounts();
     try {
       for (const a of plain) {
         this.check(tok);
@@ -2104,17 +1883,32 @@ class TotemBot extends EventEmitter {
           case 'stop': this.cancel(); return done.concat('остановился').join('; ');
           default: r = `не знаю действие ${a.act}`;
         }
+        // проверка итога: что реально изменилось в инвентаре (мозг видит правду, а не «вроде положила»)
+        if (/^(take|put|toss|stash|discardAll|craft|smelt|gather|mine|harvest|pickup|give|hunt|shear|fish|eat|recover)$/.test(a.act)) {
+          const after = this.invCounts(), diff = [];
+          for (const k of new Set([...Object.keys(inv0), ...Object.keys(after)])) { const d = (after[k] || 0) - (inv0[k] || 0); if (d) diff.push(`${d > 0 ? '+' : ''}${d} ${k}`); }
+          if (diff.length) r += ` [инвентарь: ${diff.slice(0, 6).join(', ')}]`;
+          else if (/^(take|put|craft|gather|mine|give|stash)$/.test(a.act)) r += ' [инвентарь не изменился - похоже, на деле не вышло]';
+          inv0 = after;
+        }
         done.push(r);
         this.log(r);
+        this.ev('итог_действия', { act: a.act, ok: true, r: String(r).slice(0, 200), source });
       }
       return done.join('; ') + '; задание выполнено';
     } catch (e) {
-      if (e instanceof Cancelled) return done.concat('задание отменено').join('; ');
+      if (e instanceof Cancelled) { this.ev('отмена', { label, source }); return done.concat('задание отменено').join('; '); }
+      this.ev('итог_действия', { ok: false, err: String(e.message).slice(0, 200), label, source });
       return done.concat('не получилось: ' + e.message).join('; ');
     } finally {
-      if (tok === this.token) { this.mode = 'idle'; this.task = ''; try { this.bot.pathfinder.setGoal(null); } catch {} if (resume) this.follow(resume); }
+      if (tok === this.token) { this.mode = 'idle'; this.task = ''; this.taskOwner = null; try { this.bot.pathfinder.setGoal(null); } catch {} if (resume) this.follow(resume); }
     }
   }
 }
 
-module.exports = { TotemBot, clickActionPacket };
+// методы из отдельных модулей (разбивка bot.js): транспорт, дом
+for (const M of [require('./vehicles').Vehicles, require('./house').House]) {
+  for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
+}
+
+module.exports = { TotemBot, clickActionPacket, Cancelled };

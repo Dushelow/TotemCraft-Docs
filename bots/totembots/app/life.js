@@ -91,6 +91,7 @@ function start(tb) {
     tb.mode = 'life'; tb.task = n.why;
     tb.log(`сама: ${n.why}`);
     let failed = false, cut = false;
+    tb.taskOwner = null;   // жизнь тела - младше всех: любое дело мозга или хозяина её прервёт
     try { await act(tb, n, tok); } catch (e) { cut = tb.isCancel(e); failed = !cut; if (failed) tb.log(`сама не смогла (${n.k}): ${e.message.slice(0, 100)}`); }
     finally {
       tb.lifeBusy = false;

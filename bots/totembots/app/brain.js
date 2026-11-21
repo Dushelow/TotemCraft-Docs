@@ -210,7 +210,7 @@ class Brain {
     if (quick) {
       // тело делает сразу, нейросеть только узнаёт (раньше ждали её 10-50 с, а она путалась: «не знаю как зайти в портал»)
       this.log(`по слову хозяина сразу: ${quick.map((x) => x.act).join(' → ')}`);
-      this.body.run(quick, quick.map((x) => x.act).join(' → ')).then((res) => {
+      this.body.run(quick, quick.map((x) => x.act).join(' → '), 'master').then((res) => {
         this.push(`[чат ${label}] ${from}${role} (${where}): ${text}\n[сделано по слову хозяина] ${res || 'готово'}`, true, from, ch);
       }).catch(() => {});
       return;
@@ -579,7 +579,7 @@ class Brain {
 
   async runActions(actions, from) {
     const label = actions.map((a) => a.act).join(' → ');
-    let result = await this.body.run(actions, label);
+    let result = await this.body.run(actions, label, from === 'сам' ? 'self' : (from && this.isMaster(from) ? 'master' : 'player'));
     if (!result) return;
     const failed = /не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result);
     if (!failed && !actions.every((a) => ['look', 'plan', 'craftable', 'lesson', 'remember', 'wait'].includes(a.act))) this.lastOk = actions.map(({ _cmd, ...x }) => x);
