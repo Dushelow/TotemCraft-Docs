@@ -16,7 +16,11 @@ const PIPER_VOICES = {
 };
 const VOICE_URL = (name) => `https://huggingface.co/rhasspy/piper-voices/resolve/main/${PIPER_VOICES[name]}/${name}`;
 
-const ORDER = ['qwen', 'piper', 'system'];
+const ORDER = ['qwen', 'silero', 'piper', 'system'];
+// Silero: русская нейросеть на этом компьютере (Python + torch CPU, модель v4_ru ~ 60 МБ). Голоса: женские xenia,
+// baya, kseniya; мужские aidar, eugene. Ставится кнопкой в разделе «Голос» в папку программы local/silero.
+const SILERO_VOICES = { xenia: 'Ксения (женский)', baya: 'Байя (женский)', kseniya: 'Ксения 2 (женский)', aidar: 'Айдар (мужской)', eugene: 'Евгений (мужской)' };
+const SILERO_MODEL = 'https://models.silero.ai/models/tts/ru/v4_ru.pt';
 
 async function download(url, file) {
   const res = await fetch(url);
@@ -34,7 +38,57 @@ class Voice {
   }
 
   settings() {
-    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', echo: true, ...(this.cfg().voice || {}) };
+    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', sileroVoice: 'xenia', echo: true, ...(this.cfg().voice || {}) };
+  }
+
+  // --- Silero
+  sileroDir() { return path.join(__dirname, '..', 'local', 'silero'); }
+  sileroState() {
+    const d = this.sileroDir();
+    return { program: fs.existsSync(path.join(d, 'py', 'torch')), voice: fs.existsSync(path.join(d, 'v4_ru.pt')), voices: SILERO_VOICES };
+  }
+
+  /** Поставить Silero: torch для процессора и numpy в local/silero/py, модель v4_ru.pt. Запускает владелец кнопкой. */
+  async installSilero(status = () => {}) {
+    const d = this.sileroDir();
+    fs.mkdirSync(path.join(d, 'py'), { recursive: true });
+    if (!fs.existsSync(path.join(d, 'py', 'torch'))) {
+      status('ставлю Python-библиотеки для Silero (torch для процессора, ~200 МБ, несколько минут)...');
+      await new Promise((ok, fail) => {
+        const p = spawn('python', ['-m', 'pip', 'install', '--quiet', '--target', path.join(d, 'py'), 'torch', 'numpy', '--index-url', 'https://download.pytorch.org/whl/cpu', '--extra-index-url', 'https://pypi.org/simple'], { windowsHide: true });
+        let err = ''; p.stderr.on('data', (c) => { err += c; });
+        p.on('error', (e) => fail(new Error('нет Python на компьютере: ' + e.message)));
+        p.on('close', (code) => (code === 0 ? ok() : fail(new Error('pip: ' + (err.trim().split('\n').pop() || 'код ' + code)))));
+      });
+    }
+    if (!fs.existsSync(path.join(d, 'v4_ru.pt'))) { status('скачиваю голосовую модель Silero (~60 МБ)...'); await download(SILERO_MODEL, path.join(d, 'v4_ru.pt')); }
+    status('Silero готов');
+    return this.sileroState();
+  }
+
+  /** Озвучить через Silero: процесс держится запущенным, фразы - по очереди. */
+  silero(text) {
+    const st = this.sileroState();
+    if (!st.program || !st.voice) throw new Error('Silero не установлен (кнопка «Скачать Silero» в разделе «Голос»)');
+    if (!this.sp || this.sp.exitCode !== null) {
+      this.sp = spawn('python', [path.join(__dirname, 'silero_tts.py')], { windowsHide: true, env: { ...process.env, SILERO_DIR: this.sileroDir(), PYTHONIOENCODING: 'utf-8' } });
+      this.spBuf = Buffer.alloc(0); this.spWait = [];
+      this.sp.stdout.on('data', (c) => {
+        this.spBuf = Buffer.concat([this.spBuf, c]);
+        while (this.spBuf.length >= 4) {
+          const n = this.spBuf.readUInt32LE(0);
+          if (this.spBuf.length < 4 + n) break;
+          const pcm = this.spBuf.subarray(4, 4 + n); this.spBuf = this.spBuf.subarray(4 + n);
+          const w = this.spWait.shift(); if (w) (n ? w.ok({ pcm: Buffer.from(pcm), rate: 24000 }) : w.fail(new Error('Silero не смог озвучить')));
+        }
+      });
+      this.sp.on('exit', () => { for (const w of this.spWait.splice(0)) w.fail(new Error('Silero остановился')); });
+    }
+    return new Promise((ok, fail) => {
+      const t = setTimeout(() => fail(new Error('Silero не ответил за 30 с')), 30000);
+      this.spWait.push({ ok: (r) => { clearTimeout(t); ok(r); }, fail: (e) => { clearTimeout(t); fail(e); } });
+      this.sp.stdin.write(JSON.stringify({ text: String(text).replace(/\s+/g, ' '), speaker: this.settings().sileroVoice || 'xenia' }) + '\n');
+    });
   }
 
   // --- Piper
@@ -101,6 +155,8 @@ class Voice {
           const a = await this.bridge.readAloud(qid);
           if (!a.pcm.length) throw new Error('Qwen вернул пустой звук');
           this.play(a, botCfg.name, how);
+        } else if (how === 'silero') {
+          this.play(await this.silero(text), botCfg.name, how);
         } else if (how === 'piper') {
           this.play(await this.piper(text), botCfg.name, how);
         } else if (how === 'system') {
@@ -133,4 +189,4 @@ class Voice {
   }
 }
 
-module.exports = { Voice, PIPER_VOICES };
+module.exports = { Voice, PIPER_VOICES, SILERO_VOICES };

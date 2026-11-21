@@ -135,7 +135,7 @@ function stateForPanel() {
       choices: [{ id: 'qwen', name: 'Qwen' }, ...Object.entries(SITES).map(([k, x]) => ({ id: k + 'web', name: x.name.replace(/ \(сайт\)$/, '') })),
         ...Object.entries(PRESETS).filter(([k]) => ((cfg.brains || {}).keys || {})[k]).map(([k, p]) => ({ id: k, name: p.name + ' (ключ)' }))],
       now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
-    voice: voice ? { ...voice.settings(), piper: voice.piperState() } : {},
+    voice: voice ? { ...voice.settings(), piper: voice.piperState(), silero: voice.sileroState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
@@ -441,17 +441,19 @@ ipcMain.handle('bot-combat', (_e, { name, combat }) => {
   return true;
 });
 ipcMain.handle('voice-save', (_e, v) => {
-  const PROVIDERS = ['qwen', 'piper', 'system'];
+  const PROVIDERS = ['qwen', 'silero', 'piper', 'system'];
   cfg.voice = {
     enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local, plasmo: !!v.plasmo, echo: v.echo !== false,
     provider: PROVIDERS.includes(v.provider) ? v.provider : 'qwen',
     volume: Math.max(0, Math.min(1, +v.volume || 0)),
     piperVoice: PIPER_VOICES[v.piperVoice] ? v.piperVoice : 'ru_RU-denis-medium',
+    sileroVoice: /^(xenia|baya|kseniya|aidar|eugene)$/.test(v.sileroVoice) ? v.sileroVoice : 'xenia',
   };
   saveCfg();
   return true;
 });
 ipcMain.handle('voice-install-piper', async () => voice.installPiper((t) => win.webContents.send('voice-status', t)));
+ipcMain.handle('voice-install-silero', async () => voice.installSilero((t) => win.webContents.send('voice-status', t)));
 ipcMain.handle('voice-test', async (_e, name) => {
   const b = cfg.bots.find((x) => x.name === name) || { name: name || 'проверка', chatId: '' };
   if (!live.get(b.name)) live.set(b.name, { log: [] });

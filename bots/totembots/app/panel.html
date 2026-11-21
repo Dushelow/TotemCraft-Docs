@@ -201,6 +201,7 @@
         <label>Чем озвучивать</label>
         <select id="vProvider">
           <option value="qwen">Qwen: голос из настроек Qwen (поменять - в «Моих окнах», Qwen)</option>
+          <option value="silero">Silero: русская нейросеть на этом компьютере, без интернета (живее Piper)</option>
           <option value="piper">Piper: нейросеть на этом компьютере, без интернета</option>
           <option value="system">Голоса Windows (только колонки)</option>
         </select>
@@ -210,6 +211,8 @@
         <label class="chk"><input type="checkbox" id="vLocal"> В колонках этого компьютера</label>
         <label class="chk"><input type="checkbox" id="vPlasmo"> В игре через Plasmo Voice (слышат игроки рядом с ботом)</label>
         <label>Громкость</label><input type="range" id="vVolume" min="0" max="1" step="0.05">
+        <label>Голос Silero</label>
+        <div class="row"><select id="vSileroVoice" class="grow"></select><button id="vInstallSilero" class="sec">Скачать Silero</button></div>
         <label>Голос Piper</label>
         <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall" class="sec">Скачать</button></div>
         <div id="vStatus" class="muted" style="margin-top:4px"></div>

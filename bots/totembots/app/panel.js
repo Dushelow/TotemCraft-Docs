@@ -324,18 +324,24 @@ function fillVoice(v) {
     $('vLocal').checked = !!v.local; $('vPlasmo').checked = !!v.plasmo; $('vVolume').value = v.volume;
     $('vPiperVoice').innerHTML = v.piper.voices.map((n) => `<option value="${n}">${VOICE_NAMES[n] || n}</option>`).join('');
     $('vPiperVoice').value = v.piperVoice;
+    if (v.silero) { $('vSileroVoice').innerHTML = Object.entries(v.silero.voices).map(([k, n]) => `<option value="${k}">${n}</option>`).join(''); $('vSileroVoice').value = v.sileroVoice || 'xenia'; }
     voiceFilled = true;
   }
-  if (!$('vStatus').dataset.busy) $('vStatus').textContent = piperText(v.piper);
+  if (!$('vStatus').dataset.busy) $('vStatus').textContent = piperText(v.piper) + (v.silero ? (v.silero.program && v.silero.voice ? ' · Silero готов' : ' · Silero не установлен') : '');
 }
 const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked, echo: $('vEcho').checked,
-  local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value });
+  local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value, sileroVoice: $('vSileroVoice').value });
 $('vSave').onclick = () => act(() => T.voiceSave(voiceForm()), $('vSave'), 'голос сохранён');
 $('vInstall').onclick = () => act(async () => {
   await T.voiceSave(voiceForm());
   $('vStatus').dataset.busy = '1';
   try { await T.voiceInstallPiper(); } finally { delete $('vStatus').dataset.busy; }
 }, $('vInstall'));
+$('vInstallSilero').onclick = () => act(async () => {
+  await T.voiceSave(voiceForm());
+  $('vStatus').dataset.busy = '1';
+  try { await T.voiceInstallSilero(); } finally { delete $('vStatus').dataset.busy; }
+}, $('vInstallSilero'), 'Silero установлен');
 $('vTest').onclick = () => act(async () => { await T.voiceSave(voiceForm()); await T.voiceTest(selected); }, $('vTest'));
 T.onVoiceStatus((t) => { $('vStatus').textContent = t; });
 // проигрывание: реплики по очереди, не накладываются

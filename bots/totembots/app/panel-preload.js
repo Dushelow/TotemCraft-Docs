@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('totem', {
   chatRewarm: call('chat-rewarm'),
   voiceSave: call('voice-save'),
   voiceInstallPiper: call('voice-install-piper'),
+  voiceInstallSilero: call('voice-install-silero'),
   voiceTest: call('voice-test'),
   onVoiceStatus: (cb) => ipcRenderer.on('voice-status', (_e, t) => cb(t)),
   onVoicePcm: (cb) => ipcRenderer.on('voice-pcm', (_e, d) => cb(d)),
