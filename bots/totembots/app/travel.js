@@ -45,6 +45,25 @@ class Trails {
     state.last = { x: p.x, y: p.y, z: p.z }; state.lastI = i; state.lastD = d;
   }
   forget(state) { state.last = null; state.lastI = undefined; }
+  /** Натоптанность клетки: сколько раз там стояли игроки и сам бот (как «тропинки желаний» в парках). */
+  heatMap(d) {
+    const k = 'heat-' + d;
+    if (this.g[k]) return this.g[k];
+    try { this.g[k] = new Map(Object.entries(JSON.parse(fs.readFileSync(path.join(this.dir, k + '.json'), 'utf8')))); } catch { this.g[k] = new Map(); }
+    return this.g[k];
+  }
+  tread(d, p) {
+    const m = this.heatMap(d), key = `${Math.floor(p.x)},${Math.floor(p.y)},${Math.floor(p.z)}`;
+    if (!m.has(key) && m.size >= 200000) return;
+    m.set(key, Math.min(50, (m.get(key) || 0) + 1));
+    this.dirty['heat-' + d] = true;
+  }
+  heat(d, x, y, z) { return this.heatMap(d).get(`${x},${y},${z}`) || 0; }
+  saveHeat(d) {
+    const k = 'heat-' + d;
+    if (!this.dirty[k]) return; this.dirty[k] = false;
+    try { fs.mkdirSync(this.dir, { recursive: true }); fs.writeFileSync(path.join(this.dir, k + '.json'), JSON.stringify(Object.fromEntries(this.g[k]))); } catch {}
+  }
   /** Путь по тропам от a до b: [{x,y,z}...] или null. Дейкстра по точкам (их немного). */
   route(d, a, b) {
     const g = this.load(d);

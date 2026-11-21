@@ -28,9 +28,10 @@ function world(build) {
   };
   return { registry, version: '1.21.4', entities: {}, game: { minY: -64, height: 384 }, entity: { position: new Vec3(0.5, 65, 0.5) }, inventory: { items: () => [] }, blockAt, toggle };
 }
-function find(bot, from, goal) {
+function find(bot, from, goal, stepCost) {
   const mv = new Movements(bot); mv.canDig = false; mv.allow1by1towers = false; mv.scafoldingBlocks = [];
   install(mv, bot);
+  if (stepCost) mv.navStepCost = stepCost;
   const a = new AStar(new Move(from[0], from[1], from[2], 0, 0), mv, goal, 5000, 20000, -1, 0);
   return a.compute();
 }
@@ -67,8 +68,8 @@ function replay(bot, from, r) {
 }
 
 const results = [];
-function check(name, build, from, goal, wantPath, extra) {
-  const r = find(world(build), from, goal);
+function check(name, build, from, goal, wantPath, extra, stepCost) {
+  const r = find(world(build), from, goal, stepCost);
   let ok = (r.status === 'success') === wantPath, note = '';
   if (r.status === 'success') {
     const bad = replay(world(build), from, r);
@@ -120,5 +121,17 @@ check('щель 1,5 под плитой - не пролезть', (set) => { wal
 check('угол по диагонали - не срезать', (set) => { for (let x = -6; x <= 12; x++) for (let z = -6; z <= 6; z++) if (!((x === 0 && z === 0) || (x === 1 && z === 1))) { set(x, 65, z, 'stone'); set(x, 66, z, 'stone'); } }, [0, 65, 0], G(1, 65, 1), false);
 check('ступенька 1 блок - прыжком', (set) => { for (let x = 2; x <= 6; x++) set(x, 65, 0, 'stone'); }, [0, 65, 0], G(4, 66, 0), true);
 check('потолок над прыжком - обойти', (set) => { set(2, 65, 0, 'stone'); set(1, 67, 0, 'stone'); set(0, 67, 0, 'stone'); }, [0, 65, 0], G(2, 66, 0), true);
+// --- грядки (22.11): прыжок и падение на грядку её вытаптывают
+const FARM = (set) => { for (let x = 2; x <= 4; x++) for (let z = -6; z <= 6; z++) set(x, 64, z, 'farmland', { moisture: 7 }); };
+check('грядки: поле во всю ширину - пройти шагом, не прыгая', (set) => FARM(set), [0, 65, 0], G(6, 65, 0), true,
+  (p) => { const n = p.filter((m) => m.x >= 2 && m.x <= 4).length; return n > 3 ? `по грядкам ${n} шагов` : null; });
+check('грядка посреди пути - обойти', (set) => { for (let x = 2; x <= 4; x++) for (let z = -1; z <= 1; z++) set(x, 64, z, 'farmland', { moisture: 7 }); }, [0, 65, 0], G(6, 65, 0), true,
+  (p) => (p.some((m) => m.x >= 2 && m.x <= 4 && Math.abs(m.z) <= 1) ? 'пошла по грядке' : null));
+check('с уступа на грядку не прыгать', (set) => { for (let x = -6; x <= 1; x++) for (let z = -6; z <= 6; z++) set(x, 65, z, 'stone'); for (let x = 2; x <= 12; x++) for (let z = -6; z <= 6; z++) set(x, 64, z, 'farmland', { moisture: 7 }); },
+  [0, 66, 0], G(6, 65, 0), false);
+// --- дороги (22.11): у построек идёт по дорожке, а не по газону
+check('по дорожке, а не по газону', (set) => { for (let x = 0; x <= 8; x++) set(x, 64, -2, 'stone_bricks'); for (let z = -2; z <= 0; z++) { set(0, 64, z, 'stone_bricks'); set(8, 64, z, 'stone_bricks'); } },
+  [0, 65, 0], G(8, 65, 0), true, (p) => { const off = p.filter((m) => !(m.z === -2 || m.x === 0 || m.x === 8)).length; return off > 2 ? `по газону ${off} шагов` : null; },
+  (x, y, z, u) => (u === 'stone_bricks' ? 1 : 1.6));
 console.log(`--- ходьба: ${results.filter(Boolean).length} из ${results.length}`);
 if (results.some((x) => !x)) process.exitCode = 1;

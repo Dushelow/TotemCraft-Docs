@@ -137,6 +137,16 @@ class TotemBot extends EventEmitter {
       // Ходьба по настоящей форме блоков (nav.js): ступеньки, плиты, кровати, ковры, люки, двери, заборы, углы по
       // диагонали - геометрией, как в игре. Заменила заплатки 15-21.11 (ковёр выше ног, диагонали, house-moves).
       require('./nav').install(mv, bot);
+      // Как человек: по дорогам и натоптанным местам, а не по газонам у чужих домов. Дорога - выложенное (не природное)
+      // под открытым небом, или клетка, где часто ходят. Рядом с постройками остальное дороже в 1,6 раза; в диком
+      // месте разницы нет. Множитель только >= 1: оценка пути модуля не завышается.
+      mv.navStepCost = (x, y, z, under) => {
+        if (!under || !this.travel || !this.travel.trails) return 1;
+        const d = require('./travel').dkey(bot.game.dimension);
+        if (this.travel.trails.heat(d, x, y, z) >= 2) return 1;
+        if (!NATURAL.test(under) && !/leaves|farmland/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
+        return nearBuilt({ x, y: y - 1, z }) ? 1.6 : 1;
+      };
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
       bot.pathfinder.thinkTimeout = 15000;   // путь в обход (без паркура) ищется дольше 5 с по умолчанию
@@ -454,7 +464,20 @@ class TotemBot extends EventEmitter {
       this.trailState = this.trailState || {};
       if (b.entity.onGround && at && !/water|lava|nether_portal/.test(at.name)) this.travel.trails.step(d, b.entity.position, this.trailState);
       else if (at && /nether_portal/.test(at.name)) this.travel.trails.forget(this.trailState);
-      if ((this._trSave = (this._trSave || 0) + 1) % 30 === 0) this.travel.trails.save(d);
+      if (b.entity.onGround && at && !/water|lava|nether_portal/.test(at.name)) this.travel.trails.tread(d, b.entity.position);
+      // где ходят игроки: их пути - тоже тропы (дальние маршруты по хабу и метро, которые бот сам не проходил),
+      // а клетки - «натоптанные» (проходы между домами, дорожки из любых блоков находятся сами)
+      this.peerTrail = this.peerTrail || new Map();
+      for (const pl of Object.values(b.players)) {
+        const e = pl.entity;
+        if (!e || pl.username === b.username || e.position.distanceTo(b.entity.position) > 64) continue;
+        const under = b.blockAt(e.position.offset(0, -0.2, 0)), feet = b.blockAt(e.position);
+        if (!under || under.boundingBox !== 'block' && !(under.shapes && under.shapes.length) || (feet && /water|lava|nether_portal/.test(feet.name))) continue;
+        if (!this.peerTrail.has(pl.username)) this.peerTrail.set(pl.username, {});
+        this.travel.trails.step(d, e.position, this.peerTrail.get(pl.username));
+        this.travel.trails.tread(d, e.position);
+      }
+      if ((this._trSave = (this._trSave || 0) + 1) % 30 === 0) { this.travel.trails.save(d); this.travel.trails.saveHeat(d); }
     }
     // в портале после перехода не стоять - затянет обратно (16.11: «сколько раз говорил!!!»); только если не заходим нарочно
     {

@@ -158,7 +158,13 @@ function install(mv, bot) {
       }
       if (!w) continue;
       const ny = Math.floor(w.feet + EPS), rise = w.feet - fy;
+      // под ногами в конце шага: грядку вытаптывает прыжок и падение на неё - такие шаги нельзя; ходить по ней - дорого
+      const under = cell(nx, Math.floor(w.feet - 0.01), nz).b, uname = under ? under.name : '';
+      if (uname === 'farmland' && (w.jumped || rise < -0.25)) continue;
       let cost = (dx && dz ? Math.SQRT2 : 1) + (w.jumped ? 1 : rise > EPS ? 0.3 : 0) + (rise < -1 ? -rise * 0.5 : 0) + (w.opened ? 2 : 0);
+      if (uname === 'farmland') cost += 3;
+      // цена клетки от тела (дороги дешевле, газоны у чужих домов дороже) - bot.js задаёт mv.navStepCost
+      if (mv.navStepCost) cost *= mv.navStepCost(nx, ny, nz, uname);
       const dest = blk(nx, ny, nz);
       cost += mv.exclusionStep(dest) + mv.getNumEntitiesAt(dest && dest.position, 0, 0, 0) * mv.entityCost;
       if (cost >= 100) continue;
