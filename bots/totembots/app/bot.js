@@ -1458,7 +1458,7 @@ class TotemBot extends EventEmitter {
         // 21.11 «пришёл к месту «мой дом»» за 0,06 с, стоя за 150 бл., и бот радовался, что дома
         if (goal.isEnd && goal.x !== undefined && !goal.entity && !goal.isEnd(b.entity.position.floored())) {
           const left = Math.round(Math.hypot((goal.x ?? b.entity.position.x) - b.entity.position.x, (goal.z ?? b.entity.position.z) - b.entity.position.z));
-          if (attempt < 2 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(800); continue; }
+          if (attempt < 2 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await this.stepOff(); await sleep(400); continue; }
           throw new Error(`не дошёл: путь не строится, до цели ${left} бл.`);
         }
         break;
@@ -1474,12 +1474,39 @@ class TotemBot extends EventEmitter {
             (this.badShore = this.badShore || []).push({ v: ledge.offset(0, -1, 0), at: Date.now() });   // в следующий раз - другой уступ
           }
         }
+        if (/No path|Took to long/i.test(e.message) && attempt < 2 && await this.stepOff()) { this.log('сошла с кровати/люка - ищу путь заново'); continue; }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }
         this.log('продолжаю путь');
       } finally { clearTimeout(timer); clearInterval(watch); }
     }
     this.check(tok);
+  }
+
+  /**
+   * Сойти с кровати, люка, плиты, ковра на соседний пол. Стоя на полублоке, модуль пути ставит начало на клетку
+   * выше и под потолком не строит путь (21.11: стояла на кровати и писала «застряла», «No path» мгновенно).
+   * true - сошла.
+   */
+  async stepOff() {
+    const b = this.bot, p = b.entity.position, f = p.floored();
+    const under = b.blockAt(f);
+    if (!under || !/_bed$|_trapdoor$|_slab$|_carpet$|pressure_plate|snow$/.test(under.name)) return false;
+    const free = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava|fire/.test(k.name); };
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
+      const v = f.offset(dx, 0, dz), floor = b.blockAt(v.offset(0, -1, 0)), here = b.blockAt(v);
+      if (!floor || floor.boundingBox !== 'block' || !free(v.offset(0, 1, 0))) continue;
+      if (!(free(v) || (here && /_carpet$|_trapdoor$|pressure_plate/.test(here.name)))) continue;
+      this.busyLook = true;
+      try {
+        await b.lookAt(v.offset(0.5, 1.4, 0.5), true);
+        b.setControlState('forward', true);
+        for (let i = 0; i < 12 && b.entity.position.floored().equals(f); i++) await sleep(50);
+      } finally { b.setControlState('forward', false); this.busyLook = false; }
+      await sleep(200);
+      if (!b.entity.position.floored().equals(f)) return true;
+    }
+    return false;
   }
 
   follow(name) {
