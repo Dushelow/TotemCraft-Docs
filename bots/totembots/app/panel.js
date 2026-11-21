@@ -67,6 +67,10 @@ function openSite(site, mode) { T.viewShow({ mode, site }).then((v) => { st.view
 let pausedNow = false;
 function paintTop() {
   pausedNow = !!st.paused;
+  // шапка: до старта - «Старт»; боты работают - «Пауза/Продолжить» и «Стоп»
+  $('startBtn').style.display = st.running ? 'none' : '';
+  $('stopBtn').style.display = st.running ? '' : 'none';
+  $('pauseBtn').style.display = st.running ? '' : 'none';
   $('pauseBtn').textContent = st.paused ? 'Продолжить' : 'Пауза';
   $('pauseBtn').className = (st.paused ? '' : 'sec') + ' small';
   const live = /play\.totemcraft/.test(st.host) ? 'TotemCraft' : /ru\.totemcraft/.test(st.host) ? 'Рос. вход' : /127\.0\.0\.1|localhost/.test(st.host) ? 'Тестовый' : st.host;
@@ -77,6 +81,45 @@ function paintTop() {
   $('brainsBadge').title = 'сайты из порядка без входа или с проверкой';
 }
 $('pauseBtn').onclick = () => act(() => T.pause(!pausedNow), $('pauseBtn'));
+$('startBtn').onclick = () => act(() => T.botsStart(), $('startBtn'), 'боты заходят на сервер');
+$('stopBtn').onclick = () => { if (confirm('Все боты выйдут с сервера. Продолжить?')) act(() => T.botsStop(), $('stopBtn'), 'боты выходят'); };
+
+// ---------- стартовый экран: пока ни один бот не запущен
+function check(ic, title, hint, btn) {
+  return `<div class="check"><div class="ic ${ic}">${ic === 'ok' ? '✓' : ic === 'bad' ? '!' : ''}</div><div class="t"><b>${esc(title)}</b>${hint ? `<span>${esc(hint)}</span>` : ''}</div>${btn || ''}</div>`;
+}
+function srvName(h) { return /play\.totemcraft/.test(h) ? 'TotemCraft' : /ru\.totemcraft/.test(h) ? 'Российский вход' : /127\.0\.0\.1|localhost/.test(h) ? 'Тестовый' : h; }
+function renderStart() {
+  const idle = !st.running;
+  $('startCard').style.display = idle ? '' : 'none';
+  $('nowCard').style.display = idle ? 'none' : '';
+  if (!idle) return;
+  const sites = st.siteList || [];
+  const ready = sites.filter((s) => s.inOrder && s.logged);
+  const cap = sites.filter((s) => s.captcha);
+  const picked = st.bots.filter((b) => b.pick);
+  const B = st.brains || {};
+  const pinName = B.pin ? ((B.choices || []).find((c) => c.id === B.pin) || {}).name || B.pin : '';
+  const out = [
+    check('ok', 'Сервер: ' + srvName(st.host), `${st.host}:${st.port}`, '<button class="ghost small" data-go="settings">Сменить</button>'),
+    cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost small" data-go="brains">Мозги</button>')
+      : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost small" data-go="brains">Мозги</button>')
+      : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="small" data-go="brains">Войти</button>'),
+    st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Ботов к запуску: ${picked.length}` : 'Отметьте, кого запустить', 'нажмите на ник, чтобы включить или убрать')
+      + `<div class="picks">${st.bots.map((b) => `<label class="${b.pick ? 'on' : ''}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}>${esc(b.name)}</label>`).join('')}</div>`
+      : check('warn', 'Ботов нет', 'добавьте первого внизу: «Новый бот»'),
+  ];
+  const html = out.join('');
+  if ($('startChecks').dataset.html !== html) { $('startChecks').dataset.html = html; $('startChecks').innerHTML = html; }
+  $('startGo').disabled = !picked.length;
+  $('startGo').textContent = picked.length > 1 ? `Запустить (${picked.length})` : 'Запустить';
+  if (document.activeElement !== $('startAuto')) $('startAuto').checked = !!st.startOnLaunch;
+}
+function goSection(sec) { const b = document.querySelector(`#nav button[data-sec="${sec}"]`); if (b) b.click(); }
+$('startChecks').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) goSection(g.dataset.go); });
+$('startChecks').addEventListener('change', (e) => { const n = e.target.dataset.pick; if (n) act(() => T.botPick({ name: n, pick: e.target.checked })); });
+$('startGo').onclick = () => act(() => T.botsStart(), $('startGo'), 'боты заходят на сервер');
+$('startAuto').onchange = () => act(() => T.startOnLaunch($('startAuto').checked), null, $('startAuto').checked ? 'при включении программы боты зайдут сами' : 'запуск только кнопкой');
 
 // ---------- ручной выбор мозга
 let pinFilled = '';
@@ -112,7 +155,7 @@ function renderNow() {
     const s = b.state || {}, br = b.brain;
     if (s.status === 'online') out.push(step('ok', `${b.name} на сервере`, `${s.dim}, ${s.pos.join(' ')} · ${s.mode === 'follow' ? 'идёт за ' + s.follow : s.mode === 'task' ? 'занят: ' + s.task : s.mode === 'ride' ? 'едет' : 'свободен'}`));
     else if (s.status === 'connecting') { out.push(step('spin', `${b.name} заходит на сервер`, 'вход и пароль AuthMe - секунд 10')); continue; }
-    else { out.push(step('', `${b.name} выключен`, 'кнопка «Включить» в его карточке; при запуске программы боты заходят сами')); continue; }
+    else { out.push(step('', `${b.name} выключен`, 'кнопка «Включить» в его карточке или «Старт» вверху')); continue; }
     if (!br) continue;
     if (br.resting) out.push(step('bad', 'Мозг отдыхает: лимит у всех нейросетей', `снова попробует через ${br.resting} мин. Войдите в другой аккаунт или добавьте сайт или ключ в «Мозгах»`));
     else if (br.thinking) out.push(step('spin', `Думает... ${br.thinking.secs} с`, 'о чём: ' + br.thinking.about + (br.queue ? ` · в очереди ещё ${br.queue}` : '')));
@@ -131,7 +174,7 @@ function renderNow() {
 
 // ---------- карточки ботов
 function logLine(l) {
-  const cls = / → /.test(l) ? 'in' : / ← /.test(l) ? 'out' : /\[чат\]/.test(l) ? 'chat' : /ошибка|не получилось|Qwen:|кикнули|отклонен/.test(l) ? 'err' : '';
+  const cls = / → /.test(l) ? 'in' : / ← /.test(l) ? 'out' : /\[(общий|рядом|личка|клан|сервер)\]/.test(l) ? 'chat' : /ошибка|не получилось|Qwen:|кикнули|отклонен/.test(l) ? 'err' : '';
   return `<div class="${cls}">${esc(l)}</div>`;
 }
 const TABS = [['log', 'Журнал'], ['behave', 'Поведение'], ['chats', 'Чаты'], ['persona', 'Характер'], ['map', 'Карта'], ['server', 'Сервер']];
@@ -398,7 +441,7 @@ setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); },
 // ---------- общий цикл
 async function refresh() {
   try { st = await T.state(); } catch { return; }
-  paintTop(); paintPin(); paintStrip(); renderNow(); renderBrains(); fillVoice(st.voice);
+  paintTop(); paintPin(); paintStrip(); renderStart(); renderNow(); renderBrains(); fillVoice(st.voice);
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');

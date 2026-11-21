@@ -53,8 +53,8 @@ const siteOf = (id) => siteList().find((x) => x.id === id);
 // --- настройки
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
 const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(LOCAL, 'config.json');
-// по умолчанию: настоящий сервер, хозяин - владелец, боты сами заходят при запуске программы, голос Qwen
-let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bots: [], autostart: true, birthYear: '2000',
+// по умолчанию: настоящий сервер, хозяин - владелец, боты заходят по кнопке «Старт» (startOnLaunch - сами), голос Qwen
+let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bots: [], startOnLaunch: false, birthYear: '2000',
   qwen: { chatMode: 'fast', planMode: 'auto', models: [] }, initiative: { enabled: true, minutes: 1 },
   voice: { enabled: true, provider: 'qwen', fallback: true, local: true, plasmo: true, volume: 0.8 } };
 function loadCfg() {
@@ -124,7 +124,8 @@ function startBot(name) {
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused,
+    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused, startOnLaunch: !!cfg.startOnLaunch,
+    running: [...live.values()].filter((l) => l.body && l.body.status !== 'off').length,
     sites: Object.fromEntries(Object.entries(SITES).map(([k, s]) => [k, { name: s.name, logged: k === 'deepseek' || !!(cfg.webLogged || {})[k] }])),
     siteList: siteList().map((x) => ({ id: x.id, name: x.name, logged: x.id === 'qwen' ? !!siteLogged.qwen : (siteLogged[x.id] ?? !!(cfg.webLogged || {})[x.id]),
       busy: x.id === 'qwen' ? !!(bridge && bridge.busy) : !!(webChats[x.id] && webChats[x.id].busy),
@@ -141,7 +142,7 @@ function stateForPanel() {
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
-      return { name: b.name, chatMode: b.chatMode || 'normal', aliases: (b.aliases || []).join(', '),
+      return { name: b.name, pick: b.pick !== false, chatMode: b.chatMode || 'normal', aliases: (b.aliases || []).join(', '),
         attention: l && l.brain ? { ...l.brain.attn.count } : null, brain: l && l.brain && l.body && l.body.bot ? l.brain.status() : null, password: b.password, probe: b.probeText || '', persona: b.persona, chatId: b.chatId || '', chats: b.chats || [], combat: b.combat || 'defend', followDist: b.followDist || 3, state: l && l.body ? l.body.state() : { status: 'off' },
         log: l ? l.log.slice(-150) : [] };
     }),
@@ -319,6 +320,7 @@ let projectState = { status: '', syncedVersion: -1, syncedAt: 0, busy: false };
 function projectEnabled() { return !cfg.qwenProject || cfg.qwenProject.enabled !== false; }
 async function projectSync(force = false) {
   if (!projectEnabled() || projectState.busy || cfg.paused) return;
+  if (!force && ![...live.values()].some((l) => l.body && l.body.status !== 'off')) return;   // до «Старт» - не трогать Qwen
   if (!force && (memory.version === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
   projectState.busy = true;
   try {
@@ -336,7 +338,7 @@ async function projectSync(force = false) {
   } finally { projectState.busy = false; }
 }
 function startProjectSync() {
-  setTimeout(() => projectSync(true), 15000);
+  setTimeout(() => projectSync(false), 15000);   // только если боты уже работают (см. projectSync)
   setInterval(() => projectSync(false), 60000);
 }
 
@@ -477,6 +479,18 @@ ipcMain.handle('project-sync', () => projectSync(true));
 ipcMain.handle('project-open', () => { if (project.id) openMine(`${QWEN_URL}p/${project.id}`); return true; });
 ipcMain.handle('project-enable', (_e, on) => { cfg.qwenProject = { ...(cfg.qwenProject || {}), enabled: !!on }; saveCfg(); if (on) projectSync(true); return true; });
 ipcMain.handle('bot-start', (_e, name) => { startBot(name); return true; });
+// Старт и стоп всех (кнопки на стартовом экране и в шапке). Старт снимает паузу, оставшуюся с прошлого раза.
+ipcMain.handle('bots-start', (_e, names) => {
+  const list = Array.isArray(names) ? names : cfg.bots.filter((b) => b.pick !== false).map((b) => b.name);
+  for (const b of cfg.bots) b.pick = list.includes(b.name);
+  if (!list.length) throw new Error('отметьте хотя бы одного бота');
+  cfg.paused = false; saveCfg();
+  for (const n of list) { const l = live.get(n); if (!(l && l.body && l.body.status !== 'off')) startBot(n); }
+  return list.length;
+});
+ipcMain.handle('bots-stop', () => { for (const l of live.values()) if (l.body && l.body.status !== 'off') l.body.stop(); return true; });
+ipcMain.handle('bot-pick', (_e, { name, pick }) => { const b = cfg.bots.find((x) => x.name === name); if (b) { b.pick = !!pick; saveCfg(); } return true; });
+ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон
 ipcMain.handle('debug-hear', (_e, { name, from, wav }) => { const l = live.get(name); if (!l || !l.body) return false; l.body.emit('speech', { from, pcm: fs.readFileSync(wav).subarray(44) }); return true; });
 ipcMain.handle('bot-map', (_e, name) => { const l = live.get(name); return l && l.body && worldMap ? worldMap.view(l.body) : null; });
@@ -650,8 +664,8 @@ async function loginQwen() {
 
 app.whenReady().then(() => { loadCfg();
   try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); Menu.setApplicationMenu(null); createWindow();
-  // боты заходят сами (настройка autostart; выключить - в config.json "autostart": false)
-  if (cfg.autostart !== false) setTimeout(() => { for (const b of cfg.bots) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
+  // боты заходят по кнопке «Старт»; сами - только если на стартовом экране отмечено «запускать сразу»
+  if (cfg.startOnLaunch) setTimeout(() => { cfg.paused = false; for (const b of cfg.bots) if (b.pick !== false) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
 });
 app.on('window-all-closed', () => {
   for (const l of live.values()) if (l.body) l.body.stop();
