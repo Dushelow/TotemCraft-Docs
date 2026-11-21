@@ -1556,8 +1556,12 @@ class TotemBot extends EventEmitter {
    */
   async stash(a, tok) {
     const b = this.bot, h = this.house();
-    const chests = h && h.chests.length ? h.chests : b.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 8, count: 10 });
-    if (!chests.length) throw new Error('в доме и рядом нет сундуков');
+    // только свои сундуки: поставленные самой или в своём доме («мой дом» в памяти, 16 бл.) - не в чужие
+    // (21.11 выложила 250 вещей в сундуки чужого амбара и «поблагодарила за помощь»)
+    const myHome = require('./life').home(this);
+    const own = (v) => this.skills.mine(v) || (myHome && Math.hypot(myHome.x - v.x, myHome.z - v.z) <= 16 && Math.abs(myHome.y - v.y) <= 12);
+    const chests = (h && h.chests.length ? h.chests : b.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 8, count: 10 })).filter(own);
+    if (!chests.length) throw new Error(myHome ? `своих сундуков рядом нет: мои - в моём доме (${myHome.x} ${myHome.z}) или те, что поставила сама` : 'своих сундуков нет - поставь свой сундук или запомни свой дом');
     const KEEP = /(_pickaxe|_axe|_shovel|_hoe|_sword|bow|crossbow|trident|mace|shield|shears|fishing_rod|flint_and_steel|_helmet|_chestplate|_leggings|_boots|elytra|totem_of_undying|torch|_boat|_raft|compass|clock|map)$/;
     const foods = b.registry.foodsByName || {};
     const keepFood = new Set(b.inventory.items().filter((i) => foods[i.name]).sort((x, y) => (foods[y.name].foodPoints || 0) - (foods[x.name].foodPoints || 0)).slice(0, 1).map((i) => i.slot));

@@ -19,6 +19,12 @@ function install(mv, bot) {
   const gb = mv.getBlock.bind(mv);
   mv.getBlock = function (pos, dx, dy, dz) {
     const b = gb(pos, dx, dy, dz);
+    // люк на уровне ног: «тонкий» (по нему ходят) - только закрытый и лежащий внизу клетки; открытый или верхний -
+    // преграда (21.11 стена амбара из люков считалась проходом, бот упирался в неё)
+    if (b && b.name && /_trapdoor$/.test(b.name) && b.getProperties && dy <= 0) {
+      const pr = b.getProperties();
+      if (pr.open || pr.half === 'top') return Object.assign(Object.create(Object.getPrototypeOf(b)), b, { safe: false, physical: dy < 0 });
+    }
     if (b && b.name && WOOD_TRAPDOOR(b.name) && b.getProperties) {
       const pr = b.getProperties();
       // деревянный люк на уровне тела и выше - проход, только если под ним свободно: люк-дверь в проёме или люк в
