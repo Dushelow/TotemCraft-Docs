@@ -34,7 +34,7 @@ class Voice {
   }
 
   settings() {
-    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', ...(this.cfg().voice || {}) };
+    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', echo: true, ...(this.cfg().voice || {}) };
   }
 
   // --- Piper
@@ -93,8 +93,11 @@ class Voice {
       try {
         if (how === 'qwen') {
           // номер чата у бота - логический (router.js); читать вслух нужно в настоящем чате Qwen, и только ответ Qwen
-          const qid = this.qwenChat ? this.qwenChat(botCfg.chatId) : botCfg.chatId;
-          if (!qid) throw new Error('этот ответ дал не Qwen - озвучить нечем');
+          let qid = this.qwenChat ? this.qwenChat(botCfg.chatId) : botCfg.chatId;
+          // ответ дала другая нейросеть (DeepSeek...): голосом Qwen через «голосовой» чат - Qwen повторяет фразу слово
+          // в слово, её и озвучиваем. Тратит один короткий запрос Qwen на фразу, задержка несколько секунд (галочка)
+          if (!qid && s.echo && this.bridge.ask && !this.bridge.resting && !this.bridge.captcha) qid = await this.echo(text, botCfg);
+          if (!qid) throw new Error('этот ответ дал не Qwen - озвучить нечем (включите «голос Qwen и для других нейросетей»)');
           const a = await this.bridge.readAloud(qid);
           if (!a.pcm.length) throw new Error('Qwen вернул пустой звук');
           this.play(a, botCfg.name, how);
@@ -110,6 +113,16 @@ class Voice {
         this.log(botCfg.name, `голос ${how} не сработал: ${e.message}`);
       }
     }
+  }
+
+  /** Голосовой чат Qwen: попросить повторить фразу дословно, вернуть номер чата для «прочитать вслух». */
+  async echo(text, botCfg) {
+    const ask = (id, t) => this.bridge.ask(id, t, { mode: 'fast' });
+    const intro = 'Ты - диктор. На каждое моё сообщение отвечай только его текстом, слово в слово, без кавычек, пояснений и добавлений. Ответь: ок';
+    if (!botCfg.voiceChat) { const r = await ask('', intro); botCfg.voiceChat = r.chatId; }
+    try { await ask(botCfg.voiceChat, String(text).slice(0, 300)); }
+    catch (e) { if (!/PARENT_NOT_FOUND|CHAT_IN_PROGRESS/.test(e.message)) throw e; const r = await ask('', intro); botCfg.voiceChat = r.chatId; await ask(botCfg.voiceChat, String(text).slice(0, 300)); }
+    return botCfg.voiceChat;
   }
 
   play({ pcm, rate }, name, how) {

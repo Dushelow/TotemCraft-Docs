@@ -34,6 +34,7 @@ const C = [
   ['combat', 'fightMode,mobs,setCombat', 'defend|flee|off', 'режим боя: defend - защищать себя и хозяина, flee - убегать к хозяину, off - не трогать мобов', (a) => ({ act: 'combat', mode: a[0] })],
   ['hold', 'waitHere,stayHere,standStill', '', 'стоять на месте и ждать, пока не позовут (своих дел не начинать)', () => ({ act: 'hold' })],
   ['readSigns', 'signs,readSign', '', 'прочитать таблички рядом (8 блоков)', () => ({ act: 'signs' })],
+  ['stash', 'storeAll,putAway,depositAll', '[что ещё оставить]', 'выложить лишнее в сундуки дома (тело само найдёт сундуки на любом этаже; оставит инструменты, броню, еду)', (a) => ({ act: 'stash', keep: a.join(',') })],
   ['duel', 'pvp,fightPlayer', 'игрок', 'дуэль с игроком - только если хозяин попросил и игрок согласен (60 с, сдаюсь при 6 здоровья)', (a) => ({ act: 'duel', who: a[0] })],
   ['shear', 'shearSheep', '[сколько]', 'постричь диких овец (нужны ножницы)', (a) => ({ act: 'shear', count: a[0] })],
   ['pickup', 'pickUp,collectItems,loot', '[радиус]', 'подобрать вещи с земли рядом', (a) => ({ act: 'pickup', radius: a[0] })],

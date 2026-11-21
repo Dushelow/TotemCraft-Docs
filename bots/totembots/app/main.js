@@ -441,7 +441,7 @@ ipcMain.handle('bot-combat', (_e, { name, combat }) => {
 ipcMain.handle('voice-save', (_e, v) => {
   const PROVIDERS = ['qwen', 'piper', 'system'];
   cfg.voice = {
-    enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local, plasmo: !!v.plasmo,
+    enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local, plasmo: !!v.plasmo, echo: v.echo !== false,
     provider: PROVIDERS.includes(v.provider) ? v.provider : 'qwen',
     volume: Math.max(0, Math.min(1, +v.volume || 0)),
     piperVoice: PIPER_VOICES[v.piperVoice] ? v.piperVoice : 'ru_RU-denis-medium',

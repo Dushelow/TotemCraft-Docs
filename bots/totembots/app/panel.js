@@ -320,7 +320,7 @@ function piperText(p) { return !p ? '' : p.program && p.voice ? 'Piper скач�
 function fillVoice(v) {
   if (!v || !v.piper) return;
   if (!voiceFilled) {
-    $('vEnabled').checked = !!v.enabled; $('vProvider').value = v.provider; $('vFallback').checked = !!v.fallback;
+    $('vEnabled').checked = !!v.enabled; $('vProvider').value = v.provider; $('vFallback').checked = !!v.fallback; $('vEcho').checked = v.echo !== false;
     $('vLocal').checked = !!v.local; $('vPlasmo').checked = !!v.plasmo; $('vVolume').value = v.volume;
     $('vPiperVoice').innerHTML = v.piper.voices.map((n) => `<option value="${n}">${VOICE_NAMES[n] || n}</option>`).join('');
     $('vPiperVoice').value = v.piperVoice;
@@ -328,7 +328,7 @@ function fillVoice(v) {
   }
   if (!$('vStatus').dataset.busy) $('vStatus').textContent = piperText(v.piper);
 }
-const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked,
+const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked, echo: $('vEcho').checked,
   local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value });
 $('vSave').onclick = () => act(() => T.voiceSave(voiceForm()), $('vSave'), 'голос сохранён');
 $('vInstall').onclick = () => act(async () => {

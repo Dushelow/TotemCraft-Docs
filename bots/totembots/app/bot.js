@@ -446,7 +446,7 @@ class TotemBot extends EventEmitter {
     }
     const ml = Object.entries(mobs).sort((a2, b2) => b2[1] - a2[1]).slice(0, 5).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
     const held = b.heldItem ? b.heldItem.name : 'пусто';
-    const room = this.roomText();
+    const room = this.houseText() || this.roomText();
     return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; мобы: ${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '');
   }
 
@@ -717,6 +717,14 @@ class TotemBot extends EventEmitter {
       else if (this.swimming) { b.setControlState('jump', false); this.swimming = false; }
     }
     this.notice().catch(() => {});
+    if (this.travel && this.travel.trails) {
+      const { dkey } = require('./travel');
+      const d = dkey(b.game.dimension), at = b.blockAt(b.entity.position);
+      this.trailState = this.trailState || {};
+      if (b.entity.onGround && at && !/water|lava|nether_portal/.test(at.name)) this.travel.trails.step(d, b.entity.position, this.trailState);
+      else if (at && /nether_portal/.test(at.name)) this.travel.trails.forget(this.trailState);
+      if ((this._trSave = (this._trSave || 0) + 1) % 30 === 0) this.travel.trails.save(d);
+    }
     // в портале после перехода не стоять - затянет обратно (16.11: «сколько раз говорил!!!»); только если не заходим нарочно
     {
       const at = b.blockAt(b.entity.position);
@@ -1360,11 +1368,37 @@ class TotemBot extends EventEmitter {
         const pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 40 });
         if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет - выход надо построить`);
         await this.portal(pb.position, tok);
-      } else if (s.y === null || s.y === undefined) await this.goto(new goals.GoalNearXZ(s.x, s.z, 2), tok, legTime(d));
-      else await this.goto(new goals.GoalNear(s.x, s.y, s.z, 2), tok, legTime(d));
+      } else await this.walkTo(s, tok, legTime(d));
     }
     const p = b.entity.position;
     return `дошёл${dest.name ? ' до «' + dest.name + '»' : ''} (${plan.text}), теперь у ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}, ${this.dimName()}`;
+  }
+
+  /**
+   * Дойти до точки: далеко (40+ бл.) и есть знакомая тропа - по ней, отрезками от точки к точке (как по веткам метро,
+   * чанки по пути загружены); тропы нет - напрямик, как раньше.
+   */
+  async walkTo(s, tok, ms = 300000) {
+    const b = this.bot, me = b.entity.position;
+    const goal = s.y === null || s.y === undefined ? new goals.GoalNearXZ(s.x, s.z, 2) : new goals.GoalNear(s.x, s.y, s.z, 2);
+    if (this.travel && this.travel.trails && Math.hypot(s.x - me.x, s.z - me.z) > 40) {
+      const { dkey } = require('./travel');
+      const d = dkey(b.game.dimension);
+      const r = this.travel.trails.route(d, me, { x: s.x, y: s.y ?? me.y, z: s.z });
+      if (r && r.len < Math.hypot(s.x - me.x, s.z - me.z) * 2.5) {
+        this.log(`иду по знакомой тропе: ${r.points.length} точек, ${Math.round(r.len)} бл.`);
+        const until = Date.now() + ms;
+        // точки через одну-две (по ~12 бл.), последнюю - обязательно
+        const pts = r.points.filter((_, i) => i % 2 === 0 || i === r.points.length - 1);
+        for (const p of pts) {
+          this.check(tok);
+          if (Math.hypot(p.x - b.entity.position.x, p.z - b.entity.position.z) < 3) continue;
+          try { await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, Math.max(20000, until - Date.now())); }
+          catch (e) { if (e instanceof Cancelled) throw e; this.log('с тропы сбился: ' + e.message.slice(0, 80) + ' - дальше напрямик'); break; }
+        }
+      }
+    }
+    await this.goto(goal, tok, ms);
   }
 
   // --- действия
@@ -1432,6 +1466,73 @@ class TotemBot extends EventEmitter {
     return `иду за ${name}`;
   }
 
+  /**
+   * Дом, в котором стоит бот (тело, без нейросети): этажи, сундуки, кровати, печи, лестницы, двери - в 16 блоках,
+   * только если над головой крыша-постройка. Кэш 20 с. Этаж - уровень пола (y ног), этажи - уровни, где есть пол и
+   * что-то из обстановки.
+   */
+  house() {
+    const b = this.bot, p = b.entity.position.floored();
+    if (this._house && Date.now() - this._house.at < 20000 && this._house.pos.distanceTo(p) < 6) return this._house.h;
+    let roof = null;
+    for (let dy = 2; dy <= 8 && !roof; dy++) { const k = b.blockAt(p.offset(0, dy, 0)); if (k && k.boundingBox === 'block') roof = k; }
+    let h = null;
+    if (roof && (BUILT.test(roof.name) || this.skills.builtNear(p, 2))) {
+      const find = (re, n = 60) => b.findBlocks({ matching: (bl) => re.test(bl.name), maxDistance: 16, count: n }).filter((v) => Math.abs(v.y - p.y) <= 12);
+      const byDist = (a, c) => a.distanceTo(p) - c.distanceTo(p);
+      const chests = find(/^(chest|trapped_chest|barrel)$|shulker_box$/).sort(byDist);
+      const beds = find(/_bed$/, 20).filter((v) => { const k = b.blockAt(v); return !k.getProperties || k.getProperties().part !== 'head'; }).sort(byDist);
+      const work = find(/^(furnace|smoker|blast_furnace|crafting_table)$/, 20).sort(byDist);
+      const stairs = find(/_stairs$|^ladder$|_trapdoor$/, 80);
+      const levels = [...new Set([...chests, ...beds, ...work].map((v) => v.y))].sort((a, c) => a - c);
+      const floors = []; for (const y of levels) if (!floors.length || y - floors[floors.length - 1] >= 3) floors.push(y);
+      h = { chests, beds, work, stairs, floors };
+    }
+    this._house = { at: Date.now(), pos: p, h };
+    return h;
+  }
+
+  /** Коротко для мозга: «дом: 2 этажа (y 67, 71), сундуков 9 (5 на втором), кровать на втором, печи 2». */
+  houseText() {
+    const h = this.house();
+    if (!h) return '';
+    const fl = (v) => { const i = h.floors.findIndex((y, k) => v.y >= y && (k === h.floors.length - 1 || v.y < h.floors[k + 1])); return i < 0 ? 1 : i + 1; };
+    const per = (list) => { const m = {}; for (const v of list) m[fl(v)] = (m[fl(v)] || 0) + 1; return Object.entries(m).map(([f, n]) => `${n} на ${f}-м`).join(', '); };
+    const me = fl(this.bot.entity.position.floored());
+    return `дом: этажей ${h.floors.length || 1}, ты на ${me}-м; сундуков ${h.chests.length}${h.chests.length ? ' (' + per(h.chests) + ')' : ''}; кроватей ${h.beds.length}${h.beds.length ? ' (' + per(h.beds) + ')' : ''}; верстак и печи ${h.work.length}; лестниц ${h.stairs.length ? 'есть' : 'не видно'} - тело само ходит по этажам (!goTo, !putInChest, !stash, !sleep)`;
+  }
+
+  /**
+   * Выложить лишнее в сундуки дома (16.11 «выложи всё лишнее в сундуки дома, оставь инструменты, броню, еду» -
+   * бот вышел на улицу). Оставляет: инструменты и оружие, броню, щит, тотем, до 16 лучшей еды, факелы, лодку.
+   * Сундуки - ближние по пути, полный - следующий.
+   */
+  async stash(a, tok) {
+    const b = this.bot, h = this.house();
+    const chests = h && h.chests.length ? h.chests : b.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 8, count: 10 });
+    if (!chests.length) throw new Error('в доме и рядом нет сундуков');
+    const KEEP = /(_pickaxe|_axe|_shovel|_hoe|_sword|bow|crossbow|trident|mace|shield|shears|fishing_rod|flint_and_steel|_helmet|_chestplate|_leggings|_boots|elytra|totem_of_undying|torch|_boat|_raft|compass|clock|map)$/;
+    const foods = b.registry.foodsByName || {};
+    const keepFood = new Set(b.inventory.items().filter((i) => foods[i.name]).sort((x, y) => (foods[y.name].foodPoints || 0) - (foods[x.name].foodPoints || 0)).slice(0, 1).map((i) => i.slot));
+    const extra = String(a.keep || '').toLowerCase().split(/[\s,]+/).filter(Boolean);
+    const out = () => b.inventory.items().filter((i) => !KEEP.test(i.name) && !keepFood.has(i.slot) && !extra.some((k) => i.name.includes(k)));
+    let put = 0;
+    for (const v of chests) {
+      this.check(tok);
+      if (!out().length) break;
+      let c;
+      try { c = await this.openAt(v.x, v.y, v.z, tok); } catch (e) { if (e instanceof Cancelled) throw e; continue; }
+      try {
+        for (const it of out()) {
+          try { await c.deposit(it.type, null, it.count); put += it.count; await sleep(rnd(120, 300)); } catch { break; }   // сундук полон - следующий
+        }
+      } finally { c.close(); }
+    }
+    if (!put) throw new Error('выкладывать нечего или сундуки полны');
+    const left = out().reduce((s, i) => s + i.count, 0);
+    return `выложил ${put} шт. в сундуки дома${left ? `, не поместилось ещё ${left}` : ''}; оставил инструменты, броню и еду`;
+  }
+
   /** Таблички рядом (8 блоков): текст с обеих сторон. */
   readSigns() {
     const b = this.bot, out = [];
@@ -1473,8 +1574,10 @@ class TotemBot extends EventEmitter {
   // сундук не назван - ближайший (6 блоков)
   nearestChest(a) {
     if (!a.nearest && a.x !== undefined) return a;
-    const k = this.bot.findBlock({ matching: (bl) => /^(chest|trapped_chest|barrel)$|shulker_box$/.test(bl.name), maxDistance: 6 });
-    if (!k) throw new Error('рядом (6 блоков) нет сундука - нужны координаты: !takeFromChest(x, y, z, предмет, сколько)');
+    let k = this.bot.findBlock({ matching: (bl) => /^(chest|trapped_chest|barrel)$|shulker_box$/.test(bl.name), maxDistance: 6 });
+    // в доме - и на другом этаже (16.11: «на втором этаже сундуки, подойди» - бот искал только в 6 блоках)
+    if (!k && this.house()) { const h = this.house(); if (h.chests.length) k = this.bot.blockAt(h.chests[0]); }
+    if (!k) throw new Error('рядом нет сундука - нужны координаты: !takeFromChest(x, y, z, предмет, сколько)');
     return { ...a, x: k.position.x, y: k.position.y, z: k.position.z };
   }
 
@@ -1806,7 +1909,7 @@ class TotemBot extends EventEmitter {
         switch (a.act) {
           case 'goto': {
             const tgt = new Vec3(+a.x, a.y !== undefined ? +a.y : this.bot.entity.position.y, +a.z);
-            try { await this.goto(a.y !== undefined ? new goals.GoalNear(tgt.x, tgt.y, tgt.z, 1) : new goals.GoalNearXZ(tgt.x, tgt.z, 1), tok, 300000); r = `дошёл до ${a.x} ${a.y ?? ''} ${a.z}`; }
+            try { if (Math.hypot(tgt.x - this.bot.entity.position.x, tgt.z - this.bot.entity.position.z) > 40) await this.walkTo({ x: tgt.x, y: a.y !== undefined ? tgt.y : null, z: tgt.z }, tok, 300000); else await this.goto(a.y !== undefined ? new goals.GoalNear(tgt.x, tgt.y, tgt.z, 1) : new goals.GoalNearXZ(tgt.x, tgt.z, 1), tok, 300000); r = `дошёл до ${a.x} ${a.y ?? ''} ${a.z}`; }
             catch (e) {
               if (e instanceof Cancelled) throw e;
               const left = this.bot.entity.position.distanceTo(tgt);
@@ -1858,6 +1961,7 @@ class TotemBot extends EventEmitter {
           case 'hold': this.cancel(); this.mode = 'hold'; return done.concat('стою на месте и жду').join('; ');
           case 'combat': { const m = { defend: 'defend', flee: 'flee', off: 'off', защищать: 'defend', убегать: 'flee', нет: 'off' }[String(a.mode || '').toLowerCase()]; if (!m || !this.guard) throw new Error('режим боя: defend, flee или off'); this.guard.mode = m; this.opts.combat = m; if (this.onCombat) this.onCombat(m); r = 'режим боя: ' + { defend: 'защищаю', flee: 'убегаю к хозяину', off: 'мобов не трогаю' }[m]; break; }
           case 'signs': r = this.readSigns(); break;
+          case 'stash': r = await this.stash(a, tok); break;
           case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
           case 'mount': r = await this.mount(a, tok); break;
           case 'dismount': r = await this.dismount(); break;
