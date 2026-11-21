@@ -178,3 +178,25 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = events[0] === 'слышу: шипит крипер сзади 4 бл.' && tb.heardPrime && /шипит крипер сзади 4 бл., зомби (слева|справа) 10 бл./.test(t) && !/дверь/.test(t);
   console.log('--- слух: ' + (ok ? t : 'НЕТ: ' + events.join('|') + ' / ' + t));
 }
+
+// чувства: кто приближается и откуда, угроза одним словом, короткая память о тех, кто ушёл из виду
+{
+  const { Senses } = require('../app/senses');
+  const { Hearing } = require('../app/hearing');
+  const { Vec3 } = require('vec3');
+  const registry = require('prismarine-registry')('1.21.4');
+  const tb = Object.create(Senses.prototype); tb.sideOf = Hearing.prototype.sideOf;
+  const ents = { 1: { id: 1, name: 'zombie', type: 'mob', position: new Vec3(0, 64, 12) }, 2: { id: 2, name: 'creeper', type: 'mob', position: new Vec3(-5, 64, 0) }, 3: { id: 3, type: 'player', username: 'Steve', position: new Vec3(20, 64, 0) } };
+  tb.bot = { registry, health: 20, time: { timeOfDay: 6000 }, game: { dimension: 'overworld' }, entity: { position: new Vec3(0, 64, 0), yaw: 0 }, entities: ents };
+  const realNow = Date.now; let t = realNow();
+  Date.now = () => t;
+  tb.sensesTick();
+  t += 1000; ents[1].position = new Vec3(0, 64, 8); ents[2].position = new Vec3(-3, 64, 0);
+  tb.sensesTick();
+  const mv = tb.motion(), th = tb.threat();
+  t += 2000; delete ents[3]; tb.sensesTick();
+  const rl = tb.recentLive();
+  Date.now = realNow;
+  const ok = mv.some((x) => /zombie приближается сзади, 8 бл/.test(x)) && mv.some((x) => /creeper приближается слева, 3 бл/.test(x)) && th.level === 'опасно' && /Steve был у 20 64 0/.test(rl.join());
+  console.log('--- чувства: ' + (ok ? `${th.level}; ${mv.join('; ')}; помнит: ${rl.join()}` : 'НЕТ: ' + th.level + ' / ' + mv.join('; ') + ' / ' + rl.join()));
+}

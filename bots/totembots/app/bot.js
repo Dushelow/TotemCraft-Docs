@@ -441,6 +441,7 @@ class TotemBot extends EventEmitter {
     if (!b || !b.entity) return;
     this.senseTick();
     try { this.atlasTick(); } catch {}
+    try { this.sensesTick(); } catch {}
     this.handsTick().catch(() => {});
     this.reflexTick().catch(() => {});
     try { this.shoreTick(); } catch {}
@@ -1481,7 +1482,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 
