@@ -75,7 +75,7 @@ function start(tb) {
   if (tb.lifeTimer) clearInterval(tb.lifeTimer);
   tb.lifeTimer = setInterval(async () => {
     const b = tb.bot;
-    if (!b || !b.entity || tb.status !== 'online' || tb.lifeBusy || tb.opts.life === false || tb.paused) return;
+    if (!b || !b.entity || tb.status !== 'online' || tb.lifeBusy || tb.opts.life === false || tb.paused || tb._errandBusy) return;
     if (tb.mode !== 'idle' || b.isSleeping || b.vehicle || (tb.guard && tb.guard.fighting)) return;
     // мозг недавно сам что-то делал - не перебивать его (21.11: тело и мозг отменяли друг друга каждые 6 с)
     if (Date.now() - (tb.lastRunAt || 0) < 45000) return;

@@ -161,6 +161,16 @@
   details.more[open] .chev { transform: rotate(180deg); }
   details.more[open] > summary { margin-bottom: var(--s3); }
   details.more:not([open]) { padding-top: var(--s3); padding-bottom: var(--s3); }
+  /* поручение в карточке бота */
+  .errand { margin-top: var(--s3); padding: var(--s3); border-radius: var(--r2); background: var(--bg); border: 1px solid var(--line); }
+  .errand.stuck { border-color: rgba(240,87,92,.45); } .errand.run { border-color: rgba(110,116,255,.35); }
+  .errand .eh { display: flex; align-items: center; gap: var(--s2); }
+  .errand .eh svg { color: var(--acc-text); } .errand.stuck .eh svg { color: var(--bad); }
+  .errand ol { list-style: none; margin: var(--s2) 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .errand li { display: flex; gap: var(--s2); align-items: flex-start; font-size: var(--f-xs); color: var(--text-3); padding: 2px 0; }
+  .errand li svg { margin-top: 2px; } .errand li.done { color: var(--text-2); } .errand li.done svg { color: var(--ok); }
+  .errand li.cur { color: var(--text); font-weight: 500; } .errand li.fail { color: #ffa3a6; } .errand li.fail svg { color: var(--bad); }
+  .errand li em { display: block; font-style: normal; color: var(--text-2); font-weight: 400; }
   /* ---------- сайты-мозги */
   .site { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) 0; border-top: 1px solid var(--line); }
   .site:first-of-type { border-top: 0; padding-top: 0; }

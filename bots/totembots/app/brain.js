@@ -89,6 +89,13 @@ ${require('./commands').manual()}
 как любой игрок. Ставь себе цели (!setGoal) и доводи до конца, разбивая на шаги. Будь живым: своё мнение, юмор,
 привычки, планы. Не стой столбом и не повторяйся. Если команда не вышла - подумай почему и попробуй иначе.
 
+ДЛИННАЯ ЗАДАЧА ХОЗЯИНА (несколько шагов, далеко, «принеси/отнеси/сходи и вернись») - одной командой
+!errand("шаг; шаг; ..."), дальше тело делает само по шагам и проверяет каждый; ты только следишь и разговариваешь.
+Шаги: come ник | wait предмет сколько | gear | goto x y z [nether] | place название | find ник [x z] |
+give ник предмет [сколько] | confirm ник | home | say ник текст. Пример: хозяин «подойди, дождись шерсти, отнеси
+CaptianRage на 10000 200 и вернись» -> !errand("come Valghard; wait white_wool 128; gear; find CaptianRage 10000 200;
+give CaptianRage white_wool 128; confirm CaptianRage; home"). Портал и Незер тело выберет само по известным порталам.
+
 ПРАВИЛО СЕРВЕРА одно: чужие постройки, сундуки и фермы не ломать и не брать (тело и так не даст). Из чужих сундуков
 берёшь только по просьбе хозяев: ${masters}.
 
@@ -133,6 +140,8 @@ function quickOrder(text, from) {
   if (/(садись|сядь|залезай) на (лошадь|коня|лошадку)/.test(t)) return [{ act: 'mount', what: 'horse' }];
   if (/^(слезай|вылезай|выходи из лодки|слезь|вылезь)$/.test(t)) return [{ act: 'dismount' }];
   if (/^(выложи|сложи|разложи|убери) (вс[её] )?(лишнее|лишнее говно|шмот|вещи)( в сундук[и]?)?( дома| в доме)?$/.test(t)) return [{ act: 'stash' }];
+  if (/^(отбой|отмена поручения|брось поручение|отменяй|отмени поручение)$/.test(t)) return [{ act: 'errandStop' }];
+  if (/^(продолжай|продолжи|давай дальше|продолжай поручение|делай дальше)$/.test(t)) return [{ act: 'errandGo' }];
   if (/^(верни|верни (вс[её] )?(обратно|назад|как было)|забери (вс[её] )?(обратно|назад)|положи как было|отмени)$/.test(t)) return [{ act: 'undoPut' }];
   if (/^(ближе|иди ближе|держись ближе|держись рядом|рядом)$/.test(t)) return [{ act: 'followDist', d: 'closer' }];
   if (/^(подальше|дальше|отойди|не так близко|держись подальше)$/.test(t)) return [{ act: 'followDist', d: 'farther' }];
@@ -164,6 +173,7 @@ class Brain {
     this.attn = new Attention(botCfg.name, { mode: botCfg.chatMode || 'normal', aliases: botCfg.aliases || [] });
     this.onBackground = () => {};   // общий журнал фона (main.js) - туда весь неважный общий чат
     body.on('player-chat', (m) => this.onChat(m));
+    body.brainHook = (line) => this.push(line, true, '@self');   // поручение сообщает мозгу итог или застревание
     // уши: фраза игрока рядом в Plasmo Voice -> текст голосовым вводом Qwen -> как реплика рядом
     body.on('speech', ({ from, pcm }) => {
       if (!this.bridge.transcribe) return;
@@ -222,13 +232,16 @@ class Brain {
 
   order(text) {
     const owner = this.cfg().masters[0] || 'владелец';
+    // короткий приказ (стой, за мной, отбой, продолжай...) - телу сразу, как в игре, без нейросети
+    const quick = quickOrder(text, owner);
+    if (quick) { this.log(`приказ из панели сразу телу: ${quick.map((x) => x.act).join(' → ')}`); this.body.run(quick, quick.map((x) => x.act).join(' → '), 'master').then((r) => this.log(r)).catch(() => {}); return; }
     this.push(`[приказ хозяина ${owner} из панели] ${text}`, true, owner);
   }
 
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
-    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.busy || this.pending.length || this.bridge.resting) return;
+    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.body._errandBusy || this.busy || this.pending.length || this.bridge.resting) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
@@ -589,6 +602,7 @@ class Brain {
 
   async runActions(actions, from) {
     const label = actions.map((a) => a.act).join(' → ');
+    this.body.runFrom = from && from !== 'сам' ? from : '';
     let result = await this.body.run(actions, label, from === 'сам' ? 'self' : (from && this.isMaster(from) ? 'master' : 'player'));
     if (!result) return;
     const failed = /не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result);

@@ -164,6 +164,7 @@ class TotemBot extends EventEmitter {
       this.loops();
     });
     bot.on('spawn', () => {
+      setTimeout(() => { const e = this.errand && this.errand(); if (e && e.state === 'run' && !this._errandBusy) { this.log('продолжаю поручение'); this.errandLoop().catch(() => {}); } }, 12000);
       if (this.dim && this.dim !== bot.game.dimension) {
         this.event(`ты в другом измерении: ${this.dimName()}`);
         // прошёл портал (а не умер): стоял в портале перед этим - запомнить пару «вход -> выход»
@@ -391,6 +392,7 @@ class TotemBot extends EventEmitter {
     return {
       status: this.status, dim: this.dimName(), pos: [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)],
       health: Math.round(b.health), food: b.food, items, near, mode: this.mode, follow: this.followName, task: this.task,
+      errand: (() => { const e = this.errand && this.errand(); return e && e.state !== 'done' && e.state !== 'cancel' ? { state: e.state, cur: e.cur, text: e.text, steps: e.steps.map((s) => ({ title: s.title, st: s.st, note: s.note || '' })) } : null; })(),
     };
   }
 
@@ -1305,6 +1307,7 @@ class TotemBot extends EventEmitter {
    */
   claim(source) {
     const rank = { master: 3, player: 2, self: 1, life: 0 }[source] ?? 2;
+    if (this._errandBusy && rank < 3) { const e = this.errand(); if (e && e.state === 'run') return `выполняю поручение хозяина (шаг ${e.cur + 1} из ${e.steps.length}) - сделаю после`; }
     const cur = this.taskOwner;
     if (cur && this.mode === 'task' && Date.now() - cur.at < 300000 && rank < cur.rank) return `занята делом поважнее (${cur.label}) - сделаю после`;
     this.taskOwner = { rank, at: Date.now() };
@@ -1373,6 +1376,9 @@ class TotemBot extends EventEmitter {
           case 'take': r = await this.take(a, tok); break;
           case 'put': r = await this.put(a, tok); break;
           case 'undoPut': r = await this.undoPut(a, tok); break;
+          case 'errand': r = this.startErrand({ ...a, from: a.from || this.runFrom }); return done.concat(r).join('; ');
+          case 'errandStop': r = this.cancelErrand(); break;
+          case 'errandGo': r = this.resumeErrand(); return done.concat(r).join('; ');
           case 'give': r = await this.give(a, tok); break;
           case 'portal': r = await this.portal(a, tok); break;
           case 'pickup': r = await this.pickup(a, tok); break;
@@ -1459,7 +1465,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

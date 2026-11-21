@@ -2,12 +2,12 @@
 // троп и разведки. node test/models.js
 const { execFileSync } = require('child_process');
 const path = require('path');
-for (const t of ['house_test.js', 'swim_test.js', 'scout_test.js']) {
+for (const t of ['house_test.js', 'errand_test.js', 'swim_test.js', 'scout_test.js']) {
   console.log('--- ' + t);
   process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, t)]).toString());
 }
 const B = require('../app/brain');
-const cases = [['за мной', 'follow'], ['стой', 'hold'], ['жди тут', 'hold'], ['ближе', 'followDist'], ['не дерись', 'combat'], ['заходи в портал', 'portal'], ['садись в лодку', 'mount'], ['слезай', 'dismount'], ['выкинь всё', 'discardAll'], ['выложи лишнее', 'stash'], ['верни обратно', 'undoPut']];
+const cases = [['за мной', 'follow'], ['стой', 'hold'], ['жди тут', 'hold'], ['ближе', 'followDist'], ['не дерись', 'combat'], ['заходи в портал', 'portal'], ['садись в лодку', 'mount'], ['слезай', 'dismount'], ['выкинь всё', 'discardAll'], ['выложи лишнее', 'stash'], ['верни обратно', 'undoPut'], ['отбой', 'errandStop'], ['продолжай', 'errandGo']];
 const bad = cases.filter(([t, a]) => { const r = B.quickOrder(t, 'V'); return !r || r[0].act !== a; });
 console.log(`--- приказы хозяина: ${cases.length - bad.length} из ${cases.length}${bad.length ? ' НЕ ВЫШЛО: ' + bad.map((x) => x[0]).join(', ') : ''}`);
 const os = require('os'), fs = require('fs');

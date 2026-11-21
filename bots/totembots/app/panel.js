@@ -273,7 +273,13 @@ function botCard(b) {
     <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}</div>`;
   const stats = on ? `<div class="meters">${meter('heart', s.health, 'здоровье')}${meter('drumstick', s.food, 'еда')}
     <div class="doing">${icon(s.mode === 'paused' ? 'circle-pause' : s.mode === 'hold' ? 'hand' : s.mode === 'follow' ? 'footprints' : 'activity', 14)}<b>${esc(doingText(s, on))}</b></div></div>` : '';
-  if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}" title="Открыть">${head}${stats}</div>`;
+  // поручение: шаги с отметками - видно, где бот и что не вышло; продолжить и отменить - тут же
+  const E = s.errand;
+  const errand = E ? `<div class="errand ${E.state}">
+    <div class="eh">${icon(E.state === 'run' ? 'loader-circle' : E.state === 'stuck' ? 'triangle-alert' : 'circle-pause', 14, E.state === 'run' ? 'spin' : '')}<b>${E.state === 'run' ? 'Поручение' : E.state === 'stuck' ? 'Поручение застряло' : 'Поручение на паузе'}</b>
+      <span class="grow"></span>${E.state !== 'run' ? `<button data-a="errandGo" class="go sm">${icon('play', 14)}Продолжить</button>` : ''}<button data-a="errandStop" class="quiet sm" title="Отменить поручение">${icon('x', 14)}Отменить</button></div>
+    <ol>${E.steps.map((x, i) => `<li class="${x.st} ${i === E.cur ? 'cur' : ''}">${icon(x.st === 'done' ? 'check' : x.st === 'fail' ? 'circle-alert' : i === E.cur ? 'activity' : 'hourglass', 13)}<span>${esc(x.title)}${x.note && (x.st === 'fail' || i === E.cur) ? `<em>${esc(x.note)}</em>` : ''}</span></li>`).join('')}</ol></div>` : '';
+  if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}" title="Открыть">${head}${stats}${errand}</div>`;
   const tab = botTab.get(b.name) || 'log';
   const inv = s.items ? Object.entries(s.items).map(([k, v]) => `${k} ×${v}`).join(', ') : '';
   let body = '';
@@ -319,7 +325,7 @@ function botCard(b) {
     <div class="row" style="margin-top:var(--s3)"><button data-a="pass" class="sm">${icon(showPass.has(b.name) ? 'eye-off' : 'eye', 14)}${showPass.has(b.name) ? 'Скрыть пароль' : 'Показать пароль'}</button>
       <button data-a="newpass" class="sm">${icon('key-round', 14)}Новый пароль</button><button data-a="probe" class="sm" title="зайти и сразу выйти: проверить пароль и доступ">${icon('log-in', 14)}Проверить вход</button></div>
     <div class="row" style="margin-top:var(--s3)"><span class="muted grow">${esc(b.probe || '')}</span><button data-a="remove" class="danger sm">${icon('trash-2', 14)}Удалить бота</button></div>`;
-  return `<div class="card bot sel" data-name="${esc(b.name)}">${head}${stats}
+  return `<div class="card bot sel" data-name="${esc(b.name)}">${head}${stats}${errand}
     <div class="tabs2">${TABS.map(([k, t, ic]) => `<button data-a="tab" data-v="${k}" class="${k === tab ? 'on' : ''}">${t}</button>`).join('')}</div>${body}</div>`;
 }
 
@@ -356,6 +362,8 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'stop') act(() => T.botStop(name), t, name + ' вышел с сервера', { fn: () => T.botStart(name), done: name + ' заходит обратно' });
   if (a === 'order') { const v = f('order').value.trim(); if (v) act(async () => { await T.botOrder({ name, text: v }); f('order').value = ''; f('order').blur(); }, t, 'приказ отправлен'); }
   if (a === 'chat') act(() => T.botChat(name), t);
+  if (a === 'errandGo') act(() => T.botOrder({ name, text: 'продолжай' }), t, 'поручение продолжается');
+  if (a === 'errandStop') act(() => T.botOrder({ name, text: 'отбой' }), t, 'поручение отменено');
   if (a === 'pass') { showPass.has(name) ? showPass.delete(name) : showPass.add(name); re(); renderBots(); }
   if (a === 'copy') { navigator.clipboard.writeText(t.dataset.cmd); toast('скопировано', 'ok'); }
   if (a === 'newpass' && confirm('Сделать новый пароль? Потом выполните на сервере «authme changepassword», иначе бот не войдёт.')) act(() => T.botNewPass(name), t, 'новый пароль создан');
