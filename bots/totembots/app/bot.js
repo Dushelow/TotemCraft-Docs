@@ -1504,16 +1504,39 @@ class TotemBot extends EventEmitter {
     let roof = null;
     for (let dy = 2; dy <= 8 && !roof; dy++) { const k = b.blockAt(p.offset(0, dy, 0)); if (k && k.boundingBox === 'block') roof = k; }
     let h = null;
-    if (roof && (BUILT.test(roof.name) || this.skills.builtNear(p, 2))) {
-      const find = (re, n = 60) => b.findBlocks({ matching: (bl) => re.test(bl.name), maxDistance: 16, count: n }).filter((v) => Math.abs(v.y - p.y) <= 12);
-      const byDist = (a, c) => a.distanceTo(p) - c.distanceTo(p);
+    // дом - крыша-постройка И стены хотя бы с трёх сторон в 6 блоках (открытая коробка или навес - не дом)
+    const wallSide = [[0, -1], [1, 0], [0, 1], [-1, 0]].filter(([dx, dz]) => { for (let i = 1; i <= 6; i++) { const k = b.blockAt(p.offset(dx * i, 1, dz * i)); if (k && k.boundingBox === 'block') return BUILT.test(k.name) || /_log$|stone|deepslate/.test(k.name); } return false; }).length;
+    if (roof && (BUILT.test(roof.name) || this.skills.builtNear(p, 2)) && wallSide >= 3) {
+      // этажи - по перекрытиям в этом же столбце: снизу от земли до крыши (а не по высотам сундуков соседних домов)
+      const layers = [];
+      let air = 0;
+      for (let y = p.y - 1; y >= p.y - 24; y--) {
+        const k = b.blockAt(new Vec3(p.x, y, p.z));
+        if (!k) break;
+        if (k.boundingBox !== 'block') { air++; continue; }
+        if (!BUILT.test(k.name)) break;                 // дошли до земли
+        if (air >= 2 || !layers.length) layers.push(y);
+        air = 0;
+      }
+      const floorNo = layers.length;                    // 1 - пол на земле, 2 - второй этаж...
+      let upper = 0; air = 0;
+      for (let y = p.y + 2; y <= p.y + 24; y++) {
+        const k = b.blockAt(new Vec3(p.x, y, p.z));
+        if (!k) break;
+        if (k.boundingBox !== 'block') { air++; continue; }
+        if (air >= 2) upper++;
+        air = 0;
+      }
+      // обстановка этого дома: в 10 блоках по горизонтали и под крышей (над ней в 6 блоках - постройка)
+      const roofed = (v) => { for (let dy = 1; dy <= 6; dy++) { const k = b.blockAt(v.offset(0, dy, 0)); if (k && k.boundingBox === 'block' && BUILT.test(k.name)) return true; } return false; };
+      const find = (re, n = 60) => b.findBlocks({ matching: (bl) => re.test(bl.name), maxDistance: 12, count: n })
+        .filter((v) => Math.abs(v.y - p.y) <= 10 && Math.hypot(v.x - p.x, v.z - p.z) <= 10 && roofed(v));
+      const byDist = (q, c) => q.distanceTo(p) - c.distanceTo(p);
       const chests = find(/^(chest|trapped_chest|barrel)$|shulker_box$/).sort(byDist);
       const beds = find(/_bed$/, 20).filter((v) => { const k = b.blockAt(v); return !k.getProperties || k.getProperties().part !== 'head'; }).sort(byDist);
       const work = find(/^(furnace|smoker|blast_furnace|crafting_table)$/, 20).sort(byDist);
       const stairs = find(/_stairs$|^ladder$|_trapdoor$/, 80);
-      const levels = [...new Set([...chests, ...beds, ...work].map((v) => v.y))].sort((a, c) => a - c);
-      const floors = []; for (const y of levels) if (!floors.length || y - floors[floors.length - 1] >= 3) floors.push(y);
-      h = { chests, beds, work, stairs, floors };
+      h = { chests, beds, work, stairs, floor: Math.max(1, floorNo), floors: Math.max(1, floorNo) + upper };
     }
     this._house = { at: Date.now(), pos: p, h };
     return h;
@@ -1523,10 +1546,7 @@ class TotemBot extends EventEmitter {
   houseText() {
     const h = this.house();
     if (!h) return '';
-    const fl = (v) => { const i = h.floors.findIndex((y, k) => v.y >= y && (k === h.floors.length - 1 || v.y < h.floors[k + 1])); return i < 0 ? 1 : i + 1; };
-    const per = (list) => { const m = {}; for (const v of list) m[fl(v)] = (m[fl(v)] || 0) + 1; return Object.entries(m).map(([f, n]) => `${n} на ${f}-м`).join(', '); };
-    const me = fl(this.bot.entity.position.floored());
-    return `дом: этажей ${h.floors.length || 1}, ты на ${me}-м; сундуков ${h.chests.length}${h.chests.length ? ' (' + per(h.chests) + ')' : ''}; кроватей ${h.beds.length}${h.beds.length ? ' (' + per(h.beds) + ')' : ''}; верстак и печи ${h.work.length}; лестниц ${h.stairs.length ? 'есть' : 'не видно'} - тело само ходит по этажам (!goTo, !putInChest, !stash, !sleep)`;
+    return `в доме: этажей ${h.floors}, ты на ${h.floor}-м; сундуков ${h.chests.length}, кроватей ${h.beds.length}, верстак и печи ${h.work.length}; лестниц ${h.stairs.length ? 'есть' : 'не видно'} - тело само ходит по этажам (!goTo, !putInChest, !stash, !sleep)`;
   }
 
   /**
