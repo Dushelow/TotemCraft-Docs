@@ -7,20 +7,48 @@ const botTab = new Map();   // ник -> открытая вкладка кар�
 const showPass = new Set();
 let settingsFilled = false, voiceFilled = false, brainsFilled = false;
 
-// ---------- всплывающие сообщения (вместо красной строки внизу)
-function toast(text, kind = '') {
+// ---------- понятные ошибки: технические сообщения - простыми словами и что сделать
+const HUMAN = [
+  [/ECONNREFUSED/, 'сервер не принимает подключение: он выключен или неверный адрес и порт («Настройки» → «Сервер»)'],
+  [/ENOTFOUND|getaddrinfo|EAI_AGAIN/, 'адрес сервера не найден: проверьте интернет и адрес в «Настройках»'],
+  [/ETIMEDOUT|timed? ?out/i, 'сервер не отвечает: проверьте интернет; если интернет есть - сервер может перезапускаться'],
+  [/ECONNRESET|socket hang up|EPIPE/, 'связь с сервером оборвалась, бот переподключится сам'],
+  [/ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|ERR_NAME_NOT_RESOLVED/, 'нет интернета'],
+  [/No path|noPath/, 'не нашла дорогу: цель за стеной или слишком далеко'],
+  [/Took to long to decide path/, 'слишком долго искала дорогу: цель далеко или кругом препятствия'],
+  [/goal was changed/i, 'цель поменялась по ходу'],
+  [/disconnect\.quitting/, 'вышла с сервера'],
+  [/duplicate_login|logged in from another location/i, 'под этим ником зашли с другого места'],
+  [/whitelist|не в белом списке/i, 'ник не в белом списке сервера'],
+  [/(\b429\b|rate.?limit|too many requests)/i, 'нейросеть просит подождать (лимит запросов), возьмётся следующая'],
+  [/Cannot read properties of (null|undefined)|is not a function|is not defined/, 'внутренняя ошибка программы - она не ваша, напишите о ней разработчику'],
+];
+function human(text) {
+  const t = String(text ?? '').replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+  const h = HUMAN.find(([re]) => re.test(t));
+  return h ? h[1] : t;
+}
+
+// ---------- всплывающие сообщения (вместо красной строки внизу); undo - кнопка «Вернуть» вместо «Вы уверены?»
+function toast(text, kind = '', undo) {
   if (!text) return;
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
-  t.textContent = String(text).replace(/^Error invoking remote method '[^']+': (Error: )?/, '');
+  t.textContent = human(text);
+  if (undo) {
+    const b = document.createElement('button');
+    b.className = 'undo'; b.textContent = undo.label || 'Вернуть';
+    b.onclick = () => { t.remove(); act(undo.fn, null, undo.done); };
+    t.appendChild(b);
+  }
   $('toasts').appendChild(t);
   while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
-  setTimeout(() => t.remove(), kind === 'bad' ? 9000 : 5000);
+  setTimeout(() => t.remove(), undo ? 10000 : kind === 'bad' ? 9000 : 5000);
 }
 // кнопка во время действия: крутилка и недоступна (видно, что нажатие принято)
-async function act(fn, btn, okText) {
+async function act(fn, btn, okText, undo) {
   if (btn) { btn.classList.add('loading'); btn.disabled = true; }
-  try { const r = await fn(); if (okText) toast(okText, 'ok'); await refresh(); return r; }
+  try { const r = await fn(); if (okText) toast(okText, 'ok', undo); await refresh(); return r; }
   catch (e) { toast(e.message || e, 'bad'); }
   finally { if (btn) { btn.classList.remove('loading'); btn.disabled = false; } }
 }
@@ -82,7 +110,10 @@ function paintTop() {
 }
 $('pauseBtn').onclick = () => act(() => T.pause(!pausedNow), $('pauseBtn'));
 $('startBtn').onclick = () => act(() => T.botsStart(), $('startBtn'), 'боты заходят на сервер');
-$('stopBtn').onclick = () => { if (confirm('Все боты выйдут с сервера. Продолжить?')) act(() => T.botsStop(), $('stopBtn'), 'боты выходят'); };
+$('stopBtn').onclick = () => {
+  const was = st.bots.filter((b) => (b.state || {}).status && b.state.status !== 'off').map((b) => b.name);
+  act(() => T.botsStop(), $('stopBtn'), 'боты вышли с сервера', { fn: () => T.botsStart(was), done: 'боты заходят обратно' });
+};
 
 // ---------- стартовый экран: пока ни один бот не запущен
 function check(ic, title, hint, btn) {
@@ -136,8 +167,11 @@ function paintPin() {
 }
 function paintPinModel() { const id = $('pinSel').value; $('pinModel').style.display = id === 'qwen' || (id && !/web$/.test(id)) ? '' : 'none'; $('pinOnly').parentElement.style.display = id ? '' : 'none'; }
 $('pinSel').onchange = paintPinModel;
-$('pinSave').onclick = () => act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').style.display === 'none' ? undefined : $('pinModel').value }), $('pinSave'),
-  $('pinSel').value ? 'мозг выбран: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто');
+$('pinSave').onclick = () => {
+  const B = st.brains || {}, prev = { id: B.pin || '', only: !!B.pinOnly, model: B.pinModel };
+  act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').style.display === 'none' ? undefined : $('pinModel').value }), $('pinSave'),
+    $('pinSel').value ? 'мозг выбран: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто', { fn: () => { pinFilled = ''; return T.brainPin(prev); }, done: 'мозг как был' });
+};
 
 // ---------- «Что сейчас происходит»
 function step(ic, title, hint) { return `<div class="step"><div class="ic ${ic}"></div><div><b>${esc(title)}</b>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div></div>`; }
@@ -173,10 +207,24 @@ function renderNow() {
 }
 
 // ---------- карточки ботов
-function logLine(l) {
-  const cls = / → /.test(l) ? 'in' : / ← /.test(l) ? 'out' : /\[(общий|рядом|личка|клан|сервер)\]/.test(l) ? 'chat' : /ошибка|не получилось|Qwen:|кикнули|отклонен/.test(l) ? 'err' : '';
-  return `<div class="${cls}">${esc(l)}</div>`;
+// вид строки журнала: чат, мозг (что получил и решил), ошибка, остальное - тело
+const ERR = /ошибка|не получилось|не смогла|не вышло|кикнули|отклонен|Error|ECONN|ETIMEDOUT/;
+function logKind(l) {
+  if (/\[(общий|рядом|личка|клан|сервер)\]|\[голос\]/.test(l)) return 'chat';
+  if (ERR.test(l)) return 'err';
+  if (/ → | ← |мозг|Qwen|DeepSeek|Gemini|Arena|Claude|думает|прогрет/.test(l)) return 'brain';
+  return 'body';
 }
+function logLine(l) {
+  const k = logKind(l);
+  const cls = / → /.test(l) ? 'in' : / ← /.test(l) ? 'out' : k === 'chat' ? 'chat' : k === 'err' ? 'err' : '';
+  const h = k === 'err' ? human(l) : l;
+  return `<div class="${cls}">${esc(l)}${h !== l ? `<div class="hint">↳ ${esc(h)}</div>` : ''}</div>`;
+}
+const logFilter = new Map();   // ник -> что показывать в журнале
+const LOGF = [['all', 'Всё'], ['chat', 'Чат'], ['brain', 'Мозг'], ['body', 'Тело'], ['err', 'Ошибки']];
+function logLines(b) { const f = logFilter.get(b.name) || 'all'; return b.log.filter((l) => f === 'all' || logKind(l) === f); }
+function errCount(b) { const n = b.log.filter((l) => logKind(l) === 'err').length; return n ? 'ошибок: ' + n : ''; }
 const TABS = [['log', 'Журнал'], ['behave', 'Поведение'], ['chats', 'Чаты'], ['persona', 'Характер'], ['map', 'Карта'], ['server', 'Сервер']];
 function botCard(b) {
   const s = b.state || {};
@@ -192,7 +240,8 @@ function botCard(b) {
   if (tab === 'log') body = `
     <div class="row"><input class="grow" data-f="order" placeholder="приказ, как в игре: иди за мной, отнеси шерсть CaptianRage..."><button data-a="order">Отправить</button></div>
     ${inv ? `<div class="muted" style="margin:6px 0">инвентарь: ${esc(inv)}</div>` : ''}
-    <div class="log" data-f="log" style="margin-top:8px">${b.log.map(logLine).join('')}</div>`;
+    <div class="logbar"><div class="seg">${LOGF.map(([k, t]) => `<button data-a="logf" data-v="${k}" class="${(logFilter.get(b.name) || 'all') === k ? 'on' : ''}">${t}</button>`).join('')}</div><span class="muted">${errCount(b)}</span></div>
+    <div class="log" data-f="log" style="margin-top:8px">${logLines(b).map(logLine).join('') || '<div class="hint">здесь пока пусто</div>'}</div>`;
   if (tab === 'behave') body = `
     <label>На что отзывается в чате${b.attention ? ` · обращений ${b.attention.address}, рядом ${b.attention.near}, в фон ${b.attention.background}` : ''}</label>
     <div class="seg">${[['quiet', 'Тихий'], ['normal', 'Обычный'], ['social', 'Общительный']].map(([v, t]) => `<button data-a="chatmode" data-v="${v}" class="${b.chatMode === v ? 'on' : ''}">${t}</button>`).join('')}</div>
@@ -240,7 +289,7 @@ function renderBots() {
   const log = box.querySelector('[data-f="log"]');
   // не перерисовывать карточку, пока человек печатает: только журнал
   if (box.contains(document.activeElement) && /INPUT|TEXTAREA/.test(document.activeElement.tagName)) {
-    if (sel && log) { const end = log.scrollTop + log.clientHeight >= log.scrollHeight - 20; log.innerHTML = sel.log.map(logLine).join(''); if (end) log.scrollTop = log.scrollHeight; }
+    if (sel && log) { const end = log.scrollTop + log.clientHeight >= log.scrollHeight - 20; log.innerHTML = logLines(sel).map(logLine).join(''); if (end) log.scrollTop = log.scrollHeight; }
     return;
   }
   const html = st.bots.map(botCard).join('') || '<div class="card empty">Ботов пока нет. Добавьте первого ниже.</div>';
@@ -260,8 +309,9 @@ $('bots').addEventListener('click', (e) => {
   const f = (n) => card.querySelector(`[data-f="${n}"]`);
   const re = () => { lastHtml = ''; };
   if (a === 'tab') { botTab.set(name, t.dataset.v); re(); renderBots(); return; }
+  if (a === 'logf') { logFilter.set(name, t.dataset.v); re(); renderBots(); const lg = $('bots').querySelector('[data-f="log"]'); if (lg) lg.scrollTop = lg.scrollHeight; return; }
   if (a === 'start') act(() => T.botStart(name), t);
-  if (a === 'stop') act(() => T.botStop(name), t);
+  if (a === 'stop') act(() => T.botStop(name), t, name + ' вышел с сервера', { fn: () => T.botStart(name), done: name + ' заходит обратно' });
   if (a === 'order') { const v = f('order').value.trim(); if (v) act(async () => { await T.botOrder({ name, text: v }); f('order').value = ''; f('order').blur(); }, t, 'приказ отправлен'); }
   if (a === 'chat') act(() => T.botChat(name), t);
   if (a === 'pass') { showPass.has(name) ? showPass.delete(name) : showPass.add(name); re(); renderBots(); }
