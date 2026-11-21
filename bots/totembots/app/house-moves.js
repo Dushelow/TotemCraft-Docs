@@ -21,7 +21,8 @@ function install(mv, bot) {
     const b = gb(pos, dx, dy, dz);
     if (b && b.name && WOOD_TRAPDOOR(b.name) && b.getProperties) {
       const pr = b.getProperties();
-      if (!pr.open && pr.half === 'top' && dy >= 1) return Object.assign(Object.create(Object.getPrototypeOf(b)), b, { safe: true, physical: false, trapdoor: true });
+      // деревянный люк на уровне тела и выше (дверь-люк в проёме, люк в потолке) - проходим: тело откроет его по пути
+      if (dy >= 1) return Object.assign(Object.create(Object.getPrototypeOf(b)), b, { safe: true, physical: false, trapdoor: true });
     }
     return b;
   };

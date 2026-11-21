@@ -140,7 +140,7 @@ class TotemBot extends EventEmitter {
         const gb = mv.getBlock.bind(mv);
         mv.getBlock = function (pos, dx, dy, dz) {
           const b2 = gb(pos, dx, dy, dz);
-          if (dy >= 1 && b2 && this.carpets.has(b2.type) && b2.safe) return Object.assign(Object.create(Object.getPrototypeOf(b2)), b2, { safe: false });
+          if (dy >= 1 && b2 && this.carpets.has(b2.type) && b2.safe && !/_trapdoor$/.test(b2.name)) return Object.assign(Object.create(Object.getPrototypeOf(b2)), b2, { safe: false });
           return b2;
         };
       }
@@ -929,7 +929,7 @@ class TotemBot extends EventEmitter {
     b.setControlState('jump', true);
     b.setControlState(dir, true);
     setTimeout(() => { try { b.setControlState('jump', false); b.setControlState(dir, false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
-    if (this.stuck.tries === 3) this.event('ты застрял и не можешь пройти дальше', true);
+    if (this.stuck.tries === 3 && Date.now() - (this.stuckSaidAt || 0) > 180000) { this.stuckSaidAt = Date.now(); this.event('ты застрял и не можешь пройти дальше (тело пробует выбраться само; писать об этом в чат не нужно)', true); }
   }
 
   // Сон: на сервере ночь пропускается, когда спят все не-AFK. Кто-то лёг, ночь, кровать в 16 блоках - ложимся.
@@ -1568,7 +1568,8 @@ class TotemBot extends EventEmitter {
       this.check(tok);
       if (!out().length) break;
       let c;
-      try { c = await this.openAt(v.x, v.y, v.z, tok); } catch (e) { if (e instanceof Cancelled) throw e; continue; }
+      if ((this.lockedChests || new Set()).has(`${v.x},${v.y},${v.z}`)) continue;
+      try { c = await this.openLocked(v.x, v.y, v.z, tok); } catch (e) { if (e instanceof Cancelled) throw e; continue; }
       try {
         for (const it of out()) {
           try { await c.deposit(it.type, null, it.count); put += it.count; await sleep(rnd(120, 300)); } catch { break; }   // сундук полон - следующий
@@ -1638,12 +1639,30 @@ class TotemBot extends EventEmitter {
     } finally { this.busyLook = false; }
   }
 
+  /**
+   * Открыть сундук; под замком LWC сервер пишет «принадлежит другому игроку» и окно не открывается (ждали 20 с, а бот
+   * думал, что сундуки «переполнены», 21.11). Такой сундук запоминается чужим и больше не выбирается.
+   */
+  async openLocked(x, y, z, tok) {
+    const before = (this.lastSystem || []).length;
+    try { return await this.openAt(x, y, z, tok); }
+    catch (e) {
+      const said = (this.lastSystem || []).slice(before).join(' ');
+      if (/принадлежит другому|protected|locked|заблокирован/i.test(said) || /windowOpen did not fire/.test(e.message)) {
+        (this.lockedChests = this.lockedChests || new Set()).add(`${x},${y},${z}`);
+        throw new Error(`сундук ${x} ${y} ${z} чужой, под замком - класть туда нельзя, нужен свой сундук`);
+      }
+      throw e;
+    }
+  }
+
   // сундук не назван - ближайший (6 блоков)
   nearestChest(a) {
     if (!a.nearest && a.x !== undefined) return a;
-    let k = this.bot.findBlock({ matching: (bl) => /^(chest|trapped_chest|barrel)$|shulker_box$/.test(bl.name), maxDistance: 6 });
+    const lk = this.lockedChests || new Set();
+    let k = this.bot.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$|shulker_box$/.test(bl.name), maxDistance: 6, count: 20 }).map((p) => this.bot.blockAt(p)).find((x) => !lk.has(`${x.position.x},${x.position.y},${x.position.z}`));
     // в доме - и на другом этаже (16.11: «на втором этаже сундуки, подойди» - бот искал только в 6 блоках)
-    if (!k && this.house()) { const h = this.house(); if (h.chests.length) k = this.bot.blockAt(h.chests[0]); }
+    if (!k && this.house()) { const h = this.house(); const free = h.chests.find((v) => !lk.has(`${v.x},${v.y},${v.z}`)); if (free) k = this.bot.blockAt(free); }
     if (!k) throw new Error('рядом нет сундука - нужны координаты: !takeFromChest(x, y, z, предмет, сколько)');
     return { ...a, x: k.position.x, y: k.position.y, z: k.position.z };
   }
@@ -1667,7 +1686,7 @@ class TotemBot extends EventEmitter {
 
   async put(a, tok) {
     a = this.nearestChest(a);
-    const c = await this.openAt(+a.x, +a.y, +a.z, tok);
+    const c = await this.openLocked(+a.x, +a.y, +a.z, tok);
     let left = a.count ? +a.count : Infinity, put = 0;
     try {
       for (const it of this.matchItems(this.bot.inventory.items(), a.item)) {
