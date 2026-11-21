@@ -21,8 +21,11 @@ function install(mv, bot) {
     const b = gb(pos, dx, dy, dz);
     if (b && b.name && WOOD_TRAPDOOR(b.name) && b.getProperties) {
       const pr = b.getProperties();
-      // деревянный люк на уровне тела и выше (дверь-люк в проёме, люк в потолке) - проходим: тело откроет его по пути
-      if (dy >= 1) return Object.assign(Object.create(Object.getPrototypeOf(b)), b, { safe: true, physical: false, trapdoor: true });
+      // деревянный люк на уровне тела и выше - проход, только если под ним свободно: люк-дверь в проёме или люк в
+      // потолке. Стена из люков (люк и на уровне ног) - стена (21.11 бот упёрся в декоративную стену амбара из люков)
+      const below = dy >= 1 ? gb(pos, dx, dy - 1, dz) : null;
+      const freeBelow = below && (below.boundingBox === 'empty' || (dy - 1 === 0 && below.name && /_carpet$|pressure_plate/.test(below.name)));
+      if (dy >= 1 && freeBelow) return Object.assign(Object.create(Object.getPrototypeOf(b)), b, { safe: true, physical: false, trapdoor: true });
     }
     return b;
   };
