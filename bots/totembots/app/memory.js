@@ -124,7 +124,11 @@ class Memory {
 
   findPlace(name) {
     const k = key(name);
-    return this.data.places[k] || Object.values(this.data.places).find((p) => key(p.name).includes(k) || k.includes(key(p.name)));
+    const pl = this.data.places[k] || Object.values(this.data.places).find((p) => key(p.name).includes(k) || k.includes(key(p.name)));
+    if (pl || !k) return pl;
+    // нет такого места - может, есть табличка с этим словом (атлас: «к капитану», «ферма слизней»)
+    const s = Object.values(this.data.signs || {}).find((x) => key(x.text).includes(k));
+    return s ? { name: 'табличка «' + s.text.slice(0, 40) + '»', x: s.x, y: s.y, z: s.z, dim: s.dim, sign: true } : null;
   }
 
   /** Ближайшее известное место (для «я у склада»). */

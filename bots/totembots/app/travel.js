@@ -117,6 +117,7 @@ class Travel {
     const out = [];
     const add = (p, src) => { if (!out.some((o) => dist(o, p) < 6 && Math.abs(o.y - p.y) < 8)) out.push({ x: p.x, y: p.y, z: p.z, src }); };
     for (const l of this.links) { if (l.a.d === d) add(l.a, 'пара'); if (l.b.d === d) add(l.b, 'пара'); }
+    if (this.memory) for (const p of Object.values(this.memory.data.places || {})) if (/портал/i.test(p.name) && dkey(p.dim) === d) add(p, 'память');
     if (this.wm) {
       const m = this.wm.load(d === 'nether' ? 'the_nether' : d === 'end' ? 'the_end' : 'overworld');
       for (const v of Object.values(m.poi)) if (v.kind === 'портал') add(v, 'карта');

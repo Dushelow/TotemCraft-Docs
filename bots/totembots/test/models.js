@@ -43,3 +43,20 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = r[0][1] === 'отказ' && r[1][1] === 'не умею';
   console.log(`--- умные предметы: ${ok ? 'правила соблюдены' : 'НЕ ТАК: ' + JSON.stringify(r)}`);
 })();
+
+// атлас: ледяная ветка в Незере, которую бот только видел, становится тропой (маршрут по ней находится)
+{
+  const { Atlas } = require('../app/atlas');
+  const { Trails } = require('../app/travel');
+  const T = new Trails(fs.mkdtempSync(path.join(os.tmpdir(), 'at')));
+  const { Vec3 } = require('vec3');
+  const tb = Object.create(Atlas.prototype);
+  const ice = new Set(); for (let x = 0; x <= 200; x++) for (let z = 0; z <= 1; z++) ice.add(`${x},64,${z}`);
+  let cx = 0;
+  tb.travel = { trails: T };
+  tb.bot = { blockAt: (p) => ({ name: ice.has(`${p.x},${p.y},${p.z}`) ? 'packed_ice' : 'air', boundingBox: ice.has(`${p.x},${p.y},${p.z}`) ? 'block' : 'empty' }),
+    findBlocks: () => [...ice].map((k) => k.split(',').map(Number)).filter(([x]) => Math.abs(x - cx) <= 32).map(([x, y, z]) => new Vec3(x, y, z)) };
+  for (cx = 0; cx <= 200; cx += 24) tb.iceRoads('nether');
+  const r = T.route('nether', { x: 2, y: 65, z: 0 }, { x: 198, y: 65, z: 1 });
+  console.log('--- атлас: ' + (r ? `ледяная ветка 200 бл. - маршрут ${Math.round(r.len)} бл. по ${r.points.length} точкам` : 'НЕТ МАРШРУТА ПО ЛЬДУ'));
+}
