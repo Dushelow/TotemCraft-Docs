@@ -6,6 +6,8 @@ const crypto = require('crypto');
 
 // Готовые бесплатные варианты (модель можно поменять в настройках: названия у сервисов иногда меняются)
 const PRESETS = {
+  // Claude (Anthropic): официальный SDK; Haiku 5.5 - быстро и дёшево, Sonnet 5.5 - умнее (вписать моделью claude-sonnet-5-5)
+  claude: { name: 'Claude', claude: true, model: 'claude-haiku-5-5', keyUrl: 'https://platform.claude.com/settings/keys' },
   gemini: { name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
   groq: { name: 'Groq', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', keyUrl: 'https://console.groq.com/keys' },
   openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-chat-v3-0324:free', keyUrl: 'https://openrouter.ai/keys' },
@@ -37,7 +39,7 @@ class Router {
       if (id === 'qwen') return c.qwen === false ? null : { id: 'qwen', name: 'Qwen (сайт)' };
       if (/web$/.test(id)) { const w = this.webFor ? this.webFor(id.replace(/web$/, '')) : this.webs[id]; return w ? { id, name: w.site.name, web: w } : null; }
       const p = PRESETS[id], k = (c.keys || {})[id];
-      return p && k ? { id, name: p.name, url: p.url, key: k, model: (c.models || {})[id] || p.model } : null;
+      return p && k ? { id, name: p.name, url: p.url, key: k, model: (c.models || {})[id] || p.model, claude: !!p.claude } : null;
     }).filter(Boolean);
     // выбран вручную (панель, «Мозг») - он первый, остальные запасные только если включено «запасные»
     if (c.pin) { const i = list.findIndex((x) => x.id === c.pin); if (i > 0) list.unshift(...list.splice(i, 1)); if (i >= 0 && c.pinOnly) list.splice(1); }
@@ -82,7 +84,7 @@ class Router {
     for (const b of this.order()) {
       if (this.isResting(b.id)) continue;
       try {
-        const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : b.web ? await this.askWeb(b, ch, text) : await this.askApi(b, ch, text);
+        const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : b.web ? await this.askWeb(b, ch, text) : b.claude ? await this.askClaude(b, ch, text) : await this.askApi(b, ch, text);
         if (!answer || !String(answer).trim()) throw new Error('пустой ответ');
         ch.turns.push({ q: text, a: answer }); ch.turns = ch.turns.slice(-24);
         // чаты сайтов и последние 12 реплик - в настройки: переживут перезапуск программы и смену мозга
@@ -136,6 +138,34 @@ class Router {
   recap(ch) {
     const t = ch.turns.slice(-8).map((x) => `[было] ${String(x.q).slice(0, 400)}\n[ты ответил] ${String(x.a).slice(0, 300)}`).join('\n');
     return `${ch.warm}\n\n(продолжение твоей жизни: разговор шёл в другом чате или до перезапуска программы; последние события:)\n${t}`;
+  }
+
+  /**
+   * Claude через официальный SDK Anthropic. Вводная - system (кэшируется: одна и та же каждый раз), история - по
+   * очереди. Мозгу бота нужны короткие быстрые ответы: effort low, max_tokens 1500.
+   */
+  async askClaude(b, ch, text) {
+    const Anthropic = require('@anthropic-ai/sdk').default;
+    if (!this.claudeClient || this.claudeKey !== b.key) { this.claudeClient = new Anthropic({ apiKey: b.key, timeout: 60000, maxRetries: 1 }); this.claudeKey = b.key; }
+    const messages = [];
+    for (const x of ch.turns.slice(-16)) { messages.push({ role: 'user', content: String(x.q) }); messages.push({ role: 'assistant', content: String(x.a) }); }
+    messages.push({ role: 'user', content: text !== ch.warm ? text : 'Начинаем. Ответь: ок' });
+    try {
+      const r = await this.claudeClient.messages.create({
+        model: b.model, max_tokens: 1500,
+        system: ch.warm ? [{ type: 'text', text: ch.warm, cache_control: { type: 'ephemeral' } }] : undefined,
+        output_config: { effort: 'low' },
+        messages,
+      });
+      if (r.stop_reason === 'refusal') throw new Error('Claude отказался ответить' + (r.stop_details && r.stop_details.category ? ` (${r.stop_details.category})` : ''));
+      return r.content.filter((x) => x.type === 'text').map((x) => x.text).join(' ');
+    } catch (e) {
+      const A = require('@anthropic-ai/sdk').default;
+      if (e instanceof A.AuthenticationError) throw new Error('Claude: ключ не подходит (нужен вход - вставьте ключ заново)');
+      if (e instanceof A.RateLimitError) throw new Error('Claude: лимит (429)');
+      if (e instanceof A.APIError) throw new Error(`Claude: ошибка ${e.status} ${String(e.message).slice(0, 120)}`);
+      throw e;
+    }
   }
 
   /** Ключевой мозг (формат OpenAI): вводная - system, история - по очереди, ответ - текст. */

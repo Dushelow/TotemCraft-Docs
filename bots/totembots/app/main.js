@@ -65,6 +65,8 @@ function loadCfg() {
     b.order = ['deepseekweb', 'geminiweb', 'arenaweb', ...old.filter((x) => !['deepseekweb', 'geminiweb', 'arenaweb'].includes(x))];
     b.freeFirst = true;
   }
+  // Claude по ключу - первым (если ключа нет, он просто пропускается)
+  if (!b.claudeAdded) { b.order = ['claude', ...(b.order || []).filter((x) => x !== 'claude')]; b.claudeAdded = true; }
 }
 function saveCfg() {
   // история чатов каждого бота: новые сверху, до 30
