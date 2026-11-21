@@ -507,7 +507,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
+        const FREE = new Set(['stash', 'put', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         // идёт за кем-то и сам решил чем-то заняться - не уходить: своё только то, что делается на ходу или рядом
         // (16.11: шла за хозяином и сама ушла копать камень)
@@ -523,7 +523,11 @@ class Brain {
         if (notFromMaster && !self && this.body.mode === 'follow' && this.isMaster(this.body.followName)) {
           for (let i = allowed.length - 1; i >= 0; i--) if (['stop', 'come', 'follow'].includes(allowed[i].act)) allowed.splice(i, 1);
         }
-        if (NEED_MASTER.length && notFromMaster) this.log('отклонено (нужен хозяин): ' + NEED_MASTER.map((a) => a.act).join(', '));
+        if (NEED_MASTER.length && notFromMaster) {
+          this.log('отклонено (нужен хозяин): ' + NEED_MASTER.map((a) => a.act).join(', '));
+          // сказать мозгу, иначе он молча повторяет одно и то же (21.11: «выложить» 13 раз подряд, бот стоял)
+          if (self) this.pending.push({ line: `[итог] не сделано: ${NEED_MASTER.map((a) => a._cmd || a.act).join(', ')} - это только по просьбе хозяина; выбери другое дело`, from: '@self', fix: true });
+        }
         if (allowed.length) this.runActions(allowed, master ? master.from : self ? 'сам' : '');
       }
     } catch (e) {
