@@ -32,6 +32,45 @@ class Marks {
   }
 
   /**
+   * Факелы, как игрок в шахте: под землёй, в диком месте (не в городе, не у чужих построек), темно и факелы
+   * есть - поставить на пол рядом, если ближайший свой факел дальше 12 блоков. Не чаще раза в 8 с, не в бою.
+   */
+  async torchTick() {
+    const b = this.bot;
+    if (!b || !b.entity || this.paused || (this.guard && this.guard.fighting) || this.busyLook || b.isSleeping) return;
+    if (Date.now() - (this._torchAt || 0) < 8000) return;
+    const torch = b.inventory.items().find((i) => i.name === 'torch');
+    if (!torch || !this.worldMap) return;
+    let under = ''; try { under = this.worldMap.layerMode(this); } catch {}
+    if (!/подземный/.test(under)) return;
+    let town = false; try { town = this.worldMap.settlements(this, 64).some((s) => s.inside); } catch {}
+    if (town || (this.skills && this.skills.builtNear(b.entity.position.floored(), 4))) return;
+    let dark = ''; try { dark = this.darkness(); } catch {}
+    if (!dark) return;
+    const me = b.entity.position;
+    this.myTorches = (this.myTorches || []).filter((t) => Math.hypot(t.x - me.x, t.y - me.y, t.z - me.z) < 64);
+    if (this.myTorches.some((t) => Math.hypot(t.x - me.x, t.y - me.y, t.z - me.z) < 12)) return;
+    if (b.findBlock({ matching: (bl) => /torch|lantern|glowstone|shroomlight/.test(bl.name), maxDistance: 10 })) return;   // свет уже есть
+    this._torchAt = Date.now();
+    const { Vec3 } = require('vec3'), p = me.floored();
+    for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const at = b.blockAt(p.offset(dx, 0, dz)), floor = b.blockAt(p.offset(dx, -1, dz));
+      if (!at || !floor || at.name !== 'air' && at.name !== 'cave_air' || floor.boundingBox !== 'block') continue;
+      if (dx === 0 && dz === 0 && b.pathfinder.isMoving()) continue;   // под себя - только стоя
+      this.busyLook = true;
+      try {
+        const held = b.heldItem;
+        await b.equip(torch, 'hand');
+        await b.placeBlock(floor, new Vec3(0, 1, 0));
+        this.myTorches.push(p.offset(dx, 0, dz));
+        this.log(`поставила факел у ${p.x + dx} ${p.y} ${p.z + dz} (темно)`);
+        if (held && held.name !== 'torch') await b.equip(held, 'hand').catch(() => {});
+      } catch {} finally { this.busyLook = false; }
+      return;
+    }
+  }
+
+  /**
    * Слова хозяина без координат: «запомни это место как склад», «это мой склад», «тут ферма», «отметь: шахта».
    * Место - где стоит хозяин (если видно), иначе где бот. Возвращает имя или ''.
    */

@@ -352,11 +352,18 @@ class WorldMap {
     const pcx = Math.floor(b.entity.position.x / 16), pcz = Math.floor(b.entity.position.z / 16);
     const cnt = {};
     for (const d of COMPASS) cnt[d] = Math.random();   // при равенстве - случайно
+    // «где никто не был» (как новые чанки у XaeroPlus): бот там не был, построек нет, тропы и натоптанность
+    // игроков нет. Виденное +1, постройка +2, тропа игроков или бота +1,5 за точку.
     for (let dx = -12; dx <= 12; dx++) for (let dz = -12; dz <= 12; dz++) {
       const r = Math.hypot(dx, dz);
       if (r < 3 || r > 12) continue;
-      if (m.chunks[`${pcx + dx},${pcz + dz}`]) cnt[compass(dx, dz)] += 1;
+      const c = m.chunks[`${pcx + dx},${pcz + dz}`];
+      if (c) cnt[compass(dx, dz)] += 1 + ((c.b || 0) >= 12 ? 2 : 0);
     }
+    try {
+      const T = tb.travel && tb.travel.trails, d = require('./travel').dkey(b.game.dimension), me = b.entity.position;
+      if (T) for (const n of T.load(d).n) { const dx = n[0] - me.x, dz = n[2] - me.z, r = Math.hypot(dx, dz); if (r > 48 && r < 200) cnt[compass(dx, dz)] += 1.5; }
+    } catch {}
     return Object.entries(cnt).sort((a, c) => a[1] - c[1])[0][0];
   }
 
@@ -452,7 +459,8 @@ class WorldMap {
     const towns = st.filter((s) => !s.inside).slice(0, 3).map((s) => `${s.kind} (${s.n} чанков) ${Math.round(s.d)} бл. на ${compass(s.x - me.x, s.z - me.z)} (около ${s.x} ${s.z})`);
     const out = this.nearby(tb, 200, 8);
     let bio = ''; try { bio = this.biomes(tb); } catch {}
-    return `${where}; исследовано ${explored} чанков` + (bio ? '; ' + bio : '') + (towns.length ? '; поселения: ' + towns.join('; ') : '') + (out.length ? '; ' + out.map((o) => o.text).join('; ') : '');
+    let fresh = ''; try { fresh = this.leastExplored(tb); } catch {}
+    return `${where}; исследовано ${explored} чанков` + (fresh ? ` (меньше всего знакомо на ${fresh})` : '') + (bio ? '; ' + bio : '') + (towns.length ? '; поселения: ' + towns.join('; ') : '') + (out.length ? '; ' + out.map((o) => o.text).join('; ') : '');
   }
 
   /** Под землёй (крыша над головой, ниже поверхности чанка на 6+) или в Незере - показывать срез на высоте бота. */

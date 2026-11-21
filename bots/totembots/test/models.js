@@ -254,3 +254,35 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = okGet && near[0].x === 35 && okDisk && r1.status === 'success' && r0.status !== 'success';
   console.log('--- кэш проходимости: ' + (ok ? `чтение, особые блоки, диск - верно; путь через выгруженные чанки: без кэша ${r0.status}, с кэшем ${r1.status} (${r1.path.length} шагов); упаковка чанка ${packMs.toFixed(0)} мс` : `НЕТ: get ${okGet} near ${JSON.stringify(near)} disk ${okDisk} пути ${r0.status}/${r1.status}`));
 }
+
+// разведка «где никто не был»: на востоке город и тропы игроков, на западе пусто - идти на запад
+{
+  const { WorldMap } = require('../app/worldmap');
+  const { Trails } = require('../app/travel');
+  const wm = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'ex')));
+  const m = wm.load('overworld');
+  for (let cx = 3; cx <= 12; cx++) for (let cz = -12; cz <= 12; cz++) m.chunks[`${cx},${cz}`] = { h: 64, b: 20 };
+  for (let cz = -12; cz <= 12; cz++) for (let cx = -12; cx <= 12; cx++) if (Math.abs(cz) > 4 || cx > -3) m.chunks[`${cx},${cz}`] = m.chunks[`${cx},${cz}`] || { h: 64, b: 0 };
+  const T = new Trails(fs.mkdtempSync(path.join(os.tmpdir(), 'ex2'))), st = {};
+  for (let x = 60; x < 190; x += 5) T.step('overworld', { x, y: 64, z: 0 }, st);
+  const tb = { bot: { entity: { position: { x: 8, y: 64, z: 8 } }, game: { dimension: 'overworld' } }, travel: { trails: T } };
+  const dirs = new Set(); for (let i = 0; i < 5; i++) dirs.add(wm.leastExplored(tb));
+  console.log('--- разведка: ' + (dirs.size === 1 && dirs.has('запад') ? 'идти на запад, где никто не был' : 'НЕТ: ' + [...dirs].join(',')));
+}
+
+// факелы: под землёй в диком месте темно - ставит; в городе - нет
+{
+  const { Marks } = require('../app/marks');
+  const { Vec3 } = require('vec3');
+  const mk = (town) => {
+    const placed = [];
+    const tb = Object.create(Marks.prototype);
+    Object.assign(tb, { log() {}, darkness: () => 'темно: 30 из 40', skills: { builtNear: () => null },
+      worldMap: { layerMode: () => 'подземный слой на высоте 20 (поверхность около 70)', settlements: () => (town ? [{ inside: true }] : []) },
+      bot: { entity: { position: new Vec3(0.5, 20, 0.5) }, inventory: { items: () => [{ name: 'torch' }] }, heldItem: null, pathfinder: { isMoving: () => false },
+        findBlock: () => null, blockAt: (v) => (v.y < 20 ? { name: 'stone', boundingBox: 'block' } : { name: 'cave_air', boundingBox: 'empty' }),
+        equip: async () => {}, placeBlock: async (f) => { placed.push(f); } } });
+    return tb.torchTick().then(() => placed.length);
+  };
+  Promise.all([mk(false), mk(true)]).then(([wild, town]) => console.log('--- факелы: ' + (wild === 1 && town === 0 ? 'в пещере поставила, в городе - нет' : `НЕТ: пещера ${wild}, город ${town}`)));
+}

@@ -447,6 +447,7 @@ class TotemBot extends EventEmitter {
     try { this.atlasTick(); } catch {}
     try { this.sensesTick(); } catch {}
     try { this.marksTick(); } catch {}
+    this.torchTick && this.torchTick().catch(() => {});
     this.handsTick().catch(() => {});
     this.reflexTick().catch(() => {});
     try { this.shoreTick(); } catch {}
