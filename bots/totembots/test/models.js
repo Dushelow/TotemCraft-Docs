@@ -136,3 +136,20 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = /враги: zombie, skeleton \(ближе всех zombie 10 бл. на север\)/.test(r.text) && /животные: cow x2/.test(r.text) && /жители: фермер, библиотекарь/.test(r.text) && r.list.length === 6;
   console.log('--- радар: ' + (ok ? r.text : 'НЕТ: ' + r.text));
 }
+
+// биомы вокруг и тёмные места
+{
+  const { WorldMap } = require('../app/worldmap');
+  const { Perception } = require('../app/perception');
+  const { Vec3 } = require('vec3');
+  const wm = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'bi')));
+  const m = wm.load('overworld');
+  m.chunks['0,0'] = { h: 64, bi: 'taiga' }; m.chunks['0,10'] = { h: 64, bi: 'desert' }; m.chunks['-8,0'] = { h: 64, bi: 'snowy_plains' }; m.chunks['0,30'] = { h: 64, bi: 'desert' };
+  const bt = wm.biomes({ bot: { entity: { position: { x: 8, y: 64, z: 8 } }, game: { dimension: 'overworld' } } });
+  const okB = bt === 'биом: taiga; рядом: snowy_plains 128 бл. на запад, desert 160 бл. на юг';
+  // тёмный подвал: пол из камня, свет 0 везде
+  const tb = Object.create(Perception.prototype);
+  tb.bot = { time: { timeOfDay: 6000 }, entity: { position: new Vec3(0, 65, 0) }, blockAt: (v) => (v.y === 64 ? { name: 'stone', boundingBox: 'block' } : { name: 'air', boundingBox: 'empty', light: 0, skyLight: 0 }) };
+  const dk = tb.darkness();
+  console.log('--- биомы и темнота: ' + (okB && /темно: 81 из 81/.test(dk) ? 'биомы рядом и тёмный подвал узнаны' : 'НЕТ: ' + bt + ' / ' + dk));
+}

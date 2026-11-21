@@ -143,6 +143,8 @@ class WorldMap {
       // карта по блокам: что сверху в каждой точке, высота, глубина воды (mapgrid.js)
       let grid = {};
       try { grid = require('./mapgrid').surface(b, col, AIR, /nether/.test(String(dim))); } catch {}
+      // биом в середине чанка на высоте поверхности (как подпись биома у карт): где снег, пустыня, грибы, болото
+      try { const by = h !== null ? h : 64; const bid = col.getBiome({ x: 8, y: by, z: 8 }); const bn = b.registry.biomes && b.registry.biomes[bid]; if (bn) grid.bi = bn.name; } catch {}
       m.chunks[`${cx},${cz}`] = { t: now, k: water >= 3 ? 'w' : lava >= 2 ? 'l' : 'g', h, b: found.built, ...(found.built && gy !== null && found.by < gy - 6 ? { u: 1 } : {}), ...grid };
       // точки этого чанка - заново
       for (const k of Object.keys(m.poi)) if (k.endsWith(`@${cx},${cz}`)) delete m.poi[k];
@@ -423,6 +425,21 @@ class WorldMap {
     return out.sort((a, c) => a.d - c.d);
   }
 
+  /** Биомы вокруг (до 400 бл.): какой здесь и ближайшие другие со стороной света. «биом: тайга; рядом: пустыня 300 бл. на юг». */
+  biomes(tb, radius = 400) {
+    const b = tb.bot, m = this.load(b.game.dimension), me = b.entity.position;
+    const here = (m.chunks[`${Math.floor(me.x / 16)},${Math.floor(me.z / 16)}`] || {}).bi;
+    const near = {};
+    for (const [k, c] of Object.entries(m.chunks)) {
+      if (!c.bi || c.bi === here) continue;
+      const [cx, cz] = k.split(',').map(Number), x = cx * 16 + 8, z = cz * 16 + 8, d = Math.hypot(x - me.x, z - me.z);
+      if (d > radius) continue;
+      if (!near[c.bi] || d < near[c.bi].d) near[c.bi] = { d, x, z };
+    }
+    const list = Object.entries(near).sort((a, c) => a[1].d - c[1].d).slice(0, 4).map(([n, v]) => `${n} ${Math.round(v.d)} бл. на ${compass(v.x - me.x, v.z - me.z)}`);
+    return (here ? `биом: ${here}` : '') + (list.length ? `${here ? '; ' : ''}рядом: ${list.join(', ')}` : '');
+  }
+
   /** Короткая сводка для мозга: где бот (город или дикая местность), поселения, ближайшие точки, со сторонами света. */
   summary(tb) {
     const b = tb.bot;
@@ -434,7 +451,8 @@ class WorldMap {
     const where = here ? `ты в ${{ 'постройка': 'застроенном месте', 'поселение игроков': 'поселении игроков', 'деревня с постройками игроков': 'деревне с постройками игроков' }[here.kind]} (${here.n} застроенных чанков) - здесь всё чужое: не копать, не брать` : 'ты в дикой местности (построек игроков рядом нет)';
     const towns = st.filter((s) => !s.inside).slice(0, 3).map((s) => `${s.kind} (${s.n} чанков) ${Math.round(s.d)} бл. на ${compass(s.x - me.x, s.z - me.z)} (около ${s.x} ${s.z})`);
     const out = this.nearby(tb, 200, 8);
-    return `${where}; исследовано ${explored} чанков` + (towns.length ? '; поселения: ' + towns.join('; ') : '') + (out.length ? '; ' + out.map((o) => o.text).join('; ') : '');
+    let bio = ''; try { bio = this.biomes(tb); } catch {}
+    return `${where}; исследовано ${explored} чанков` + (bio ? '; ' + bio : '') + (towns.length ? '; поселения: ' + towns.join('; ') : '') + (out.length ? '; ' + out.map((o) => o.text).join('; ') : '');
   }
 
   /** Под землёй (крыша над головой, ниже поверхности чанка на 6+) или в Незере - показывать срез на высоте бота. */

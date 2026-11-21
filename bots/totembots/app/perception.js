@@ -96,6 +96,26 @@ class Perception {
     return { text: parts.join('; '), list };
   }
 
+  /**
+   * Тёмные места рядом, где могут появиться мобы (свет блоков 0 и неба мало: в помещении, под землёй, ночью):
+   * сколько клеток пола в 8 блоках на уровне бота. Как «подсветка спавна» у карт и MiniHUD.
+   */
+  darkness() {
+    const b = this.bot, p = b.entity.position.floored(), t = b.time && b.time.timeOfDay;
+    const night = t !== undefined && t > 13000 && t < 23000;
+    let dark = 0, total = 0;
+    for (let dx = -8; dx <= 8; dx += 2) for (let dz = -8; dz <= 8; dz += 2) for (let dy = -2; dy <= 1; dy++) {
+      const v = p.offset(dx, dy, dz), at = b.blockAt(v), below = b.blockAt(v.offset(0, -1, 0)), head = b.blockAt(v.offset(0, 1, 0));
+      if (!at || !below || !head || at.boundingBox !== 'empty' || head.boundingBox !== 'empty' || below.boundingBox !== 'block' || /water|lava/.test(at.name)) continue;
+      total++;
+      const bl = typeof at.light === 'number' ? at.light : 15, sky = typeof at.skyLight === 'number' ? at.skyLight : 15;
+      if (bl === 0 && (sky < 8 || night)) dark++;
+      break;
+    }
+    if (!total || dark < 4) return '';
+    return `темно: ${dark} из ${total} мест вокруг без света - тут могут появиться мобы${night && dark === total ? ' (ночь)' : ''}`;
+  }
+
   glance() {
     const b = this.bot, e = b.entity, p = e.position;
     const nm = (v) => { const k = b.blockAt(v); return k ? k.name.replace(/^minecraft:/, '') : '?'; };
@@ -112,7 +132,8 @@ class Perception {
     const held = b.heldItem ? b.heldItem.name : 'пусто';
     const room = this.houseText() || this.roomText();
     let objs = ''; try { objs = require('./objects').describe(this); } catch {}
-    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; ${rd.text ? '' : 'мобы: '}${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
+    let dk = ''; try { dk = this.darkness(); } catch {}
+    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; ${rd.text ? '' : 'мобы: '}${ml}` : '') + (dk ? `; ${dk}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
   }
 
   /**
