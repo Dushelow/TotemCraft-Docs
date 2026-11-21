@@ -28,10 +28,12 @@ function world(build) {
   };
   return { registry, version: '1.21.4', entities: {}, game: { minY: -64, height: 384 }, entity: { position: new Vec3(0.5, 65, 0.5) }, inventory: { items: () => [] }, blockAt, toggle };
 }
+let lastCtl = null;
 function find(bot, from, goal, stepCost) {
   const mv = new Movements(bot); mv.canDig = false; mv.allow1by1towers = false; mv.scafoldingBlocks = [];
   install(mv, bot);
   if (stepCost) mv.navStepCost = stepCost;
+  lastCtl = mv._nav.leapControl;
   const a = new AStar(new Move(from[0], from[1], from[2], 0, 0), mv, goal, 5000, 20000, -1, 0);
   return a.compute();
 }
@@ -56,13 +58,27 @@ function walkTo(bot, ent, to) {
   }
   return false;
 }
-function replay(bot, from, r) {
+function leapTo(bot, ent, m, ctl) {
+  const world = { getBlock: (p) => bot.blockAt(new Vec3(p.x, p.y, p.z)) };
+  const physics = Physics(registry, world);
+  const e = { position: ent.position.clone(), velocity: new Vec3(0, 0, 0), onGround: true, isInWater: false, isInLava: false, isInWeb: false, isCollidedHorizontally: false, isCollidedVertically: false, elytraFlying: false, yaw: Math.atan2(-m.leap.dx, -m.leap.dz), pitch: 0, effects: {}, attributes: {} };
+  const p = { entity: e, version: '1.21.4', jumpTicks: 0, jumpQueued: false, fireworkRocketDuration: 0, game: {}, inventory: { slots: [] }, registry };
+  let air = false;
+  for (let t = 0; t < 40; t++) {
+    const st = new PlayerState(p, ctl(e.position, e.onGround, m.leap, m.x + 0.5, m.z + 0.5));
+    physics.simulatePlayer(st, world); st.apply(p);
+    if (!e.onGround && t > 2) air = true;
+    if (air && e.onGround) { ent.position = e.position; return Math.floor(e.position.x) === m.x && Math.floor(e.position.z) === m.z && Math.floor(e.position.y + 1e-3) === m.y; }
+  }
+  return false;
+}
+function replay(bot, from, r, ctl) {
   const ent = { position: new Vec3(from[0] + 0.5, from[1], from[2] + 0.5) };
   const g = bot.blockAt(new Vec3(from[0], from[1], from[2]));   // старт на кровати, плите, люке - ноги выше клетки
   if (g.shapes && g.shapes.length) ent.position.y = from[1] + Math.max(...g.shapes.map((s) => s[4]));
   for (const m of r.path) {
     for (const p of m.opens || []) bot.toggle(p.x, p.y, p.z);
-    if (!walkTo(bot, ent, m)) return `физически не прошла к ${m.x},${m.y},${m.z} (стоит на ${ent.position.x.toFixed(2)},${ent.position.y.toFixed(2)},${ent.position.z.toFixed(2)})`;
+    if (m.leap ? !leapTo(bot, ent, m, ctl) : !walkTo(bot, ent, m)) return `физически не прошла к ${m.x},${m.y},${m.z} (стоит на ${ent.position.x.toFixed(2)},${ent.position.y.toFixed(2)},${ent.position.z.toFixed(2)})`;
   }
   return null;
 }
@@ -72,12 +88,12 @@ function check(name, build, from, goal, wantPath, extra, stepCost) {
   const r = find(world(build), from, goal, stepCost);
   let ok = (r.status === 'success') === wantPath, note = '';
   if (r.status === 'success') {
-    const bad = replay(world(build), from, r);
+    const bad = replay(world(build), from, r, lastCtl);
     if (bad) { ok = false; note = ' - ' + bad; }
     if (ok && extra) { const e = extra(r.path); if (e) { ok = false; note = ' - ' + e; } }
   }
   results.push(ok);
-  console.log(`${ok ? 'да ' : 'НЕТ'} ${name}: ${r.status}${r.status === 'success' ? ' через ' + r.path.slice(0, 5).map((p) => `${p.x},${p.y},${p.z}${p.opens ? '(откр.)' : ''}`).join(' ') : ''}${note}`);
+  console.log(`${ok ? 'да ' : 'НЕТ'} ${name}: ${r.status}${r.status === 'success' ? ' через ' + r.path.slice(0, 5).map((p) => `${p.x},${p.y},${p.z}${p.opens ? '(откр.)' : ''}${p.leap ? '(прыжок)' : ''}`).join(' ') : ''}${note}`);
 }
 const wall = (set, x, h = 3) => { for (let z = -6; z <= 6; z++) for (let y = 65; y < 65 + h; y++) set(x, y, z, 'stone'); };
 const T = (half, open, facing = 'east') => ({ facing, half, open, powered: false, waterlogged: false });
@@ -133,5 +149,14 @@ check('с уступа на грядку не прыгать', (set) => { for (l
 check('по дорожке, а не по газону', (set) => { for (let x = 0; x <= 8; x++) set(x, 64, -2, 'stone_bricks'); for (let z = -2; z <= 0; z++) { set(0, 64, z, 'stone_bricks'); set(8, 64, z, 'stone_bricks'); } },
   [0, 65, 0], G(8, 65, 0), true, (p) => { const off = p.filter((m) => !(m.z === -2 || m.x === 0 || m.x === 8)).length; return off > 2 ? `по газону ${off} шагов` : null; },
   (x, y, z, u) => (u === 'stone_bricks' ? 1 : 1.6));
+// --- паркур (22.11): прыжок через яму, если физика игры подтверждает; над лавой и пропастью - нет
+// канава шириной w и глубиной depth: дно - камень на 64-depth (в модели мира один слой пола - без дна была бы пропасть)
+const DITCH = (w, depth, fill) => (set) => { for (let x = 2; x < 2 + w; x++) for (let z = -6; z <= 6; z++) { for (let y = 64; y > 64 - depth; y--) set(x, y, z, y === 64 - depth + 1 && fill ? fill : 'air'); if (depth < 6) set(x, 64 - depth, z, 'stone'); } };
+const leapUsed = (p) => (p.some((m) => m.leap) ? null : 'без прыжка');
+check('канава 1 блок - перепрыгнуть', DITCH(1, 2), [0, 65, 0], G(5, 65, 0), true, leapUsed);
+check('канава 2 блока - перепрыгнуть', DITCH(2, 2), [0, 65, 0], G(6, 65, 0), true, leapUsed);
+check('канава 3 блока - с разбега', DITCH(3, 2), [0, 65, 0], G(7, 65, 0), true, leapUsed);
+check('канава 1 блок над лавой - нельзя', DITCH(1, 2, 'lava'), [0, 65, 0], G(5, 65, 0), false);
+check('пропасть 2 блока шириной, глубина 10 - нельзя', DITCH(2, 10), [0, 65, 0], G(6, 65, 0), false);
 console.log(`--- ходьба: ${results.filter(Boolean).length} из ${results.length}`);
 if (results.some((x) => !x)) process.exitCode = 1;

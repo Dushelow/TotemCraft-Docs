@@ -119,6 +119,79 @@ function install(mv, bot) {
     return { feet, jumped, hit: [...hit.values()] };
   }
 
+  // ---- Паркур: прыжок с разбега через яму. Ход появляется, только если физика самой игры (prismarine-physics -
+  // ей же ходит бот) подтверждает, что тело с места, разбежавшись внутри своей клетки и оттолкнувшись у края,
+  // приземлится в нужной клетке. Над лавой и пропастью (глубже maxDropDown) не прыгает.
+  const LEAP_AT = 0.62;   // толчок, когда центр тела прошёл столько от центра клетки к краю
+  let physics = null;
+  /** Управление прыжком (одно для проверки и для тела): разбег, толчок у края, в воздухе над целью - тормоз. */
+  function leapControl(pos, onGround, lp, tx, tz) {
+    const prog = (pos.x - lp.from[0]) * lp.dx + (pos.z - lp.from[1]) * lp.dz;
+    const over = ((pos.x - tx) * lp.dx + (pos.z - tz) * lp.dz) > -0.5;   // уже над целевой клеткой
+    const brake = !onGround && prog > LEAP_AT && over;
+    return { forward: !brake, back: brake, left: false, right: false, sprint: lp.sprint && !brake, sneak: false, jump: onGround && prog >= LEAP_AT };
+  }
+  /** Проверка физикой игры: с места, шагом или бегом. Возвращает true/false для режима lp.sprint. */
+  function simLeap(sy, lp, tx, ty, tz) {
+    try {
+      const { Physics, PlayerState } = require('prismarine-physics');
+      const world = { getBlock: (p) => mv.bot.blockAt(new Vec3(p.x, p.y, p.z), false) };
+      physics = physics || Physics(mv.bot.registry, world);
+      const e = { position: new Vec3(lp.from[0], sy, lp.from[1]), velocity: new Vec3(0, 0, 0), onGround: true, isInWater: false, isInLava: false, isInWeb: false, isCollidedHorizontally: false, isCollidedVertically: false, elytraFlying: false, yaw: Math.atan2(-lp.dx, -lp.dz), pitch: 0, effects: {}, attributes: {} };
+      const fake = { entity: e, version: mv.bot.version, jumpTicks: 0, jumpQueued: false, fireworkRocketDuration: 0, game: {}, inventory: { slots: [] }, registry: mv.bot.registry };
+      let air = false;
+      for (let t = 0; t < 40; t++) {
+        const st = new PlayerState(fake, leapControl(e.position, e.onGround, lp, tx, tz));
+        physics.simulatePlayer(st, world); st.apply(fake);
+        if (e.position.y < sy - 2.5) return false;
+        const prog = (e.position.x - lp.from[0]) * lp.dx + (e.position.z - lp.from[1]) * lp.dz;
+        if (!e.onGround && prog >= 0.5) air = true;
+        if (air && e.onGround) return Math.floor(e.position.x) === Math.floor(tx) && Math.floor(e.position.z) === Math.floor(tz) && Math.floor(e.position.y + 1e-3) === ty;
+      }
+    } catch { return false; }
+    return false;
+  }
+  const leapCache = new Map();
+  function leaps(node, fy, out, seen) {
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      // первая клетка - яма (опоры на уровне ног нет), иначе это обычный шаг
+      // (спуск на блок - обычный шаг: яма - это где пола нет и на 1,2 ниже)
+      const s1 = support(node.x + dx + 0.5, node.z + dz + 0.5, fy + 0.6, fy - 1.2);
+      if (s1 !== null) continue;
+      for (let k = 2; k <= 4; k++) {
+        const nx = node.x + dx * k, nz = node.z + dz * k;
+        // клетки ямы: что под ними (лава - нельзя, дна в пределах maxDropDown нет - пропасть, нельзя)
+        let bad = false;
+        for (let i = 1; i < k && !bad; i++) {
+          const gx = node.x + dx * i, gz = node.z + dz * i;
+          if (i > 1 && support(gx + 0.5, gz + 0.5, fy + 0.6, fy - 0.5) !== null) { bad = true; break; }
+          const floor = support(gx + 0.5, gz + 0.5, fy - 0.5, fy - mv.maxDropDown - 1);
+          if (floor === null) bad = true;
+          for (let y = Math.floor(fy) - 1; y >= Math.floor(fy) - 4 && !bad; y--) if (cell(gx, y, gz).bad) bad = true;
+        }
+        if (bad) break;
+        const f = support(nx + 0.5, nz + 0.5, fy + 1.0, fy - 1.0);
+        if (f === null) continue;
+        const ny = Math.floor(f + EPS), key = `${node.x},${node.y},${node.z}>${nx},${ny},${nz}`;
+        if (seen.has(`${nx},${ny},${nz}`)) break;
+        let lp = leapCache.get(key);
+        if (lp === undefined) {
+          lp = null;
+          for (const sprint of [false, true]) {   // сначала шагом (короткий прыжок), не вышло - с бегом
+            const t = { from: [node.x + 0.5, node.z + 0.5], dx, dz, sprint };
+            if (simLeap(fy, t, nx + 0.5, ny, nz + 0.5)) { lp = t; break; }
+          }
+          leapCache.set(key, lp); if (leapCache.size > 5000) leapCache.clear();
+        }
+        if (!lp) continue;
+        const m = new Move(nx, ny, nz, node.remainingBlocks, k + 3 + (f > fy ? 1 : 0), [], []);
+        m.feet = f; m.cell = [nx, nz]; m.leap = lp;
+        seen.add(`${nx},${ny},${nz}`); out.push(m);
+        break;   // ближайшая достижимая посадка
+      }
+    }
+  }
+
   mv.getNeighbors = function (node) {
     if (Date.now() - cacheAt > 3000) { cache.clear(); cacheAt = Date.now(); ox = node.x; oz = node.z; cache.ox = ox; cache.oz = oz; }
     const out = [];
@@ -176,9 +249,10 @@ function install(mv, bot) {
       m.feet = w.feet; m.cell = [nx, nz];   // настоящая высота ног и клетка: точку маршрута ставим по ним (см. ниже)
       out.push(m);
     }
+    if (mv.navLeaps !== false) leaps(node, fy, out, seen);
     return out;
   };
-  mv._nav = { support, body, walk, cell };
+  mv._nav = { support, body, walk, cell, leapControl };
   if (bot) (bot._navCaches = bot._navCaches || []).push(cache);
   // Точки маршрута. Модуль пути после поиска ставит точку «на верх блока» в клетке; у открытого люка или двери у края
   // клетки это верх тонкой стенки - точка на блок выше пола и смещена к краю, бот до неё «не доходит» и стоит (сбой
@@ -192,6 +266,18 @@ function install(mv, bot) {
     });
     // блок изменился (открыли калитку) - забыть его старую форму сразу, а не через 3 с
     bot.on('blockUpdate', (o, n) => { const v = (n || o) && (n || o).position; if (v) for (const c of bot._navCaches || []) c.delete(((v.x - c.ox + 1048576) * 2097152 + (v.z - c.oz + 1048576)) * 1024 + (v.y + 512)); });
+    // прыжок через яму: модуль пути перед ямой стоит без клавиш - разбег и толчок делает тело (тем же правилом,
+    // что проверяла физика при поиске пути)
+    bot.on('physicsTick', () => {
+      const path = bot._navPath, m = path && path[0];
+      if (!m || !m.leap || !bot.entity || !bot.pathfinder.isMoving()) return;
+      const [sx, sz] = m.leap.from, { dx, dz } = m.leap, p = bot.entity.position;
+      const prog = (p.x - sx) * dx + (p.z - sz) * dz;
+      if (prog < -0.6 || Math.abs((p.x - sx) * dz) + Math.abs((p.z - sz) * dx) > 0.6) return;   // ещё не в клетке разбега
+      bot.look(Math.atan2(-dx, -dz), 0, true);
+      const c = leapControl(p, bot.entity.onGround, m.leap, m.cell[0] + 0.5, m.cell[1] + 0.5);
+      for (const k of ['forward', 'back', 'sprint', 'jump']) bot.setControlState(k, c[k]);
+    });
     // двери, калитки, люки на ближайших шагах: открыть (закрыть), только если сейчас не в нужном положении
     const tog = new Map();
     bot.on('physicsTick', () => {
