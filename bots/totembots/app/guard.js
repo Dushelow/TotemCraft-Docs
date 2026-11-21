@@ -67,6 +67,8 @@ class Guard {
       const angry = (this.hurtBy.get(e.id) || 0) > Date.now() - 15000 || this.prey === e.id;   // prey - добыча на охоте
       const hostile = this.isHostile(e) && !NEUTRAL.has(n);
       if (!hostile && !angry) continue;
+      // летающих стрелков (гаст, фантом высоко) мечом не догнать: за ними не бегать, идти дальше своей дорогой
+      if (/^(ghast|phantom)$/.test(n) && (e.position.y - me.y > 2.5 || n === 'ghast')) continue;
       if (e.customName && !angry) continue;
       // защищаем: себя (до 8 блоков) и хозяина (моб в 6 блоках от него)
       const nearOwner = own && e.position.distanceTo(own.position) < 6;

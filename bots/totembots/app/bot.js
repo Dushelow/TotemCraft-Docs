@@ -142,6 +142,10 @@ class TotemBot extends EventEmitter {
       // месте разницы нет. Множитель только >= 1: оценка пути модуля не завышается.
       mv.navStepCost = (x, y, z, under) => {
         if (!under || !this.travel || !this.travel.trails) return 1;
+        // у края лавы (Незер, пещеры) - вдвое дороже: один толчок гаста или моба - и в лаву
+        let lava = false;
+        for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ay of [-1, 0]) { const k = bot.blockAt(new Vec3(x + ax, y + ay, z + az), false); if (k && k.name === 'lava') lava = true; }
+        if (lava) return 2;
         const d = require('./travel').dkey(bot.game.dimension);
         if (this.travel.trails.heat(d, x, y, z) >= 2) return 1;
         if (!NATURAL.test(under) && !/leaves|farmland/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
@@ -973,8 +977,16 @@ class TotemBot extends EventEmitter {
           b.pathfinder.goto(goal),
           new Promise((_, rej) => { watch = setInterval(() => {
             const d = far(); if (!d) return;
-            if (d < bestD - 1) { bestD = d; bestAt = Date.now(); }
-            else if (Date.now() - bestAt > 20000) rej(new Error(`отсюда не подойти: 20 с без приближения, осталось ${Math.round(d)} бл. (путь закрыт - выбери другое)`));
+            // Сторож по пути, а не по прямой: в метро и в обход идёшь и в сторону от цели. Прогресс - ближе к цели,
+            // или тело идёт по построенному пути (сместилось на 4+ блока за 10 с). Впереди не прогружен мир -
+            // ждать чанков, а не бросать (дальние переходы на тысячи блоков).
+            const me = b.entity.position;
+            const moved = this._lastWatchPos && me.distanceTo(this._lastWatchPos.p) >= 4 && Date.now() - this._lastWatchPos.at <= 10000;
+            if (!this._lastWatchPos || Date.now() - this._lastWatchPos.at > 10000) this._lastWatchPos = { p: me.clone(), at: Date.now() };
+            const ahead = gx !== null && gx !== undefined ? me.offset((gx - me.x) / (d || 1) * Math.min(d, 24), 0, (gz - me.z) / (d || 1) * Math.min(d, 24)) : null;
+            const unloaded = ahead && !b.blockAt(ahead);
+            if (d < bestD - 1 || (moved && b.pathfinder.isMoving()) || unloaded) { bestD = Math.min(bestD, d); bestAt = Date.now(); }
+            else if (Date.now() - bestAt > 20000) rej(new Error(`отсюда не подойти: 20 с без продвижения, осталось ${Math.round(d)} бл. (путь закрыт - выбери другое)`));
           }, 1000); }),
           new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('не дошёл за отведённое время')), Math.max(1000, until - Date.now())); }),
         ]);
