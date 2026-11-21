@@ -62,6 +62,7 @@ document.querySelectorAll('#nav button').forEach((b) => { b.onclick = () => {
   section = b.dataset.sec;
   document.querySelectorAll('#nav button').forEach((x) => x.classList.toggle('on', x === b));
   document.querySelectorAll('main section').forEach((s) => s.classList.toggle('on', s.id === 'sec-' + section));
+  if (st) paintTop();
 }; });
 
 // ---------- полоска над окнами сайтов
@@ -101,7 +102,8 @@ let pausedNow = false;
 function paintTop() {
   pausedNow = !!st.paused;
   // до старта - «Старт»; боты работают - «Пауза/Продолжить» и «Стоп»; рядом с названием - общее состояние
-  $('startBtn').style.display = st.running ? 'none' : '';
+  // «Старт» вверху - только в других разделах: в «Ботах» запуск один - большая кнопка «Запустить» на стартовом экране
+  $('startBtn').style.display = st.running || section === 'bots' ? 'none' : '';
   $('stopBtn').style.display = st.running ? '' : 'none';
   $('pauseBtn').style.display = st.running ? '' : 'none';
   const pb = st.paused ? 'Продолжить' : 'Пауза';
