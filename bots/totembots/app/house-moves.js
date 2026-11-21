@@ -12,6 +12,9 @@ const Move = require('mineflayer-pathfinder/lib/move');
 const WOOD_TRAPDOOR = (n) => /_trapdoor$/.test(n) && n !== 'iron_trapdoor';
 
 function install(mv, bot) {
+  // Люк тонкий, как ковёр: стоя на закрытом люке, модуль пути считал его целым блоком, «поднимал» бота на блок
+  // выше - там голова упиралась в потолок, и путь был пустым (21.11: «застряла», стоя на люке в комнате).
+  for (const bl of Object.values(bot.registry.blocksByName)) if (/_trapdoor$/.test(bl.name)) mv.carpets.add(bl.id);
   // люк сверху (half=top, закрыт) - проходим для расчёта пути: откроем по дороге
   const gb = mv.getBlock.bind(mv);
   mv.getBlock = function (pos, dx, dy, dz) {
