@@ -1454,6 +1454,13 @@ class TotemBot extends EventEmitter {
           }, 1000); }),
           new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('не дошёл за отведённое время')), Math.max(1000, until - Date.now())); }),
         ]);
+        // модуль пути считает «дошёл», если не смог построить ни одного шага (пустой путь) - проверить самим:
+        // 21.11 «пришёл к месту «мой дом»» за 0,06 с, стоя за 150 бл., и бот радовался, что дома
+        if (goal.isEnd && goal.x !== undefined && !goal.entity && !goal.isEnd(b.entity.position.floored())) {
+          const left = Math.round(Math.hypot((goal.x ?? b.entity.position.x) - b.entity.position.x, (goal.z ?? b.entity.position.z) - b.entity.position.z));
+          if (attempt < 2 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(800); continue; }
+          throw new Error(`не дошёл: путь не строится, до цели ${left} бл.`);
+        }
         break;
       } catch (e) {
         this.check(tok);
@@ -1978,7 +1985,9 @@ class TotemBot extends EventEmitter {
             if (!pl) throw new Error(`не знаю места «${a.name}»`);
             // в другом измерении или далеко - дальний путь (может, через Незер)
             if (this.travel && (pl.dim !== this.dimName() || Math.hypot(pl.x - b0().x, pl.z - b0().z) > 300)) { r = await this.travelTo({ place: a.name }, tok); break; }
-            await this.goto(new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
+            // дальше 48 бл. - тропами, обычной ходьбой, разведкой (walkTo); рядом - просто подойти
+            if (Math.hypot(pl.x - b0().x, pl.z - b0().z) > 48) await this.walkTo({ x: pl.x, y: pl.y, z: pl.z }, tok, 600000);
+            else await this.goto(new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
             r = `пришёл к месту «${pl.name}»`;
             break;
           }
