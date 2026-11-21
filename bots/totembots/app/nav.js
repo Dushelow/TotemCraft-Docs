@@ -28,7 +28,15 @@ function install(mv, bot) {
   const Block = require('prismarine-block')(mv.bot.registry);
   const cache = new Map();   // коробки блока по координатам; сбрасывается раз в 3 с и при изменении блока
   let cacheAt = 0, ox = 0, oz = 0;   // числовой ключ кэша - от точки отсчёта (строки в 5 раз медленнее)
-  const blk = (x, y, z) => mv.bot.blockAt(new Vec3(x, y, z), false);
+  // чанк не загружен - блок из кэша проходимости (passcache.js, как у Baritone): путь через то, что видела раньше
+  const fakes = {};
+  const fake = (name, x, y, z) => { const f = Object.create(fakes[name] || (fakes[name] = Block.fromStateId(mv.bot.registry.blocksByName[name].defaultState, 0))); f.position = new Vec3(x, y, z); return f; };
+  const blk = (x, y, z) => {
+    const real = mv.bot.blockAt(new Vec3(x, y, z), false);
+    if (real || !mv.passCache) return real;
+    const c = mv.passCache.get(mv.passDim ? mv.passDim() : 'overworld', x, y, z);
+    return c === undefined ? null : fake(['air', 'water', 'stone', 'lava'][c], x, y, z);
+  };
 
   function shapesOf(b, x, y, z) {
     const r = [];

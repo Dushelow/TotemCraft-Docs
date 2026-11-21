@@ -222,3 +222,35 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = w1 && w2 && !w3 && sklad && sklad.x === 30 && sheep.length === 1 && sheep[0].x === 30 && expired && kept;
   console.log('--- метки по ситуации: ' + (ok ? 'склад и шахта со слов хозяина, стадо слилось, временная истекла, хозяйские не вытеснены' : `НЕТ: ${w1}|${w2}|${w3}|${sklad && sklad.x}|${sheep.length}|${expired}|${kept}`));
 }
+
+// кэш проходимости (как Baritone): упаковка чанка, чтение, особые блоки, сохранение и загрузка с диска,
+// путь через выгруженный чанк по кэшу
+{
+  const R = path.resolve(__dirname, '../node_modules');
+  const registry = require(R + '/prismarine-registry')('1.21.4'); const Chunk = require(R + '/prismarine-chunk')(registry); const Block = require(R + '/prismarine-block')(registry);
+  const { Vec3 } = require(R + '/vec3'); const { Movements, goals } = require(R + '/mineflayer-pathfinder'); const AStar = require(R + '/mineflayer-pathfinder/lib/astar'); const Move = require(R + '/mineflayer-pathfinder/lib/move');
+  const { PassCache } = require('../app/passcache');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pc'));
+  const pc = new PassCache(dir), id = (n) => registry.blocksByName[n].defaultState;
+  const cols = new Map();
+  for (let cx = 0; cx <= 3; cx++) {
+    const col = new Chunk({ minY: -64, worldHeight: 384 });
+    for (let x = 0; x < 16; x++) for (let z = 0; z < 16; z++) { for (let y = -64; y < 64; y++) col.setBlockStateId(new Vec3(x, y, z), id('stone')); }
+    if (cx === 2) { col.setBlockStateId(new Vec3(3, 64, 3), id('chest')); col.setBlockStateId(new Vec3(5, 64, 5), id('lava')); }
+    cols.set(cx, col); pc.pack(registry, 'overworld', cx, 0, col);
+  }
+  const t0 = Date.now(); for (let i = 0; i < 10; i++) pc.pack(registry, 'overworld', 9, 9, cols.get(2)); const packMs = (Date.now() - t0) / 10;
+  const okGet = pc.get('overworld', 40, 63, 5) === 2 && pc.get('overworld', 40, 64, 5) === 0 && pc.get('overworld', 37, 64, 5) === 3 && pc.get('overworld', 200, 64, 5) === undefined;
+  const near = pc.nearest('overworld', 'chest', { x: 0, y: 64, z: 0 });
+  pc.saveAll(); const pc2 = new PassCache(dir); const okDisk = pc2.get('overworld', 40, 63, 5) === 2 && pc2.nearest('overworld', 'chest', { x: 0, y: 64, z: 0 })[0].x === 35;
+  // мир, где загружен только чанк 0 - путь до x=55 (чанк 3) строится по кэшу
+  const bot = { registry, version: '1.21.4', entities: {}, game: { minY: -64, height: 384, dimension: 'overworld' }, entity: { position: new Vec3(2.5, 64, 2.5) }, inventory: { items: () => [] },
+    blockAt: (v) => { v = v.floored(); if (v.x < 0 || v.x > 15) return null; const st = cols.get(0).getBlockStateId(new Vec3(v.x & 15, v.y, v.z & 15)); const b = Block.fromStateId(st, 0); b.position = v; return b; } };
+  const mv = new Movements(bot); mv.canDig = false; mv.scafoldingBlocks = []; require('../app/nav').install(mv, bot);
+  const r0 = new AStar(new Move(2, 64, 2, 0, 0), mv, new goals.GoalNearXZ(55, 2, 1), 5000, 20000, -1, 0).compute();
+  mv.passCache = pc; mv.passDim = () => 'overworld';
+  const mv2 = new Movements(bot); mv2.canDig = false; mv2.scafoldingBlocks = []; require('../app/nav').install(mv2, bot); mv2.passCache = pc; mv2.passDim = () => 'overworld';
+  const r1 = new AStar(new Move(2, 64, 2, 0, 0), mv2, new goals.GoalNearXZ(55, 2, 1), 5000, 20000, -1, 0).compute();
+  const ok = okGet && near[0].x === 35 && okDisk && r1.status === 'success' && r0.status !== 'success';
+  console.log('--- кэш проходимости: ' + (ok ? `чтение, особые блоки, диск - верно; путь через выгруженные чанки: без кэша ${r0.status}, с кэшем ${r1.status} (${r1.path.length} шагов); упаковка чанка ${packMs.toFixed(0)} мс` : `НЕТ: get ${okGet} near ${JSON.stringify(near)} disk ${okDisk} пути ${r0.status}/${r1.status}`));
+}

@@ -137,6 +137,10 @@ class TotemBot extends EventEmitter {
       // Ходьба по настоящей форме блоков (nav.js): ступеньки, плиты, кровати, ковры, люки, двери, заборы, углы по
       // диагонали - геометрией, как в игре. Заменила заплатки 15-21.11 (ковёр выше ног, диагонали, house-moves).
       require('./nav').install(mv, bot);
+      // кэш проходимости (passcache.js): путь и через выгруженные чанки, которые бот видел раньше
+      if (this.passCacheShared && !bot._passAttached) { bot._passAttached = true; this.passCacheShared.attach(this); }
+      mv.passCache = this.passCacheShared || null;
+      mv.passDim = () => String(bot.game && bot.game.dimension || 'overworld').replace(/^minecraft:/, '');
       // Как человек: по дорогам и натоптанным местам, а не по газонам у чужих домов. Дорога - выложенное (не природное)
       // под открытым небом, или клетка, где часто ходят. Рядом с постройками остальное дороже в 1,6 раза; в диком
       // месте разницы нет. Множитель только >= 1: оценка пути модуля не завышается.
@@ -1395,6 +1399,7 @@ class TotemBot extends EventEmitter {
           case 'errand': r = this.startErrand({ ...a, from: a.from || this.runFrom }); return done.concat(r).join('; ');
           case 'errandStop': r = this.cancelErrand(); break;
           case 'trades': r = await this.lookTrades(a, tok); break;
+          case 'where': { const pc = this.passCacheShared; if (!pc) { r = 'кэша мира нет'; break; } const list = pc.nearest(String(this.bot.game.dimension).replace(/^minecraft:/, ''), a.what || 'chest', this.bot.entity.position, 5); r = list.length ? `ближайшие ${a.what}: ` + list.map((x) => `${x.name} ${x.x} ${x.y} ${x.z} (${Math.round(x.d)} бл.)`).join('; ') : `не видела ${a.what} поблизости (смотрю только там, где была)`; break; }
           case 'trade': r = await this.doTrade(a, tok); break;
           case 'errandGo': r = this.resumeErrand(); return done.concat(r).join('; ');
           case 'give': r = await this.give(a, tok); break;

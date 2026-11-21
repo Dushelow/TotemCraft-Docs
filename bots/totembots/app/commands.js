@@ -35,6 +35,7 @@ const C = [
   ['hold', 'waitHere,stayHere,standStill', '', 'стоять на месте и ждать, пока не позовут (своих дел не начинать)', () => ({ act: 'hold' })],
   ['readSigns', 'signs,readSign', '', 'прочитать таблички рядом (8 блоков)', () => ({ act: 'signs' })],
   ['use', 'useBlock,interact,activate,open', 'x, y, z', 'использовать предмет: кровать - лечь, сундук - посмотреть что внутри, дверь/люк/калитка - открыть или закрыть, рычаг - только по просьбе хозяина', (a) => ({ act: 'use', x: a[0], y: a[1], z: a[2] })],
+  ['where', 'nearest,findNearest', 'что (chest, crafting_table, furnace, bed, nether_portal...)', 'где ближайший такой блок из тех, что видела (сундук, верстак, печь, кровать, портал...) - мгновенно, по памяти', (a) => ({ act: 'where', what: a[0] })],
   ['trades', 'villagerTrades,lookTrades', '', 'обойти жителей рядом и посмотреть, кто чем торгует (запоминается для всех ботов)', () => ({ act: 'trades' })],
   ['trade', 'buy,sell,villagerTrade', 'что получить, сколько раз', 'поменяться с жителем рядом: получить предмет (emerald, bread, book...), отдав то, что он просит (тело проверит, хватает ли)', (a) => ({ act: 'trade', want: a[0], times: a[1] })],
   ['errand', 'task,job,errand', '"шаг; шаг; ..."', 'длинное поручение хозяина по шагам (тело делает само): come ник | wait предмет сколько | gear | goto x y z [nether] | place название | find ник [x z] | give ник предмет [сколько] | confirm ник | home | say ник текст', (a) => ({ act: 'errand', plan: a.join(',') })],
