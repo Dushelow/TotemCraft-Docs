@@ -166,6 +166,7 @@ class Brain {
     // уши: фраза игрока рядом в Plasmo Voice -> текст голосовым вводом Qwen -> как реплика рядом
     body.on('speech', ({ from, pcm }) => {
       if (!this.bridge.transcribe) return;
+      if (this.cfg().paused) { this.log(`слышу голос ${from}, но пауза - не распознаю`); return; }
       this.log(`слышу голос ${from} (${(pcm.length / 96000).toFixed(1)} с)`);
       this.bridge.transcribe(pcm).then((text) => {
         if (!text) { this.log('голос не разобрал'); return; }
@@ -249,7 +250,7 @@ class Brain {
   // связано, не чаще раза в 4 мин и одного вида - раза в 15 мин. Решает реагировать или нет - нейросеть.
   moment(m) {
     const b = this.body.bot;
-    if (!b || !b.entity || this.busy || this.pending.length || this.body.mode === 'task') return;
+    if (this.cfg().paused || !b || !b.entity || this.busy || this.pending.length || this.body.mode === 'task') return;
     const now = Date.now();
     this.momentAt = this.momentAt || {};
     if (now - (this.lastMoment || 0) < 4 * 60000 || now - (this.momentAt[m.kind] || 0) < 15 * 60000) return;
@@ -352,10 +353,18 @@ class Brain {
     };
   }
 
+  /** После паузы: ответить на то, что написали за время паузы (свежее 10 мин; старое уже неактуально). */
+  resume() {
+    const old = this.pending.length;
+    this.pending = this.pending.filter((p) => !p.at || Date.now() - p.at < 600000);
+    if (this.pending.length) this.log(`после паузы отвечаю на ${this.pending.length} сообщ.${old > this.pending.length ? ` (${old - this.pending.length} старше 10 мин - пропускаю)` : ''}`);
+    this.pump();
+  }
+
   push(line, wake, from = '', channel = '', extra = {}) {
     this.lastEvent = Date.now();
     if (from && from !== '@self') { this.idleSkips = 0; this.selfChain = 0; }
-    this.pending.push({ line, from, channel, ...extra });
+    this.pending.push({ line, from, channel, at: Date.now(), ...extra });
     this.log('→ ' + line);
     if (wake) this.pump();
   }
@@ -374,7 +383,7 @@ class Brain {
   }
 
   async pump() {
-    if (this.cfg().paused) { this.pending = []; return; }   // пауза из панели: к Qwen не обращаемся
+    if (this.cfg().paused) return;   // пауза из панели: к нейросетям не обращаемся, сообщения ждут в очереди
     if (this.busy || !this.pending.length) return;
     this.busy = true;
     let batch = [];

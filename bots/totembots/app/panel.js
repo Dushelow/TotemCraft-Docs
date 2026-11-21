@@ -103,7 +103,7 @@ function renderNow() {
   const sites = st.siteList || [];
   const cap = sites.filter((s) => s.captcha);
   if (cap.length) out.push(step('bad', `${cap.map((s) => s.name).join(', ')}: просит пройти проверку`, 'откройте вкладку сайта справа («Окна бота») и пройдите её - программа ждёт'));
-  if (st.paused) out.push(step('warn', 'Мозг на паузе', 'боты стоят на сервере, но к нейросетям не обращаются. «Продолжить» вверху - снова думать'));
+  if (st.paused) out.push(step('warn', 'Пауза', 'боты стоят на сервере и ничего не делают сами, к нейросетям не обращаются; сообщения игроков копятся. «Продолжить» вверху - ответят и продолжат'));
   const logged = sites.filter((s) => s.inOrder && s.logged);
   out.push(logged.length ? step('ok', 'Мозги готовы: ' + logged.map((s) => s.name).join(', '), st.brains && st.brains.now ? 'сейчас думает через ' + st.brains.now : 'список и вход - раздел «Мозги»')
     : step('bad', 'Нет ни одного мозга с входом', 'раздел «Мозги»: войдите хотя бы в Qwen («Войти через Chrome»)'));

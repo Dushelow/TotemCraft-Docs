@@ -100,7 +100,7 @@ function startBot(name) {
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
   body.onCombat = (m) => { bc.combat = m; saveCfg(); };
   body.on('log', (t) => logTo(name, t));
-  body.on('chat', (t) => logTo(name, '[чат] ' + t));
+  body.on('chat', (t) => logTo(name, t));   // канал уже в тексте: [общий], [рядом], [личка], [клан], [сервер]
   body.on('end', () => logTo(name, 'бот выключен'));
   const brain = new Brain({ body, bridge: router, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
   brain.voice = voice;
@@ -116,6 +116,7 @@ function startBot(name) {
   });
   body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
+  if (cfg.paused) body.setPaused(true);   // включили бота во время паузы - тоже стоит
   body.start();
   // сознание включается сразу: через 30 с после входа - первое «свободное время» (создаётся чат Qwen, бот начинает жить)
   body.once('event', () => setTimeout(() => { brain.lastEvent = 0; brain.idle(); }, 30000));
@@ -389,7 +390,17 @@ ipcMain.handle('brains-save', (_e, v) => {
   saveCfg();
   return true;
 });
-ipcMain.handle('pause', (_e, on) => { cfg.paused = !!on; saveCfg(); for (const n of live.keys()) logTo(n, on ? 'мозг на паузе (кнопка в панели)' : 'мозг снова работает'); return cfg.paused; });
+// Пауза: всё стоит - мозг, жизнь тела, уши, фоновые обращения к нейросетям. Боты остаются на сервере (не выходят),
+// сообщения игроков копятся и после «Продолжить» получают ответ. Можно спокойно перезайти на сайт нейросети.
+ipcMain.handle('pause', (_e, on) => {
+  cfg.paused = !!on; saveCfg();
+  for (const [n, l] of live) {
+    if (l.body && l.body.setPaused) l.body.setPaused(cfg.paused);
+    logTo(n, cfg.paused ? 'ПАУЗА: мозг, жизнь тела и уши стоят; сообщения игроков копятся' : 'продолжаю');
+    if (!cfg.paused && l.brain && l.brain.resume) l.brain.resume();
+  }
+  return cfg.paused;
+});
 ipcMain.handle('save-settings', (_e, s) => {
   cfg.host = String(s.host || '').trim() || 'play.totemcraft.net';
   cfg.port = +s.port || 20098;

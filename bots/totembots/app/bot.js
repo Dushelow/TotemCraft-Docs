@@ -275,7 +275,6 @@ class TotemBot extends EventEmitter {
     if (pos === 'game_info') return;
     const text = String(msg).trim();
     if (!text) return;
-    if (pos !== 'chat') this.emit('chat', text);   // сообщения игроков пишутся в журнал ниже, с ником и каналом
     const pw = this.opts.password;
     const now = Date.now();
     // запасной вход AuthMe командой - только по сообщению сервера и только пока бот не вошёл
@@ -295,12 +294,18 @@ class TotemBot extends EventEmitter {
       const m = /^.*?<[^>]+>\s?(.*)$/.exec(shown);
       if (m && m[1]) body = m[1];
       else if (local) body = text.replace(/^!\s*/, '');
-      this.emit('chat', `${local ? '[рядом] ' : ''}${p ? p.username : '?'}: ${body}`);
+      this.emit('chat', `${local ? '[рядом]' : '[общий]'} ${p ? p.username : '?'}: ${body}`);
       if (p) this.playerChat(p.username, body, false, local ? 'local' : 'global');
       return;
     }
+    // не сообщение игрока по протоколу: личка Essentials, клановый чат SimpleClans, системное. В журнал - с каналом,
+    // чтобы было видно, откуда пришло (21.11: не понять было, общий это чат или личка)
     const parsed = this.parseChat(text);
-    if (parsed) this.playerChat(parsed.from, parsed.text, parsed.whisper, parsed.whisper ? 'whisper' : (/^\s*\[Рядом\]/i.test(text) ? 'local' : 'global'));
+    const clan = /^\s*\[(Клан|Clan|Союз|Ally)\]/i.test(text);
+    const local = /^\s*\[Рядом\]/i.test(text);
+    const ch = !parsed ? 'сервер' : parsed.whisper ? 'личка' : clan ? 'клан' : local ? 'рядом' : 'общий';
+    this.emit('chat', `[${ch}] ${clan ? text.replace(/^\s*\[[^\]]+\]\s*/, '') : parsed ? parsed.from + ': ' + parsed.text : text}`);
+    if (parsed) this.playerChat(parsed.from, parsed.text, parsed.whisper, parsed.whisper ? 'whisper' : local ? 'local' : 'global');
   }
 
   playerChat(from, text, whisper, channel = whisper ? 'whisper' : 'global') {
@@ -903,10 +908,27 @@ class TotemBot extends EventEmitter {
   // --- действия
   cancel() {
     this.token++;
-    this.mode = 'idle';
+    this.mode = this.paused ? 'paused' : 'idle';
     this.task = '';
     this.followName = '';
     if (this.bot) { try { this.bot.pathfinder.setGoal(null); this.bot.clearControlStates(); } catch {} }
+  }
+
+  /** Полная пауза (кнопка в панели): бросить дело, стоять, ничего не начинать самой. Рефлексы (еда, отбиться,
+   *  не утонуть) работают - иначе бот умрёт, пока стоит. Снять паузу - вернуться к следованию, если шла за кем-то. */
+  setPaused(on) {
+    if (on && !this.paused) {
+      this.pausedFollow = this.followName || '';
+      this.cancel();
+      this.paused = true; this.mode = 'paused'; this.task = 'пауза';
+      this.log('пауза: дела брошены, стою; отбиваюсь и ем, если надо');
+    } else if (!on && this.paused) {
+      this.paused = false;
+      if (this.mode === 'paused') { this.mode = 'idle'; this.task = ''; }
+      const f = this.pausedFollow; this.pausedFollow = '';
+      if (f && this.player(f)) { this.log('пауза снята - снова иду за ' + f); try { this.follow(f); } catch {} }
+      else this.log('пауза снята');
+    }
   }
 
   check(tok) { if (tok !== this.token) throw new Cancelled('отменено'); }
@@ -1268,6 +1290,7 @@ class TotemBot extends EventEmitter {
 
   async run(actions, label, source = 'player') {
     if (!this.bot || this.status !== 'online') return 'бот не на сервере';
+    if (this.paused) return 'на паузе - стою, пока хозяин не нажмёт «Продолжить»';
     const busy = this.claim(source);
     if (busy) { this.ev('отказ_судьи', { source, label }); return busy; }
     if (this.taskOwner) this.taskOwner.label = label || actions.map((a) => a && a.act).join(', ');
