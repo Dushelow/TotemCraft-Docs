@@ -2,6 +2,8 @@
 // Хранится строками в записи чанка (worldmap.js): px - вид блока (1 знак на блок), hy - высота (2 знака на блок),
 // wd - глубина воды (1 знак, только если в чанке есть вода). ~800 байт на чанк.
 // Нужна боту (дороги, дома, проходы, вода и броды видны точно, а не «чанк застроен») и для картинки в панели.
+// версия формата: поменялся список видов или кодирование - номер +1, старые чанки перечитаются, а не исказятся
+const GRID_V = 1;
 const A64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 
 // вид блока -> цвет. Порядок важен: первое совпадение.
@@ -74,7 +76,7 @@ function surface(b, col, airIds, nether) {
     const hv = found < 0 ? 0 : Math.max(0, Math.min(4095, found - minY + 1));
     px += A64[k]; hy += A64[hv >> 6] + A64[hv & 63]; wd += A64[depth];
   }
-  return { px, hy: hy, wd: anyWater ? wd : undefined, my: minY };
+  return { px, hy: hy, wd: anyWater ? wd : undefined, my: minY, gv: GRID_V };
 }
 
 /**
@@ -99,12 +101,12 @@ function slice(b, col, airIds, y0) {
     }
     px += A64[k]; hy += A64[hv >> 6] + A64[hv & 63];
   }
-  return { px, hy, my: minY };
+  return { px, hy, my: minY, gv: GRID_V };
 }
 
 /** Разбор строк чанка для картинки и для тела. */
 function decode(c) {
-  if (!c || !c.px) return null;
+  if (!c || !c.px || c.gv !== GRID_V) return null;
   const k = new Uint8Array(256), h = new Int16Array(256), d = new Uint8Array(256);
   for (let i = 0; i < 256; i++) {
     k[i] = A64.indexOf(c.px[i]);
@@ -115,4 +117,4 @@ function decode(c) {
   return { k, h, d };
 }
 
-module.exports = { surface, slice, decode, KINDS, COLORS, kindOf, A64, WALL };
+module.exports = { surface, slice, decode, KINDS, COLORS, kindOf, A64, WALL, GRID_V };

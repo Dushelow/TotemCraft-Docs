@@ -14,6 +14,7 @@ const zlib = require('zlib');
 const SPECIAL = /^(chest|trapped_chest|barrel|ender_chest|.*shulker_box|furnace|blast_furnace|smoker|crafting_table|anvil|chipped_anvil|damaged_anvil|enchanting_table|brewing_stand|smithing_table|grindstone|stonecutter|loom|cartography_table|lectern|.*_bed|nether_portal|end_portal_frame|spawner|trial_spawner|bell|beacon|respawn_anchor|composter|cauldron|jukebox)$/;
 const AVOID = /^(lava|fire|soul_fire|cobweb|magma_block|campfire|soul_campfire|sweet_berry_bush|wither_rose|powder_snow|cactus|pointed_dripstone)$/;
 const MAX_CHUNKS = 3000;
+const PASS_V = 1;   // версия формата файлов кэша: другая - файл не читается (перепакуется заново)
 
 class PassCache {
   constructor(dir) {
@@ -81,7 +82,8 @@ class PassCache {
     if (r) { r.used = Date.now(); return r; }
     r = { chunks: new Map(), dirty: false, used: Date.now(), dim, rx, rz };
     try {
-      const raw = JSON.parse(zlib.gunzipSync(fs.readFileSync(this.file(dim, rx, rz))).toString());
+      const file = JSON.parse(zlib.gunzipSync(fs.readFileSync(this.file(dim, rx, rz))).toString());
+      const raw = file.v === PASS_V ? file.chunks : {};
       for (const [ck, c] of Object.entries(raw)) r.chunks.set(ck, { minY: c.minY, t: c.t, special: c.special || [], secs: c.secs.map((s) => (typeof s === 'number' ? s : new Uint8Array(Buffer.from(s, 'base64')))) });
     } catch {}
     this.regions.set(k, r);
@@ -134,7 +136,7 @@ class PassCache {
     if (!r.dirty) return;
     const out = {};
     for (const [ck, c] of r.chunks) out[ck] = { minY: c.minY, t: c.t, special: c.special, secs: c.secs.map((s) => (typeof s === 'number' ? s : Buffer.from(s).toString('base64'))) };
-    try { const f = this.file(r.dim, r.rx, r.rz); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, zlib.gzipSync(JSON.stringify(out))); r.dirty = false; } catch {}
+    try { const f = this.file(r.dim, r.rx, r.rz); fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, zlib.gzipSync(JSON.stringify({ v: PASS_V, chunks: out }))); r.dirty = false; } catch {}
   }
   saveAll() { for (const r of this.regions.values()) this.saveRegion(r); }
 

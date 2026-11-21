@@ -96,7 +96,7 @@ function startBot(name) {
   let l = live.get(name);
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
-  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3 });
+  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {} });
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
   body.onCombat = (m) => { bc.combat = m; saveCfg(); };
   body.on('log', (t) => logTo(name, t));
@@ -125,7 +125,7 @@ function startBot(name) {
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused, startOnLaunch: !!cfg.startOnLaunch,
+    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused, startOnLaunch: !!cfg.startOnLaunch, features: cfg.features || {},
     running: [...live.values()].filter((l) => l.body && l.body.status !== 'off').length,
     sites: Object.fromEntries(Object.entries(SITES).map(([k, s]) => [k, { name: s.name, logged: k === 'deepseek' || !!(cfg.webLogged || {})[k] }])),
     siteList: siteList().map((x) => ({ id: x.id, name: x.name, logged: x.id === 'qwen' ? !!siteLogged.qwen : (siteLogged[x.id] ?? !!(cfg.webLogged || {})[x.id]),
@@ -403,6 +403,12 @@ ipcMain.handle('pause', (_e, on) => {
     if (!cfg.paused && l.brain && l.brain.resume) l.brain.resume();
   }
   return cfg.paused;
+});
+// выключатели частей тела (health.js): включить или выключить, не трогая код; действует на запущенных ботов сразу
+ipcMain.handle('feature', (_e, { part, on }) => {
+  cfg.features = { ...(cfg.features || {}), [part]: !!on }; saveCfg();
+  for (const l of live.values()) if (l.body) l.body.opts.features = cfg.features;
+  return cfg.features;
 });
 ipcMain.handle('save-settings', (_e, s) => {
   cfg.host = String(s.host || '').trim() || 'play.totemcraft.net';

@@ -517,7 +517,8 @@ class WorldMap {
     const chunks = [];
     for (const [k, c] of Object.entries(m.chunks)) {
       const [cx, cz] = k.split(',').map(Number);
-      if (Math.abs(cx - pcx) <= radiusChunks && Math.abs(cz - pcz) <= radiusChunks) chunks.push([cx - pcx, cz - pcz, c.k, c.b || 0, c.px || '', c.hy || '', c.wd || '', c.my || 0]);
+      const okv = c.gv === require('./mapgrid').GRID_V;   // другая версия формата - как старый чанк, пока не перечитается
+      if (Math.abs(cx - pcx) <= radiusChunks && Math.abs(cz - pcz) <= radiusChunks) chunks.push([cx - pcx, cz - pcz, c.k, c.b || 0, okv ? c.px || '' : '', okv ? c.hy || '' : '', okv ? c.wd || '' : '', c.my || 0]);
     }
     const poi = Object.values(m.poi).map((v) => [Math.floor(v.x / 16) - pcx, Math.floor(v.z / 16) - pcz, v.kind])
       .filter(([x, z]) => Math.abs(x) <= radiusChunks && Math.abs(z) <= radiusChunks);

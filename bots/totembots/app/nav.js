@@ -85,6 +85,8 @@ function install(mv, bot) {
    *  В столбике ниже первой верхушки не выше stop (на неё встают шагом) не смотрим: ниже неё не встать. */
   function tops(px, pz, top, bottom, flip, stop = top) {
     const r = [];
+    // ширина опоры под телом по каждой верхушке (для прыжка: на ребро люка или двери 0,19 не запрыгнуть)
+    tops.wide = new Map();
     const x0 = Math.floor(px - HALF + EPS), x1 = Math.floor(px + HALF - EPS), z0 = Math.floor(pz - HALF + EPS), z1 = Math.floor(pz + HALF - EPS);
     for (let x = x0; x <= x1; x++)
       for (let z = z0; z <= z1; z++)
@@ -94,6 +96,9 @@ function install(mv, bot) {
           for (const q of bx)
             if (q.y1 <= top + EPS && q.y1 >= bottom - EPS && q.x0 < px + HALF - EPS && q.x1 > px - HALF + EPS && q.z0 < pz + HALF - EPS && q.z1 > pz - HALF + EPS) {
               if (!r.some((v) => Math.abs(v - q.y1) < EPS)) r.push(q.y1);
+              const ox = q.x1 - q.x0, oz = q.z1 - q.z0;   // размер самой опоры (ребро люка, двери - 0,19)
+              const kk = Math.round(q.y1 * 1e4), w0 = tops.wide.get(kk) || [0, 0];
+              tops.wide.set(kk, [Math.max(w0[0], ox), Math.max(w0[1], oz)]);
               if (q.y1 <= stop + EPS) low = true;
             }
           if (low) break col;
@@ -118,10 +123,22 @@ function install(mv, bot) {
       for (const t of tops(nx, nz, feet + JUMP, feet - mv.maxDropDown - 0.01, flip, feet + STEP)) {
         if (t <= feet + STEP + EPS) { s = t; break; }
         if (jumped) continue;
+        // прыгать - только на опору шириной от 0,25 в обе стороны (не на ребро открытого люка или двери 0,19:
+        // физика так не прыгает - 22.11 случайные миры)
+        const wd = tops.wide.get(Math.round(t * 1e4)) || [0, 0];
+        if (wd[0] < 0.25 || wd[1] < 0.25) continue;
         if (!body(px, t, pz, flip).hit.length && !body(nx, t, nz, flip).hit.length) { s = t; jump = true; break; }
       }
       if (s === null) return null;                          // пропасть глубже допустимого
       if (jump) jumped = true;
+      // шаг вверх (без прыжка) - как физика бота (prismarine-physics): тело сначала поднимается на высоту шага,
+      // насколько пускает потолок над ним, потом идёт вперёд. Впереди потолок ниже - упирается головой, хотя
+      // по высоте помещается (22.11 случайные миры: коврик или люк в полу под низким потолком соседней клетки)
+      if (!jump && s > feet + EPS) {
+        let up = 0;
+        for (const d of [STEP, 0.5, 0.4, 0.3, 0.2, 0.1, s - feet]) if (d >= s - feet - EPS && !body(px, feet + d, pz, flip).hit.length) { up = d; break; }
+        if (!up || body(nx, feet + up, nz, flip).hit.length) { add({ hit: body(nx, feet + up || s, nz, flip).hit, bad: false }); if (!hit.size) return null; }
+      }
       if (s < feet - EPS) for (let y = feet - 1; y > s; y -= 1) if (add(body(nx, y, nz, flip))) return null;   // столб падения
       feet = s; px = nx; pz = nz;
       if (add(body(nx, feet, nz, flip))) return null;
@@ -202,7 +219,11 @@ function install(mv, bot) {
     }
   }
 
+  // сбой своей навигации - не роняет поиск пути: ходы модуля пути по-старому, сбой считается (health.js)
   mv.getNeighbors = function (node) {
+    try { return navNeighbors(node); } catch (e) { if (bot && bot._tb && bot._tb.fault) bot._tb.fault('nav', e); return base(node); }
+  };
+  const navNeighbors = function (node) {
     if (Date.now() - cacheAt > 3000) { cache.clear(); cacheAt = Date.now(); ox = node.x; oz = node.z; cache.ox = ox; cache.oz = oz; }
     const out = [];
     // ходы модуля пути: с ломанием или стройкой, вертикальные (лестницы, лианы, столбы) и в воде - оставить
@@ -222,6 +243,9 @@ function install(mv, bot) {
     const fallback = (why) => { mv._navFallback = { at: Date.now(), node: `${node.x},${node.y},${node.z}`, why }; return base(node); };
     if (fy0 === null) return fallback('нет опоры под ногами');
     for (const c of body(cx, fy0, cz).hit) if (c.open) { inDoor.add(c.k); const p = pairKey(c); if (p) inDoor.add(p); }
+    // этим шагом открыли дверь или люк - дальше считать их открытыми (22.11 случайные миры: открыла, вошла, а
+    // следующий шаг считался по закрытой двери - открытая встала поперёк)
+    for (const o of node.opens || []) { const c = cell(o.x, o.y, o.z); inDoor.add(c.k); const p = c.b && pairKey(c); if (p) inDoor.add(p); }
     const fy = inDoor.size ? support(cx, cz, node.y + 0.99, node.y - 1, inDoor) : fy0;
     const open0 = inDoor.size ? inDoor : null;
     if (fy === null) return fallback('нет опоры (в проёме)');
@@ -244,6 +268,13 @@ function install(mv, bot) {
         w = { ...w2, opened: true };
       }
       if (!w) continue;
+      // по диагонали (как Baritone): обе соседние клетки свободны на высоте тела и без прыжка - иначе тело
+      // шириной 0,6 цепляет угол ступеньки, забора, блока (22.11 случайные миры: путь был, а физика не проходит)
+      if (dx && dz) {
+        if (w.jumped || Math.abs(w.feet - fy) > STEP) continue;
+        const lo = Math.min(fy, w.feet), clear = (x, z) => !body(x + 0.5, lo, z + 0.5, open0).hit.length && !body(x + 0.5, Math.max(fy, w.feet), z + 0.5, open0).hit.length;
+        if (!clear(node.x + dx, node.z) || !clear(node.x, node.z + dz)) continue;
+      }
       const ny = Math.floor(w.feet + EPS), rise = w.feet - fy;
       // под ногами в конце шага: грядку вытаптывает прыжок и падение на неё - такие шаги нельзя; ходить по ней - дорого
       const under = cell(nx, Math.floor(w.feet - 0.01), nz).b, uname = under ? under.name : '';
@@ -298,7 +329,8 @@ function install(mv, bot) {
     bot.on('blockUpdate', (o, n) => { const v = (n || o) && (n || o).position; if (v) for (const c of bot._navCaches || []) c.delete(((v.x - c.ox + 1048576) * 2097152 + (v.z - c.oz + 1048576)) * 1024 + (v.y + 512)); });
     // прыжок через яму: модуль пути перед ямой стоит без клавиш - разбег и толчок делает тело (тем же правилом,
     // что проверяла физика при поиске пути)
-    bot.on('physicsTick', () => {
+    const safe = (name, fn) => () => { try { fn(); } catch (e) { if (bot._tb && bot._tb.fault) bot._tb.fault(name, e); } };
+    bot.on('physicsTick', safe('nav-прыжок', () => {
       const path = bot._navPath, m = path && path[0];
       if (!m || !m.leap || !bot.entity || !bot.pathfinder.isMoving()) return;
       const [sx, sz] = m.leap.from, { dx, dz } = m.leap, p = bot.entity.position;
@@ -307,10 +339,10 @@ function install(mv, bot) {
       bot.look(Math.atan2(-dx, -dz), 0, true);
       const c = leapControl(p, bot.entity.onGround, m.leap, m.cell[0] + 0.5, m.cell[1] + 0.5);
       for (const k of ['forward', 'back', 'sprint', 'jump']) bot.setControlState(k, c[k]);
-    });
+    }));
     // двери, калитки, люки на ближайших шагах: открыть (закрыть), только если сейчас не в нужном положении
     const tog = new Map();
-    bot.on('physicsTick', () => {
+    bot.on('physicsTick', safe('nav-двери', () => {
       const path = bot._navPath, me = bot.entity && bot.entity.position;
       if (!path || !me) return;
       for (const m of path.slice(0, 2)) for (const o of m.opens || []) {
@@ -322,7 +354,7 @@ function install(mv, bot) {
         tog.set(k, Date.now());
         bot.activateBlock(b).catch(() => {});
       }
-    });
+    }));
   }
 }
 

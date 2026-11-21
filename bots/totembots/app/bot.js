@@ -136,10 +136,11 @@ class TotemBot extends EventEmitter {
       mv.exclusionAreasStep = [(block) => this.forbiddenCost(block)];
       // Ходьба по настоящей форме блоков (nav.js): ступеньки, плиты, кровати, ковры, люки, двери, заборы, углы по
       // диагонали - геометрией, как в игре. Заменила заплатки 15-21.11 (ковёр выше ног, диагонали, house-moves).
-      require('./nav').install(mv, bot);
+      bot._tb = this;   // для nav.js: сбои навигации - в здоровье тела
+      if (this.on('nav')) require('./nav').install(mv, bot);
       // кэш проходимости (passcache.js): путь и через выгруженные чанки, которые бот видел раньше
-      if (this.passCacheShared && !bot._passAttached) { bot._passAttached = true; this.passCacheShared.attach(this); }
-      mv.passCache = this.passCacheShared || null;
+      if (this.on('passcache') && this.passCacheShared && !bot._passAttached) { bot._passAttached = true; this.passCacheShared.attach(this); }
+      mv.passCache = this.on('passcache') ? this.passCacheShared || null : null;
       mv.passDim = () => String(bot.game && bot.game.dimension || 'overworld').replace(/^minecraft:/, '');
       // Как человек: по дорогам и натоптанным местам, а не по газонам у чужих домов. Дорога - выложенное (не природное)
       // под открытым небом, или клетка, где часто ходят. Рядом с постройками остальное дороже в 1,6 раза; в диком
@@ -227,7 +228,7 @@ class TotemBot extends EventEmitter {
       if (who && Date.now() - (this.hitReported || 0) > 10000) { this.hitReported = Date.now(); this.event(`игрок ${who[0]} ударил тебя`, true); }
     });
     bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
-    this.listen(bot);   // слух (hearing.js)
+    if (this.on('hearing')) this.listen(bot);   // слух (hearing.js)
     bot.on('error', (e) => this.log('ошибка: ' + e.message));
     bot.on('end', (r) => {
       this.log('отключён: ' + (r || ''));
@@ -397,6 +398,7 @@ class TotemBot extends EventEmitter {
     return {
       status: this.status, dim: this.dimName(), pos: [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)],
       health: Math.round(b.health), food: b.food, items, near, mode: this.mode, follow: this.followName, task: this.task,
+      health: this.healthState ? this.healthState() : [],
       errand: (() => { const e = this.errand && this.errand(); return e && e.state !== 'done' && e.state !== 'cancel' ? { state: e.state, cur: e.cur, text: e.text, steps: e.steps.map((s) => ({ title: s.title, st: s.st, note: s.note || '' })) } : null; })(),
     };
   }
@@ -443,14 +445,15 @@ class TotemBot extends EventEmitter {
   async slowTick() {
     const b = this.bot;
     if (!b || !b.entity) return;
-    this.senseTick();
-    try { this.atlasTick(); } catch {}
-    try { this.sensesTick(); } catch {}
-    try { this.marksTick(); } catch {}
-    this.torchTick && this.torchTick().catch(() => {});
-    this.handsTick().catch(() => {});
-    this.reflexTick().catch(() => {});
-    try { this.shoreTick(); } catch {}
+    // каждая часть - через tick(): выключатель, изоляция сбоя (не молчит - считается и видна), бюджет времени
+    this.tick('perception', () => this.senseTick());
+    this.tick('atlas', () => this.atlasTick());
+    this.tick('senses', () => this.sensesTick());
+    this.tick('marks', () => this.marksTick());
+    this.tick('torches', () => this.torchTick());
+    this.tick('hands', () => this.handsTick());
+    this.tick('reflexes', () => this.reflexTick());
+    this.tick('water', () => this.shoreTick());
     // взгляд: на того, за кем идём, иногда по сторонам
     const owner = this.followName ? this.player(this.followName) : null;
     const nearest = Object.values(b.players).filter((p) => p.entity && p.username !== b.username)
@@ -1490,7 +1493,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

@@ -2,7 +2,7 @@
 // троп и разведки. node test/models.js
 const { execFileSync } = require('child_process');
 const path = require('path');
-for (const t of ['house_test.js', 'errand_test.js', 'swim_test.js', 'scout_test.js']) {
+for (const t of ['house_test.js', 'fuzz_nav.js', 'errand_test.js', 'swim_test.js', 'scout_test.js']) {
   console.log('--- ' + t);
   process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, t)]).toString());
 }
@@ -285,4 +285,20 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
     return tb.torchTick().then(() => placed.length);
   };
   Promise.all([mk(false), mk(true)]).then(([wild, town]) => console.log('--- факелы: ' + (wild === 1 && town === 0 ? 'в пещере поставила, в городе - нет' : `НЕТ: пещера ${wild}, город ${town}`)));
+}
+
+// здоровье частей: сбой части не роняет остальные и не прячется; выключенная часть не работает; медленная - отмечена
+{
+  const { Health } = require('../app/health');
+  const tb = Object.create(Health.prototype), logs = [];
+  Object.assign(tb, { opts: { features: { torches: false } }, log: (t) => logs.push(t) });
+  let ran = 0;
+  tb.tick('nav', () => { throw new Error('сломалась'); });
+  tb.tick('nav', () => { throw new Error('сломалась'); });
+  tb.tick('senses', () => { ran++; });
+  tb.tick('torches', () => { ran += 10; });
+  tb.tick('slow', () => { const t = Date.now(); while (Date.now() - t < 60); });
+  const h = tb.healthState(), nav = h.find((x) => x.part === 'nav');
+  const ok = nav && nav.n === 2 && logs.length === 1 && /сбой части «nav»/.test(logs[0]) && ran === 1 && tb.health.slow && tb.health.slow.slow === 1;
+  console.log('--- здоровье частей: ' + (ok ? 'сбой изолирован и виден, выключатель работает, медленная часть отмечена' : 'НЕТ: ' + JSON.stringify(h) + ' ' + logs.join('|') + ' ran ' + ran));
 }

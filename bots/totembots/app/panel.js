@@ -279,7 +279,9 @@ function botCard(b) {
     <div class="eh">${icon(E.state === 'run' ? 'loader-circle' : E.state === 'stuck' ? 'triangle-alert' : 'circle-pause', 14, E.state === 'run' ? 'spin' : '')}<b>${E.state === 'run' ? 'Поручение' : E.state === 'stuck' ? 'Поручение застряло' : 'Поручение на паузе'}</b>
       <span class="grow"></span>${E.state !== 'run' ? `<button data-a="errandGo" class="go sm">${icon('play', 14)}Продолжить</button>` : ''}<button data-a="errandStop" class="quiet sm" title="Отменить поручение">${icon('x', 14)}Отменить</button></div>
     <ol>${E.steps.map((x, i) => `<li class="${x.st} ${i === E.cur ? 'cur' : ''}">${icon(x.st === 'done' ? 'check' : x.st === 'fail' ? 'circle-alert' : i === E.cur ? 'activity' : 'hourglass', 13)}<span>${esc(x.title)}${x.note && (x.st === 'fail' || i === E.cur) ? `<em>${esc(x.note)}</em>` : ''}</span></li>`).join('')}</ol></div>` : '';
-  if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}" title="Открыть">${head}${stats}${errand}</div>`;
+  const faults = (s.health || []).filter((h) => h.n);
+  const health = faults.length ? `<div class="muted" style="margin-top:var(--s2);color:#ffa3a6" title="${esc(faults.map((h) => h.part + ': ' + h.last).join('\n'))}">${icon('triangle-alert', 13)} сбои: ${faults.map((h) => `${esc(h.part)} ×${h.n}`).join(', ')} - подробно в журнале; часть можно выключить в «Настройках»</div>` : '';
+  if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}" title="Открыть">${head}${stats}${health}${errand}</div>`;
   const tab = botTab.get(b.name) || 'log';
   const inv = s.items ? Object.entries(s.items).map(([k, v]) => `${k} ×${v}`).join(', ') : '';
   let body = '';
@@ -325,7 +327,7 @@ function botCard(b) {
     <div class="row" style="margin-top:var(--s3)"><button data-a="pass" class="sm">${icon(showPass.has(b.name) ? 'eye-off' : 'eye', 14)}${showPass.has(b.name) ? 'Скрыть пароль' : 'Показать пароль'}</button>
       <button data-a="newpass" class="sm">${icon('key-round', 14)}Новый пароль</button><button data-a="probe" class="sm" title="зайти и сразу выйти: проверить пароль и доступ">${icon('log-in', 14)}Проверить вход</button></div>
     <div class="row" style="margin-top:var(--s3)"><span class="muted grow">${esc(b.probe || '')}</span><button data-a="remove" class="danger sm">${icon('trash-2', 14)}Удалить бота</button></div>`;
-  return `<div class="card bot sel" data-name="${esc(b.name)}">${head}${stats}${errand}
+  return `<div class="card bot sel" data-name="${esc(b.name)}">${head}${stats}${health}${errand}
     <div class="tabs2">${TABS.map(([k, t, ic]) => `<button data-a="tab" data-v="${k}" class="${k === tab ? 'on' : ''}">${t}</button>`).join('')}</div>${body}</div>`;
 }
 
@@ -524,8 +526,19 @@ function paintSrvSeg() { document.querySelectorAll('#srvSeg button').forEach((b)
 $('host').oninput = paintSrvSeg; $('port').oninput = paintSrvSeg;
 const saveSettings = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }),
   null, 'сохранено' + (st.running ? ' (новый сервер - после перезапуска ботов)' : ''));
-$('sec-settings').addEventListener('change', (e) => { if (e.target.closest('input,select')) saveSettings(); });
+$('sec-settings').addEventListener('change', (e) => { if (e.target.closest('input,select') && !e.target.dataset.part) saveSettings(); });
 document.querySelectorAll('#srvSeg button').forEach((b) => b.addEventListener('click', () => saveSettings()));
+
+// ---------- части тела: выключатели (health.js)
+const PARTS = [['nav', 'Ходьба по форме блоков', 'выключить - ходьба как раньше, модулем пути'], ['passcache', 'Кэш мира (пути через невидимые места)', ''], ['senses', 'Чувства: кто приближается, угроза', ''],
+  ['hearing', 'Слух', ''], ['marks', 'Метки по ситуации', ''], ['torches', 'Факелы в пещерах', ''], ['atlas', 'Атлас: ледяные ветки, таблички', ''], ['hands', 'Что держать в руках', ''], ['reflexes', 'Рефлексы (огонь, вода, еда)', '']];
+let featSig = '';
+function renderFeatures() {
+  const F = st.features || {}, sig = JSON.stringify(F);
+  if (sig === featSig) return; featSig = sig;
+  $('features').innerHTML = PARTS.map(([k, t, h]) => `<label class="chk" title="${esc(h)}"><input type="checkbox" data-part="${k}" ${F[k] === false ? '' : 'checked'}> ${esc(t)}</label>`).join('');
+}
+$('features').addEventListener('change', (e) => { const k = e.target.dataset.part; if (k) act(() => T.feature({ part: k, on: e.target.checked }), null, (e.target.checked ? 'включено: ' : 'выключено: ') + PARTS.find((p) => p[0] === k)[1]); });
 
 // ---------- карта бота: чанки вокруг (бот в центре, север сверху)
 const A64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
@@ -581,7 +594,7 @@ setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); },
 // ---------- общий цикл
 async function refresh() {
   try { st = await T.state(); } catch { return; }
-  paintTop(); paintPin(); paintStrip(); renderStart(); renderNow(); renderBrains(); fillVoice(st.voice);
+  paintTop(); paintPin(); paintStrip(); renderStart(); renderNow(); renderFeatures(); renderBrains(); fillVoice(st.voice);
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');
