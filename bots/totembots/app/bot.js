@@ -891,7 +891,13 @@ class TotemBot extends EventEmitter {
       if (a.x === undefined || a.z === undefined) throw new Error('куда? нужны x и z или место');
       dest = { x: +a.x, y: a.y !== undefined ? +a.y : null, z: +a.z, dim: a.dim || this.dimName() };
     }
-    const plan = this.travel.plan(b.entity.position, b.game.dimension, dest);
+    let plan = this.travel.plan(b.entity.position, b.game.dimension, dest);
+    // портал не знает (или цель очень далеко, а идти только пешком) - найти портал самой: спросить в чате и
+    // поискать в поселениях, где они обычно стоят; потом план заново
+    const far = Math.hypot(dest.x - b.entity.position.x, dest.z - b.entity.position.z);
+    if (plan.error && /портал/.test(plan.error) || (!plan.error && /^пешком/.test(plan.text) && far > 1500 && /overworld/.test(b.game.dimension))) {
+      if (await this.findPortal(tok)) plan = this.travel.plan(b.entity.position, b.game.dimension, dest);
+    }
     if (plan.error) throw new Error(plan.error);
     this.log('путь: ' + plan.text);
     this.event('путь: ' + plan.text, false);
@@ -902,13 +908,45 @@ class TotemBot extends EventEmitter {
       if (s.do === 'portal') await this.portal(s, tok);
       else if (s.do === 'find_portal') {
         await this.goto(new goals.GoalNearXZ(s.x, s.z, 6), tok, legTime(d));
-        const pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 40 });
-        if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет - выход надо построить`);
+        let pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 40 });
+        // у расчётной точки портала нет - ближайший виденный в этом мире (кэш), до 400 бл. от неё
+        if (!pb && this.passCacheShared) {
+          const q = this.passCacheShared.nearest(String(b.game.dimension).replace(/^minecraft:/, ''), /^nether_portal$/, { x: s.x, y: b.entity.position.y, z: s.z }, 1, 400)[0];
+          if (q) { this.log(`у ${s.x} ${s.z} портала нет - иду к ближайшему виденному ${q.x} ${q.z}`); await this.walkTo({ x: q.x, y: q.y, z: q.z }, tok, legTime(Math.hypot(q.x - s.x, q.z - s.z))); pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 16 }); }
+        }
+        if (!pb) throw new Error(`у ${s.x} ${s.z} (${this.dimName()}) портала нет, и рядом я порталов не видела - выход надо построить или подсказать, где он`);
         await this.portal(pb.position, tok);
       } else await this.walkTo(s, tok, legTime(d));
     }
     const p = b.entity.position;
     return `дошёл${dest.name ? ' до «' + dest.name + '»' : ''} (${plan.text}), теперь у ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}, ${this.dimName()}`;
+  }
+
+  /**
+   * Найти портал в Незер самой (до 6 мин): спросить в общем чате (ответ с координатами - метка «портал», brain.js),
+   * и пока ждёт - идти к ближайшему поселению (на спавне и в городах порталы обычно есть) и смотреть по сторонам.
+   * true - портал теперь известен.
+   */
+  async findPortal(tok) {
+    const b = this.bot, known = () => this.travel.portals(require('./travel').dkey(b.game.dimension)).length > 0;
+    this.travel.near = b.entity.position;
+    if (known()) return true;
+    if (Date.now() - (this._portalAskAt || 0) > 600000) {
+      this._portalAskAt = Date.now();
+      this.portalHintUntil = Date.now() + 360000;
+      this.say('Подскажите, где ближайший портал в Незер? Напишите координаты, пожалуйста.', 'global');
+    }
+    const until = Date.now() + 360000;
+    let towns = [];
+    try { towns = this.worldMap ? this.worldMap.settlements(this, 2000).filter((s) => s.n >= 5 && !s.inside) : []; } catch {}
+    for (const t of towns.slice(0, 3)) {
+      if (Date.now() > until || known()) break;
+      this.log(`ищу портал: иду в поселение у ${t.x} ${t.z}`);
+      try { await this.walkTo({ x: t.x, z: t.z }, tok, 240000); } catch (e) { if (this.isCancel(e)) throw e; }
+      this.travel.near = b.entity.position;
+    }
+    while (!known() && Date.now() < until) { await sleep(5000); this.check(tok); this.travel.near = b.entity.position; }
+    return known();
   }
 
   /**

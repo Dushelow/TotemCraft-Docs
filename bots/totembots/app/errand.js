@@ -59,7 +59,9 @@ class Errands {
   /** Начать поручение: план от нейросети (строка шагов), от кого и как звучала просьба. */
   startErrand(a) {
     const steps = parse(a.plan || a.steps || a.text);
-    const e = { text: String(a.task || a.label || '').slice(0, 200), from: a.from || (this.runFrom || ''), steps: steps.map((s) => ({ ...s, st: 'wait', tries: 0 })), cur: 0, state: 'run', at: Date.now() };
+    const p0 = this.bot && this.bot.entity ? this.bot.entity.position : null;
+    const e = { text: String(a.task || a.label || '').slice(0, 200), from: a.from || (this.runFrom || ''), steps: steps.map((s) => ({ ...s, st: 'wait', tries: 0 })), cur: 0, state: 'run', at: Date.now(),
+      start: p0 ? { x: Math.floor(p0.x), y: Math.floor(p0.y), z: Math.floor(p0.z), dim: this.dimName ? this.dimName() : '' } : null };
     this.saveErrand(e);
     this.log(`поручение: ${e.steps.map((s) => s.title).join(' → ')}`);
     this.ev('поручение', { steps: e.steps.map((s) => s.title) });
@@ -164,12 +166,31 @@ class Errands {
       case 'goto': return run([{ act: 'travel', x: s.x, y: s.y, z: s.z, dim: s.dim }]);
       case 'place': return run([{ act: 'goto_place', name: s.name }]);
       case 'home': {
-        const h = require('./life').home(this);
-        if (!h) throw new Error('не знаю, где мой дом - пусть хозяин скажет «это твой дом»');
-        return run([{ act: 'travel', x: h.x, y: h.y, z: h.z, dim: h.dim }]);
+        // дом: «мой дом» или кровать, где спала; не знает - вернуться туда, откуда ушла по поручению
+        const h = require('./life').home(this) || (e.start && { ...e.start, back: true });
+        if (!h) throw new Error('не знаю, где мой дом и откуда ушла');
+        const r = await run([{ act: 'travel', x: h.x, y: h.y, z: h.z, dim: h.dim }]);
+        return h.back ? 'дом не знаю - вернулась туда, откуда ушла по поручению; ' + r : r;
       }
       case 'find': {
-        if (!this.player(s.who) && s.x !== undefined) await run([{ act: 'travel', x: s.x, z: s.z }]);
+        if (!this.player(s.who)) {
+          // координат нет (или они на глаз - «на 10к»): спросить его самого в личку и взять координаты из ответа
+          let at = null;
+          if (b.players[s.who]) {
+            this.say('Привет! Мне нужно к вам - напишите, пожалуйста, ваши координаты (x z).', 'whisper', s.who);
+            const until = Date.now() + 180000;
+            while (!at && Date.now() < until) {
+              const reply = await this.waitReply(s.who, until - Date.now());
+              if (!reply) break;
+              const p = require('./chatpoints').parse('метка ' + reply);
+              if (p) at = p; else this.say('Не поняла - напишите просто числа: x z или x y z.', 'whisper', s.who);
+            }
+          }
+          if (!at && s.x !== undefined) at = { x: s.x, z: s.z };
+          if (!at) throw new Error(`${s.who} не ответил, где он${b.players[s.who] ? '' : ' (не в игре)'}`);
+          try { this.autoMark('у ' + s.who, { x: at.x, y: at.y ?? 64, z: at.z }, { kind: 'встреча ' + s.who, radius: 64, ttl: 86400000, dim: at.dim }); } catch {}
+          await run([{ act: 'travel', x: at.x, y: at.y, z: at.z, dim: at.dim && at.dim !== 'обычный мир' ? at.dim : undefined }]);
+        }
         for (let i = 0; i < 40 && !this.player(s.who); i++) {   // до 2 минут: подождать и спросить
           if (i === 0) this.say(`Я у ${Math.floor(b.entity.position.x)} ${Math.floor(b.entity.position.z)}, принесла вам вещи от хозяина. Где вы?`, 'whisper', s.who);
           await sleep(3000);

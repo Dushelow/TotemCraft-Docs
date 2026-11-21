@@ -117,7 +117,9 @@ class Travel {
     const out = [];
     const add = (p, src) => { if (!out.some((o) => dist(o, p) < 6 && Math.abs(o.y - p.y) < 8)) out.push({ x: p.x, y: p.y, z: p.z, src }); };
     for (const l of this.links) { if (l.a.d === d) add(l.a, 'пара'); if (l.b.d === d) add(l.b, 'пара'); }
-    if (this.memory) for (const p of Object.values(this.memory.data.places || {})) if (/портал/i.test(p.name) && dkey(p.dim) === d) add(p, 'память');
+    if (this.memory) for (const p of Object.values(this.memory.data.places || {})) if (/портал/i.test(p.name) && dkey(p.dim) === d && !(p.until && p.until < Date.now())) add(p, 'память');
+    // все порталы, которые видела хоть раз (кэш мира, особые блоки) - в радиусе 4000 от центра последнего запроса
+    if (this.passCache && this.near) { try { for (const q of this.passCache.nearest(d === 'nether' ? 'the_nether' : d === 'end' ? 'the_end' : 'overworld', /^nether_portal$/, this.near, 40, 4000)) add(q, 'видела'); } catch {} }
     if (this.wm) {
       const m = this.wm.load(d === 'nether' ? 'the_nether' : d === 'end' ? 'the_end' : 'overworld');
       for (const v of Object.values(m.poi)) if (v.kind === 'портал') add(v, 'карта');
@@ -143,6 +145,7 @@ class Travel {
    * Шаги: walk {x,y,z} | walk_xz {x,z} | portal {x,y,z} | find_portal {x,z} (дойти к расчётной точке и найти портал).
    */
   plan(pos, dim, dest) {
+    this.near = pos;
     const here = dkey(dim), there = dkey(dest.dim || dim);
     if (here === 'end' || there === 'end') return here === there ? this.direct(pos, dest, here) : { error: 'в Энд и из Энда пути не строю' };
     if (here === there) {
@@ -162,6 +165,16 @@ class Travel {
             steps: [{ do: 'portal', ...p }, qn.exact ? { do: 'portal', ...qn } : { do: 'find_portal', x: qn.x, z: qn.z, y: qn.y }, { do: 'walk', ...dest }],
             text: `через Незер: портал ${p.x} ${p.y} ${p.z} (${Math.round(dist(pos, p))} бл.), в Незере ${Math.round(dist(pn, qn))} бл. до ${qn.exact ? 'портала' : 'места выхода (портал там поищу)'} ${qn.x} ${qn.z}, выход у ${q.x} ${q.z}, дальше ${Math.round(dist(q, dest))} бл.; пешком было бы ${Math.round(dist(pos, dest))} бл.`,
           };
+        }
+      }
+      // у цели портала не знаю, а у себя знаю: в Незер, по Незеру к точке цели /8, там найти выход (find_portal
+      // ищет у точки и среди виденных рядом) - всё равно в 8 раз короче, чем 10 тысяч блоков пешком
+      if (!Q.length && P.length && dist(pos, dest) > 1000) {
+        for (const p of P) {
+          const pn = this.exitOf(p, 'overworld'), dn = conv(dest, 'overworld', 'nether');
+          const cost = this.legLen('overworld', pos, p) + PORTAL_COST + this.legLen('nether', pn, dn) + PORTAL_COST * 2;
+          if (cost < best.cost * 0.8) best = { cost, steps: [{ do: 'portal', ...p }, { do: 'find_portal', x: dn.x, z: dn.z, y: 64 }, { do: 'walk', ...dest }],
+            text: `через Незер: портал ${p.x} ${p.y} ${p.z} (${Math.round(dist(pos, p))} бл.), в Незере ${Math.round(dist(pn, dn))} бл. до ${dn.x} ${dn.z}, там поищу выход; пешком было бы ${Math.round(dist(pos, dest))} бл.` };
         }
       }
       return best;

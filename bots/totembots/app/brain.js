@@ -94,8 +94,9 @@ ${require('./commands').manual()}
 !errand("шаг; шаг; ..."), дальше тело делает само по шагам и проверяет каждый; ты только следишь и разговариваешь.
 Шаги: come ник | wait предмет сколько | gear | goto x y z [nether] | place название | find ник [x z] |
 give ник предмет [сколько] | confirm ник | home | say ник текст. Пример: хозяин «подойди, дождись шерсти, отнеси
-CaptianRage на 10000 200 и вернись» -> !errand("come Valghard; wait white_wool 128; gear; find CaptianRage 10000 200;
-give CaptianRage white_wool 128; confirm CaptianRage; home"). Портал и Незер тело выберет само по известным порталам.
+CaptianRage и вернись» -> !errand("come Valghard; wait white_wool 128; gear; find CaptianRage;
+give CaptianRage white_wool 128; confirm CaptianRage; home"). Координаты не нужны: тело само спросит игрока, где он, само
+найдёт портал (виденные, спросит в чате, поищет в поселениях), пройдёт через Незер, дом - кровать, где спала.
 
 ПРАВИЛО СЕРВЕРА одно: чужие постройки, сундуки и фермы не ломать и не брать (тело и так не даст). Из чужих сундуков
 берёшь только по просьбе хозяев: ${masters}.
@@ -208,7 +209,9 @@ class Brain {
     if (this.memory && !this.isMaster(from)) {
       // координаты от другого игрока («я на 500 -300») - временная метка на час: найти его, не спрашивая снова
       const p = require('./chatpoints').parse(text);
-      if (p && this.body.autoMark) this.body.autoMark(`${from}: ${p.name === 'метка' ? 'точка' : p.name}`.slice(0, 40), { x: p.x, y: p.y ?? 64, z: p.z }, { kind: 'от ' + from, radius: 32, ttl: 3600000, dim: p.dim, note: 'из чата ' + from });
+      // спрашивала, где портал, - ответ с координатами и есть портал (на неделю)
+      const askedPortal = this.body.portalHintUntil && Date.now() < this.body.portalHintUntil;
+      if (p && this.body.autoMark) this.body.autoMark(askedPortal ? `портал (подсказал ${from})` : `${from}: ${p.name === 'метка' ? 'точка' : p.name}`.slice(0, 40), { x: p.x, y: p.y ?? 64, z: p.z }, { kind: askedPortal ? 'портал от ' + from : 'от ' + from, radius: 32, ttl: askedPortal ? 7 * 86400000 : 3600000, dim: p.dim, note: 'из чата ' + from });
     }
     if (this.isMaster(from) && this.memory && this.body.markFromWords) {
       const r = this.body.markFromWords(text, from);

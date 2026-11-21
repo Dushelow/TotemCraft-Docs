@@ -302,3 +302,14 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = nav && nav.n === 2 && logs.length === 1 && /сбой части «nav»/.test(logs[0]) && ran === 1 && tb.health.slow && tb.health.slow.slow === 1;
   console.log('--- здоровье частей: ' + (ok ? 'сбой изолирован и виден, выключатель работает, медленная часть отмечена' : 'НЕТ: ' + JSON.stringify(h) + ' ' + logs.join('|') + ' ran ' + ran));
 }
+
+// сама, без координат от хозяина: портал у себя знает (видела), у цели нет - план через Незер с поиском выхода;
+// дом не знает - вернётся туда, откуда ушла по поручению
+{
+  const { Travel } = require('../app/travel');
+  const tv = new Travel(fs.mkdtempSync(path.join(os.tmpdir(), 'tv')), null);
+  tv.passCache = { nearest: (dim) => (dim === 'overworld' ? [{ x: 250, y: 64, z: -300, name: 'nether_portal' }] : []) };
+  const pl = tv.plan({ x: 300, y: 64, z: -400 }, 'minecraft:overworld', { x: 10000, y: 64, z: 200 });
+  const ok = !pl.error && pl.steps[0].do === 'portal' && pl.steps[0].x === 250 && pl.steps[1].do === 'find_portal' && pl.steps[1].x === 1250;
+  console.log('--- сама до цели без координат: ' + (ok ? pl.text : 'НЕТ: ' + JSON.stringify(pl).slice(0, 300)));
+}

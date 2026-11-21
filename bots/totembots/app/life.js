@@ -22,7 +22,7 @@ function home(tb) {
   // свой дом: «мой дом», «наш дом», «моя база»; чужие («дом Вальгарда», «дом на продажу») - не дом бота
   const mine = all.filter((p) => /^(мой|наш|моя|наша) (дом|база|хата)/i.test(p.name)).sort((a, b) => b.at - a.at)[0];
   if (mine) return mine;
-  return all.filter((p) => /^кровать у/i.test(p.name) && /спал/.test(p.note || '')).sort((a, b) => b.at - a.at)[0] || null;
+  return all.filter((p) => p.kind === 'моя кровать' || (/^кровать у/i.test(p.name) && /спал/.test(p.note || ''))).sort((a, b) => b.at - a.at)[0] || null;
 }
 
 function needs(tb) {

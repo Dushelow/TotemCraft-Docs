@@ -41,7 +41,7 @@ const run = async (tb) => { await tb.errandLoop(); };
     await new Promise((r) => sleep0(r, 300));
     const e = tb.errand();
     tb.homeKnown = true;
-    ok('все шаги по порядку (дом в модели не задан - на нём честно застряла)', e && e.cur === 6 && /дом/.test(e.steps[6].note), `шаг ${e && e.cur}, ${e && e.steps[6].note}, тело: ${tb.ran.join(',')}`);
+    ok('все шаги по порядку; дом не знает - вернулась туда, откуда ушла', e && e.state === 'done' && /откуда ушла/.test(e.steps[6].note), `шаг ${e && e.cur}, ${e && e.steps[6].note}, тело: ${tb.ran.join(',')}`);
     ok('сохранено в памяти', mem.bots.Alex && mem.bots.Alex.errand && mem.saved > 3);
   }
   // 2. Шаг не выходит 3 раза - застряла, пишет хозяину и ждёт
