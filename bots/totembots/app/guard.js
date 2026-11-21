@@ -47,8 +47,11 @@ class Guard {
   onHurt() {
     // кто рядом и враждебен или нейтрален - считаем обидчиком
     const b = this.bot;
-    const near = Object.values(b.entities).filter((e) => e !== b.entity && e.type !== 'player' && e.position.distanceTo(b.entity.position) < 6);
-    for (const e of near) this.hurtBy.set(e.id, Date.now());
+    // обидчик - ближайший моб (раньше - все в 6 блоках: доставалось и мирным, бот бил их, а не шёл за хозяином, 16.11)
+    const me = b.entity.position;
+    const near = Object.values(b.entities).filter((e) => e !== b.entity && e.type !== 'player' && e.name !== 'item' && e.position.distanceTo(me) < 5)
+      .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
+    if (near) this.hurtBy.set(near.id, Date.now());
   }
 
   owner() { return this.tb.followName ? this.tb.player(this.tb.followName) : null; }
@@ -68,6 +71,8 @@ class Guard {
       // защищаем: себя (до 8 блоков) и хозяина (моб в 6 блоках от него)
       const nearOwner = own && e.position.distanceTo(own.position) < 6;
       if (d > 8 && !nearOwner) continue;
+      // идём за хозяином и он отошёл - драться только с тем, кто бьёт сейчас (5 с) или рядом с хозяином
+      if (this.tb.mode === 'follow' && own && own.position.distanceTo(me) > 6 && !nearOwner && !((this.hurtBy.get(e.id) || 0) > Date.now() - 5000) && this.prey !== e.id) continue;
       const score = d - (angry ? 4 : 0) - (nearOwner ? 2 : 0);
       if (score < bestD) { best = e; bestD = score; }
     }

@@ -14,7 +14,7 @@ const C = [
   ['enterPortal', 'portal,usePortal', '[x, y, z]', 'войти в портал (без координат - в ближайший)', (a) => ({ act: 'portal', x: a[0], y: a[1], z: a[2] })],
   ['wander', 'explore,walkAround', '[сторона света]', 'прогуляться, поисследовать (без стороны - где ещё не был)', (a) => ({ act: 'wander', dir: a[0] })],
   ['surface', 'goUp,toSurface', '', 'подняться на поверхность из пещеры или шахты', () => ({ act: 'surface' })],
-  ['mount', 'ride,board,getIn,sit,enterBoat,mountHorse', '[что или игрок]', 'сесть в лодку или на лошадь рядом (boat, horse); с ником игрока - к нему в лодку пассажиром', (a) => (a[0] && /^[A-Za-z0-9_]{3,16}$/.test(String(a[0])) && !/^(boat|horse|donkey|mule|camel|pig|minecart|raft|llama|strider)$/i.test(String(a[0])) ? { act: 'mount', who: a[0] } : { act: 'mount', what: a[0] })],
+  ['mount', 'ride,board,getIn,sit,enterBoat,mountHorse', '[что или игрок]', 'сесть в лодку или на лошадь рядом (boat, horse); лодки рядом нет, а в инвентаре есть - сама поставлю на воду или лёд; с ником игрока - к нему в лодку пассажиром', (a) => (a[0] && /^[A-Za-z0-9_]{3,16}$/.test(String(a[0])) && !/^(boat|horse|donkey|mule|camel|pig|minecart|raft|llama|strider)$/i.test(String(a[0])) ? { act: 'mount', who: a[0] } : { act: 'mount', what: a[0] })],
   ['dismount', 'getOut,leaveBoat,unmount', '', 'слезть с лошади, выйти из лодки', () => ({ act: 'dismount' })],
   ['drive', 'row,steer,rideTo,sail', 'x, z', 'сидишь в лодке или на лошади за рулём - плыть/ехать к точке', (a) => ({ act: 'drive', x: a[0], z: a[1] })],
   // --- работа
@@ -31,6 +31,9 @@ const C = [
   ['fish', 'fishing', '[сколько раз]', 'порыбачить (нужна удочка, рядом вода)', (a) => ({ act: 'fish', count: a[0] })],
   ['hunt', 'killAnimal', 'животное, сколько', 'охота на диких животных: cow, pig, sheep, chicken...', (a) => ({ act: 'hunt', animal: a[0], count: a[1] })],
   ['attack', 'kill,fight,attackMob', 'моб', 'напасть на моба рядом (зомби, ведьма, скелет...)', (a) => ({ act: 'attack', mob: a[0] })],
+  ['combat', 'fightMode,mobs,setCombat', 'defend|flee|off', 'режим боя: defend - защищать себя и хозяина, flee - убегать к хозяину, off - не трогать мобов', (a) => ({ act: 'combat', mode: a[0] })],
+  ['hold', 'waitHere,stayHere,standStill', '', 'стоять на месте и ждать, пока не позовут (своих дел не начинать)', () => ({ act: 'hold' })],
+  ['readSigns', 'signs,readSign', '', 'прочитать таблички рядом (8 блоков)', () => ({ act: 'signs' })],
   ['duel', 'pvp,fightPlayer', 'игрок', 'дуэль с игроком - только если хозяин попросил и игрок согласен (60 с, сдаюсь при 6 здоровья)', (a) => ({ act: 'duel', who: a[0] })],
   ['shear', 'shearSheep', '[сколько]', 'постричь диких овец (нужны ножницы)', (a) => ({ act: 'shear', count: a[0] })],
   ['pickup', 'pickUp,collectItems,loot', '[радиус]', 'подобрать вещи с земли рядом', (a) => ({ act: 'pickup', radius: a[0] })],
@@ -132,6 +135,15 @@ function parseCommands(text) {
     .replace(/\s+([,.!?])/g, '$1').split('\n').map((l) => l.trim()).filter(Boolean).join(' ').replace(/\s{2,}/g, ' ').trim();
   const META = /команд|систем|итог|сработал|инвентар|позици|координат|задани|выполнен|не работа|^отлично|^понял|давайте|попробую|возможно|я вижу|теперь я|я дошёл|я переместил|я всё ещё/i;
   say = say.split(/(?<=[.!?])\s+/).filter((x) => x && !META.test(x)).slice(0, 2).join(' ').slice(0, 200);
+  // реплику модель иногда кладёт в блок кода («общий: Вилор, привет!») - тогда она не уходила в чат (19.11)
+  if (!say) {
+    const inFence = [...raw.matchAll(/```[a-z]*\s*([\s\S]*?)```/gi)].map((m) => m[1]).join('\n').split('\n')
+      .map((l) => l.replace(/^\s*\d+\s+/, '').trim()).filter((l) => l && !l.startsWith('!') && !l.startsWith('//') && !l.startsWith('{') && !/^(text|json|plaintext|Copy|Download)$/i.test(l));
+    if (inFence.length) say = inFence.slice(0, 2).join(' ').slice(0, 200);
+  }
+  // строка с каналом («общий: ...») в блоке кода - это и есть реплика, она важнее слов вокруг
+  { const ch = [...raw.matchAll(/```[a-z]*\s*([\s\S]*?)```/gi)].map((m) => m[1]).join('\n').split('\n').map((l) => l.replace(/^\s*\d+\s+/, '').trim()).find((l) => /^(общий|рядом|лс\s+[A-Za-z0-9_]{3,16})\s*:/i.test(l));
+    if (ch) say = ch.slice(0, 220); }
   return { say, acts, unknown };
 }
 

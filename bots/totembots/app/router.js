@@ -112,6 +112,8 @@ class Router {
 
   /** Qwen-сайт: свой чат; если его нет (переключились с другого мозга) - новый чат с вводной и последними событиями. */
   async askQwen(ch, text, opt) {
+    // новый чат без вводной - мозг не знал, что управляет телом, и писал планы как ассистент (19.11)
+    if (!ch.qwenId && !ch.warm) ch.warm = Object.values(this.warms || {}).pop() || '';
     let send = text;
     if (!ch.qwenId && ch.turns.length) send = this.recap(ch) + '\n\n' + text;
     else if (!ch.qwenId && ch.warm && ch.warm !== text) send = ch.warm + '\n\n' + text;

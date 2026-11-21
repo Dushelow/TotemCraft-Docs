@@ -69,6 +69,9 @@ class WebChat {
   ask(chatId, text) { return this.exclusive(() => this._ask(chatId, text)); }
 
   async _ask(chatId, text) {
+    const gap = 4000 - (Date.now() - (this.lastSend || 0));
+    if (gap > 0) await sleep(gap);
+    this.lastSend = Date.now();
     this._r1 = this._r2 = false;
     const s = this.site;
     // окно открыто у владельца (вход, своё) или вход не сделан - страницу не трогаем вообще

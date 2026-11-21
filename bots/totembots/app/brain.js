@@ -60,7 +60,8 @@ ${require('./commands').manual()}
 что за постройка) - !see(вопрос): я сделаю снимок твоего вида и карты сверху и пришлю описание [вижу картинкой].
 Снимок дорогой - не чаще, чем нужно.
 
-ПРОСТЫЕ ПРИКАЗЫ ХОЗЯИНА («за мной», «стой», «иди сюда», «заходи в портал», «садись в лодку», «слезай», «выкинь всё»)
+ПРОСТЫЕ ПРИКАЗЫ ХОЗЯИНА («за мной», «стой»/«жди», «иди сюда», «заходи в портал», «садись в лодку», «слезай», «выкинь всё»,
+«не дерись»/«защищай», «ближе»/«подальше»)
 тело выполняет само сразу, ты получишь [сделано по слову хозяина] - просто ответь коротко, если хочется.
 МЕЛОЧИ ИГРЫ: сытым (еда 20/20) есть нельзя - тело ответит «не голоден». Сырую ламинарию (kelp) не едят - только
 жареную (dried_kelp из печи). В лодку и на лошадь - !mount, править - !drive(x, z), вылезти - !dismount. В портал -
@@ -118,7 +119,10 @@ function quickOrder(text, from) {
   const t = String(text || '').toLowerCase().replace(/^(alex|алекс|алекса|бот)[,!:\s]+/i, '').replace(/[.!?)]+$/g, '').trim();
   if (t.length > 40) return null;
   if (/^(за мной|иди за мной|пошли за мной|пошли|следуй за мной|следуй|го за мной|идём|идем)$/.test(t)) return [{ act: 'follow', who: from }];
-  if (/^(стой|стоп|подожди|жди|стой тут|стой здесь|замри)$/.test(t)) return [{ act: 'stop' }];
+  if (/^(стой|стоп|подожди|жди|стой тут|стой здесь|замри|жди тут|жди здесь|стой на месте|жди меня|стой и жди|не иди за мной|не ходи за мной)$/.test(t)) return [{ act: 'hold' }];
+  if (/^(не дерись|не трогай мобов|не бей мобов|не нападай|мирно)$/.test(t)) return [{ act: 'combat', mode: 'off' }];
+  if (/^(дерись|защищай|защищай меня|бей мобов|защищайся)$/.test(t)) return [{ act: 'combat', mode: 'defend' }];
+  if (/^(убегай|беги ко мне|не дерись убегай)$/.test(t)) return [{ act: 'combat', mode: 'flee' }];
   if (/^(иди сюда|ко мне|подойди|сюда|иди ко мне)$/.test(t)) return [{ act: 'come', who: from }];
   if (/(заходи|зайди|прыгай|запрыгивай|иди|лезь|го) (в|во) (портал|него)|^в портал$/.test(t)) return [{ act: 'portal' }];
   if (/(садись|сядь|залезай|залазь|прыгай) (ко мне )?(в лодку|в мою лодку|ко мне)|^в лодку$/.test(t)) return [{ act: 'mount', who: from }];
@@ -176,6 +180,8 @@ class Brain {
     const e = this.body.player(from);
     const dist = e && this.body.bot && this.body.bot.entity ? Math.round(e.position.distanceTo(this.body.bot.entity.position)) : null;
     this.attn.mode = this.botCfg.chatMode || 'normal';
+    // «отвечай только мне»: чужие сообщения - только в фон (19.11 бот отвечал всем, хотя хозяин велел только ему)
+    if (this.botCfg.onlyMaster && !this.isMaster(from)) { this.onBackground({ from, text, at: Date.now() }); return; }
     const kind = this.attn.classify({ from, text, channel: ch, dist, master: this.isMaster(from) });
     if (kind === 'background') { this.onBackground({ from, text, at: Date.now() }); return; }
     if (kind !== 'address') return;
@@ -185,7 +191,14 @@ class Brain {
     const label = { whisper: 'личка', local: 'рядом', global: 'общий', voice: 'голос рядом' }[ch];
     const where = (dist !== null ? `${dist} бл. от тебя` : 'далеко') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
-    const quick = this.isMaster(from) && dist !== null && dist <= 32 ? quickOrder(text, from) : null;
+    if (kind === 'address') this.attn.lastAddr = { channel: ch, from, at: Date.now() };
+    // режим «только хозяин» - словами хозяина
+    if (this.isMaster(from)) {
+      const t = String(text).toLowerCase();
+      if (/(отвечай|говори|слушай) только (мне|меня)|игнорируй (их|других|всех)|не отвечай (им|другим)/.test(t)) { this.botCfg.onlyMaster = true; this.save(); this.log('режим: отвечаю только хозяевам'); }
+      else if (/(можешь|можно) (общаться|говорить|отвечать) (со всеми|всем|с ними)|отвечай всем/.test(t)) { this.botCfg.onlyMaster = false; this.save(); this.log('режим: общаюсь со всеми'); }
+    }
+    const quick = this.isMaster(from) && (dist !== null && dist <= 32 || ch === 'whisper') ? quickOrder(text, from) : null;
     if (quick) {
       // тело делает сразу, нейросеть только узнаёт (раньше ждали её 10-50 с, а она путалась: «не знаю как зайти в портал»)
       this.log(`по слову хозяина сразу: ${quick.map((x) => x.act).join(' → ')}`);
@@ -205,7 +218,7 @@ class Brain {
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
-    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.busy || this.pending.length || this.bridge.resting) return;
+    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.busy || this.pending.length || this.bridge.resting) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
@@ -246,6 +259,11 @@ class Brain {
   async see(question, from) {
     const qwen = this.bridge.qwen || this.bridge;
     if (!qwen.askImage || !this.body.snapshot) return;
+    // Qwen в лимите или на проверке, или зрение недавно не вышло - не долбить его картинками (19.11), сказать мозгу сразу
+    if (qwen.resting || qwen.captcha || Date.now() - (this.seeFailAt || 0) < 10 * 60000) {
+      this.push('[вижу картинкой] зрение сейчас недоступно (Qwen в лимите) - ориентируйся по [вижу] и [комната], не проси снимок снова 10 минут', true, from, '', { look: true });
+      return;
+    }
     try {
       const png = this.body.snapshot();
       const shotAt = Date.now(), shotPos = this.body.bot.entity.position.floored();
@@ -261,6 +279,7 @@ class Brain {
       this.push(`[вижу картинкой - снимок с ${shotPos.x} ${shotPos.y} ${shotPos.z}, ${ago} с назад; если ты с тех пор ушёл, это уже позади] ` + (ans || String(r.answer).slice(0, 400)), true, from, '', { look: true });
     } catch (e) {
       this.log('зрение: ' + e.message);
+      this.seeFailAt = Date.now();
       this.push('[вижу картинкой] не вышло: ' + e.message.slice(0, 120), true, from, '', { look: true });
     }
   }
@@ -483,7 +502,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
+        const FREE = new Set(['hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         // идёт за кем-то и сам решил чем-то заняться - не уходить: своё только то, что делается на ходу или рядом
         // (16.11: шла за хозяином и сама ушла копать камень)

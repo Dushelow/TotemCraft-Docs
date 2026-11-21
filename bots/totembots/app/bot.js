@@ -367,6 +367,7 @@ class TotemBot extends EventEmitter {
     if (!t) return;
     if (channel === 'whisper' && to) t = `/msg ${to} ${t}`;
     else if (channel === 'local') t = '!' + t;
+    else if (channel === 'global') t = '/g ' + t;
     this.bot.chat(t);
   }
 
@@ -419,7 +420,7 @@ class TotemBot extends EventEmitter {
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
     return {
       pos: s.pos,
-      core: `${s.dim} ${s.pos.join(' ')}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}`,
+      core: `${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}`,
       near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
       inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
       online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),
@@ -516,8 +517,13 @@ class TotemBot extends EventEmitter {
     const blocks = {};
     try {
       const NOTABLE = /(chest|barrel|shulker_box|crafting_table|furnace|smoker|_door|_bed|anvil|enchanting_table|brewing_stand|wheat|carrots|potatoes|beetroots|farmland|sugar_cane|melon|pumpkin|nether_portal|spawner|_sign|lantern|torch|_ore|bell|composter|lectern)$/;
+      const HID = /^(.*_ore|raw_\w+_block|mossy_cobblestone|obsidian|chest|ender_chest|clay)$/;
+      const open = (p) => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => { const n = b.blockAt(p.offset(x, y, z)); return n && n.boundingBox !== 'block'; });
       for (const p of b.findBlocks({ matching: (bl) => NOTABLE.test(bl.name), maxDistance: 10, count: 400 })) {
-        const nm = b.blockAt(p).name.replace(/^wall_|_wall(?=_)/, '');
+        const k = b.blockAt(p);
+        // анти-иксрей сервера шлёт поддельные руды и сундуки внутри камня ниже y 64 - их нет (19.11: «шахта с алмазами», которой нет)
+        if (HID.test(k.name) && p.y < 64 && !open(p)) continue;
+        const nm = k.name.replace(/^wall_|_wall(?=_)/, '');
         blocks[nm] = (blocks[nm] || 0) + 1;
       }
     } catch {}
@@ -710,6 +716,23 @@ class TotemBot extends EventEmitter {
       else if (this.swimming) { b.setControlState('jump', false); this.swimming = false; }
     }
     this.notice().catch(() => {});
+    // в портале после перехода не стоять - затянет обратно (16.11: «сколько раз говорил!!!»); только если не заходим нарочно
+    {
+      const at = b.blockAt(b.entity.position);
+      if (at && at.name === 'nether_portal' && !this.portalTask && Date.now() - (this.arrivedAt || 0) > 1500 && Date.now() - (this.portalStepAt || 0) > 4000) {
+        this.portalStepAt = Date.now();
+        const p0 = b.entity.position.floored();
+        const out = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]].map(([dx, dz]) => p0.offset(dx, 0, dz))
+          .find((v) => { const f = b.blockAt(v), h = b.blockAt(v.offset(0, 1, 0)), u = b.blockAt(v.offset(0, -1, 0)); return f && h && u && f.boundingBox === 'empty' && f.name !== 'nether_portal' && h.boundingBox === 'empty' && u.boundingBox === 'block' && !/lava/.test(f.name); });
+        if (out) { this.log('стою в портале - отхожу, чтобы не затянуло'); const was = b.pathfinder.goal; b.pathfinder.setGoal(new goals.GoalBlock(out.x, out.y, out.z)); if (was && this.mode === 'follow') setTimeout(() => { try { if (this.mode === 'follow' && this.followName) this.follow(this.followName); } catch {} }, 1500); }
+      }
+    }
+    // инвентарь полон - сказать мозгу один раз (16.11: не брал шерсть, и никто не понимал почему)
+    {
+      const full = b.inventory.emptySlotCount() === 0;
+      if (full && !this.fullSaid) { this.fullSaid = true; this.event('инвентарь полон: подобрать ничего не можешь - выложи лишнее в сундук (!putInChest) или выброси (!discard)', true); }
+      else if (!full) this.fullSaid = false;
+    }
     // компаньон: потерял из виду - сказать один раз
     if (this.mode === 'follow') {
       if (!owner) {
@@ -1118,6 +1141,7 @@ class TotemBot extends EventEmitter {
     } else {
       target = Object.values(b.entities).filter((e) => RIDE.test(e.name || '') && (!kind || (e.name || '').includes(kind)) && e.position.distanceTo(me) < 24)
         .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
+      if (!target && (!kind || /boat|raft/.test(kind))) target = await this.placeBoat(tok);
       if (!target) throw new Error(`рядом нет ${kind || 'лодки или животного'}, на что сесть`);
     }
     const seats = /boat|raft/.test(target.name || '') ? (/chest/.test(target.name) ? 1 : 2) : 1;
@@ -1136,6 +1160,26 @@ class TotemBot extends EventEmitter {
     if (this.mode !== 'task') this.mode = 'ride';
     const driver = !(target.passengers || []).some((x) => x !== b.entity);
     return `сел в ${target.name}${driver ? ' (я за рулём: !drive(x, z))' : ' пассажиром'}`;
+  }
+
+  /** Поставить свою лодку на воду или лёд рядом (как игрок: лодка в руке, правый клик по блоку). */
+  async placeBoat(tok) {
+    const b = this.bot;
+    const it = b.inventory.items().find((i) => /_boat$|_raft$/.test(i.name) && !/chest/.test(i.name)) || b.inventory.items().find((i) => /_boat$|_raft$/.test(i.name));
+    if (!it) return null;
+    const me = b.entity.position;
+    const spot = b.findBlocks({ matching: (bl) => /^(water|ice|packed_ice|blue_ice)$/.test(bl.name), maxDistance: 4, count: 30 }).map((p) => b.blockAt(p))
+      .filter((k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.boundingBox === 'empty' && !/water/.test(up.name); })
+      .sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me))[0];
+    if (!spot) throw new Error('лодку ставить некуда: рядом нет воды или льда');
+    this.check(tok);
+    await b.equip(it, 'hand');
+    this.busyLook = true;
+    try { await b.lookAt(spot.position.offset(0.5, 1, 0.5), true); await b.placeEntity(spot, new Vec3(0, 1, 0)); } finally { this.busyLook = false; }
+    await sleep(400);
+    const e = Object.values(b.entities).filter((x) => /boat|raft/.test(x.name || '') && x.position.distanceTo(spot.position) < 3).sort((x, y) => x.position.distanceTo(spot.position) - y.position.distanceTo(spot.position))[0];
+    if (e) this.log(`поставил лодку на ${spot.position.x} ${spot.position.y} ${spot.position.z}`);
+    return e || null;
   }
 
   async dismount() {
@@ -1387,6 +1431,18 @@ class TotemBot extends EventEmitter {
     return `иду за ${name}`;
   }
 
+  /** Таблички рядом (8 блоков): текст с обеих сторон. */
+  readSigns() {
+    const b = this.bot, out = [];
+    for (const p of b.findBlocks({ matching: (bl) => /_sign$/.test(bl.name), maxDistance: 8, count: 20 })) {
+      const k = b.blockAt(p);
+      let t = '';
+      try { const st = k.getSignText ? k.getSignText() : []; t = (Array.isArray(st) ? st : [st]).map((x) => String(x || '').replace(/\s+/g, ' ').trim()).filter(Boolean).join(' | '); } catch {}
+      if (t) out.push(`${p.x} ${p.y} ${p.z}: «${t}»`);
+    }
+    return out.length ? 'таблички: ' + out.join('; ') : 'рядом нет табличек с текстом';
+  }
+
   /** Как близко идти следом (блоков): настройка бота «Поведение», меняется и словами («ближе», «подальше»). */
   followDist() { const d = +this.opts.followDist || 3; return Math.max(1.2, d + rnd(-0.3, 0.3)); }
   setFollowDist(d) {
@@ -1416,7 +1472,7 @@ class TotemBot extends EventEmitter {
   // сундук не назван - ближайший (6 блоков)
   nearestChest(a) {
     if (!a.nearest && a.x !== undefined) return a;
-    const k = this.bot.findBlock({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 6 });
+    const k = this.bot.findBlock({ matching: (bl) => /^(chest|trapped_chest|barrel)$|shulker_box$/.test(bl.name), maxDistance: 6 });
     if (!k) throw new Error('рядом (6 блоков) нет сундука - нужны координаты: !takeFromChest(x, y, z, предмет, сколько)');
     return { ...a, x: k.position.x, y: k.position.y, z: k.position.z };
   }
@@ -1478,6 +1534,11 @@ class TotemBot extends EventEmitter {
   // pathfinder (его шаги античит принимает). Ручной прыжок - только запасной: с земли, прямо, не больше 3 раз
   // (частые прыжки в раму Vulcan считает Step C, после 15 - бан; стенд 15.11).
   async portal(a, tok) {
+    this.portalTask = true;
+    try { return await this._portal(a, tok); } finally { this.portalTask = false; this.arrivedAt = Date.now(); }
+  }
+
+  async _portal(a, tok) {
     const b = this.bot;
     const from = b.game.dimension;
     const id = b.registry.blocksByName.nether_portal.id;
@@ -1729,7 +1790,7 @@ class TotemBot extends EventEmitter {
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
     // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
     // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
-    const LIGHT = new Set(['followDist', 'look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
+    const LIGHT = new Set(['combat', 'signs', 'followDist', 'look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
     const resume = this.mode === 'follow' && plain.every((a) => LIGHT.has(a.act)) ? this.followName : '';
     this.cancel();
     const tok = this.token;
@@ -1793,6 +1854,9 @@ class TotemBot extends EventEmitter {
           case 'cmd': r = await this.serverCommand(a); break;
           case 'attack': r = await this.attackMob(a, tok); break;
           case 'sleep': r = await this.goSleep(tok); break;
+          case 'hold': this.cancel(); this.mode = 'hold'; return done.concat('стою на месте и жду').join('; ');
+          case 'combat': { const m = { defend: 'defend', flee: 'flee', off: 'off', защищать: 'defend', убегать: 'flee', нет: 'off' }[String(a.mode || '').toLowerCase()]; if (!m || !this.guard) throw new Error('режим боя: defend, flee или off'); this.guard.mode = m; this.opts.combat = m; if (this.onCombat) this.onCombat(m); r = 'режим боя: ' + { defend: 'защищаю', flee: 'убегаю к хозяину', off: 'мобов не трогаю' }[m]; break; }
+          case 'signs': r = this.readSigns(); break;
           case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
           case 'mount': r = await this.mount(a, tok); break;
           case 'dismount': r = await this.dismount(); break;

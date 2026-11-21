@@ -84,6 +84,10 @@ class Attention {
       this.lastGlobalReply = Date.now();
       return { channel: 'global' };
     }
+    // итог дела по просьбе или продолжение разговора: туда, где спросили (личка хозяину, общий), если это было недавно
+    // (19.11: хозяин в личке спросил координаты, ответ пришёл с [итог] без канала и был заглушён «рядом никого»)
+    const la = this.lastAddr;
+    if (la && Date.now() - la.at < 3 * 60000) return la.channel === 'whisper' ? { channel: 'whisper', to: la.from } : { channel: la.channel === 'voice' ? 'local' : la.channel };
     // сам заговорил (приказ из панели, событие, тишина): рядом есть люди - ближний; никого рядом - молчим в игре
     // (говорить в общий чат в пустоту выглядит как разговор с самим собой; в общий - только если Qwen решил явно)
     return this.someoneNear ? { channel: 'local' } : { channel: 'none' };

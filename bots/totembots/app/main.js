@@ -96,6 +96,7 @@ function startBot(name) {
   if (!l) { l = { log: [] }; live.set(name, l); }
   const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3 });
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
+  body.onCombat = (m) => { bc.combat = m; saveCfg(); };
   body.on('log', (t) => logTo(name, t));
   body.on('chat', (t) => logTo(name, '[чат] ' + t));
   body.on('end', () => logTo(name, 'бот выключен'));
