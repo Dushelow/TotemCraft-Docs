@@ -196,9 +196,11 @@ $('pinSel').onchange = () => {
     $('pinSel').value ? 'мозг: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто, по порядку', { fn: () => { pinFilled = ''; return T.brainPin(prev); }, done: 'мозг как был' });
   $('pinSel').blur();
 };
-$('pinSave').onclick = () => {
+$('pinOnly').onchange = () => savePin();
+$('pinModel').onchange = () => savePin();
+function savePin() {
   const B = st.brains || {}, prev = { id: B.pin || '', only: !!B.pinOnly, model: B.pinModel };
-  act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').disabled ? undefined : $('pinModel').value }), $('pinSave'),
+  act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').disabled ? undefined : $('pinModel').value }), null,
     $('pinSel').value ? 'мозг выбран: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто', { fn: () => { pinFilled = ''; return T.brainPin(prev); }, done: 'мозг как был' });
 };
 
@@ -289,7 +291,7 @@ function botCard(b) {
     <div class="seg">${[['quiet', 'Тихий'], ['normal', 'Обычный'], ['social', 'Общительный']].map(([v, t]) => `<button data-a="chatmode" data-v="${v}" class="${b.chatMode === v ? 'on' : ''}">${t}</button>`).join('')}</div>
     <div class="muted" style="margin-top:6px">Тихий - только личка и имя. Обычный - ещё ближний чат и хозяин рядом. Общительный - сам заговаривает с теми, кто рядом.</div>
     <label>Прозвища, на которые откликается (через запятую)</label>
-    <div class="row"><input class="grow" data-f="aliases" value="${esc(b.aliases || '')}" placeholder="алексик, сашка"><button data-a="aliases">${icon('check', 14)}Сохранить</button></div>
+    <div class="row"><input class="grow" data-f="aliases" value="${esc(b.aliases || '')}" placeholder="алексик, сашка"></div>
     <label>Как близко идти за вами: <b data-f="fdv">${b.followDist || 3}</b> бл. (в игре можно сказать «ближе» или «подальше»)</label>
     <input type="range" data-f="fd" min="1.5" max="10" step="0.5" value="${b.followDist || 3}">
     <label>Мобы</label>
@@ -383,7 +385,8 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'remove' && confirm(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
 });
 $('bots').addEventListener('input', (e) => { if (e.target.dataset.f === 'fd') { const c = e.target.closest('.bot'); c.querySelector('[data-f="fdv"]').textContent = e.target.value; } });
-$('bots').addEventListener('change', (e) => { if (e.target.dataset.f === 'fd') { const name = e.target.closest('.bot').dataset.name; e.target.blur(); act(async () => { await T.botFollowDist({ name, dist: +e.target.value }); lastHtml = ''; }); } });
+$('bots').addEventListener('change', (e) => {
+  if (e.target.dataset.f === 'aliases') { const name = e.target.closest('.bot').dataset.name; act(async () => { await T.botChatMode({ name, aliases: e.target.value }); lastHtml = ''; }, null, 'прозвища сохранены'); return; } if (e.target.dataset.f === 'fd') { const name = e.target.closest('.bot').dataset.name; e.target.blur(); act(async () => { await T.botFollowDist({ name, dist: +e.target.value }); lastHtml = ''; }); } });
 $('bots').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.dataset.f === 'order') { e.preventDefault(); e.target.closest('.bot').querySelector('[data-a="order"]').click(); }
 });
@@ -448,7 +451,7 @@ function saveBrains(btn) {
     brainsFilled = false;
   }, btn, 'сохранено');
 }
-$('brainsSave').onclick = () => saveBrains($('brainsSave'));
+$('brainOrder').addEventListener('change', () => saveBrains(null));
 $('pEnabled').onchange = () => act(() => T.projectEnable($('pEnabled').checked));
 $('pOpen').onclick = () => act(() => T.projectOpen(), $('pOpen'));
 $('pSync').onclick = () => act(() => T.projectSync(), $('pSync'), 'память обновлена');
@@ -470,7 +473,8 @@ function fillVoice(v) {
 }
 const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked, echo: $('vEcho').checked,
   local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value, sileroVoice: $('vSileroVoice').value });
-$('vSave').onclick = () => act(() => T.voiceSave(voiceForm()), $('vSave'), 'голос сохранён');
+// сохранение сразу при изменении - без кнопки «Сохранить»
+$('sec-voice').addEventListener('change', (e) => { if (e.target.closest('input,select')) act(() => T.voiceSave(voiceForm()), null, 'сохранено'); });
 $('vInstall').onclick = () => act(async () => {
   await T.voiceSave(voiceForm());
   $('vStatus').dataset.busy = '1';
@@ -511,8 +515,10 @@ T.onVoiceSystem(({ text, volume }) => {
 document.querySelectorAll('#srvSeg button').forEach((b) => { b.onclick = () => { $('host').value = b.dataset.h; $('port').value = b.dataset.p; paintSrvSeg(); }; });
 function paintSrvSeg() { document.querySelectorAll('#srvSeg button').forEach((b) => b.classList.toggle('on', b.dataset.h === $('host').value.trim() && b.dataset.p === $('port').value.trim())); }
 $('host').oninput = paintSrvSeg; $('port').oninput = paintSrvSeg;
-$('saveSettings').onclick = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }),
-  $('saveSettings'), 'настройки сохранены (новый сервер - после перезапуска бота)');
+const saveSettings = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }),
+  null, 'сохранено' + (st.running ? ' (новый сервер - после перезапуска ботов)' : ''));
+$('sec-settings').addEventListener('change', (e) => { if (e.target.closest('input,select')) saveSettings(); });
+document.querySelectorAll('#srvSeg button').forEach((b) => b.addEventListener('click', () => saveSettings()));
 
 // ---------- карта бота: чанки вокруг (бот в центре, север сверху)
 async function drawMap() {

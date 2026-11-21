@@ -155,6 +155,12 @@
   .addbtn { width: 100%; height: 40px; background: transparent; border: 1px dashed var(--line-2); color: var(--text-2); border-radius: var(--r2); }
   .addbtn:hover { color: var(--text); border-color: #4a4e57; background: var(--surface); }
 
+  details.more > summary { list-style: none; cursor: pointer; margin: 0; user-select: none; }
+  details.more > summary::-webkit-details-marker { display: none; }
+  details.more .chev { transition: transform var(--fast); }
+  details.more[open] .chev { transform: rotate(180deg); }
+  details.more[open] > summary { margin-bottom: var(--s3); }
+  details.more:not([open]) { padding-top: var(--s3); padding-bottom: var(--s3); }
   /* ---------- сайты-мозги */
   .site { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) 0; border-top: 1px solid var(--line); }
   .site:first-of-type { border-top: 0; padding-top: 0; }
@@ -233,7 +239,6 @@
     <section id="sec-bots" class="on">
       <div class="card start" id="startCard" style="display:none">
         <h2><i data-i="play"></i>Запуск</h2>
-        <p class="lead">Пока вы не нажали «Запустить», программа ничего не делает: боты не заходят, нейросети не спрашиваются. Можно спокойно войти на сайты справа.</p>
         <div id="startChecks"></div>
         <button id="startGo" class="go big" style="width:100%;margin-top:var(--s3)"><i data-i="play" data-s="18"></i><span>Запустить</span></button>
         <label class="chk" title="При включении программы отмеченные боты зайдут сами, без этого экрана"><input type="checkbox" id="startAuto"> Запускать сразу при включении программы</label>
@@ -261,32 +266,29 @@
         <div class="row" id="pinRow" style="margin-top:var(--s3)">
           <input id="pinModel" class="grow" placeholder="модель (для Qwen и мозгов по ключу)" title="У сайтов модель выбирается на самом сайте: «Моё окно»">
           <label class="chk" style="margin:0" title="Только выбранный: без перехода на запасные"><input type="checkbox" id="pinOnly">только он</label>
-          <button id="pinSave" class="pri"><i data-i="check"></i>Сохранить</button>
         </div>
       </div>
       <div class="card">
         <h2><i data-i="globe"></i>Сайты нейросетей</h2>
-        <p class="lead">Бот думает через сайты по очереди: у одного лимит или сбой - сразу следующий. Войдите на нужные один раз. <b>Окно бота</b> - там работает программа, <b>моё окно</b> - ваше, бот туда не заходит.</p>
         <div id="siteList"></div>
       </div>
-      <div class="card">
-        <h2><i data-i="folder-open"></i>Проект Qwen</h2>
+      <details class="card more">
+        <summary class="h"><i data-i="folder-open"></i>Проект Qwen<span class="grow"></span><i data-i="chevron-down" class="chev"></i></summary>
         <p class="lead">Чаты ботов и их память лежат в проекте «TotemCraft · боты» в вашем Qwen.</p>
         <label class="chk"><input type="checkbox" id="pEnabled"> Хранить чаты и память в проекте Qwen</label>
         <div id="pStatus" class="muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:var(--s3)"><button id="pOpen" class="sm"><i data-i="external-link" data-s="14"></i>Открыть проект</button><button id="pSync" class="sm"><i data-i="rotate-cw" data-s="14"></i>Обновить память</button></div>
-      </div>
-      <div class="card">
-        <h2><i data-i="key-round"></i>Нейросети по ключу</h2>
-        <p class="lead">Ответ за 1-2 секунды, без капч. Ключ бесплатный: «где взять», войти, создать ключ, вставить сюда. Хранится только на этом компьютере.</p>
+      </details>
+      <details class="card more">
+        <summary class="h"><i data-i="key-round"></i>Нейросети по ключу<span class="grow"></span><i data-i="chevron-down" class="chev"></i></summary>
+        <p class="lead">Быстрее сайтов и без капч. Ключ хранится только на этом компьютере.</p>
         <div id="brainKeys"></div>
-      </div>
-      <div class="card">
-        <h2><i data-i="list-checks"></i>Порядок</h2>
-        <p class="lead">Кого спрашивать первым, через запятую. Сайты: qwen, deepseekweb, geminiweb, arenaweb, kimiweb, glmweb, mistralweb, grokweb, chatgptweb, copilotweb. По ключу: gemini, groq, openrouter, deepseek, claude.</p>
-        <input id="brainOrder">
-        <div class="row" style="margin-top:var(--s3)"><button id="brainsSave" class="pri"><i data-i="check"></i>Сохранить</button><span id="brainsNow" class="muted grow"></span></div>
-      </div>
+      </details>
+      <details class="card more">
+        <summary class="h"><i data-i="list-checks"></i>Порядок мозгов<span class="grow"></span><i data-i="chevron-down" class="chev"></i></summary>
+        <input id="brainOrder" title="Сайты: qwen, deepseekweb, geminiweb, arenaweb, kimiweb, glmweb, mistralweb, grokweb, chatgptweb, copilotweb. По ключу: gemini, groq, openrouter, deepseek, claude">
+        <div id="brainsNow" class="muted" style="margin-top:var(--s2)"></div>
+      </details>
     </section>
 
     <!-- ГОЛОС -->
@@ -312,7 +314,7 @@
         <label>Голос Piper</label>
         <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall"><i data-i="plus" data-s="14"></i>Скачать</button></div>
         <div id="vStatus" class="muted" style="margin-top:6px"></div>
-        <div class="row" style="margin-top:var(--s4)"><button id="vSave" class="pri"><i data-i="check"></i>Сохранить</button><button id="vTest"><i data-i="volume-2"></i>Проверить голос</button></div>
+        <div class="row" style="margin-top:var(--s4)"><button id="vTest" class="pri"><i data-i="volume-2"></i>Проверить голос</button></div>
       </div>
     </section>
 
@@ -334,7 +336,6 @@
         <label>Модель для сжатия общего чата в новости (лучше самая лёгкая)</label><input id="serviceModels" placeholder="например Qwen3.5-Flash">
         <label>Ваш год рождения: им программа отвечает, когда Qwen спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
       </div>
-      <button id="saveSettings" class="pri"><i data-i="check"></i>Сохранить настройки</button>
     </section>
   </main>
 </div>
