@@ -5,123 +5,181 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
 <title>TotemBots</title>
 <style>
+  /* ---------- токены: все цвета, отступы, радиусы, шрифты - только отсюда (правила в UI.md) */
   :root {
-    --bg: #1b1c1f; --side: #1f2023; --card: #2a2c30; --card2: #24262a; --line: #393b41; --text: #e7e8ea; --muted: #a9aeb4;
-    --ok: #3ba55d; --okbtn: #2a7d45; --warn: #e7a32e; --bad: #e5484d; --acc: #5262e6; --acc2: #3d4aa8; --chip: #33353a; --r: 10px;
+    --bg: #111214; --panel: #17181b; --surface: #1e1f23; --surface-2: #25272c; --hover: #2c2e34; --line: #2c2e34; --line-2: #3a3d44;
+    --text: #ececee; --text-2: #b6bac1; --text-3: #959aa2;
+    --acc: #5a5fe0; --acc-soft: rgba(110,116,255,.16); --acc-text: #b9bcff;
+    --ok: #3fbf6f; --ok-btn: #1f7a44; --ok-soft: rgba(63,191,111,.14);
+    --warn: #e9a23b; --warn-soft: rgba(233,162,59,.15);
+    --bad: #f0575c; --bad-btn: #a8292e; --bad-soft: rgba(240,87,92,.14);
+    --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px;
+    --r1: 6px; --r2: 10px; --r3: 14px;
+    --f-xs: 12px; --f-sm: 13px; --f-md: 14px; --f-lg: 16px;
+    --shadow: 0 8px 24px rgba(0,0,0,.35);
+    --fast: .12s ease;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 13px/1.45 "Segoe UI", system-ui, sans-serif; overflow: hidden; }
-  a { color: #9fb0ff; }
-  /* ---------- левая панель */
-  #side { position: fixed; left: 0; top: 0; bottom: 0; width: 440px; display: flex; flex-direction: column; background: var(--side); border-right: 1px solid var(--line); }
-  #top { padding: 12px 16px 0; }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand h1 { font-size: 16px; margin: 0; letter-spacing: .2px; }
-  .brand .grow { flex: 1; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .chip b { color: var(--text); font-weight: 600; }
-  nav { display: flex; gap: 2px; margin-top: 12px; border-bottom: 1px solid var(--line); }
-  nav button { background: none; color: var(--muted); border: 0; border-bottom: 2px solid transparent; border-radius: 0; padding: 8px 11px; font: inherit; cursor: pointer; }
-  nav button:hover { color: var(--text); }
-  nav button.on { color: var(--text); border-bottom-color: var(--acc); }
-  nav .badge { display: inline-block; min-width: 16px; padding: 0 5px; margin-left: 4px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 11px; line-height: 16px; text-align: center; }
-  main { flex: 1; overflow: auto; padding: 12px 16px 72px; }
-  section { display: none; } section.on { display: block; }
-  .card { background: var(--card); border-radius: var(--r); padding: 12px; margin-bottom: 12px; }
-  .card h2 { font-size: 14px; margin: 0 0 8px; }
-  .lead { color: var(--muted); font-size: 12.5px; margin: 0 0 12px; }
-  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .grow { flex: 1; min-width: 0; }
-  .muted { color: var(--muted); font-size: 12px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: #5c6067; flex: none; }
-  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); }
-  .dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
-  @keyframes pulse { 50% { opacity: .35; } }
-  button { background: var(--acc); color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; transition: filter .12s; }
-  button:hover { filter: brightness(1.12); }
-  button.sec { background: #44474e; } button.ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
-  button.red { background: #9b3437; } button.small { padding: 4px 8px; font-size: 12px; }
-  button.go { background: var(--okbtn); } button.big { padding: 11px 16px; font-size: 15px; font-weight: 600; border-radius: 9px; }
-  /* стартовый экран */
-  .start { border: 1px solid #3a5a45; }
-  .check { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid #34363c; }
-  .check:first-child { border-top: 0; }
-  .check .ic { width: 18px; height: 18px; flex: none; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 700; color: #fff; background: #5c6067; }
-  .check .ic.ok { background: var(--ok); } .check .ic.bad { background: var(--bad); } .check .ic.warn { background: var(--warn); }
-  .check .t { flex: 1; min-width: 0; } .check .t b { display: block; font-weight: 600; } .check .t span { color: var(--muted); font-size: 12px; }
-  .picks { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 4px 30px; }
-  .picks label { display: inline-flex; align-items: center; gap: 6px; margin: 0; padding: 5px 10px; border-radius: 8px; background: var(--card2); border: 1px solid var(--line); color: var(--text); font-size: 13px; cursor: pointer; }
-  .picks label.on { border-color: var(--ok); background: rgba(59,165,93,.12); }
-  .picks input { width: auto; margin: 0; }
-  button:disabled { opacity: .5; cursor: default; filter: none; }
-  button.loading { position: relative; color: transparent !important; }
-  button.loading::after { content: ''; position: absolute; left: 50%; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: var(--f-sm)/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  a { color: var(--acc-text); }
+  svg.i { flex: none; vertical-align: -3px; }
+  .spin { animation: spin .9s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  input, textarea, select { background: #17181b; color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font: inherit; width: 100%; }
-  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--acc); }
-  textarea { resize: vertical; }
-  label { display: block; margin: 12px 0 4px; color: var(--muted); font-size: 12px; }
-  label.chk { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 13px; margin: 8px 0 0; }
-  label.chk input { width: auto; }
-  input[type=range] { padding: 0; }
-  .seg { display: inline-flex; background: #17181b; border: 1px solid var(--line); border-radius: 8px; padding: 2px; gap: 2px; flex-wrap: wrap; }
-  .seg button { background: none; color: var(--muted); padding: 4px 10px; border-radius: 6px; }
-  .seg button.on { background: var(--acc); color: #fff; }
-  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11.5px; background: var(--chip); color: var(--muted); white-space: nowrap; }
-  .pill.ok { background: rgba(59,165,93,.18); color: #6fd391; } .pill.bad { background: rgba(229,72,77,.18); color: #ff8f92; }
-  .pill.warn { background: rgba(231,163,46,.18); color: #f3c26b; } .pill.acc { background: rgba(91,108,242,.22); color: #b3bcff; }
-  /* статус «что происходит» */
-  .step { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; border-top: 1px solid #34363c; }
-  .step:first-child { border-top: 0; padding-top: 2px; }
-  .step .ic { width: 14px; height: 14px; flex: none; margin-top: 3px; border-radius: 50%; background: #5c6067; }
-  .step .ic.ok { background: var(--ok); } .step .ic.bad { background: var(--bad); } .step .ic.warn { background: var(--warn); }
-  .step .ic.spin { background: none; border: 2px solid var(--acc); border-top-color: transparent; animation: spin .8s linear infinite; }
-  .step b { font-weight: 600; }
-  .step .hint { color: var(--muted); font-size: 12px; }
-  /* карточка бота */
-  .bot { border: 1px solid transparent; cursor: pointer; }
-  .bot.sel { border-color: var(--acc2); cursor: default; }
-  .bot h3 { margin: 0; font-size: 14px; }
-  .stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
-  .tabs2 { display: flex; gap: 2px; margin: 12px 0 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .tabs2 button { background: none; color: var(--muted); border-radius: 0; border-bottom: 2px solid transparent; padding: 6px 8px; font-size: 12.5px; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  @keyframes fadein { from { opacity: 0; transform: translateY(4px); } }
+  :focus-visible { outline: 2px solid var(--acc-text); outline-offset: 2px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-thumb { background: #33363d; border-radius: 10px; border: 2px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: #444851; } ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ---------- кнопки: основная (одна на экран), обычная, тихая, опасная; иконка + текст */
+  button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 var(--s3); border: 1px solid transparent; border-radius: var(--r1);
+    background: var(--surface-2); color: var(--text); font: 500 var(--f-sm) inherit; font-family: inherit; cursor: pointer; white-space: nowrap; transition: background var(--fast), border-color var(--fast), opacity var(--fast); }
+  button:hover { background: var(--hover); }
+  button:active { transform: translateY(1px); }
+  button.pri { background: var(--acc); color: #fff; } button.pri:hover { background: #6a6ff0; }
+  button.go { background: var(--ok-btn); color: #fff; } button.go:hover { background: #24904f; }
+  button.ghost { background: transparent; color: var(--text-2); border-color: var(--line-2); } button.ghost:hover { color: var(--text); background: var(--surface-2); }
+  button.quiet { background: transparent; color: var(--text-2); } button.quiet:hover { color: var(--text); background: var(--surface-2); }
+  button.danger { background: transparent; color: #ff9a9d; border-color: rgba(240,87,92,.35); } button.danger:hover { background: var(--bad-soft); }
+  button.sm { height: 28px; padding: 0 10px; font-size: var(--f-xs); }
+  button.icon { width: 32px; padding: 0; } button.icon.sm { width: 28px; }
+  button.big { height: 44px; font-size: var(--f-md); font-weight: 600; border-radius: var(--r2); }
+  button:disabled { opacity: .45; cursor: default; transform: none; }
+  button.loading { position: relative; color: transparent !important; } button.loading svg { opacity: 0; }
+  button.loading::after { content: ''; position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border: 2px solid var(--text); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+
+  /* ---------- поля */
+  input, textarea, select { width: 100%; height: 34px; padding: 0 10px; background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: var(--r1); font: var(--f-sm) inherit; font-family: inherit; transition: border-color var(--fast); }
+  textarea { height: auto; padding: 8px 10px; resize: vertical; line-height: 1.5; }
+  input:hover, textarea:hover, select:hover { border-color: #4a4e57; }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--acc); box-shadow: 0 0 0 3px var(--acc-soft); }
+  input::placeholder, textarea::placeholder { color: var(--text-3); }
+  input[type=range] { height: auto; padding: 0; border: 0; background: none; accent-color: var(--acc); box-shadow: none; }
+  input[type=checkbox] { width: 16px; height: 16px; margin: 0; accent-color: var(--acc); flex: none; }
+  label { display: block; margin: var(--s3) 0 6px; color: var(--text-2); font-size: var(--f-xs); font-weight: 500; }
+  label.chk { display: flex; align-items: center; gap: var(--s2); margin: var(--s2) 0 0; color: var(--text); font-size: var(--f-sm); font-weight: 400; cursor: pointer; }
+
+  /* ---------- раскладка */
+  .row { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  .muted { color: var(--text-2); font-size: var(--f-xs); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r3); padding: var(--s4); margin-bottom: var(--s3); }
+  .card > h2, .card .h { display: flex; align-items: center; gap: var(--s2); margin: 0 0 var(--s2); font-size: var(--f-md); font-weight: 600; }
+  .card > h2 svg, .card .h svg { color: var(--text-2); }
+  .lead { color: var(--text-2); font-size: var(--f-sm); margin: 0 0 var(--s3); }
+  .seg { display: inline-flex; gap: 2px; padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r2); flex-wrap: wrap; }
+  .seg button { height: 26px; padding: 0 10px; background: none; color: var(--text-2); border-radius: 7px; font-size: var(--f-xs); }
+  .seg button:hover { color: var(--text); background: var(--surface-2); }
+  .seg button.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .pill { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: var(--f-xs); background: var(--surface-2); color: var(--text-2); white-space: nowrap; }
+  .pill.ok { background: var(--ok-soft); color: #7fe0a3; } .pill.bad { background: var(--bad-soft); color: #ffa3a6; }
+  .pill.warn { background: var(--warn-soft); color: #f5c57a; } .pill.acc { background: var(--acc-soft); color: var(--acc-text); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #5c6067; flex: none; }
+  .dot.ok { background: var(--ok); } .dot.bad { background: var(--bad); } .dot.warn { background: var(--warn); } .dot.pulse { animation: pulse 1.2s ease-in-out infinite; }
+
+  /* ---------- левая колонка */
+  #side { position: fixed; left: 0; top: 0; bottom: 0; width: 440px; display: flex; flex-direction: column; background: var(--panel); border-right: 1px solid var(--line); }
+  header.top { padding: var(--s3) var(--s4) 0; }
+  .brand { display: flex; align-items: center; gap: 10px; height: 36px; }
+  .logo { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: linear-gradient(135deg, #6a6ff0, #4146b8); color: #fff; }
+  .brand h1 { margin: 0; font-size: var(--f-lg); font-weight: 650; letter-spacing: .1px; }
+  #runPill { margin-left: 2px; }
+  .ctx { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s3); }
+  .ctx .field { display: flex; align-items: center; gap: 6px; height: 32px; padding: 0 0 0 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r1); color: var(--text-2); font-size: var(--f-xs); }
+  .ctx .field select { height: 30px; border: 0; background: transparent; padding: 0 6px; box-shadow: none; }
+  #srvChip { padding-right: 10px; cursor: pointer; } #srvChip b { color: var(--text); font-weight: 600; }
+  nav#nav { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; margin-top: var(--s3); padding: 3px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r2); }
+  nav#nav button { height: 32px; background: none; color: var(--text-2); border-radius: 7px; font-size: var(--f-sm); position: relative; }
+  nav#nav button:hover { color: var(--text); background: var(--surface); }
+  nav#nav button.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+  nav .badge { min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--bad); color: #fff; font-size: 10.5px; font-weight: 700; line-height: 16px; }
+  main { flex: 1; overflow: auto; padding: var(--s3) var(--s4) 88px; scrollbar-gutter: stable; }
+  section { display: none; } section.on { display: block; animation: fadein .15s ease; }
+
+  /* ---------- строки состояния (стартовый экран и «Сейчас») */
+  .step, .check { display: flex; gap: var(--s3); align-items: flex-start; padding: 10px 0; border-top: 1px solid var(--line); }
+  .step:first-child, .check:first-child { border-top: 0; padding-top: 2px; }
+  .st { width: 18px; height: 18px; flex: none; margin-top: 1px; display: grid; place-items: center; color: var(--text-3); }
+  .st.ok { color: var(--ok); } .st.bad { color: var(--bad); } .st.warn { color: var(--warn); } .st.spin { color: var(--acc-text); }
+  .step .t, .check .t { flex: 1; min-width: 0; } .step b, .check b { display: block; font-weight: 600; } .step .hint, .check .t span { display: block; color: var(--text-2); font-size: var(--f-xs); }
+  .check { align-items: center; }
+  .start { border-color: rgba(63,191,111,.35); background: linear-gradient(180deg, rgba(63,191,111,.06), transparent 60%), var(--surface); }
+  .picks { display: flex; flex-wrap: wrap; gap: var(--s2); margin: 2px 0 var(--s1) 30px; }
+  .picks label { display: inline-flex; align-items: center; gap: var(--s2); height: 32px; margin: 0; padding: 0 var(--s3); border-radius: var(--r1); background: var(--surface-2); border: 1px solid var(--line-2); color: var(--text); font-size: var(--f-sm); cursor: pointer; transition: border-color var(--fast), background var(--fast); }
+  .picks label:hover { border-color: #4a4e57; }
+  .picks label.on { border-color: rgba(63,191,111,.6); background: var(--ok-soft); }
+
+  /* ---------- карточка бота */
+  .bot { padding: var(--s3) var(--s4); cursor: pointer; transition: border-color var(--fast), background var(--fast); }
+  .bot:hover { border-color: var(--line-2); }
+  .bot.sel { cursor: default; padding: var(--s4); border-color: var(--line-2); }
+  .bothead { display: flex; align-items: center; gap: var(--s3); }
+  .ava { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: var(--f-md); background: #2e3140; color: var(--acc-text); position: relative; flex: none; }
+  .ava .dot { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border: 2px solid var(--surface); }
+  .bothead .nm { font-size: var(--f-md); font-weight: 600; }
+  .bothead .sub { color: var(--text-2); font-size: var(--f-xs); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meters { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s2) var(--s4); margin-top: var(--s3); }
+  .meter { display: flex; align-items: center; gap: 6px; font-size: var(--f-xs); color: var(--text-2); }
+  .meter .bar { flex: 1; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .meter .bar i { display: block; height: 100%; border-radius: 3px; background: var(--ok); transition: width .3s ease; }
+  .meter.warn .bar i { background: var(--warn); } .meter.bad .bar i { background: var(--bad); }
+  .meter svg { color: var(--text-3); }
+  .doing { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; font-size: var(--f-xs); color: var(--text-2); }
+  .doing b { color: var(--text); font-weight: 500; }
+  .tabs2 { display: flex; gap: 2px; margin: var(--s4) calc(-1 * var(--s4)) var(--s3); padding: 0 var(--s4); border-bottom: 1px solid var(--line); overflow-x: auto; scrollbar-width: none; }
+  .tabs2::-webkit-scrollbar { display: none; }
+  .tabs2 button { height: 34px; padding: 0 7px; background: none; border-radius: 0; color: var(--text-2); border-bottom: 2px solid transparent; font-size: var(--f-xs); gap: 5px; flex: none; }
+  .tabs2 button:hover { color: var(--text); background: none; }
   .tabs2 button.on { color: var(--text); border-bottom-color: var(--acc); }
-  .log { background: #141517; border-radius: 8px; padding: 8px; height: 320px; overflow: auto; font: 11.5px/1.45 Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
-  .logbar { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
-  .logbar .seg button { padding: 2px 8px; font-size: 12px; }
-  .log .hint { color: var(--muted); }
-  .toast .undo { margin-left: 8px; background: none; color: #b3bcff; padding: 0; text-decoration: underline; }
-  :focus-visible { outline: 2px solid #8fa0ff; outline-offset: 2px; }
-  .log .in { color: #8fb8ff; } .log .out { color: #b5e08f; } .log .chat { color: #cfcfcf; } .log .err { color: #ff9a9a; }
-  .box { background: var(--card2); border-radius: 8px; padding: 8px 12px; margin-top: 8px; }
-  .chatrow { margin-top: 5px; font-size: 12px; }
-  .chatrow.cur b { color: #9fb0ff; }
-  .cmd { font: 11.5px Consolas, monospace; background: #141517; border-radius: 5px; padding: 4px 7px; word-break: break-all; }
-  /* сайты-мозги */
-  .site { display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; padding: 9px 0; border-top: 1px solid #34363c; }
-  .site:first-of-type { border-top: 0; }
-  .site .nm { display: flex; align-items: center; gap: 7px; font-weight: 600; }
-  .site .acts { grid-column: 1 / -1; display: flex; gap: 5px; flex-wrap: wrap; }
-  .empty { text-align: center; color: var(--muted); padding: 18px 10px; }
-  /* всплывающие сообщения */
-  #toasts { position: fixed; left: 16px; bottom: 12px; width: 408px; display: flex; flex-direction: column; gap: 6px; z-index: 10; pointer-events: none; }
-  .toast { background: #2f3136; border: 1px solid var(--line); border-left: 3px solid var(--acc); border-radius: 8px; padding: 8px 10px; box-shadow: 0 4px 16px rgba(0,0,0,.4); font-size: 12.5px; pointer-events: auto; }
-  .toast.bad { border-left-color: var(--bad); } .toast.ok { border-left-color: var(--ok); }
+  .logbar { display: flex; align-items: center; gap: var(--s2); }
+  .logbar .seg button { padding: 0 8px; gap: 4px; }
+  .log { margin-top: var(--s2); background: var(--bg); border: 1px solid var(--line); border-radius: var(--r2); padding: var(--s2) 10px; height: max(240px, calc(100vh - 560px)); overflow: auto;
+    font: 12px/1.55 "Cascadia Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-word; contain: content; }
+  .log > div { padding: 1px 0; }
+  .log .in { color: #9cc3ff; } .log .out { color: #a9e38b; } .log .chat { color: #e3e3e3; } .log .err { color: #ff9ea1; } .log .hint { color: var(--text-2); font-family: "Segoe UI", sans-serif; }
+  .compose { display: flex; gap: var(--s2); margin-top: var(--s2); }
+  .compose input { height: 36px; }
+  .compose button { height: 36px; }
+  .box { background: var(--bg); border: 1px solid var(--line); border-radius: var(--r2); padding: 4px var(--s3); margin-top: var(--s3); }
+  .chatrow { display: flex; align-items: center; gap: 4px; padding: 6px 0; border-top: 1px solid var(--line); font-size: var(--f-xs); }
+  .chatrow:first-child { border-top: 0; }
+  .chatrow.cur b { color: var(--acc-text); }
+  .cmd { font: 12px Consolas, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r1); padding: 6px 8px; word-break: break-all; }
+  .empty { display: flex; flex-direction: column; align-items: center; gap: var(--s2); text-align: center; color: var(--text-2); padding: var(--s6) var(--s3); }
+  .empty svg { color: var(--text-3); }
+  .addbtn { width: 100%; height: 40px; background: transparent; border: 1px dashed var(--line-2); color: var(--text-2); border-radius: var(--r2); }
+  .addbtn:hover { color: var(--text); border-color: #4a4e57; background: var(--surface); }
+
+  /* ---------- сайты-мозги */
+  .site { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s3) 0; border-top: 1px solid var(--line); }
+  .site:first-of-type { border-top: 0; padding-top: 0; }
+  .site .nm { display: flex; align-items: center; gap: var(--s2); font-weight: 600; }
+  .site .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  /* ---------- всплывающие сообщения */
+  #toasts { position: fixed; left: var(--s4); bottom: var(--s4); width: 408px; display: flex; flex-direction: column; gap: var(--s2); z-index: 10; pointer-events: none; }
+  .toast { display: flex; align-items: flex-start; gap: 10px; background: #26282e; border: 1px solid var(--line-2); border-radius: var(--r2); padding: 10px var(--s3); box-shadow: var(--shadow); font-size: var(--f-sm); pointer-events: auto; animation: fadein .15s ease; }
+  .toast .tx { flex: 1; min-width: 0; }
+  .toast svg { margin-top: 2px; color: var(--acc-text); } .toast.ok svg { color: var(--ok); } .toast.bad svg { color: var(--bad); }
+  .toast .undo { height: 24px; padding: 0 8px; background: var(--surface-2); color: var(--acc-text); font-size: var(--f-xs); }
+
   /* ---------- полоска над окнами сайтов (справа) */
-  #strip { position: fixed; left: 440px; right: 0; top: 0; height: 68px; background: #222327; border-bottom: 1px solid var(--line); }
-  #strip .r1 { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 8px; }
-  #strip .r2 { height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 12px; font-size: 12px; color: var(--muted); border-top: 1px solid #2d2f34; }
-  #strip .r2.busy { color: #c7ceff; background: rgba(91,108,242,.12); }
-  #strip .r2.bad { color: #ffb0b2; background: rgba(229,72,77,.12); }
+  #strip { position: fixed; left: 440px; right: 0; top: 0; height: 68px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #strip .r1 { height: 42px; display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s2); }
+  #strip .r2 { height: 26px; display: flex; align-items: center; gap: var(--s2); padding: 0 var(--s3); font-size: var(--f-xs); color: var(--text-2); border-top: 1px solid var(--line); }
+  #strip .r2 svg { color: var(--text-3); }
+  #strip .r2.busy { color: var(--acc-text); background: var(--acc-soft); } #strip .r2.busy svg { color: var(--acc-text); }
+  #strip .r2.bad { color: #ffb3b5; background: var(--bad-soft); } #strip .r2.bad svg { color: var(--bad); }
   #strip .r2 .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #modeSeg button { gap: 5px; }
   #siteTabs { flex: 1; min-width: 0; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
   #siteTabs::-webkit-scrollbar { display: none; }
-  #siteTabs button { flex: none; display: inline-flex; align-items: center; gap: 6px; background: #2c2e33; color: var(--muted); padding: 5px 11px; border-radius: 7px; }
-  #siteTabs button.on { background: #3a3d44; color: var(--text); box-shadow: inset 0 -2px 0 var(--acc); }
-  #siteTabs button.off { opacity: .55; }
-  #nav2 { display: flex; gap: 4px; }
-  #nav2 button { background: #2c2e33; color: var(--text); padding: 5px 9px; }
+  #siteTabs button { flex: none; height: 30px; gap: 7px; background: transparent; color: var(--text-2); padding: 0 10px; }
+  #siteTabs button:hover { background: var(--surface); color: var(--text); }
+  #siteTabs button.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 -2px 0 var(--acc); }
+  #siteTabs button.off { opacity: .6; }
+  #nav2 { display: flex; gap: 2px; }
 </style>
 </head>
 <body>
@@ -129,147 +187,156 @@
 <div id="strip">
   <div class="r1">
     <div class="seg" id="modeSeg" title="Окна бота - там работает программа. Мои окна - ваши, с тем же входом: бот туда не заходит">
-      <button data-mode="work">Окна бота</button><button data-mode="mine">Мои окна</button>
+      <button data-mode="work"><i data-i="bot" data-s="14"></i>Окна бота</button><button data-mode="mine"><i data-i="user" data-s="14"></i>Мои окна</button>
     </div>
     <div id="siteTabs"></div>
     <div id="nav2">
-      <button id="navBack" title="Назад">←</button>
-      <button id="navReload" title="Обновить страницу">⟳</button>
-      <button id="navHome" title="На главную сайта">⌂</button>
+      <button id="navBack" class="quiet icon" title="Назад" aria-label="Назад"><i data-i="arrow-left"></i></button>
+      <button id="navReload" class="quiet icon" title="Обновить страницу" aria-label="Обновить страницу"><i data-i="rotate-cw"></i></button>
+      <button id="navHome" class="quiet icon" title="На главную сайта" aria-label="На главную сайта"><i data-i="house"></i></button>
     </div>
   </div>
-  <div class="r2" id="stripHint"><span class="t" id="stripText"></span></div>
+  <div class="r2" id="stripHint"><i data-i="info" data-s="14"></i><span class="t" id="stripText"></span></div>
 </div>
 
 <div id="side">
-  <div id="top">
+  <header class="top">
     <div class="brand">
+      <div class="logo"><i data-i="bot" data-s="18"></i></div>
       <h1>TotemBots</h1>
+      <span class="pill" id="runPill"></span>
       <span class="grow"></span>
-      <span class="chip" id="srvChip" title="Сервер, на который заходят боты. Поменять - «Настройки»"></span>
-      <button id="startBtn" class="go small" title="Запустить отмеченных ботов">Старт</button>
-      <button id="stopBtn" class="ghost small" title="Все боты выходят с сервера. Снова - «Старт»">Стоп</button>
-      <button id="pauseBtn" class="sec small" title="Пауза: всё стоит - мозг, дела тела, уши; боты остаются на сервере, сообщения игроков копятся и после «Продолжить» получают ответ. Можно перезайти на сайт нейросети">Пауза</button>
+      <button id="startBtn" class="go" title="Запустить отмеченных ботов"><i data-i="play"></i>Старт</button>
+      <button id="pauseBtn" title="Пауза: всё стоит - мозг, дела тела, уши; боты остаются на сервере, сообщения игроков копятся и после «Продолжить» получают ответ. Можно перезайти на сайт нейросети"><i data-i="pause"></i><span>Пауза</span></button>
+      <button id="stopBtn" class="ghost icon" title="Стоп: все боты выходят с сервера" aria-label="Стоп"><i data-i="square"></i></button>
     </div>
-    <div class="row" id="pinRow" style="margin-top:10px" title="Каким мозгом думает бот. Авто - по порядку из раздела «Мозги», при лимите или сбое сам переходит к следующему">
-      <span class="muted">Мозг</span>
-      <select id="pinSel" style="width:auto;flex:1;min-width:0"></select>
-      <input id="pinModel" placeholder="модель" style="width:120px" title="Для Qwen и мозгов по ключу. У сайтов модель выбирается на самом сайте: «Мои окна»">
-      <label class="chk" style="margin:0" title="Только выбранный: без перехода на запасные"><input type="checkbox" id="pinOnly">только он</label>
-      <button id="pinSave" class="small">OK</button>
+    <div class="ctx">
+      <div class="field" id="srvChip" title="Сервер, на который заходят боты. Нажмите, чтобы сменить"></div>
+      <div class="field grow" title="Каким мозгом думает бот. Авто - по порядку из раздела «Мозги», при лимите или сбое сам переходит к следующему">
+        <i data-i="cpu" data-s="14"></i><select id="pinSel"></select>
+      </div>
     </div>
     <nav id="nav">
-      <button data-sec="bots" class="on">Боты</button>
-      <button data-sec="brains">Мозги<span class="badge" id="brainsBadge" style="display:none"></span></button>
-      <button data-sec="voice">Голос</button>
-      <button data-sec="settings">Настройки</button>
+      <button data-sec="bots" class="on"><i data-i="bot"></i>Боты</button>
+      <button data-sec="brains"><i data-i="brain"></i>Мозги<span class="badge" id="brainsBadge" style="display:none"></span></button>
+      <button data-sec="voice"><i data-i="audio-lines"></i>Голос</button>
+      <button data-sec="settings"><i data-i="settings"></i>Настройки</button>
     </nav>
-  </div>
+  </header>
 
   <main>
     <!-- БОТЫ -->
     <section id="sec-bots" class="on">
       <div class="card start" id="startCard" style="display:none">
-        <h2>Запуск</h2>
+        <h2><i data-i="play"></i>Запуск</h2>
         <p class="lead">Пока вы не нажали «Запустить», программа ничего не делает: боты не заходят, нейросети не спрашиваются. Можно спокойно войти на сайты справа.</p>
         <div id="startChecks"></div>
-        <div class="row" style="margin-top:12px"><button id="startGo" class="go big grow">Запустить</button></div>
+        <button id="startGo" class="go big" style="width:100%;margin-top:var(--s3)"><i data-i="play" data-s="18"></i><span>Запустить</span></button>
         <label class="chk" title="При включении программы отмеченные боты зайдут сами, без этого экрана"><input type="checkbox" id="startAuto"> Запускать сразу при включении программы</label>
       </div>
       <div class="card" id="nowCard">
-        <div class="row"><h2 class="grow" style="margin:0">Что сейчас происходит</h2></div>
-        <div id="steps" style="margin-top:8px"></div>
+        <h2><i data-i="activity"></i>Сейчас</h2>
+        <div id="steps"></div>
       </div>
       <div id="bots"></div>
-      <div class="card">
-        <div class="row"><h2 class="grow" style="margin:0">Новый бот</h2><button id="addToggle" class="sec small">Добавить</button></div>
-        <div id="addBox" style="display:none">
-          <label>Ник на сервере</label><input id="newName" placeholder="например Steve2">
-          <label>Характер (можно оставить пустым: дружелюбный игрок)</label><textarea id="newPersona" rows="3" placeholder="весёлый строитель, любит помогать новичкам"></textarea>
-          <div class="muted" style="margin-top:6px">После добавления откройте у бота вкладку «На сервере»: там команды, которые надо один раз выполнить на сервере.</div>
-          <div class="row" style="margin-top:10px"><button id="add">Добавить бота</button></div>
-        </div>
+      <button id="addToggle" class="addbtn"><i data-i="plus"></i>Добавить бота</button>
+      <div class="card" id="addBox" style="display:none;margin-top:var(--s3)">
+        <h2><i data-i="plus"></i>Новый бот</h2>
+        <label>Ник на сервере</label><input id="newName" placeholder="например Steve2">
+        <label>Характер (можно пусто: дружелюбный игрок)</label><textarea id="newPersona" rows="3" placeholder="весёлый строитель, любит помогать новичкам"></textarea>
+        <div class="muted" style="margin-top:var(--s2)">После добавления откроется вкладка «Сервер»: там команды, которые надо один раз выполнить на сервере.</div>
+        <div class="row" style="margin-top:var(--s3)"><button id="add" class="pri"><i data-i="plus"></i>Добавить</button></div>
       </div>
     </section>
 
     <!-- МОЗГИ -->
     <section id="sec-brains">
       <div class="card">
-        <h2>Сайты нейросетей (без ключа)</h2>
-        <p class="lead">Бот думает через сайты по очереди: у одного лимит, проверка или сбой - сразу следующий. Войдите на нужные один раз. У каждого сайта два окна: <b>окно бота</b> (там работает программа, пока она занята - нажимать нельзя, листать можно) и <b>моё окно</b> (ваше, бот туда не заходит).</p>
+        <h2><i data-i="cpu"></i>Какой мозг думает</h2>
+        <p class="lead" id="pinLead" style="margin:0"></p>
+        <div class="row" id="pinRow" style="margin-top:var(--s3)">
+          <input id="pinModel" class="grow" placeholder="модель (для Qwen и мозгов по ключу)" title="У сайтов модель выбирается на самом сайте: «Мои окна»">
+          <label class="chk" style="margin:0" title="Только выбранный: без перехода на запасные"><input type="checkbox" id="pinOnly">только он</label>
+          <button id="pinSave" class="pri"><i data-i="check"></i>Сохранить</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2><i data-i="globe"></i>Сайты нейросетей</h2>
+        <p class="lead">Бот думает через сайты по очереди: у одного лимит или сбой - сразу следующий. Войдите на нужные один раз. <b>Окно бота</b> - там работает программа, <b>моё окно</b> - ваше, бот туда не заходит.</p>
         <div id="siteList"></div>
       </div>
       <div class="card">
-        <h2>Проект Qwen</h2>
+        <h2><i data-i="folder-open"></i>Проект Qwen</h2>
         <p class="lead">Чаты ботов и их память лежат в проекте «TotemCraft · боты» в вашем Qwen.</p>
         <label class="chk"><input type="checkbox" id="pEnabled"> Хранить чаты и память в проекте Qwen</label>
-        <div id="pStatus" class="muted" style="margin-top:4px"></div>
-        <div class="row" style="margin-top:8px"><button id="pOpen" class="sec small">Открыть проект в моём окне</button><button id="pSync" class="sec small">Обновить память сейчас</button></div>
+        <div id="pStatus" class="muted" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:var(--s3)"><button id="pOpen" class="sm"><i data-i="external-link" data-s="14"></i>Открыть проект</button><button id="pSync" class="sm"><i data-i="rotate-cw" data-s="14"></i>Обновить память</button></div>
       </div>
       <div class="card">
-        <h2>Нейросети по ключу (быстрее, без капч)</h2>
-        <p class="lead">Ответ за 1-2 секунды вместо 5-10. Ключ бесплатный: «где взять», войти своим аккаунтом, создать ключ, вставить сюда. Ключи хранятся только на этом компьютере.</p>
+        <h2><i data-i="key-round"></i>Нейросети по ключу</h2>
+        <p class="lead">Ответ за 1-2 секунды, без капч. Ключ бесплатный: «где взять», войти, создать ключ, вставить сюда. Хранится только на этом компьютере.</p>
         <div id="brainKeys"></div>
       </div>
       <div class="card">
-        <h2>Порядок</h2>
-        <p class="lead">Кого спрашивать первым, через запятую. Сайты: qwen, deepseekweb, kimiweb, glmweb, mistralweb, grokweb, chatgptweb, geminiweb, copilotweb. По ключу: gemini, groq, openrouter, deepseek.</p>
+        <h2><i data-i="list-checks"></i>Порядок</h2>
+        <p class="lead">Кого спрашивать первым, через запятую. Сайты: qwen, deepseekweb, geminiweb, arenaweb, kimiweb, glmweb, mistralweb, grokweb, chatgptweb, copilotweb. По ключу: gemini, groq, openrouter, deepseek, claude.</p>
         <input id="brainOrder">
-        <div class="row" style="margin-top:10px"><button id="brainsSave">Сохранить</button><span id="brainsNow" class="muted grow"></span></div>
+        <div class="row" style="margin-top:var(--s3)"><button id="brainsSave" class="pri"><i data-i="check"></i>Сохранить</button><span id="brainsNow" class="muted grow"></span></div>
       </div>
     </section>
 
     <!-- ГОЛОС -->
     <section id="sec-voice">
       <div class="card">
-        <h2>Голос ботов</h2>
+        <h2><i data-i="volume-2"></i>Голос ботов</h2>
         <label class="chk"><input type="checkbox" id="vEnabled"> Озвучивать реплики ботов</label>
         <label>Чем озвучивать</label>
         <select id="vProvider">
-          <option value="qwen">Qwen: голос из настроек Qwen (поменять - в «Моих окнах», Qwen)</option>
-          <option value="silero">Silero: русская нейросеть на этом компьютере, без интернета (живее Piper)</option>
-          <option value="piper">Piper: нейросеть на этом компьютере, без интернета</option>
+          <option value="qwen">Qwen: голос из настроек Qwen</option>
+          <option value="silero">Silero: русская нейросеть на компьютере, без интернета</option>
+          <option value="piper">Piper: нейросеть на компьютере, без интернета</option>
           <option value="system">Голоса Windows (только колонки)</option>
         </select>
-        <label class="chk"><input type="checkbox" id="vEcho"> Голос Qwen и для ответов других нейросетей (DeepSeek, Gemini...): +1 короткий запрос Qwen на фразу, задержка 3-8 с</label>
+        <label class="chk"><input type="checkbox" id="vEcho"> Голос Qwen и для ответов других нейросетей (+1 короткий запрос, 3-8 с)</label>
         <label class="chk"><input type="checkbox" id="vFallback"> Если не вышло, пробовать остальные способы</label>
         <label>Где звучит</label>
         <label class="chk"><input type="checkbox" id="vLocal"> В колонках этого компьютера</label>
         <label class="chk"><input type="checkbox" id="vPlasmo"> В игре через Plasmo Voice (слышат игроки рядом с ботом)</label>
         <label>Громкость</label><input type="range" id="vVolume" min="0" max="1" step="0.05">
         <label>Голос Silero</label>
-        <div class="row"><select id="vSileroVoice" class="grow"></select><button id="vInstallSilero" class="sec">Скачать Silero</button></div>
+        <div class="row"><select id="vSileroVoice" class="grow"></select><button id="vInstallSilero"><i data-i="plus" data-s="14"></i>Скачать</button></div>
         <label>Голос Piper</label>
-        <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall" class="sec">Скачать</button></div>
-        <div id="vStatus" class="muted" style="margin-top:4px"></div>
-        <div class="row" style="margin-top:12px"><button id="vSave">Сохранить</button><button id="vTest" class="sec">Проверить голос</button></div>
+        <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall"><i data-i="plus" data-s="14"></i>Скачать</button></div>
+        <div id="vStatus" class="muted" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:var(--s4)"><button id="vSave" class="pri"><i data-i="check"></i>Сохранить</button><button id="vTest"><i data-i="volume-2"></i>Проверить голос</button></div>
       </div>
     </section>
 
     <!-- НАСТРОЙКИ -->
     <section id="sec-settings">
       <div class="card">
-        <h2>Сервер</h2>
+        <h2><i data-i="server"></i>Сервер</h2>
         <div class="seg" id="srvSeg"><button data-h="play.totemcraft.net" data-p="20098">TotemCraft</button><button data-h="ru.totemcraft.net" data-p="20098">Российский вход</button><button data-h="127.0.0.1" data-p="25566">Тестовый</button></div>
-        <div class="row" style="margin-top:4px"><div class="grow"><label>Адрес</label><input id="host"></div><div style="width:110px"><label>Порт</label><input id="port"></div></div>
+        <div class="row" style="margin-top:2px;align-items:flex-end"><div class="grow"><label>Адрес</label><input id="host"></div><div style="width:110px"><label>Порт</label><input id="port"></div></div>
         <label>Хозяева: ники через запятую, первый - вы. Только их приказы с действиями бот выполняет</label><input id="masters">
       </div>
       <div class="card">
-        <h2>Qwen</h2>
+        <h2><i data-i="sliders-horizontal"></i>Qwen</h2>
         <label>Режим для болтовни</label>
         <select id="chatMode"><option value="fast">Быстро</option><option value="auto">Авто</option><option value="think">Мышление</option><option value="">Как выбрано в Qwen</option></select>
         <label>Режим для заданий</label>
         <select id="planMode"><option value="auto">Авто</option><option value="think">Мышление</option><option value="fast">Быстро</option><option value="">Как выбрано в Qwen</option></select>
-        <label>Модели по порядку через запятую (первая основная, дальше запасные на случай лимита; пусто - как выбрано в Qwen)</label><input id="models" placeholder="например Qwen3.7-Plus, Qwen3.5-Flash">
+        <label>Модели по порядку через запятую (пусто - как выбрано в Qwen)</label><input id="models" placeholder="например Qwen3.7-Plus, Qwen3.5-Flash">
         <label>Модель для сжатия общего чата в новости (лучше самая лёгкая)</label><input id="serviceModels" placeholder="например Qwen3.5-Flash">
         <label>Ваш год рождения: им программа отвечает, когда Qwen спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
       </div>
-      <div class="row"><button id="saveSettings">Сохранить настройки</button></div>
+      <button id="saveSettings" class="pri"><i data-i="check"></i>Сохранить настройки</button>
     </section>
   </main>
 </div>
 
-<div id="toasts"></div>
+<div id="toasts" role="status" aria-live="polite"></div>
+<script src="icons.js"></script>
 <script src="panel.js"></script>
 </body>
 </html>

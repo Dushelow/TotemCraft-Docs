@@ -34,7 +34,8 @@ function toast(text, kind = '', undo) {
   if (!text) return;
   const t = document.createElement('div');
   t.className = 'toast ' + kind;
-  t.textContent = human(text);
+  t.innerHTML = icon(kind === 'ok' ? 'circle-check' : kind === 'bad' ? 'circle-alert' : 'info') + '<div class="tx"></div>';
+  t.querySelector('.tx').textContent = human(text);
   if (undo) {
     const b = document.createElement('button');
     b.className = 'undo'; b.textContent = undo.label || 'Вернуть';
@@ -52,6 +53,7 @@ async function act(fn, btn, okText, undo) {
   catch (e) { toast(e.message || e, 'bad'); }
   finally { if (btn) { btn.classList.remove('loading'); btn.disabled = false; } }
 }
+paintIcons();
 T.onLoginStatus((t) => toast(t, /не вышло|ошибка|нужен вход/i.test(t) ? 'bad' : /готово|пройдена/i.test(t) ? 'ok' : ''));
 
 // ---------- разделы
@@ -73,7 +75,7 @@ function paintStrip() {
     $('siteTabs').innerHTML = st.siteList.map((s) => {
       const dot = s.captcha ? 'bad' : s.busy ? 'ok pulse' : s.logged ? 'ok' : '';
       const tip = s.captcha ? 'просит пройти проверку' : s.busy ? 'бот сейчас работает здесь' : s.logged ? 'вход выполнен' : 'вход не выполнен';
-      return `<button data-site="${s.id}" class="${s.id === v.site ? 'on' : ''} ${!s.logged && v.mode === 'work' ? 'off' : ''}" title="${esc(s.name)}: ${tip}"><span class="dot ${dot}"></span>${esc(s.name)}</button>`;
+      return `<button data-site="${s.id}" class="${s.id === v.site ? 'on' : ''} ${!s.logged && v.mode === 'work' ? 'off' : ''}" title="${esc(s.name)}: ${tip}">${s.captcha ? icon('triangle-alert', 14).replace('class="i ', 'style="color:var(--bad)" class="i ') : `<span class="dot ${dot}"></span>`}${esc(s.name)}</button>`;
     }).join('');
   }
   const cur = st.siteList.find((s) => s.id === v.site) || {};
@@ -84,7 +86,10 @@ function paintStrip() {
   else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Войдите здесь или кнопкой «Войти через Chrome» в разделе «Мозги».`; cls = 'bad'; }
   else text = `Окно бота ${cur.name}: бот может начать работу в любой момент. Писать самому лучше в «Мои окна».`;
   $('stripText').textContent = text;
-  $('stripHint').className = 'r2 ' + cls;
+  if ($('stripHint').className !== 'r2 ' + cls) {
+    $('stripHint').className = 'r2 ' + cls;
+    $('stripHint').firstElementChild.outerHTML = icon(cls === 'bad' ? 'triangle-alert' : cls === 'busy' ? 'loader-circle' : 'info', 14, cls === 'busy' ? 'spin' : '');
+  }
 }
 $('siteTabs').onclick = (e) => { const b = e.target.closest('[data-site]'); if (b) T.viewShow({ mode: (st.view || {}).mode || 'work', site: b.dataset.site }).then((v) => { st.view = v; paintStrip(); }); };
 document.querySelectorAll('#modeSeg button').forEach((b) => { b.onclick = () => T.viewShow({ mode: b.dataset.mode, site: (st.view || {}).site || 'qwen' }).then((v) => { st.view = v; paintStrip(); }); });
@@ -95,19 +100,27 @@ function openSite(site, mode) { T.viewShow({ mode, site }).then((v) => { st.view
 let pausedNow = false;
 function paintTop() {
   pausedNow = !!st.paused;
-  // шапка: до старта - «Старт»; боты работают - «Пауза/Продолжить» и «Стоп»
+  // до старта - «Старт»; боты работают - «Пауза/Продолжить» и «Стоп»; рядом с названием - общее состояние
   $('startBtn').style.display = st.running ? 'none' : '';
   $('stopBtn').style.display = st.running ? '' : 'none';
   $('pauseBtn').style.display = st.running ? '' : 'none';
-  $('pauseBtn').textContent = st.paused ? 'Продолжить' : 'Пауза';
-  $('pauseBtn').className = (st.paused ? '' : 'sec') + ' small';
-  const live = /play\.totemcraft/.test(st.host) ? 'TotemCraft' : /ru\.totemcraft/.test(st.host) ? 'Рос. вход' : /127\.0\.0\.1|localhost/.test(st.host) ? 'Тестовый' : st.host;
-  $('srvChip').innerHTML = `сервер <b>${esc(live)}</b>`;
+  const pb = st.paused ? 'Продолжить' : 'Пауза';
+  if ($('pauseBtn').dataset.v !== pb) {
+    $('pauseBtn').dataset.v = pb;
+    $('pauseBtn').innerHTML = icon(st.paused ? 'play' : 'pause') + `<span>${pb}</span>`;
+    $('pauseBtn').className = st.paused ? 'go' : '';
+  }
+  const run = !st.running ? ['', 'остановлено'] : st.paused ? ['warn', 'пауза'] : ['ok', 'работает'];
+  const rp = `<span class="dot ${run[0]}${run[0] === 'ok' ? ' pulse' : ''}"></span>${run[1]}`;
+  if ($('runPill').innerHTML !== rp) { $('runPill').innerHTML = rp; $('runPill').className = 'pill ' + run[0]; }
+  const srv = `${icon('server', 14)}<b>${esc(srvName(st.host))}</b>`;
+  if ($('srvChip').innerHTML !== srv) $('srvChip').innerHTML = srv;
   const need = (st.siteList || []).filter((s) => s.inOrder && !s.logged).length + ((st.siteList || []).some((s) => s.captcha) ? 1 : 0);
   $('brainsBadge').style.display = need ? '' : 'none';
   $('brainsBadge').textContent = need;
   $('brainsBadge').title = 'сайты из порядка без входа или с проверкой';
 }
+$('srvChip').onclick = () => goSection('settings');
 $('pauseBtn').onclick = () => act(() => T.pause(!pausedNow), $('pauseBtn'));
 $('startBtn').onclick = () => act(() => T.botsStart(), $('startBtn'), 'боты заходят на сервер');
 $('stopBtn').onclick = () => {
@@ -116,8 +129,10 @@ $('stopBtn').onclick = () => {
 };
 
 // ---------- стартовый экран: пока ни один бот не запущен
+const ST_ICON = { ok: 'circle-check', bad: 'circle-alert', warn: 'triangle-alert', spin: 'loader-circle', '': 'info' };
+function stIcon(ic) { return `<div class="st ${ic}">${icon(ST_ICON[ic] || 'info', 18, ic === 'spin' ? 'spin' : '')}</div>`; }
 function check(ic, title, hint, btn) {
-  return `<div class="check"><div class="ic ${ic}">${ic === 'ok' ? '✓' : ic === 'bad' ? '!' : ''}</div><div class="t"><b>${esc(title)}</b>${hint ? `<span>${esc(hint)}</span>` : ''}</div>${btn || ''}</div>`;
+  return `<div class="check">${stIcon(ic)}<div class="t"><b>${esc(title)}</b>${hint ? `<span>${esc(hint)}</span>` : ''}</div>${btn || ''}</div>`;
 }
 function srvName(h) { return /play\.totemcraft/.test(h) ? 'TotemCraft' : /ru\.totemcraft/.test(h) ? 'Российский вход' : /127\.0\.0\.1|localhost/.test(h) ? 'Тестовый' : h; }
 function renderStart() {
@@ -132,18 +147,18 @@ function renderStart() {
   const B = st.brains || {};
   const pinName = B.pin ? ((B.choices || []).find((c) => c.id === B.pin) || {}).name || B.pin : '';
   const out = [
-    check('ok', 'Сервер: ' + srvName(st.host), `${st.host}:${st.port}`, '<button class="ghost small" data-go="settings">Сменить</button>'),
-    cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost small" data-go="brains">Мозги</button>')
-      : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost small" data-go="brains">Мозги</button>')
-      : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="small" data-go="brains">Войти</button>'),
+    check('ok', 'Сервер: ' + srvName(st.host), `${st.host}:${st.port}`, '<button class="ghost sm" data-go="settings">Сменить</button>'),
+    cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost sm" data-go="brains">Мозги</button>')
+      : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost sm" data-go="brains">Мозги</button>')
+      : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="pri sm" data-go="brains">Войти</button>'),
     st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Ботов к запуску: ${picked.length}` : 'Отметьте, кого запустить', 'нажмите на ник, чтобы включить или убрать')
       + `<div class="picks">${st.bots.map((b) => `<label class="${b.pick ? 'on' : ''}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}>${esc(b.name)}</label>`).join('')}</div>`
-      : check('warn', 'Ботов нет', 'добавьте первого внизу: «Новый бот»'),
+      : check('warn', 'Ботов нет', 'добавьте первого внизу: «Добавить бота»'),
   ];
   const html = out.join('');
   if ($('startChecks').dataset.html !== html) { $('startChecks').dataset.html = html; $('startChecks').innerHTML = html; }
   $('startGo').disabled = !picked.length;
-  $('startGo').textContent = picked.length > 1 ? `Запустить (${picked.length})` : 'Запустить';
+  $('startGo').lastElementChild.textContent = picked.length > 1 ? `Запустить (${picked.length})` : 'Запустить';
   if (document.activeElement !== $('startAuto')) $('startAuto').checked = !!st.startOnLaunch;
 }
 function goSection(sec) { const b = document.querySelector(`#nav button[data-sec="${sec}"]`); if (b) b.click(); }
@@ -159,22 +174,34 @@ function paintPin() {
   const sig = JSON.stringify([B.choices, B.pin, B.pinOnly, B.pinModel]);
   if (pinFilled === sig || document.activeElement === $('pinModel') || document.activeElement === $('pinSel')) return;
   pinFilled = sig;
-  $('pinSel').innerHTML = `<option value="">Авто (по порядку)</option>` + B.choices.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
+  $('pinSel').innerHTML = `<option value="">Мозг: авто (по порядку)</option>` + B.choices.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   $('pinSel').value = B.pin || '';
   $('pinOnly').checked = !!B.pinOnly;
   $('pinModel').value = B.pinModel || '';
   paintPinModel();
 }
-function paintPinModel() { const id = $('pinSel').value; $('pinModel').style.display = id === 'qwen' || (id && !/web$/.test(id)) ? '' : 'none'; $('pinOnly').parentElement.style.display = id ? '' : 'none'; }
-$('pinSel').onchange = paintPinModel;
+function paintPinModel() {
+  const id = $('pinSel').value, withModel = id === 'qwen' || (id && !/web$/.test(id));
+  $('pinModel').disabled = !withModel; $('pinModel').style.display = withModel ? '' : 'none'; $('pinOnly').disabled = !id;
+  $('pinRow').style.display = id ? '' : 'none';
+  $('pinLead').textContent = id ? `Выбран: ${$('pinSel').selectedOptions[0].textContent}. ${withModel ? 'Можно указать модель. ' : 'Модель меняется на самом сайте («Моё окно»). '}«Только он» - не переходить на запасные при лимите.`
+    : 'Сейчас «авто»: бот спрашивает мозги по порядку ниже, при лимите или сбое - следующий. Выбрать один - в списке вверху.';
+}
+$('pinSel').onchange = () => {
+  paintPinModel();
+  const B = st.brains || {}, prev = { id: B.pin || '', only: !!B.pinOnly, model: B.pinModel };
+  act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').disabled ? undefined : $('pinModel').value }), null,
+    $('pinSel').value ? 'мозг: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто, по порядку', { fn: () => { pinFilled = ''; return T.brainPin(prev); }, done: 'мозг как был' });
+  $('pinSel').blur();
+};
 $('pinSave').onclick = () => {
   const B = st.brains || {}, prev = { id: B.pin || '', only: !!B.pinOnly, model: B.pinModel };
-  act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').style.display === 'none' ? undefined : $('pinModel').value }), $('pinSave'),
+  act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').disabled ? undefined : $('pinModel').value }), $('pinSave'),
     $('pinSel').value ? 'мозг выбран: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто', { fn: () => { pinFilled = ''; return T.brainPin(prev); }, done: 'мозг как был' });
 };
 
 // ---------- «Что сейчас происходит»
-function step(ic, title, hint) { return `<div class="step"><div class="ic ${ic}"></div><div><b>${esc(title)}</b>${hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div></div>`; }
+function step(ic, title, hint) { return `<div class="step">${stIcon(ic)}<div class="t"><b>${esc(title)}</b>${hint ? `<span class="hint">${esc(hint)}</span>` : ''}</div></div>`; }
 function renderNow() {
   const out = [];
   const sites = st.siteList || [];
@@ -184,12 +211,11 @@ function renderNow() {
   const logged = sites.filter((s) => s.inOrder && s.logged);
   out.push(logged.length ? step('ok', 'Мозги готовы: ' + logged.map((s) => s.name).join(', '), st.brains && st.brains.now ? 'сейчас думает через ' + st.brains.now : 'список и вход - раздел «Мозги»')
     : step('bad', 'Нет ни одного мозга с входом', 'раздел «Мозги»: войдите хотя бы в Qwen («Войти через Chrome»)'));
-  if (!st.bots.length) out.push(step('warn', 'Ботов нет', 'добавьте бота ниже («Новый бот»)'));
+  if (!st.bots.length) out.push(step('warn', 'Ботов нет', 'добавьте бота ниже: «Добавить бота»'));
   for (const b of st.bots) {
     const s = b.state || {}, br = b.brain;
-    if (s.status === 'online') out.push(step('ok', `${b.name} на сервере`, `${s.dim}, ${s.pos.join(' ')} · ${s.mode === 'follow' ? 'идёт за ' + s.follow : s.mode === 'task' ? 'занят: ' + s.task : s.mode === 'ride' ? 'едет' : 'свободен'}`));
-    else if (s.status === 'connecting') { out.push(step('spin', `${b.name} заходит на сервер`, 'вход и пароль AuthMe - секунд 10')); continue; }
-    else { out.push(step('', `${b.name} выключен`, 'кнопка «Включить» в его карточке или «Старт» вверху')); continue; }
+    if (s.status === 'connecting') { out.push(step('spin', `${b.name} заходит на сервер`, 'вход и пароль AuthMe - секунд 10')); continue; }
+    if (s.status !== 'online') continue;
     if (!br) continue;
     if (br.resting) out.push(step('bad', 'Мозг отдыхает: лимит у всех нейросетей', `снова попробует через ${br.resting} мин. Войдите в другой аккаунт или добавьте сайт или ключ в «Мозгах»`));
     else if (br.thinking) out.push(step('spin', `Думает... ${br.thinking.secs} с`, 'о чём: ' + br.thinking.about + (br.queue ? ` · в очереди ещё ${br.queue}` : '')));
@@ -222,63 +248,76 @@ function logLine(l) {
   return `<div class="${cls}">${esc(l)}${h !== l ? `<div class="hint">↳ ${esc(h)}</div>` : ''}</div>`;
 }
 const logFilter = new Map();   // ник -> что показывать в журнале
-const LOGF = [['all', 'Всё'], ['chat', 'Чат'], ['brain', 'Мозг'], ['body', 'Тело'], ['err', 'Ошибки']];
+const LOGF = [['all', 'Всё', 'list-checks'], ['chat', 'Чат', 'message-square'], ['brain', 'Мозг', 'brain'], ['body', 'Тело', 'footprints'], ['err', 'Ошибки', 'triangle-alert']];
 function logLines(b) { const f = logFilter.get(b.name) || 'all'; return b.log.filter((l) => f === 'all' || logKind(l) === f); }
-function errCount(b) { const n = b.log.filter((l) => logKind(l) === 'err').length; return n ? 'ошибок: ' + n : ''; }
-const TABS = [['log', 'Журнал'], ['behave', 'Поведение'], ['chats', 'Чаты'], ['persona', 'Характер'], ['map', 'Карта'], ['server', 'Сервер']];
+function errCount(b) { return b.log.filter((l) => logKind(l) === 'err').length; }
+const TABS = [['log', 'Журнал', 'scroll-text'], ['behave', 'Поведение', 'smile'], ['chats', 'Чаты', 'message-circle'], ['persona', 'Характер', 'sparkles'], ['map', 'Карта', 'map'], ['server', 'Сервер', 'server']];
+function meter(ic, val, label) {
+  const v = Math.max(0, Math.min(20, +val || 0)), cls = v <= 6 ? 'bad' : v <= 12 ? 'warn' : '';
+  return `<div class="meter ${cls}" title="${label} ${v} из 20">${icon(ic, 14)}<div class="bar"><i style="width:${v * 5}%"></i></div><span>${v}</span></div>`;
+}
+function doingText(s, on) {
+  return s.mode === 'follow' ? `идёт за ${s.follow}` : s.mode === 'task' ? `занят: ${s.task}` : s.mode === 'ride' ? 'едет' : s.mode === 'life' ? 'сама: ' + s.task
+    : s.mode === 'hold' ? 'ждёт на месте' : s.mode === 'paused' ? 'пауза' : on ? 'свободен' : '';
+}
 function botCard(b) {
   const s = b.state || {};
-  const on = s.status === 'online', conn = s.status === 'connecting';
-  const doing = s.mode === 'follow' ? `идёт за ${s.follow}` : s.mode === 'task' ? `занят: ${s.task}` : s.mode === 'ride' ? 'едет' : s.mode === 'life' ? 'сама: ' + s.task : s.mode === 'hold' ? 'ждёт' : on ? 'свободен' : '';
-  const head = `<div class="row"><span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span><h3 class="grow">${esc(b.name)}</h3>
-      ${s.status === 'off' ? `<button data-a="start" class="small">Включить</button>` : `<button data-a="stop" class="sec small">Выключить</button>`}</div>
-    <div class="stats">${on ? `<span class="pill">${esc(s.dim)} ${esc(s.pos.join(' '))}</span><span class="pill ${s.health <= 6 ? 'bad' : 'ok'}">здоровье ${s.health}/20</span><span class="pill ${s.food <= 6 ? 'warn' : ''}">еда ${s.food}/20</span><span class="pill acc">${esc(doing)}</span>` : `<span class="pill">${conn ? 'заходит...' : 'выключен'}</span>`}</div>`;
-  if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}">${head}<div class="muted" style="margin-top:6px">нажмите, чтобы открыть</div></div>`;
+  const on = s.status === 'online', conn = s.status === 'connecting', off = !on && !conn;
+  const where = on ? `${s.dim} · ${s.pos.join(' ')}` : conn ? 'заходит на сервер…' : 'выключен';
+  const power = off ? `<button data-a="start" class="go sm" title="Зайти на сервер">${icon('play', 14)}Включить</button>`
+    : `<button data-a="stop" class="ghost icon sm" title="Выйти с сервера" aria-label="Выключить">${icon('power', 14)}</button>`;
+  const head = `<div class="bothead"><div class="ava">${esc(b.name[0] || '?').toUpperCase()}<span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span></div>
+    <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}</div>`;
+  const stats = on ? `<div class="meters">${meter('heart', s.health, 'здоровье')}${meter('drumstick', s.food, 'еда')}
+    <div class="doing">${icon(s.mode === 'paused' ? 'circle-pause' : s.mode === 'hold' ? 'hand' : s.mode === 'follow' ? 'footprints' : 'activity', 14)}<b>${esc(doingText(s, on))}</b></div></div>` : '';
+  if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}" title="Открыть">${head}${stats}</div>`;
   const tab = botTab.get(b.name) || 'log';
   const inv = s.items ? Object.entries(s.items).map(([k, v]) => `${k} ×${v}`).join(', ') : '';
   let body = '';
-  if (tab === 'log') body = `
-    <div class="row"><input class="grow" data-f="order" placeholder="приказ, как в игре: иди за мной, отнеси шерсть CaptianRage..."><button data-a="order">Отправить</button></div>
-    ${inv ? `<div class="muted" style="margin:6px 0">инвентарь: ${esc(inv)}</div>` : ''}
-    <div class="logbar"><div class="seg">${LOGF.map(([k, t]) => `<button data-a="logf" data-v="${k}" class="${(logFilter.get(b.name) || 'all') === k ? 'on' : ''}">${t}</button>`).join('')}</div><span class="muted">${errCount(b)}</span></div>
-    <div class="log" data-f="log" style="margin-top:8px">${logLines(b).map(logLine).join('') || '<div class="hint">здесь пока пусто</div>'}</div>`;
+  if (tab === 'log') {
+    const n = errCount(b), f = logFilter.get(b.name) || 'all';
+    body = `
+    <div class="logbar"><div class="seg">${LOGF.map(([k, t, ic]) => `<button data-a="logf" data-v="${k}" class="${f === k ? 'on' : ''}" title="${t}">${icon(ic, 13)}${t}${k === 'err' && n ? ` <span class="pill bad" style="height:16px;padding:0 5px">${n}</span>` : ''}</button>`).join('')}</div></div>
+    <div class="log" data-f="log">${logLines(b).map(logLine).join('') || '<div class="hint">здесь пока пусто</div>'}</div>
+    <div class="compose"><input class="grow" data-f="order" placeholder="Приказ, как в игре: иди за мной, отнеси шерсть…"><button data-a="order" class="pri icon" title="Отправить (Enter)" aria-label="Отправить">${icon('send')}</button></div>
+    ${inv ? `<div class="muted" style="margin-top:var(--s2)">${icon('folder-open', 13)} ${esc(inv)}</div>` : ''}`;
+  }
   if (tab === 'behave') body = `
     <label>На что отзывается в чате${b.attention ? ` · обращений ${b.attention.address}, рядом ${b.attention.near}, в фон ${b.attention.background}` : ''}</label>
     <div class="seg">${[['quiet', 'Тихий'], ['normal', 'Обычный'], ['social', 'Общительный']].map(([v, t]) => `<button data-a="chatmode" data-v="${v}" class="${b.chatMode === v ? 'on' : ''}">${t}</button>`).join('')}</div>
-    <div class="muted" style="margin-top:4px">Тихий - только личка и имя. Обычный - ещё ближний чат и хозяин рядом. Общительный - сам заговаривает с теми, кто рядом.</div>
+    <div class="muted" style="margin-top:6px">Тихий - только личка и имя. Обычный - ещё ближний чат и хозяин рядом. Общительный - сам заговаривает с теми, кто рядом.</div>
     <label>Прозвища, на которые откликается (через запятую)</label>
-    <div class="row"><input class="grow" data-f="aliases" value="${esc(b.aliases || '')}" placeholder="алексик, сашка"><button data-a="aliases" class="sec">Сохранить</button></div>
+    <div class="row"><input class="grow" data-f="aliases" value="${esc(b.aliases || '')}" placeholder="алексик, сашка"><button data-a="aliases">${icon('check', 14)}Сохранить</button></div>
     <label>Как близко идти за вами: <b data-f="fdv">${b.followDist || 3}</b> бл. (в игре можно сказать «ближе» или «подальше»)</label>
     <input type="range" data-f="fd" min="1.5" max="10" step="0.5" value="${b.followDist || 3}">
     <label>Мобы</label>
-    <div class="seg">${[['defend', 'Защищать себя и меня'], ['flee', 'Убегать ко мне'], ['off', 'Не трогать']].map(([v, t]) => `<button data-a="combat" data-v="${v}" class="${b.combat === v ? 'on' : ''}">${t}</button>`).join('')}</div>`;
+    <div class="seg">${[['defend', 'Защищать', 'shield'], ['flee', 'Убегать ко мне', 'footprints'], ['off', 'Не трогать', 'hand']].map(([v, t, ic]) => `<button data-a="combat" data-v="${v}" class="${b.combat === v ? 'on' : ''}">${icon(ic, 13)}${t}</button>`).join('')}</div>`;
   if (tab === 'chats') body = `
-    <div class="muted">Сейчас: ${b.chatId ? esc(b.chatId.slice(0, 8)) + '…' : 'нет (начнётся при первом сообщении)'}</div>
-    <div class="row" style="margin-top:6px"><button data-a="chat" class="sec small" ${b.chatId ? '' : 'disabled'}>Показать в окне бота</button><button data-a="rewarm" class="sec small" title="повторить вводную в этом чате">Прогреть заново</button><button data-a="newchat" class="sec small">Новый чат</button></div>
-    <div class="row" style="margin-top:6px"><input class="grow" data-f="chatLink" placeholder="ссылка на чат Qwen https://chat.qwen.ai/c/..."><button data-a="chatUse" class="sec">Взять</button></div>
-    <div class="box">${(b.chats || []).map((c) => `<div class="row chatrow ${c.id === b.chatId ? 'cur' : ''}" data-id="${esc(c.id)}">
+    <div class="muted">Текущий чат: ${b.chatId ? esc(b.chatId.slice(0, 8)) + '…' : 'нет (начнётся при первом сообщении)'}</div>
+    <div class="row" style="margin-top:var(--s2)"><button data-a="chat" class="sm" ${b.chatId ? '' : 'disabled'}>${icon('app-window', 14)}Показать</button><button data-a="rewarm" class="sm" title="повторить вводную в этом чате">${icon('sparkles', 14)}Прогреть заново</button><button data-a="newchat" class="sm">${icon('plus', 14)}Новый чат</button></div>
+    <div class="row" style="margin-top:var(--s2)"><input class="grow" data-f="chatLink" placeholder="ссылка на чат Qwen https://chat.qwen.ai/c/…"><button data-a="chatUse">Взять</button></div>
+    <div class="box">${(b.chats || []).map((c) => `<div class="chatrow ${c.id === b.chatId ? 'cur' : ''}" data-id="${esc(c.id)}">
       <span class="grow"><b>${esc(c.note || c.id.slice(0, 8) + '…')}</b> <span class="muted">${new Date(c.at).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span></span>
-      <button data-a="chatOpen" class="sec small" title="открыть в моём окне Qwen">Открыть</button>
-      ${c.id === b.chatId ? '<span class="pill acc">текущий</span>' : '<button data-a="chatPick" class="sec small">Сделать текущим</button>'}
-      <button data-a="chatNote" class="ghost small" title="подписать">✎</button><button data-a="chatForget" class="ghost small" title="убрать из списка (в Qwen чат останется)">✕</button>
-    </div>`).join('') || '<div class="muted">чатов пока нет</div>'}</div>`;
+      ${c.id === b.chatId ? '<span class="pill acc">текущий</span>' : `<button data-a="chatPick" class="quiet sm" title="Сделать текущим">${icon('check', 14)}Взять</button>`}
+      <button data-a="chatOpen" class="quiet icon sm" title="Открыть в моём окне Qwen" aria-label="Открыть">${icon('external-link', 14)}</button>
+      <button data-a="chatNote" class="quiet icon sm" title="Подписать" aria-label="Подписать">${icon('pencil', 14)}</button><button data-a="chatForget" class="quiet icon sm" title="Убрать из списка (в Qwen чат останется)" aria-label="Убрать">${icon('x', 14)}</button>
+    </div>`).join('') || `<div class="empty">${icon('message-circle', 22)}чатов пока нет</div>`}</div>`;
   if (tab === 'persona') body = `
-    <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="6">${esc(b.persona || '')}</textarea>
-    <div class="row" style="margin-top:8px"><button data-a="savePersona">Сохранить характер</button></div>`;
-  if (tab === 'map') body = `<canvas data-f="map" width="392" height="392" style="width:100%;border-radius:8px;background:#111"></canvas>
+    <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="8">${esc(b.persona || '')}</textarea>
+    <div class="row" style="margin-top:var(--s3)"><button data-a="savePersona" class="pri">${icon('check', 14)}Сохранить характер</button></div>`;
+  if (tab === 'map') body = `<canvas data-f="map" width="392" height="392" style="width:100%;border-radius:var(--r2);background:var(--bg);border:1px solid var(--line)"></canvas>
     <div class="muted" data-f="mapinfo">серое - суша, синее - вода, красное - лава, оранжевое - постройки; точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер. Бот в центре, север сверху.</div>`;
   if (tab === 'server') body = `
-    <div class="muted">Один раз выполнить на сервере (консоль сервера или в игре от админа, с «/» в начале):</div>
+    <div class="muted">Один раз выполнить на сервере (консоль или в игре от админа, с «/» в начале):</div>
     ${[['Аккаунт AuthMe', `authme register ${b.name} ${b.password}`], ['Если аккаунт уже есть - новый пароль', `authme changepassword ${b.name} ${b.password}`],
        ['Наш аддон античита не наказывает бота', `lp user ${b.name} permission set totemguard.bypass true`]].map(([t, c]) => `
-      <label>${t}</label><div class="row"><span class="cmd grow">${esc(showPass.has(b.name) ? c : c.replace(b.password, '•'.repeat(8)))}</span><button data-a="copy" data-cmd="${esc(c)}" class="sec small">Копировать</button></div>`).join('')}
-    <div class="muted" style="margin-top:8px">Доступ к вашим сундукам LWC даёт администратор через базу LWC.</div>
-    <div class="row" style="margin-top:8px"><button data-a="pass" class="sec small">${showPass.has(b.name) ? 'Скрыть пароль' : 'Показать пароль'}</button>
-      <button data-a="newpass" class="sec small">Новый пароль</button><button data-a="probe" class="sec small" title="зайти и сразу выйти: проверить пароль и доступ">Проверить вход</button>
-      <span class="grow"></span><button data-a="remove" class="red small">Удалить бота</button></div>
-    <div class="muted" style="margin-top:6px">${esc(b.probe || '')}</div>`;
-  return `<div class="card bot sel" data-name="${esc(b.name)}">${head}
-    <div class="tabs2">${TABS.map(([k, t]) => `<button data-a="tab" data-v="${k}" class="${k === tab ? 'on' : ''}">${t}</button>`).join('')}</div>${body}</div>`;
+      <label>${t}</label><div class="row" style="flex-wrap:nowrap"><span class="cmd grow">${esc(showPass.has(b.name) ? c : c.replace(b.password, '•'.repeat(8)))}</span><button data-a="copy" data-cmd="${esc(c)}" class="quiet icon sm" title="Копировать" aria-label="Копировать">${icon('copy', 14)}</button></div>`).join('')}
+    <div class="muted" style="margin-top:var(--s2)">Доступ к вашим сундукам LWC даёт администратор через базу LWC.</div>
+    <div class="row" style="margin-top:var(--s3)"><button data-a="pass" class="sm">${icon(showPass.has(b.name) ? 'eye-off' : 'eye', 14)}${showPass.has(b.name) ? 'Скрыть пароль' : 'Показать пароль'}</button>
+      <button data-a="newpass" class="sm">${icon('key-round', 14)}Новый пароль</button><button data-a="probe" class="sm" title="зайти и сразу выйти: проверить пароль и доступ">${icon('log-in', 14)}Проверить вход</button></div>
+    <div class="row" style="margin-top:var(--s3)"><span class="muted grow">${esc(b.probe || '')}</span><button data-a="remove" class="danger sm">${icon('trash-2', 14)}Удалить бота</button></div>`;
+  return `<div class="card bot sel" data-name="${esc(b.name)}">${head}${stats}
+    <div class="tabs2">${TABS.map(([k, t, ic]) => `<button data-a="tab" data-v="${k}" class="${k === tab ? 'on' : ''}">${t}</button>`).join('')}</div>${body}</div>`;
 }
 
 let lastHtml = '';
@@ -292,7 +331,7 @@ function renderBots() {
     if (sel && log) { const end = log.scrollTop + log.clientHeight >= log.scrollHeight - 20; log.innerHTML = logLines(sel).map(logLine).join(''); if (end) log.scrollTop = log.scrollHeight; }
     return;
   }
-  const html = st.bots.map(botCard).join('') || '<div class="card empty">Ботов пока нет. Добавьте первого ниже.</div>';
+  const html = st.bots.map(botCard).join('') || `<div class="card empty">${icon('bot', 28)}<b>Ботов пока нет</b>добавьте первого кнопкой ниже</div>`;
   if (html === lastHtml) return;
   const atEnd = !log || log.scrollTop + log.clientHeight >= log.scrollHeight - 20, top = log ? log.scrollTop : 0;
   box.innerHTML = html; lastHtml = html;
@@ -346,12 +385,14 @@ $('bots').addEventListener('change', (e) => { if (e.target.dataset.f === 'fd') {
 $('bots').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && e.target.dataset.f === 'order') { e.preventDefault(); e.target.closest('.bot').querySelector('[data-a="order"]').click(); }
 });
-$('addToggle').onclick = () => { const open = $('addBox').style.display === 'none'; $('addBox').style.display = open ? '' : 'none'; $('addToggle').textContent = open ? 'Скрыть' : 'Добавить'; if (open) $('newName').focus(); };
+function addOpen(open) { $('addBox').style.display = open ? '' : 'none'; $('addToggle').style.display = open ? 'none' : ''; if (open) $('newName').focus(); }
+$('addToggle').onclick = () => addOpen(true);
+$('newName').addEventListener('keydown', (e) => { if (e.key === 'Escape') addOpen(false); if (e.key === 'Enter') $('add').click(); });
 $('add').onclick = () => act(async () => {
   const name = $('newName').value.trim();
   if (!name) throw new Error('впишите ник');
   await T.botAdd({ name, persona: $('newPersona').value });
-  selected = name; botTab.set(name, 'server'); $('newName').value = ''; $('newPersona').value = ''; $('addBox').style.display = 'none'; $('addToggle').textContent = 'Добавить'; lastHtml = '';
+  selected = name; botTab.set(name, 'server'); $('newName').value = ''; $('newPersona').value = ''; addOpen(false); lastHtml = '';
 }, $('add'), 'бот добавлен: выполните команды на сервере');
 
 // ---------- мозги: все сайты одинаково
@@ -361,11 +402,14 @@ function renderSites() {
   if (sig === sitesSig) return;
   sitesSig = sig;
   $('siteList').innerHTML = st.siteList.map((s) => {
-    const pill = s.captcha ? '<span class="pill bad">просит проверку</span>' : s.busy ? '<span class="pill acc">работает</span>' : s.logged ? '<span class="pill ok">вошёл</span>' : '<span class="pill">нужен вход</span>';
-    return `<div class="site"><div class="nm"><span class="dot ${s.logged ? 'ok' : ''}"></span>${esc(s.name)} ${pill}${s.inOrder ? '' : ' <span class="pill" title="не в порядке мозгов: бот его не спрашивает">не используется</span>'}</div><div></div>
-      <div class="acts"><button class="sec small" data-site-work="${s.id}">Окно бота</button><button class="sec small" data-site-mine="${s.id}">Моё окно</button>
-        <button class="small" data-site-login="${s.id}" title="откроется настоящий Chrome: войдите там, вход перенесётся в программу">Войти (Chrome)</button>${s.id !== 'qwen' ? `<button class="ghost small" data-site-mark="${s.id}" title="уже вошли прямо в окне сайта">Вошёл</button>` : ''}
-        <button class="ghost small" data-site-test="${s.id}">Проверить</button></div></div>`;
+    const pill = s.captcha ? `<span class="pill bad">${icon('triangle-alert', 12)}просит проверку</span>` : s.busy ? `<span class="pill acc">${icon('loader-circle', 12, 'spin')}работает</span>`
+      : s.logged ? `<span class="pill ok">${icon('check', 12)}вошёл</span>` : '<span class="pill">нужен вход</span>';
+    return `<div class="site"><div class="nm"><span class="dot ${s.logged ? 'ok' : ''}"></span>${esc(s.name)} ${pill}${s.inOrder ? '' : ' <span class="pill" title="не в порядке мозгов: бот его не спрашивает">не используется</span>'}</div>
+      <div class="acts">${s.captcha ? `<button class="pri sm" data-site-work="${s.id}" title="пройти проверку в окне бота">${icon('triangle-alert', 14)}Пройти проверку</button>`
+        : s.logged ? `<button class="sm" data-site-work="${s.id}" title="окно, где работает бот">${icon('app-window', 14)}Окно бота</button><button class="sm" data-site-mine="${s.id}" title="ваше окно с тем же входом: писать самому, менять модель и голос">${icon('user', 14)}Моё окно</button>
+          <button class="quiet sm" data-site-test="${s.id}" title="проверить, отвечает ли">${icon('activity', 14)}Проверить</button>`
+        : `<button class="pri sm" data-site-login="${s.id}" title="откроется настоящий Chrome: войдите там, вход перенесётся в программу">${icon('log-in', 14)}Войти через Chrome</button><button class="sm" data-site-work="${s.id}" title="войти прямо в окне программы">${icon('app-window', 14)}Окно бота</button>
+          ${s.id !== 'qwen' ? `<button class="quiet sm" data-site-mark="${s.id}" title="уже вошли прямо в окне сайта">${icon('check', 14)}Я вошёл</button>` : ''}`}</div></div>`;
   }).join('');
 }
 $('siteList').addEventListener('click', (e) => {
@@ -387,9 +431,9 @@ function renderBrains() {
   if (brainsFilled) return;
   brainsFilled = true;
   $('brainOrder').value = B.order.join(', ');
-  $('brainKeys').innerHTML = Object.entries(B.presets).map(([k, p]) => `<label>${esc(p.name)} ${B.has[k] ? '<span class="pill ok">ключ вставлен</span>' : ''} · <a href="#" data-url="${esc(p.keyUrl)}" class="keylink">где взять</a></label>
+  $('brainKeys').innerHTML = Object.entries(B.presets).map(([k, p]) => `<label style="display:flex;align-items:center;gap:6px">${esc(p.name)} ${B.has[k] ? `<span class="pill ok">${icon('check', 12)}ключ вставлен</span>` : ''}<span class="grow"></span><a href="#" data-url="${esc(p.keyUrl)}" class="keylink">где взять ${icon('external-link', 12)}</a></label>
     <div class="row"><input class="grow" data-key="${k}" placeholder="${B.has[k] ? 'пусто - оставить, «-» - удалить' : 'вставьте ключ'}"><input style="width:42%" data-model="${k}" value="${esc(B.models[k])}" title="модель"></div>`).join('')
-    + '<div class="row" style="margin-top:10px"><button id="keysSave">Сохранить ключи</button></div>';
+    + `<div class="row" style="margin-top:var(--s3)"><button id="keysSave" class="pri">${icon('check')}Сохранить ключи</button></div>`;
   document.querySelectorAll('.keylink').forEach((a) => { a.onclick = (e) => { e.preventDefault(); T.openExternal(a.dataset.url); }; });
   $('keysSave').onclick = () => saveBrains($('keysSave'));
 }
