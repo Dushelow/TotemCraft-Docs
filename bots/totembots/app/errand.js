@@ -175,6 +175,7 @@ class Errands {
           await sleep(3000);
         }
         if (!this.player(s.who)) throw new Error(`${s.who} не видно рядом`);
+        try { this.autoMark('встреча с ' + s.who, this.player(s.who).position, { kind: 'встреча ' + s.who, radius: 64, ttl: 7 * 86400000 }); } catch {}
         return run([{ act: 'come', who: s.who }]);
       }
       case 'give': {

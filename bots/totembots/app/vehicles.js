@@ -69,7 +69,9 @@ class Vehicles {
   async dismount() {
     const b = this.bot;
     if (!b.vehicle) return 'я ни на чём не сижу';
+    const was = b.vehicle;
     try { b.dismount(); } catch {}
+    try { if (was && /boat|raft/.test(was.name || '')) this.autoMark('моя лодка', was.position, { kind: 'моя лодка', one: true, ttl: 3 * 86400000 }); } catch {}
     for (let w = 0; w < 20 && b.vehicle; w++) await sleep(100);
     if (this.mode === 'ride') this.mode = 'idle';
     return b.vehicle ? 'не смог слезть' : 'слез';

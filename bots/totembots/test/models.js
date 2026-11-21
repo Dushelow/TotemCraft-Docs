@@ -200,3 +200,25 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = mv.some((x) => /zombie приближается сзади, 8 бл/.test(x)) && mv.some((x) => /creeper приближается слева, 3 бл/.test(x)) && th.level === 'опасно' && /Steve был у 20 64 0/.test(rl.join());
   console.log('--- чувства: ' + (ok ? `${th.level}; ${mv.join('; ')}; помнит: ${rl.join()}` : 'НЕТ: ' + th.level + ' / ' + mv.join('; ') + ' / ' + rl.join()));
 }
+
+// метки по ситуации: слова хозяина без координат, слияние одинаковых рядом, временные истекают, хозяйские не вытесняются
+{
+  const { Memory } = require('../app/memory');
+  const { Marks } = require('../app/marks');
+  const { Vec3 } = require('vec3');
+  const mem = new Memory(fs.mkdtempSync(path.join(os.tmpdir(), 'mk')));
+  const tb = Object.create(Marks.prototype);
+  Object.assign(tb, { memory: mem, opts: { name: 'Alex' }, log() {}, dimName: () => 'обычный мир', bot: { entity: { position: new Vec3(0, 64, 0) } },
+    player: (n) => (n === 'Valghard' ? { position: new Vec3(30, 70, -20) } : null) });
+  const w1 = tb.markFromWords('это мой склад', 'Valghard'), w2 = tb.markFromWords('запомни это место как шахта', 'Valghard'), w3 = tb.markFromWords('это круто', 'Valghard');
+  const sklad = mem.findPlace('мой склад');
+  tb.autoMark('овцы', { x: 10, y: 64, z: 10 }, { kind: 'стадо sheep', radius: 64 });
+  tb.autoMark('овцы', { x: 30, y: 64, z: 10 }, { kind: 'стадо sheep', radius: 64 });
+  const sheep = Object.values(mem.data.places).filter((p) => p.kind === 'стадо sheep');
+  tb.autoMark('Steve: точка', { x: 500, y: 64, z: -300 }, { kind: 'от Steve', ttl: -1 });
+  const expired = !mem.findPlace('Steve: точка');
+  for (let i = 0; i < 200; i++) tb.autoMark('ресурс ' + i, { x: i * 100, y: 64, z: 0 }, { kind: 'r' + i });
+  const kept = !!mem.findPlace('мой склад');
+  const ok = w1 && w2 && !w3 && sklad && sklad.x === 30 && sheep.length === 1 && sheep[0].x === 30 && expired && kept;
+  console.log('--- метки по ситуации: ' + (ok ? 'склад и шахта со слов хозяина, стадо слилось, временная истекла, хозяйские не вытеснены' : `НЕТ: ${w1}|${w2}|${w3}|${sklad && sklad.x}|${sheep.length}|${expired}|${kept}`));
+}

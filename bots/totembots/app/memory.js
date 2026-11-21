@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const LIMITS = { places: 80, people: 80, facts: 60, journal: 60 };
+const LIMITS = { places: 150, people: 80, facts: 60, journal: 60 };
 const now = () => Date.now();
 const clean = (s, n = 200) => String(s || '').replace(/\s+/g, ' ').trim().slice(0, n);
 const key = (s) => clean(s, 40).toLowerCase();
@@ -38,6 +38,10 @@ class Memory {
       const ks = Object.keys(obj).sort((a, b) => (obj[b].at || 0) - (obj[a].at || 0));
       for (const k of ks.slice(n)) delete obj[k];
     };
+    // истёкшие метки - прочь; лишние - сначала сами поставленные (auto), места от хозяина держатся дольше всех
+    for (const [k, p] of Object.entries(this.data.places)) if (p.until && p.until < now()) delete this.data.places[k];
+    const autos = Object.keys(this.data.places).filter((k) => this.data.places[k].auto).sort((a, b) => (this.data.places[a].at || 0) - (this.data.places[b].at || 0));
+    while (Object.keys(this.data.places).length > LIMITS.places && autos.length) delete this.data.places[autos.shift()];
     cut(this.data.places, LIMITS.places);
     cut(this.data.people, LIMITS.people);
     this.data.facts = this.data.facts.slice(-LIMITS.facts);
@@ -122,9 +126,26 @@ class Memory {
     this.trim(); this.save();
   }
 
+  /**
+   * Метка по ситуации (сама): kind - вид (одинаковые в radius сливаются: обновляется место и время), ttl - сколько
+   * жить (мс, временные сами истекают), one - такая метка одна на весь мир (моя кровать, моя лодка).
+   */
+  mark({ name, x, y, z, dim, note, kind, radius = 24, ttl, one }, by) {
+    const n = clean(name, 40);
+    if (!n || [x, y, z].some((v) => !Number.isFinite(+v))) return '';
+    const P = this.data.places, t = now();
+    let k = Object.keys(P).find((q) => P[q].kind === kind && kind && P[q].dim === (dim || 'обычный мир') && (one || Math.hypot(P[q].x - x, P[q].z - z) <= radius));
+    const fresh = !k;
+    if (k && key(P[k].name) !== key(n)) { delete P[k]; k = null; }
+    P[k || key(n)] = { name: n, x: Math.round(+x), y: Math.round(+y), z: Math.round(+z), dim: dim || 'обычный мир', note: clean(note, 120), by, at: t, auto: 1, kind, ...(ttl ? { until: t + ttl } : {}) };
+    this.trim(); this.save();
+    return fresh ? `отметила «${n}»` : '';
+  }
+
   findPlace(name) {
     const k = key(name);
-    const pl = this.data.places[k] || Object.values(this.data.places).find((p) => key(p.name).includes(k) || k.includes(key(p.name)));
+    const live = (p) => p && !(p.until && p.until < now());
+    const pl = (live(this.data.places[k]) && this.data.places[k]) || Object.values(this.data.places).find((p) => live(p) && (key(p.name).includes(k) || k.includes(key(p.name))));
     if (pl || !k) return pl;
     // нет такого места - может, есть табличка с этим словом (атлас: «к капитану», «ферма слизней»)
     const s = Object.values(this.data.signs || {}).find((x) => key(x.text).includes(k));

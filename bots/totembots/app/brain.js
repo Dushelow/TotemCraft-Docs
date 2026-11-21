@@ -205,6 +205,16 @@ class Brain {
     if (this.botCfg.onlyMaster && !this.isMaster(from)) { this.onBackground({ from, text, at: Date.now() }); return; }
     // метка из чата: хозяин написал название и координаты - запомнить место (как «точка из чата» у Xaero)
     let mark = '';
+    if (this.memory && !this.isMaster(from)) {
+      // координаты от другого игрока («я на 500 -300») - временная метка на час: найти его, не спрашивая снова
+      const p = require('./chatpoints').parse(text);
+      if (p && this.body.autoMark) this.body.autoMark(`${from}: ${p.name === 'метка' ? 'точка' : p.name}`.slice(0, 40), { x: p.x, y: p.y ?? 64, z: p.z }, { kind: 'от ' + from, radius: 32, ttl: 3600000, dim: p.dim, note: 'из чата ' + from });
+    }
+    if (this.isMaster(from) && this.memory && this.body.markFromWords) {
+      const r = this.body.markFromWords(text, from);
+      if (r) mark = `
+[метка] ${r}`;
+    }
     if (this.isMaster(from) && this.memory) {
       const p = require('./chatpoints').parse(text);
       if (p) {

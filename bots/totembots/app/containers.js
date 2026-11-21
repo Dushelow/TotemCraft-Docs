@@ -86,6 +86,7 @@ class Containers {
       }
     } finally { c.close(); }
     if (!put) throw new Error(`нет у меня ${a.item}`);
+    try { const h = require('./life').home(this); if (!h || Math.hypot(h.x - a.x, h.z - a.z) > 24) this.autoMark('мои вещи в сундуке', { x: +a.x, y: +a.y, z: +a.z }, { kind: 'мои вещи', radius: 8, ttl: 7 * 86400000, note: `${put} ${a.item}` }); } catch {}
     return `положил ${put} ${a.item} в ${a.x} ${a.y} ${a.z}`;
   }
 
