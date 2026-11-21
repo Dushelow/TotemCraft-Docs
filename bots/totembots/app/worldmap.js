@@ -368,8 +368,10 @@ class WorldMap {
       const d = Math.hypot(v.x - me.x, v.z - me.z);
       const c = m.chunks[`${Math.floor(v.x / 16)},${Math.floor(v.z / 16)}`];
       const deep = c && c.h !== null && v.y < c.h - 10 ? ' под землёй' : '';
+      // слои: точка сильно выше или ниже бота - сказать, насколько (в шахте, на горе, в Незере между ярусами)
+      const dy = Math.round(v.y - me.y), lay = Math.abs(dy) >= 8 ? `, ${dy > 0 ? 'выше' : 'ниже'} тебя на ${Math.abs(dy)}` : '';
       if (d <= radius) items.push({ d, kind: v.kind, x: v.x, y: v.y, z: v.z, key: `${v.kind}@${v.x},${v.z}`,
-        text: `${v.kind}${v.n > 1 && /сундуки|кровать|ферма/.test(v.kind) ? ' (' + v.n + ')' : ''}${deep} ${Math.round(d)} бл. на ${compass(v.x - me.x, v.z - me.z)} (${v.x} ${v.y} ${v.z})` });
+        text: `${v.kind}${v.n > 1 && /сундуки|кровать|ферма/.test(v.kind) ? ' (' + v.n + ')' : ''}${deep} ${Math.round(d)} бл. на ${compass(v.x - me.x, v.z - me.z)}${lay} (${v.x} ${v.y} ${v.z})` });
     }
     for (const [k, c] of Object.entries(m.chunks)) {
       if ((c.b || 0) < 12) continue;
@@ -390,13 +392,46 @@ class WorldMap {
     return out;
   }
 
-  /** Короткая сводка для мозга: ближайшие точки и постройки в 200 блоках, со сторонами света. */
+  /**
+   * Поселения: застроенные чанки, связанные друг с другом (через 1 чанк), - одно поселение. 5+ чанков - город
+   * или посёлок игроков, меньше - отдельная постройка; колокол рядом - деревня жителей. Сам бот: «в городе» или
+   * «в дикой местности», чтобы понимать, где можно копать и брать, а где чужое.
+   */
+  settlements(tb, radius = 600) {
+    const b = tb.bot, m = this.load(b.game.dimension), me = b.entity.position;
+    const pcx = Math.floor(me.x / 16), pcz = Math.floor(me.z / 16), R = Math.ceil(radius / 16);
+    const built = new Set();
+    for (const [k, c] of Object.entries(m.chunks)) { if ((c.b || 0) < 12) continue; const [cx, cz] = k.split(',').map(Number); if (Math.abs(cx - pcx) <= R && Math.abs(cz - pcz) <= R) built.add(k); }
+    const seen = new Set(), out = [];
+    for (const k of built) {
+      if (seen.has(k)) continue;
+      const group = [], stack = [k]; seen.add(k);
+      while (stack.length) {
+        const cur = stack.pop(); group.push(cur);
+        const [cx, cz] = cur.split(',').map(Number);
+        for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) { const n = `${cx + dx},${cz + dz}`; if (built.has(n) && !seen.has(n)) { seen.add(n); stack.push(n); } }
+      }
+      const xs = group.map((g) => +g.split(',')[0] * 16 + 8), zs = group.map((g) => +g.split(',')[1] * 16 + 8);
+      const x = Math.round(xs.reduce((s, v) => s + v, 0) / xs.length), z = Math.round(zs.reduce((s, v) => s + v, 0) / zs.length);
+      const inside = group.includes(`${pcx},${pcz}`) || group.some((g) => { const [cx, cz] = g.split(',').map(Number); return Math.abs(cx - pcx) <= 1 && Math.abs(cz - pcz) <= 1; });
+      const village = Object.values(m.poi).some((v) => v.kind === 'деревня' && Math.hypot(v.x - x, v.z - z) < 16 * Math.max(3, Math.sqrt(group.length)));
+      out.push({ n: group.length, x, z, inside, d: Math.hypot(x - me.x, z - me.z), kind: group.length >= 5 ? (village ? 'деревня с постройками игроков' : 'поселение игроков') : 'постройка' });
+    }
+    return out.sort((a, c) => a.d - c.d);
+  }
+
+  /** Короткая сводка для мозга: где бот (город или дикая местность), поселения, ближайшие точки, со сторонами света. */
   summary(tb) {
     const b = tb.bot;
     if (!b || !b.entity) return '';
     const explored = Object.keys(this.load(b.game.dimension).chunks).length;
+    const me = b.entity.position;
+    const st = this.settlements(tb).filter((s) => s.n >= 5);
+    const here = st.find((s) => s.inside);
+    const where = here ? `ты в ${{ 'постройка': 'застроенном месте', 'поселение игроков': 'поселении игроков', 'деревня с постройками игроков': 'деревне с постройками игроков' }[here.kind]} (${here.n} застроенных чанков) - здесь всё чужое: не копать, не брать` : 'ты в дикой местности (построек игроков рядом нет)';
+    const towns = st.filter((s) => !s.inside).slice(0, 3).map((s) => `${s.kind} (${s.n} чанков) ${Math.round(s.d)} бл. на ${compass(s.x - me.x, s.z - me.z)} (около ${s.x} ${s.z})`);
     const out = this.nearby(tb, 200, 8);
-    return out.length ? `исследовано ${explored} чанков; ` + out.map((o) => o.text).join('; ') : `исследовано ${explored} чанков, рядом ничего приметного`;
+    return `${where}; исследовано ${explored} чанков` + (towns.length ? '; поселения: ' + towns.join('; ') : '') + (out.length ? '; ' + out.map((o) => o.text).join('; ') : '');
   }
 
   /** Данные для картинки в панели: чанки и точки вокруг (cx,cz бота в центре). */

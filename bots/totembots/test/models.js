@@ -60,3 +60,16 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const r = T.route('nether', { x: 2, y: 65, z: 0 }, { x: 198, y: 65, z: 1 });
   console.log('--- атлас: ' + (r ? `ледяная ветка 200 бл. - маршрут ${Math.round(r.len)} бл. по ${r.points.length} точкам` : 'НЕТ МАРШРУТА ПО ЛЬДУ'));
 }
+
+// поселения: застроенные чанки рядом - один город; бот понимает, что он в городе (здесь всё чужое) или в диком месте
+{
+  const { WorldMap } = require('../app/worldmap');
+  const wm = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'wm')));
+  const m = wm.load('overworld');
+  for (let x = 0; x < 4; x++) for (let z = 0; z < 3; z++) m.chunks[`${x},${z}`] = { t: Date.now(), k: 'g', b: 30, h: 70 };
+  m.chunks['20,20'] = { t: Date.now(), k: 'g', b: 20, h: 70 };
+  const at = (x, z) => ({ bot: { entity: { position: { x, y: 70, z } }, game: { dimension: 'overworld' } } });
+  const inTown = wm.summary(at(30, 20)), wild = wm.summary(at(-400, -400));
+  const ok = /ты в поселении игроков \(12/.test(inTown) && /дикой местности/.test(wild) && /поселения: поселение игроков \(12 чанков\)/.test(wild);
+  console.log('--- поселения: ' + (ok ? 'город из 12 чанков узнан, внутри и снаружи - правильно' : 'НЕТ: ' + inTown + ' / ' + wild));
+}

@@ -32,7 +32,9 @@ class Perception {
       const built = roof && (BUILT.test(roof.name) || !!this.skills.builtNear(b.entity.position.floored(), 2));
       if (!/overworld/.test(b.game.dimension || '')) under = '';   // в Незере и Энде неба нет всегда - не «под землёй»
       else if (roof && built && roof.position.y - b.entity.position.y < 8) under = ', в помещении (постройка)';
-      else if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй';
+      else if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй' + (ch && ch.h !== null && ch.h - s.pos[1] > 6 ? ` (поверхность около y ${ch.h}, ты на ${ch.h - s.pos[1]} ниже)` : '');
+      // высоко над землёй (гора, башня, мост, небо) - тоже сказать: иначе «рядом» постройки и точки внизу путаются
+      if (/overworld/.test(b.game.dimension || '') && ch && ch.h !== null && s.pos[1] - ch.h > 12 && !under) under = `, высоко: земля здесь около y ${ch.h}, ты на ${s.pos[1] - ch.h} выше`;
     }
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : 'стоишь';
     return {
@@ -41,7 +43,7 @@ class Perception {
       near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
       inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
       online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),
-      sees: this.glance(),
+      sees: this.glance() + (this.villagersNear && this.villagersNear(24).length ? (() => { const k = this.tradesKnown(); return '; жителей рядом: ' + this.villagersNear(24).length + (k ? '; ' + k : ' (чем торгуют - !trades)'); })() : ''),
       map: () => (this.worldMap ? this.worldMap.summary(this) : 'карты нет'),
     };
   }

@@ -1379,6 +1379,8 @@ class TotemBot extends EventEmitter {
           case 'undoPut': r = await this.undoPut(a, tok); break;
           case 'errand': r = this.startErrand({ ...a, from: a.from || this.runFrom }); return done.concat(r).join('; ');
           case 'errandStop': r = this.cancelErrand(); break;
+          case 'trades': r = await this.lookTrades(a, tok); break;
+          case 'trade': r = await this.doTrade(a, tok); break;
           case 'errandGo': r = this.resumeErrand(); return done.concat(r).join('; ');
           case 'give': r = await this.give(a, tok); break;
           case 'portal': r = await this.portal(a, tok); break;
@@ -1443,11 +1445,11 @@ class TotemBot extends EventEmitter {
           default: r = `не знаю действие ${a.act}`;
         }
         // проверка итога: что реально изменилось в инвентаре (мозг видит правду, а не «вроде положила»)
-        if (/^(take|put|toss|stash|discardAll|craft|smelt|gather|mine|harvest|pickup|give|hunt|shear|fish|eat|recover)$/.test(a.act)) {
+        if (/^(take|put|toss|stash|discardAll|craft|smelt|gather|mine|harvest|pickup|give|hunt|shear|fish|eat|recover|trade)$/.test(a.act)) {
           const after = this.invCounts(), diff = [];
           for (const k of new Set([...Object.keys(inv0), ...Object.keys(after)])) { const d = (after[k] || 0) - (inv0[k] || 0); if (d) diff.push(`${d > 0 ? '+' : ''}${d} ${k}`); }
           if (diff.length) r += ` [инвентарь: ${diff.slice(0, 6).join(', ')}]`;
-          else if (/^(take|put|craft|gather|mine|give|stash)$/.test(a.act)) r += ' [инвентарь не изменился - похоже, на деле не вышло]';
+          else if (/^(take|put|craft|gather|mine|give|stash|trade)$/.test(a.act)) r += ' [инвентарь не изменился - похоже, на деле не вышло]';
           inv0 = after;
         }
         done.push(r);
@@ -1466,7 +1468,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 
