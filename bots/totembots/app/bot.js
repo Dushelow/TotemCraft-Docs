@@ -559,7 +559,8 @@ class TotemBot extends EventEmitter {
       try { b._client.write('tick_end', {}); } catch {}
       this.lookTick();
       if (this.guard) this.guard.combatTick();
-      this.swimTick();
+      // своё плавание (swim.js); не взялось (суша впереди, нет пути) - старая логика воды и выхода на берег
+      if (!require('./swim').swimTick(this)) this.swimTick();
       this.waterExitTick();
       if ((this._tk = (this._tk || 0) + 1) % 4 === 0) require('./house-moves').trapdoorTick(this);
     });
