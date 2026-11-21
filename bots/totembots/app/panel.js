@@ -314,7 +314,7 @@ function botCard(b) {
   if (tab === 'persona') body = `
     <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="8">${esc(b.persona || '')}</textarea>
     <div class="row" style="margin-top:var(--s3)"><button data-a="savePersona" class="pri">${icon('check', 14)}Сохранить характер</button></div>`;
-  if (tab === 'map') body = `<canvas data-f="map" width="392" height="392" style="width:100%;border-radius:var(--r2);background:var(--bg);border:1px solid var(--line)"></canvas>
+  if (tab === 'map') body = `<canvas data-f="map" width="528" height="528" style="width:100%;image-rendering:pixelated;border-radius:var(--r2);background:var(--bg);border:1px solid var(--line)"></canvas>
     <div class="muted" data-f="mapinfo">серое - суша, синее - вода, красное - лава, оранжевое - постройки; точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер. Бот в центре, север сверху.</div>`;
   if (tab === 'server') body = `
     <div class="muted">Один раз выполнить на сервере (консоль или в игре от админа, с «/» в начале):</div>
@@ -528,22 +528,44 @@ $('sec-settings').addEventListener('change', (e) => { if (e.target.closest('inpu
 document.querySelectorAll('#srvSeg button').forEach((b) => b.addEventListener('click', () => saveSettings()));
 
 // ---------- карта бота: чанки вокруг (бот в центре, север сверху)
+const A64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+// Карта бота по блокам, как у Xaero: цвет верхнего блока, тень от разницы высот с соседом с севера, вода темнее с
+// глубиной. Чанки, которые бот видел до карты по блокам, - одним цветом (как раньше), пока он не пройдёт там снова.
 async function drawMap() {
   const card = document.querySelector('.bot.sel'), cv = card && card.querySelector('[data-f="map"]');
   if (!cv) return;
   const v = await T.botMap(selected);
   if (!v) return;
-  const g = cv.getContext('2d'), n = v.r * 2 + 1, s = cv.width / n;
-  g.fillStyle = '#111'; g.fillRect(0, 0, cv.width, cv.height);
-  for (const [x, z, k, built] of v.chunks) {
-    g.fillStyle = built >= 12 ? '#c8813a' : k === 'w' ? '#2f5f9e' : k === 'l' ? '#a8382c' : '#4a4d52';
-    g.fillRect((x + v.r) * s, (z + v.r) * s, s - 1, s - 1);
+  const n = v.r * 2 + 1, W = n * 16;
+  if (cv.width !== W) { cv.width = W; cv.height = W; }
+  const g = cv.getContext('2d'), img = g.createImageData(W, W), D = img.data;
+  for (let i = 3; i < D.length; i += 4) { D[i] = 255; D[i - 1] = 17; D[i - 2] = 18; D[i - 3] = 20; }
+  const OLD = { w: [47, 95, 158], l: [168, 56, 44], g: [74, 77, 82] };
+  for (const [x, z, k, built, px, hy, wd, my] of v.chunks) {
+    const ox = (x + v.r) * 16, oz = (z + v.r) * 16;
+    const hAt = (i) => { const hv = A64.indexOf(hy[i * 2]) * 64 + A64.indexOf(hy[i * 2 + 1]); return hv ? hv - 1 + my : null; };
+    for (let bz = 0; bz < 16; bz++) for (let bx = 0; bx < 16; bx++) {
+      const i = bz * 16 + bx, o = ((oz + bz) * W + ox + bx) * 4;
+      let c;
+      if (px) {
+        c = v.colors[A64.indexOf(px[i])] || [0, 0, 0];
+        let f = 1;
+        const h0 = hAt(i), hn = bz > 0 ? hAt(i - 16) : null;
+        if (h0 !== null && hn !== null) f = h0 > hn ? 1.15 : h0 < hn ? 0.82 : 1;
+        if (wd) { const d = A64.indexOf(wd[i]); if (d) f = 1.1 - Math.min(0.55, d * 0.05); }
+        c = [c[0] * f, c[1] * f, c[2] * f];
+      } else c = built >= 12 ? [200, 129, 58] : OLD[k] || OLD.g;
+      D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2];
+    }
   }
+  g.putImageData(img, 0, 0);
   const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
-  for (const [x, z, kind] of v.poi) { g.fillStyle = COL[kind] || '#bbb'; g.beginPath(); g.arc((x + v.r + 0.5) * s, (z + v.r + 0.5) * s, Math.max(2, s / 3), 0, 7); g.fill(); }
-  g.strokeStyle = '#fff'; g.lineWidth = 2; g.strokeRect(v.r * s, v.r * s, s, s);
+  for (const [x, z, kind] of v.poi) { g.fillStyle = COL[kind] || '#bbb'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc((x + v.r) * 16 + 8, (z + v.r) * 16 + 8, 3.5, 0, 7); g.fill(); g.stroke(); }
+  // бот - белая точка с обводкой в своей клетке
+  const mx = v.r * 16 + (v.me ? v.me[0] : 8), mz = v.r * 16 + (v.me ? v.me[1] : 8);
+  g.fillStyle = '#fff'; g.strokeStyle = '#e5484d'; g.lineWidth = 2; g.beginPath(); g.arc(mx + 0.5, mz + 0.5, 5, 0, 7); g.fill(); g.stroke();
   const info = card.querySelector('[data-f="mapinfo"]');
-  if (info && !info.dataset.n) { info.dataset.n = 1; info.textContent = `исследовано чанков: ${v.total}. ` + info.textContent; }
+  if (info) info.textContent = `исследовано чанков: ${v.total}. Север сверху, бот - белая точка. Точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер.`;
 }
 setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); }, 5000);
 

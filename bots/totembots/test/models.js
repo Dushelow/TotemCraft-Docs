@@ -73,3 +73,19 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const ok = /ты в поселении игроков \(12/.test(inTown) && /дикой местности/.test(wild) && /поселения: поселение игроков \(12 чанков\)/.test(wild);
   console.log('--- поселения: ' + (ok ? 'город из 12 чанков узнан, внутри и снаружи - правильно' : 'НЕТ: ' + inTown + ' / ' + wild));
 }
+
+// карта по блокам: что сверху в каждой точке, высота, глубина воды (как у Xaero)
+{
+  const R = path.resolve(__dirname, '../node_modules');
+  const registry = require(R + '/prismarine-registry')('1.21.4'); const Chunk = require(R + '/prismarine-chunk')(registry); const { Vec3 } = require(R + '/vec3');
+  const col = new Chunk({ minY: -64, worldHeight: 384 }), id = (n) => registry.blocksByName[n].defaultState;
+  for (let x = 0; x < 16; x++) for (let z = 0; z < 16; z++) { col.setBlockStateId(new Vec3(x, 63, z), id('dirt')); col.setBlockStateId(new Vec3(x, 64, z), id(z < 4 ? 'water' : 'grass_block')); }
+  for (let x = 0; x < 16; x++) for (let z = 0; z < 4; z++) { col.setBlockStateId(new Vec3(x, 63, z), id('water')); col.setBlockStateId(new Vec3(x, 62, z), id('sand')); }
+  for (let x = 4; x < 8; x++) for (let z = 8; z < 12; z++) col.setBlockStateId(new Vec3(x, 70, z), id('oak_planks'));
+  for (let z = 4; z < 16; z++) col.setBlockStateId(new Vec3(12, 64, z), id('dirt_path'));
+  const air = new Set(); for (const n of ['air', 'cave_air', 'void_air']) { const b = registry.blocksByName[n]; for (let i = b.minStateId; i <= b.maxStateId; i++) air.add(i); }
+  const mg = require('../app/mapgrid'), d = mg.decode(mg.surface({ registry }, col, air, false));
+  const at = (x, z) => `${mg.KINDS[d.k[z * 16 + x]][0]}@${d.h[z * 16 + x]}${d.d[z * 16 + x] ? '/' + d.d[z * 16 + x] : ''}`;
+  const got = [at(0, 0), at(0, 6), at(5, 9), at(12, 6)].join(' '), want = 'water@64/1 grass@64 wood@70 path@64';
+  console.log('--- карта по блокам: ' + (got === want ? 'вода с глубиной, трава, дом, тропа - верно' : 'НЕТ: ' + got));
+}

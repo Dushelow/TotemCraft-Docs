@@ -140,7 +140,10 @@ class WorldMap {
       const found = this.chunkScan(b, cx, cz);
       // u: постройка под землёй - рукотворное в среднем глубже земли над ним (земля без построек и деревьев)
       const gy = found.built ? this.ground(b, col, found.bx, found.bz, topY) : null;
-      m.chunks[`${cx},${cz}`] = { t: now, k: water >= 3 ? 'w' : lava >= 2 ? 'l' : 'g', h, b: found.built, ...(found.built && gy !== null && found.by < gy - 6 ? { u: 1 } : {}) };
+      // карта по блокам: что сверху в каждой точке, высота, глубина воды (mapgrid.js)
+      let grid = {};
+      try { grid = require('./mapgrid').surface(b, col, AIR, /nether/.test(String(dim))); } catch {}
+      m.chunks[`${cx},${cz}`] = { t: now, k: water >= 3 ? 'w' : lava >= 2 ? 'l' : 'g', h, b: found.built, ...(found.built && gy !== null && found.by < gy - 6 ? { u: 1 } : {}), ...grid };
       // точки этого чанка - заново
       for (const k of Object.keys(m.poi)) if (k.endsWith(`@${cx},${cz}`)) delete m.poi[k];
       for (const [kind, v] of Object.entries(found.poi)) {
@@ -435,7 +438,7 @@ class WorldMap {
   }
 
   /** Данные для картинки в панели: чанки и точки вокруг (cx,cz бота в центре). */
-  view(tb, radiusChunks = 24) {
+  view(tb, radiusChunks = 16) {
     const b = tb.bot;
     if (!b || !b.entity) return null;
     const m = this.load(b.game.dimension);
@@ -443,11 +446,12 @@ class WorldMap {
     const chunks = [];
     for (const [k, c] of Object.entries(m.chunks)) {
       const [cx, cz] = k.split(',').map(Number);
-      if (Math.abs(cx - pcx) <= radiusChunks && Math.abs(cz - pcz) <= radiusChunks) chunks.push([cx - pcx, cz - pcz, c.k, c.b || 0]);
+      if (Math.abs(cx - pcx) <= radiusChunks && Math.abs(cz - pcz) <= radiusChunks) chunks.push([cx - pcx, cz - pcz, c.k, c.b || 0, c.px || '', c.hy || '', c.wd || '', c.my || 0]);
     }
     const poi = Object.values(m.poi).map((v) => [Math.floor(v.x / 16) - pcx, Math.floor(v.z / 16) - pcz, v.kind])
       .filter(([x, z]) => Math.abs(x) <= radiusChunks && Math.abs(z) <= radiusChunks);
-    return { r: radiusChunks, chunks, poi, total: Object.keys(m.chunks).length };
+    const p = b.entity.position;
+    return { r: radiusChunks, chunks, poi, total: Object.keys(m.chunks).length, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
   }
 }
 
