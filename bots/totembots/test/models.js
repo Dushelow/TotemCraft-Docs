@@ -2,7 +2,7 @@
 // троп и разведки. node test/models.js
 const { execFileSync } = require('child_process');
 const path = require('path');
-for (const t of ['stairs_test.js', 'house_test.js', 'swim_test.js', 'scout_test.js']) {
+for (const t of ['house_test.js', 'swim_test.js', 'scout_test.js']) {
   console.log('--- ' + t);
   process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, t)]).toString());
 }

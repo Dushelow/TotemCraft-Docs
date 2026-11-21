@@ -134,30 +134,9 @@ class TotemBot extends EventEmitter {
       }
       mv.entitiesToAvoid = new Set(['creeper']);
       mv.exclusionAreasStep = [(block) => this.forbiddenCost(block)];
-      // Ковёр (мох, шерсть) по pathfinder проходим всегда - а на уровне тела и головы это преграда: бот упирался
-      // в ковёр на бугорке впереди (боевой, 482 66 -611, 15.11). Ковёр выше ног - не проходим, путь в обход.
-      {
-        const gb = mv.getBlock.bind(mv);
-        mv.getBlock = function (pos, dx, dy, dz) {
-          const b2 = gb(pos, dx, dy, dz);
-          if (dy >= 1 && b2 && this.carpets.has(b2.type) && b2.safe && !/_trapdoor$/.test(b2.name)) return Object.assign(Object.create(Object.getPrototypeOf(b2)), b2, { safe: false });
-          return b2;
-        };
-      }
-      // Главная причина «застрял на ровном месте» (стенд-копия мира 15.11): pathfinder шагает по диагонали, если
-      // свободна хотя бы ОДНА из двух соседних клеток, и тело (0,6 блока) цепляется за угол блока. Как Baritone:
-      // диагональ - только если свободны обе стороны (на уровне ног и головы).
-      {
-        const diag = mv.getMoveDiagonal.bind(mv);
-        mv.getMoveDiagonal = function (node, dir, neighbors) {
-          const y = this.getBlock(node, dir.x, 0, dir.z).physical ? 1 : 0;
-          for (const [dx, dz] of [[0, dir.z], [dir.x, 0]]) {
-            for (let dy = 0; dy <= y + 1; dy++) if (!this.getBlock(node, dx, dy, dz).safe) return;   // и уровень ног при прыжке
-          }
-          return diag(node, dir, neighbors);
-        };
-      }
-      require('./house-moves').install(mv, bot);   // ступеньки и плиты - шагом, люки - открыть по пути
+      // Ходьба по настоящей форме блоков (nav.js): ступеньки, плиты, кровати, ковры, люки, двери, заборы, углы по
+      // диагонали - геометрией, как в игре. Заменила заплатки 15-21.11 (ковёр выше ног, диагонали, house-moves).
+      require('./nav').install(mv, bot);
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
       bot.pathfinder.thinkTimeout = 15000;   // путь в обход (без паркура) ищется дольше 5 с по умолчанию
@@ -412,7 +391,6 @@ class TotemBot extends EventEmitter {
       // своё плавание (swim.js); не взялось (суша впереди, нет пути) - старая логика воды и выхода на берег
       if (!require('./swim').swimTick(this)) this.swimTick();
       this.waterExitTick();
-      if ((this._tk = (this._tk || 0) + 1) % 4 === 0) require('./house-moves').trapdoorTick(this);
     });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
   }
@@ -959,7 +937,7 @@ class TotemBot extends EventEmitter {
         // 21.11 «пришёл к месту «мой дом»» за 0,06 с, стоя за 150 бл., и бот радовался, что дома
         if (goal.isEnd && goal.x !== undefined && !goal.entity && !goal.isEnd(b.entity.position.floored())) {
           const left = Math.round(Math.hypot((goal.x ?? b.entity.position.x) - b.entity.position.x, (goal.z ?? b.entity.position.z) - b.entity.position.z));
-          if (attempt < 2 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await this.stepOff(); await sleep(400); continue; }
+          if (attempt < 1 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(400); continue; }
           throw new Error(`не дошёл: путь не строится, до цели ${left} бл.`);
         }
         break;
@@ -975,39 +953,12 @@ class TotemBot extends EventEmitter {
             (this.badShore = this.badShore || []).push({ v: ledge.offset(0, -1, 0), at: Date.now() });   // в следующий раз - другой уступ
           }
         }
-        if (/No path|Took to long/i.test(e.message) && attempt < 2 && await this.stepOff()) { this.log('сошла с кровати/люка - ищу путь заново'); continue; }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < 30 && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }
         this.log('продолжаю путь');
       } finally { clearTimeout(timer); clearInterval(watch); }
     }
     this.check(tok);
-  }
-
-  /**
-   * Сойти с кровати, люка, плиты, ковра на соседний пол. Стоя на полублоке, модуль пути ставит начало на клетку
-   * выше и под потолком не строит путь (21.11: стояла на кровати и писала «застряла», «No path» мгновенно).
-   * true - сошла.
-   */
-  async stepOff() {
-    const b = this.bot, p = b.entity.position, f = p.floored();
-    const under = b.blockAt(f);
-    if (!under || !/_bed$|_trapdoor$|_slab$|_carpet$|pressure_plate|snow$/.test(under.name)) return false;
-    const free = (v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty' && !/water|lava|fire/.test(k.name); };
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-      const v = f.offset(dx, 0, dz), floor = b.blockAt(v.offset(0, -1, 0)), here = b.blockAt(v);
-      if (!floor || floor.boundingBox !== 'block' || !free(v.offset(0, 1, 0))) continue;
-      if (!(free(v) || (here && /_carpet$|_trapdoor$|pressure_plate/.test(here.name)))) continue;
-      this.busyLook = true;
-      try {
-        await b.lookAt(v.offset(0.5, 1.4, 0.5), true);
-        b.setControlState('forward', true);
-        for (let i = 0; i < 12 && b.entity.position.floored().equals(f); i++) await sleep(50);
-      } finally { b.setControlState('forward', false); this.busyLook = false; }
-      await sleep(200);
-      if (!b.entity.position.floored().equals(f)) return true;
-    }
-    return false;
   }
 
   follow(name) {

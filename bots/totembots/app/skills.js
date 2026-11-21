@@ -333,11 +333,11 @@ class Skills {
     const { Movements } = require('mineflayer-pathfinder');
     const b = this.b, base = this.tb.movements;
     const mv = new Movements(b);
-    require('./house-moves').install(mv, b);
     Object.assign(mv, { canDig: true, allow1by1towers: false, scafoldingBlocks: [], allowParkour: true, allowSprinting: true, canOpenDoors: true, maxDropDown: 3 });
     if (base) { mv.blocksToAvoid = base.blocksToAvoid; mv.entitiesToAvoid = base.entitiesToAvoid; mv.exclusionAreasStep = base.exclusionAreasStep; }
     // ломать по пути можно только природное (брёвна - нет: их только с дерева через gather)
     for (const bl of Object.values(b.registry.blocksByName)) if (!NATURAL.test(bl.name) || /_log$|_stem$|_leaves$/.test(bl.name)) mv.blocksCantBreak.add(bl.id);
+    require('./nav').install(mv, b);   // ходьба по настоящей форме блоков, копание - ходами модуля пути
     mv.exclusionAreasBreak = [(block) => (this.builtChunk(block.position) ? 100 : 0)];
     return (this._mv = mv);
   }
