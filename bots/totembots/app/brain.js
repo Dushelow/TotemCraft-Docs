@@ -212,7 +212,10 @@ class Brain {
     const label = { whisper: 'личка', local: 'рядом', global: 'общий', voice: 'голос рядом' }[ch];
     const where = (dist !== null ? `${dist} бл. от тебя` : 'далеко') + at;
     const role = this.isMaster(from) ? ' (хозяин)' : '';
-    if (kind === 'address') this.attn.lastAddr = { channel: ch, from, at: Date.now() };
+    // ответ - туда, где его услышат без лишнего шума: написали в общий, но стоят рядом (до 32 бл.) - отвечать в ближний
+    // (22.11: хозяин в 5 блоках, бот отвечал в общий чат всему серверу)
+    const replyCh = ch === 'global' && dist !== null && dist <= 32 ? 'local' : ch;
+    if (kind === 'address') this.attn.lastAddr = { channel: replyCh, from, at: Date.now() };
     // режим «только хозяин» - словами хозяина
     if (this.isMaster(from)) {
       const t = String(text).toLowerCase();
@@ -224,11 +227,11 @@ class Brain {
       // тело делает сразу, нейросеть только узнаёт (раньше ждали её 10-50 с, а она путалась: «не знаю как зайти в портал»)
       this.log(`по слову хозяина сразу: ${quick.map((x) => x.act).join(' → ')}`);
       this.body.run(quick, quick.map((x) => x.act).join(' → '), 'master').then((res) => {
-        this.push(`[чат ${label}] ${from}${role} (${where}): ${text}\n[сделано по слову хозяина] ${res || 'готово'}`, true, from, ch);
+        this.push(`[чат ${label}] ${from}${role} (${where}): ${text}\n[сделано по слову хозяина] ${res || 'готово'}`, true, from, replyCh);
       }).catch(() => {});
       return;
     }
-    this.push(`[чат ${label}] ${from}${role} (${where}): ${text}`, true, from, ch);
+    this.push(`[чат ${label}] ${from}${role} (${where}): ${text}`, true, from, replyCh);
   }
 
   order(text) {
@@ -480,12 +483,31 @@ class Brain {
       this.attn.someoneNear = !!(me && Object.values(this.body.bot.players).some((p) => p.entity && p.username !== this.botCfg.name && p.entity.position.distanceTo(me.position) <= 32));
       let rc = this.attn.replyChannel(chs, whisperFrom && whisperFrom.from);
       // Qwen может сам выбрать канал по смыслу (поле channel в JSON)
+      // нейросеть просит общий, а обращались только рядом - всё равно ближний (общий - когда говорили в общем издалека)
+      if (r.channel === 'global' && chs.length && !chs.includes('global')) r.channel = 'local';
       if (r.channel === 'global' || r.channel === 'local') {
         rc = { channel: r.channel };
         if (r.channel === 'global') this.attn.lastGlobalReply = Date.now();
       }
       else if (r.channel === 'whisper' && r.to) rc = { channel: 'whisper', to: String(r.to) };
       if (r.say && rc.channel === 'none') { this.log('(вслух не сказал: рядом никого) ' + r.say); r.say = ''; }
+      // Мысли вслух - только по делу. Вслух: ответ тому, кто написал или сказал, и итог просьбы игрока (сделано,
+      // не вышло). Мысли на свои итоги и события («прогулялась», «жители не продают, надо искать овец») - только в
+      // журнал (22.11: бот писал в чат на каждое своё действие, дважды подряд про шерсть).
+      if (r.say) {
+        const spoken = batch.some((x) => /^\[(чат|голос|приказ)/.test(x.line || ''));
+        const report = batch.some((x) => /^\[итог\]/.test(x.line || '') && x.from && x.from !== '@self' && /задание выполнено|не получилось|отменено/.test(x.line || ''));
+        if (!spoken && !report) { this.log('(подумала, вслух не сказала) ' + r.say); r.say = ''; }
+      }
+      // почти та же мысль, что недавно, - не повторять (слова совпадают больше чем наполовину, 5 мин)
+      if (r.say) {
+        const words = (t) => new Set(String(t).toLowerCase().replace(/[^а-яёa-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 3));
+        const w1 = words(r.say);
+        this.saidRecent = (this.saidRecent || []).filter((x) => Date.now() - x.at < 300000);
+        const dup = w1.size >= 2 && this.saidRecent.find((x) => { let n = 0; for (const w of w1) if (x.w.has(w)) n++; return n / Math.min(w1.size, x.w.size) > 0.6; });
+        if (dup) { this.log('(почти то же уже говорила - молчу) ' + r.say); r.say = ''; }
+        else this.saidRecent.push({ w: w1, at: Date.now() });
+      }
       // голос - только если реплика действительно звучит (в ближнем и личке его слышат рядом)
       if (r.say && this.voice && rc.channel !== 'whisper') this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
       if (r.say) {
@@ -534,7 +556,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['use', 'stash', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
+        const FREE = new Set(['trades', 'trade', 'use', 'stash', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         // идёт за кем-то и сам решил чем-то заняться - не уходить: своё только то, что делается на ходу или рядом
         // (16.11: шла за хозяином и сама ушла копать камень)

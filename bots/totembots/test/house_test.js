@@ -158,5 +158,6 @@ check('канава 2 блока - перепрыгнуть', DITCH(2, 2), [0, 6
 check('канава 3 блока - с разбега', DITCH(3, 2), [0, 65, 0], G(7, 65, 0), true, leapUsed);
 check('канава 1 блок над лавой - нельзя', DITCH(1, 2, 'lava'), [0, 65, 0], G(5, 65, 0), false);
 check('пропасть 2 блока шириной, глубина 10 - нельзя', DITCH(2, 10), [0, 65, 0], G(6, 65, 0), false);
+check('ошибка в цене клетки не ломает путь', () => {}, [0, 65, 0], G(6, 65, 0), true, null, () => { throw new Error('сбой'); });
 console.log(`--- ходьба: ${results.filter(Boolean).length} из ${results.length}`);
 if (results.some((x) => !x)) process.exitCode = 1;

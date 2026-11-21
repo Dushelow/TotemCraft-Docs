@@ -237,7 +237,8 @@ function install(mv, bot) {
       let cost = (dx && dz ? Math.SQRT2 : 1) + (w.jumped ? 1 : rise > EPS ? 0.3 : 0) + (rise < -1 ? -rise * 0.5 : 0) + (w.opened ? 2 : 0);
       if (uname === 'farmland') cost += 3;
       // цена клетки от тела (дороги дешевле, газоны у чужих домов дороже) - bot.js задаёт mv.navStepCost
-      if (mv.navStepCost) cost *= mv.navStepCost(nx, ny, nz, uname);
+      // ошибка в цене клетки не должна ломать поиск пути (22.11: падение -> «путь пустой» десятки раз, бот дёргался)
+      if (mv.navStepCost) { try { cost *= mv.navStepCost(nx, ny, nz, uname) || 1; } catch (e) { if (!mv._costErr) { mv._costErr = 1; console.error('nav: цена клетки', e.message); } } }
       const dest = blk(nx, ny, nz);
       cost += mv.exclusionStep(dest) + mv.getNumEntitiesAt(dest && dest.position, 0, 0, 0) * mv.entityCost;
       if (cost >= 100) continue;

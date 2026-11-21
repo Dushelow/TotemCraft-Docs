@@ -408,7 +408,7 @@ class QwenBridge {
   async _readAloud(chatId) {
     this.attachDebugger();
     await this.open(chatId);
-    const got = new Promise((ok, fail) => { this.ttsWait = { ok, fail }; setTimeout(() => fail(new Error('Qwen не дал звук за 30 с')), 30000); });
+    const got = new Promise((ok, fail) => { this.ttsWait = { ok, fail }; setTimeout(() => fail(new Error('Qwen не дал звук за 12 с')), 12000); });   // дольше - фраза уже не к месту
     const clicked = await this.wc.executeJavaScript(`(async () => {
       const fire = (el) => { for (const t of ['pointerover','mouseover','pointerdown','mousedown','pointerup','mouseup','click'])
         el.dispatchEvent(new (t.startsWith('pointer') ? PointerEvent : MouseEvent)(t, { bubbles: true, cancelable: true })); };

@@ -142,7 +142,11 @@ class Voice {
     const s = this.settings();
     if (!s.enabled || !text) return;
     // голос Windows - только если выбран сам; запасным не включается (звучит плохо - владелец 15.11)
-    const order = s.fallback ? [s.provider, ...ORDER.filter((x) => x !== s.provider && x !== 'system')] : [s.provider];
+    // Запасной голос - только если выбранный не работает несколько раз подряд: одна осечка - фраза без звука (текст
+    // и так в чате), иначе бот говорит то своим голосом, то чужим (22.11: «сначала не тот голос»)
+    this.fails = this.fails || {};
+    const useFallback = s.fallback && (this.fails[s.provider] || 0) >= 2;
+    const order = useFallback ? [s.provider, ...ORDER.filter((x) => x !== s.provider && x !== 'system')] : [s.provider];
     for (const how of order) {
       try {
         if (how === 'qwen') {
@@ -164,9 +168,11 @@ class Voice {
           this.toPanel('voice-system', { text, volume: s.volume });
           this.log(botCfg.name, `голос (Windows): ${text}`);
         }
+        if (how === s.provider) this.fails[how] = 0;
         return;
       } catch (e) {
-        this.log(botCfg.name, `голос ${how} не сработал: ${e.message}`);
+        if (how === s.provider) this.fails[how] = (this.fails[how] || 0) + 1;
+        this.log(botCfg.name, `голос ${how} не сработал: ${e.message}${how === s.provider && !useFallback && s.fallback ? ' - эту фразу без звука, запасной голос - если не выйдет ещё раз' : ''}`);
       }
     }
   }

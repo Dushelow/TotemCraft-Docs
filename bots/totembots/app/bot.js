@@ -149,7 +149,7 @@ class TotemBot extends EventEmitter {
         const d = require('./travel').dkey(bot.game.dimension);
         if (this.travel.trails.heat(d, x, y, z) >= 2) return 1;
         if (!NATURAL.test(under) && !/leaves|farmland/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
-        return nearBuilt({ x, y: y - 1, z }) ? 1.6 : 1;
+        return nearBuilt(new Vec3(x, y - 1, z)) ? 1.6 : 1;   // Vec3: builtNear берёт pos.offset (22.11 простой объект ронял поиск пути)
       };
       this.movements = mv;
       bot.pathfinder.setMovements(mv);
@@ -1226,15 +1226,21 @@ class TotemBot extends EventEmitter {
         }
         done++;
         this.log('сорвал ' + pos.name + ' ' + p.x + ' ' + p.y + ' ' + p.z);
-        this.busyLook = false;
-        await sleep(300);
-        await this.pickup({ x: p.x + 0.5, y: p.y, z: p.z + 0.5, radius: 2.5 }, tok);   // семена из этого же куста
-        await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 15000);
-        this.busyLook = true;
+        // Как игрок: сорвал - сразу посадил своими семенами, не отводя взгляд (22.11: бот отворачивался, шёл за
+        // семенами, возвращался и только потом сажал - лишние повороты головы). Семян нет - подобрать выпавшие.
+        await sleep(150);
+        const seedName = seed && typeof seed === 'string' && !['stack', 'fruit'].includes(seed) ? seed : null;
+        let s = seedName ? b.inventory.items().find((x) => x.name === seedName) : null;
+        if (seedName && !s) {
+          this.busyLook = false;
+          await this.pickup({ x: p.x + 0.5, y: p.y, z: p.z + 0.5, radius: 2.5 }, tok);
+          s = b.inventory.items().find((x) => x.name === seedName);
+          if (s && b.entity.position.distanceTo(p.offset(0.5, 0, 0.5)) > 4.2) await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 15000);
+          this.busyLook = true;
+        }
         const soil = b.blockAt(p.offset(0, -1, 0));
-        const s = seed && typeof seed === 'string' && !['stack', 'fruit'].includes(seed) ? b.inventory.items().find((x) => x.name === seed) : null;
         if (s && soil && /farmland|soul_sand/.test(soil.name) && b.blockAt(p).name === 'air') {
-          await b.equip(s, 'hand');
+          if (!b.heldItem || b.heldItem.name !== s.name) await b.equip(s, 'hand');
           await b.placeBlock(soil, new Vec3(0, 1, 0));
           replanted++;
         }
