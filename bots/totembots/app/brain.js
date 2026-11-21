@@ -558,7 +558,7 @@ class Brain {
     // (21.11: каждый итог дела уходил хозяину в личку с новым «привет, Вальгард!»)
     const now = Date.now(), said = (this.saidLog = (this.saidLog || []).filter((x) => now - x.at < 30 * 60000));
     const norm = (t) => t.toLowerCase().replace(/[^а-яёa-z0-9 ]/g, '').trim();
-    const GREET = /^(привет|здравствуй|здорово|хай|ку|приветик|доброе утро|добрый день|добрый вечер)/i;
+    const GREET = /^(привет|здравствуй|здорово|хай|ку|приветик|доброе утро|добрый день|добрый вечер)(?![а-яё])/i;
     let parts = String(text).split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, rc.channel === 'global' ? 2 : 3);
     parts = parts.filter((p) => {
       const n = norm(p), to = rc.to || rc.channel;
