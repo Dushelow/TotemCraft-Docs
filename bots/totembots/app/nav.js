@@ -65,7 +65,9 @@ function install(mv, bot) {
       for (let z = Math.floor(pz - HALF + EPS); z <= Math.floor(pz + HALF - EPS); z++)
         for (let y = Math.floor(fy + EPS); y <= Math.floor(fy + H - EPS); y++) {
           const c = cell(x, y, z);
-          if (c.bad) bad = true;
+          // опасное (вода, лава, огонь...) - только там, где тело реально стоит: на грядке ноги на 64,94, и клетка
+          // яруса грядок с поливочной водой рядом не «тело в воде» (22.11: на поле все шаги отбрасывались)
+          if (c.bad && y + 1 - fy > 0.2) bad = true;
           for (const q of (flip && flip.has(c.k) ? flipped(c) : c.boxes))
             if (q.x0 < px + HALF - EPS && q.x1 > px - HALF + EPS && q.z0 < pz + HALF - EPS && q.z1 > pz - HALF + EPS && q.y0 < fy + H - EPS && q.y1 > fy + EPS) { hit.push(c); break; }
         }
@@ -207,12 +209,16 @@ function install(mv, bot) {
     // стоит в проёме двери или люка - значит, их уже открыли, чтобы сюда войти: считать открытыми
     const inDoor = new Set();
     const fy0 = support(cx, cz, node.y + 0.99, node.y - 1);
-    if (fy0 === null) return out;
+    // Страховка: своя навигация не видит опоры или ни одного шага - ходить по-старому (ходы модуля пути), а не стоять
+    // (22.11 на поле: «путь пустой» десятки раз, бот стоял). Почему так - пишется в журнал (mv._nav.explain).
+    const fallback = (why) => { mv._navFallback = { at: Date.now(), node: `${node.x},${node.y},${node.z}`, why }; return base(node); };
+    if (fy0 === null) return fallback('нет опоры под ногами');
     for (const c of body(cx, fy0, cz).hit) if (c.open) { inDoor.add(c.k); const p = pairKey(c); if (p) inDoor.add(p); }
     const fy = inDoor.size ? support(cx, cz, node.y + 0.99, node.y - 1, inDoor) : fy0;
     const open0 = inDoor.size ? inDoor : null;
-    if (fy === null) return out;
+    if (fy === null) return fallback('нет опоры (в проёме)');
     const seen = new Set();
+    const n0 = out.length;
     for (const [dx, dz] of DIRS) {
       const nx = node.x + dx, nz = node.z + dz;
       let w = walk(cx, fy, cz, nx + 0.5, nz + 0.5, open0), toPlace = [];
@@ -251,9 +257,24 @@ function install(mv, bot) {
       out.push(m);
     }
     if (mv.navLeaps !== false) leaps(node, fy, out, seen);
+    if (out.length === n0) return fallback('ни одного шага');
     return out;
   };
-  mv._nav = { support, body, walk, cell, leapControl };
+  /** Почему из клетки нет шагов: опора, и по каждой стороне - что мешает. Для журнала (разбор игры). */
+  function explain(x, y, z) {
+    const cx = x + 0.5, cz = z + 0.5, parts = [];
+    const names = (yy) => [-1, 0, 1].map((d) => { const c = cell(x, yy + d, z); return `${yy + d}:${c.b ? c.b.name : '?'}`; }).join(' ');
+    const fy = support(cx, cz, y + 0.99, y - 1);
+    parts.push(`клетка ${x} ${y} ${z} [${names(y)}], ноги ${fy === null ? 'нет опоры' : fy.toFixed(2)}`);
+    if (fy === null) return parts.join('; ');
+    for (const [dx, dz] of DIRS.slice(0, 4)) {
+      const w = walk(cx, fy, cz, x + dx + 0.5, z + dz + 0.5);
+      const c0 = cell(x + dx, Math.floor(fy), z + dz).b, c1 = cell(x + dx, Math.floor(fy) - 1, z + dz).b;
+      parts.push(`${dx},${dz}: ${!w ? 'нет опоры или опасно' : w.hit.length ? 'мешает ' + w.hit.map((c) => c.b.name).join('+') : 'можно (ноги ' + w.feet.toFixed(2) + ')'} [${c0 ? c0.name : '?'} над ${c1 ? c1.name : '?'}]`);
+    }
+    return parts.join('; ');
+  }
+  mv._nav = { support, body, walk, cell, leapControl, explain };
   if (bot) (bot._navCaches = bot._navCaches || []).push(cache);
   // Точки маршрута. Модуль пути после поиска ставит точку «на верх блока» в клетке; у открытого люка или двери у края
   // клетки это верх тонкой стенки - точка на блок выше пола и смещена к краю, бот до неё «не доходит» и стоит (сбой

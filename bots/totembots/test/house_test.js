@@ -159,5 +159,8 @@ check('канава 3 блока - с разбега', DITCH(3, 2), [0, 65, 0], 
 check('канава 1 блок над лавой - нельзя', DITCH(1, 2, 'lava'), [0, 65, 0], G(5, 65, 0), false);
 check('пропасть 2 блока шириной, глубина 10 - нельзя', DITCH(2, 10), [0, 65, 0], G(6, 65, 0), false);
 check('ошибка в цене клетки не ломает путь', () => {}, [0, 65, 0], G(6, 65, 0), true, null, () => { throw new Error('сбой'); });
+// поле с поливом (22.11 «застряла» на пшенице): грядки, посередине канал воды на уровне грядок - по рядам ходить можно
+check('поле с поливочной водой - пройти по рядам', (set) => { for (let x = -3; x <= 8; x++) for (let z = -4; z <= 4; z++) { set(x, 64, z, z === 0 ? 'water' : 'farmland', z === 0 ? undefined : { moisture: 7 }); if (z !== 0) set(x, 65, z, 'wheat', { age: 7 }); } },
+  [0, 65, 1], new goals.GoalNear(6, 65, 1, 1), true);
 console.log(`--- ходьба: ${results.filter(Boolean).length} из ${results.length}`);
 if (results.some((x) => !x)) process.exitCode = 1;

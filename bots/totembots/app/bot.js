@@ -997,6 +997,11 @@ class TotemBot extends EventEmitter {
         // 21.11 «пришёл к месту «мой дом»» за 0,06 с, стоя за 150 бл., и бот радовался, что дома
         if (goal.isEnd && goal.x !== undefined && !goal.entity && !goal.isEnd(b.entity.position.floored())) {
           const left = Math.round(Math.hypot((goal.x ?? b.entity.position.x) - b.entity.position.x, (goal.z ?? b.entity.position.z) - b.entity.position.z));
+          if (Date.now() - (this._emptyDiagAt || 0) > 30000 && this.movements && this.movements._nav) {
+            this._emptyDiagAt = Date.now();
+            const f = b.entity.position.floored(), fb = this.movements._navFallback;
+            try { this.log(`путь пустой - разбор: ${this.movements._nav.explain(f.x, f.y, f.z)}${fb && Date.now() - fb.at < 5000 ? '; запасная ходьба: ' + fb.why + ' у ' + fb.node : ''}`); } catch (e) { this.log('путь пустой - разбор не вышел: ' + e.message); }
+          }
           if (attempt < 1 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(400); continue; }
           throw new Error(`не дошёл: путь не строится, до цели ${left} бл.`);
         }
