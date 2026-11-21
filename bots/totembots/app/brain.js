@@ -554,7 +554,20 @@ class Brain {
   }
 
   async typeAndSay(text, rc = { channel: 'local' }) {
-    const parts = String(text).split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, rc.channel === 'global' ? 2 : 3);
+    // не повторяться: приветствие тому же человеку - не чаще раза в 30 мин, ту же фразу - не чаще раза в 10 мин
+    // (21.11: каждый итог дела уходил хозяину в личку с новым «привет, Вальгард!»)
+    const now = Date.now(), said = (this.saidLog = (this.saidLog || []).filter((x) => now - x.at < 30 * 60000));
+    const norm = (t) => t.toLowerCase().replace(/[^а-яёa-z0-9 ]/g, '').trim();
+    const GREET = /^(привет|здравствуй|здорово|хай|ку|приветик|доброе утро|добрый день|добрый вечер)/i;
+    let parts = String(text).split(/(?<=[.!?])\s+/).filter(Boolean).slice(0, rc.channel === 'global' ? 2 : 3);
+    parts = parts.filter((p) => {
+      const n = norm(p), to = rc.to || rc.channel;
+      if (GREET.test(n) && said.some((x) => x.greet && x.to === to)) return false;
+      if (said.some((x) => x.n === n && now - x.at < 10 * 60000)) return false;
+      said.push({ n, at: now, to, greet: GREET.test(n) });
+      return true;
+    });
+    if (!parts.length) { this.log('(не сказал: уже говорил это) ' + text); return; }
     for (const p of parts) {
       await sleep(Math.min(1800, 250 + p.length * 22 * (0.7 + Math.random() * 0.6)));   // будто печатает
       this.body.say(p.replace(/\.$/, ''), rc.channel, rc.to);

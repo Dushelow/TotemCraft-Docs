@@ -77,21 +77,24 @@ function start(tb) {
     const b = tb.bot;
     if (!b || !b.entity || tb.status !== 'online' || tb.lifeBusy || tb.opts.life === false) return;
     if (tb.mode !== 'idle' || b.isSleeping || b.vehicle || (tb.guard && tb.guard.fighting)) return;
+    // мозг недавно сам что-то делал - не перебивать его (21.11: тело и мозг отменяли друг друга каждые 6 с)
+    if (Date.now() - (tb.lastRunAt || 0) < 45000) return;
     let list;
     try { list = needs(tb); } catch { return; }
     const n = list[0];
     if (!n || n.s < 20) return;
-    if (tb.lifeLast && tb.lifeLast.k === n.k && Date.now() - tb.lifeLast.at < 60000 && tb.lifeLast.failed) return;   // не долбить одно и то же
+    // не долбить одно и то же: не вышло - 5 мин перерыв, прервали - 2 мин
+    if (tb.lifeLast && tb.lifeLast.k === n.k && Date.now() - tb.lifeLast.at < (tb.lifeLast.failed ? 300000 : 120000) && (tb.lifeLast.failed || tb.lifeLast.cut)) return;
     tb.lifeBusy = true;
     tb.cancel();
     const tok = tb.token;
     tb.mode = 'life'; tb.task = n.why;
     tb.log(`сама: ${n.why}`);
-    let failed = false;
-    try { await act(tb, n, tok); } catch (e) { failed = !tb.isCancel(e); if (failed) tb.log(`сама не смогла (${n.k}): ${e.message.slice(0, 100)}`); }
+    let failed = false, cut = false;
+    try { await act(tb, n, tok); } catch (e) { cut = tb.isCancel(e); failed = !cut; if (failed) tb.log(`сама не смогла (${n.k}): ${e.message.slice(0, 100)}`); }
     finally {
       tb.lifeBusy = false;
-      tb.lifeLast = { k: n.k, at: Date.now(), failed };
+      tb.lifeLast = { k: n.k, at: Date.now(), failed, cut: cut || tok !== tb.token };
       if (tok === tb.token && tb.mode === 'life') { tb.mode = 'idle'; tb.task = ''; }
     }
   }, TICK);

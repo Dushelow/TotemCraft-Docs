@@ -1932,6 +1932,7 @@ class TotemBot extends EventEmitter {
   /** Выполнить список действий по порядку. Возвращает итог текстом. */
   async run(actions, label) {
     if (!this.bot || this.status !== 'online') return 'бот не на сервере';
+    this.lastRunAt = Date.now();   // для жизни тела: мозг занят - не перебивать
     let plain = actions.filter((a) => a && a.act);
     if (!plain.length) return '';
     // «стоп» в цепочке с другими действиями Qwen ставит, чтобы бросить прежнее: прежнее и так отменяется
