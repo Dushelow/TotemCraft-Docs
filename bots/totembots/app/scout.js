@@ -11,11 +11,14 @@ const ANGLES = [0, 20, -20, 40, -40, 65, -65, 90, -90, 120, -120];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Где в столбце (x, z) можно встать рядом с высотой y: твёрдый пол, 2 блока воздуха, не лава; вода - отдельно. */
+const ROOF = /(_planks|_slab|_stairs|_wool|glass|bricks|_log|_wood|_leaves|_concrete|terracotta|_wall|_fence)$/;
 function standable(b, x, z, y) {
-  for (let yy = Math.floor(y) + 6; yy >= Math.floor(y) - 12; yy--) {
+  // сверху вниз от уровня головы+1: выше - это крыши домов и кроны (21.11 в городе бот выбирал крыши и не мог дойти)
+  for (let yy = Math.floor(y) + 3; yy >= Math.floor(y) - 12; yy--) {
     const f = b.blockAt(new Vec3(x, yy, z));
     if (!f) return null;   // чанк не загружен
     if (f.boundingBox !== 'block') continue;
+    if (yy > Math.floor(y) && ROOF.test(f.name)) return { bad: true };   // выше ног - крыша или забор, туда не идём
     const h1 = b.blockAt(new Vec3(x, yy + 1, z)), h2 = b.blockAt(new Vec3(x, yy + 2, z));
     if (!h1 || !h2) return null;
     if (/lava|fire|magma|cactus|campfire/.test(f.name + h1.name)) return { bad: true };
@@ -74,9 +77,10 @@ async function explore(tb, gx, gz, tok, ms = 600000) {
       } catch (e) {
         if (tb.isCancel(e)) throw e;
         banned.push({ x: c.x, z: c.z });
+        if (!tb._scoutErrAt || Date.now() - tb._scoutErrAt > 10000) { tb._scoutErrAt = Date.now(); tb.log(`разведка: к ${c.x} ${c.y} ${c.z} не дошла: ${String(e.message).slice(0, 80)}`); }
       }
     }
-    if (!ok) { if (!side) side = Math.random() < 0.5 ? 1 : -1; tb.log('разведка: в эту сторону не пройти - обхожу'); await sleep(300); }
+    if (!ok) { if (!side) side = Math.random() < 0.5 ? 1 : -1; tb.log('разведка: в эту сторону не пройти - обхожу'); await sleep(1500); }
   }
   throw new Error('разведка: не дошла за отведённое время');
 }

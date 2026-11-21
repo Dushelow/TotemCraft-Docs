@@ -46,6 +46,9 @@ class Attention {
     // флуд: то же самое от того же игрока подряд
     if (this.lastBy.get(m.from) === t) return 'drop';
     this.lastBy.set(m.from, t);
+    // кто недавно говорил (не бот и не этот игрок): хозяин отвечает в общем чате кому-то другому - не боту
+    const other = this.lastOther && this.lastOther.from !== m.from && now - this.lastOther.at < 30000 ? this.lastOther : null;
+    if (m.channel !== 'whisper') this.lastOther = { from: m.from, at: now };
     const near = m.dist !== null && m.dist !== undefined && m.dist <= NEAR_BLOCKS;
     const mention = this.mentioned(t);
     if (mention && m.channel === 'global') this.mentionedUntil = now + MENTION_MS;
@@ -56,7 +59,7 @@ class Attention {
     else if (mention) kind = 'address';
     else if (this.mode === 'quiet') kind = near ? 'near' : 'background';
     else if (inConvo) kind = 'address';
-    else if (m.master && m.dist !== null && m.dist <= MASTER_BLOCKS) kind = 'address';
+    else if (m.master && m.dist !== null && m.dist <= MASTER_BLOCKS && !(m.channel === 'global' && other)) kind = 'address';
     else if (m.channel === 'local' && (m.dist === null || m.dist <= LOCAL_ADDRESS_BLOCKS || this.mode === 'social')) kind = 'address';
     else if (m.channel === 'global' && this.mentionedUntil > now && /\?/.test(t)) kind = 'address';
     else if (near || m.channel === 'local') kind = 'near';

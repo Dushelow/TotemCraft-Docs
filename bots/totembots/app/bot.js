@@ -1284,7 +1284,9 @@ class TotemBot extends EventEmitter {
   /** Подойти к кровати вплотную (сервер пускает лечь только в ~2 блоках: «the bed is too far» с GoalNear 2 по диагонали и через этаж). */
   async toBed(bed, tok, ms) {
     const b = this.bot;
-    await this.goto(new goals.GoalLookAtBlock(bed.position, b.world, { reach: 2 }), tok, ms);
+    // вплотную к кровати (соседняя клетка): «видеть» её мало - сквозь стену и с другого этажа сервер не даёт лечь (21.11)
+    try { await this.goto(new goals.GoalGetToBlock(bed.position.x, bed.position.y, bed.position.z), tok, ms); }
+    catch (e) { if (e instanceof Cancelled) throw e; await this.goto(new goals.GoalLookAtBlock(bed.position, b.world, { reach: 2 }), tok, ms); }
   }
 
   /** Лечь спать в кровать рядом (ночью или в грозу). */
@@ -1406,8 +1408,15 @@ class TotemBot extends EventEmitter {
         }
       }
     }
-    // дальше знакомых троп - разведка: тело само прокладывает путь отрезками (scout.js), пройденное станет тропой
-    if (Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z) > 48) await require('./scout').explore(this, s.x, s.z, tok, ms);
+    // до 160 бл. (в прорисовке) - сначала обычная ходьба: модуль сам находит путь по загруженному; не вышло или
+    // дальше - разведка: тело прокладывает путь отрезками (scout.js), пройденное станет тропой
+    const far = Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z);
+    if (far > 48) {
+      let done = false;
+      if (far <= 160) { try { await this.goto(goal, tok, Math.min(ms, 90000)); done = true; } catch (e) { if (e instanceof Cancelled) throw e; this.log('напрямую не дошла: ' + String(e.message).slice(0, 80) + ' - разведка'); } }
+      if (done) return;
+      await require('./scout').explore(this, s.x, s.z, tok, ms);
+    }
     await this.goto(goal, tok, ms);
   }
 

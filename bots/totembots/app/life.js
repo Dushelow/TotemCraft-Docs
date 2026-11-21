@@ -18,8 +18,11 @@ function home(tb) {
   const m = tb.memory;
   if (!m) return null;
   const dim = tb.dimName();
-  const list = Object.values(m.data.places || {}).filter((p) => p.dim === dim && /(^|\s)(мой |наш )?(дом|база|хата|жильё)/i.test(p.name));
-  return list.sort((a, b) => b.at - a.at)[0] || null;
+  const all = Object.values(m.data.places || {}).filter((p) => p.dim === dim);
+  // свой дом: «мой дом», «наш дом», «моя база»; чужие («дом Вальгарда», «дом на продажу») - не дом бота
+  const mine = all.filter((p) => /^(мой|наш|моя|наша) (дом|база|хата)/i.test(p.name)).sort((a, b) => b.at - a.at)[0];
+  if (mine) return mine;
+  return all.filter((p) => /^кровать у/i.test(p.name) && /спал/.test(p.note || '')).sort((a, b) => b.at - a.at)[0] || null;
 }
 
 function needs(tb) {
