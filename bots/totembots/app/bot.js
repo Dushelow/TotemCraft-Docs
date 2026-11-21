@@ -164,6 +164,7 @@ class TotemBot extends EventEmitter {
       this.guard = new Guard(this);
       this.guard.mode = this.opts.combat || 'defend';
       this.guard.attach();
+      require('./life').start(this);   // нужды и распорядок дня - само тело (life.js)
       this.retry = 0;
       this.log('на сервере');
       this.event('ты зашёл на сервер');
@@ -199,6 +200,8 @@ class TotemBot extends EventEmitter {
       this.deathPoint = { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim: bot.game.dimension, at: Date.now() };
       this.resumeFollow = this.followName || this.resumeFollow;
       this.log(`умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z}`);
+      // опасное место: путь будет его обходить сутки (память опасности, как у мобов и NPC)
+      if (this.memory) { const dd = this.memory.data.danger = (this.memory.data.danger || []).filter((x) => Date.now() - x.at < 86400000); dd.push({ ...this.deathPoint, dim: this.dimName() }); if (dd.length > 50) dd.shift(); this.memory.save(); }
       if (this.memory) this.memory.journal(this.opts.name, `умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z} (${this.dimName()})`);
       this.cancel();
       // после возрождения (spawn) - забрать вещи, как waypoint смерти в Baritone
@@ -417,7 +420,7 @@ class TotemBot extends EventEmitter {
       else if (roof && built && roof.position.y - b.entity.position.y < 8) under = ', в помещении (постройка)';
       else if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй';
     }
-    const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : 'стоишь';
+    const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : 'стоишь';
     return {
       pos: s.pos,
       core: `${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}`,
@@ -519,8 +522,11 @@ class TotemBot extends EventEmitter {
       const NOTABLE = /(chest|barrel|shulker_box|crafting_table|furnace|smoker|_door|_bed|anvil|enchanting_table|brewing_stand|wheat|carrots|potatoes|beetroots|farmland|sugar_cane|melon|pumpkin|nether_portal|spawner|_sign|lantern|torch|_ore|bell|composter|lectern)$/;
       const HID = /^(.*_ore|raw_\w+_block|mossy_cobblestone|obsidian|chest|ender_chest|clay)$/;
       const open = (p) => [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].some(([x, y, z]) => { const n = b.blockAt(p.offset(x, y, z)); return n && n.boundingBox !== 'block'; });
-      for (const p of b.findBlocks({ matching: (bl) => NOTABLE.test(bl.name), maxDistance: 10, count: 400 })) {
+      let rays = 0;
+      for (const p of b.findBlocks({ matching: (bl) => NOTABLE.test(bl.name), maxDistance: 10, count: 400 }).sort((u, v) => u.distanceTo(me) - v.distanceTo(me))) {
         const k = b.blockAt(p);
+        // видно ли глазами: луч от глаз до блока (как зрение NPC); сквозь стены не «видит», не больше 150 лучей
+        if (rays++ < 150 && b.canSeeBlock && !b.canSeeBlock(k)) continue;
         // анти-иксрей сервера шлёт поддельные руды и сундуки внутри камня ниже y 64 - их нет (19.11: «шахта с алмазами», которой нет)
         if (HID.test(k.name) && p.y < 64 && !open(p)) continue;
         const nm = k.name.replace(/^wall_|_wall(?=_)/, '');
@@ -960,6 +966,8 @@ class TotemBot extends EventEmitter {
     const m = this.memory;
     if (!m) return 0;
     const dim = this.dimName();
+    // где недавно погиб - обходить, если есть другой путь (дороже, но не запрещено)
+    for (const x of m.data.danger || []) if (x.dim === dim && Date.now() - x.at < 86400000 && Math.abs(x.x - block.position.x) < 5 && Math.abs(x.z - block.position.z) < 5 && Math.abs(x.y - block.position.y) < 5) return 25;
     if (!this.forbidden || this.forbidden.version !== m.version) {
       this.forbidden = { version: m.version, list: Object.values(m.data.places).filter((p) => /нельзя|чуж|не заход|запрет/i.test(p.name + ' ' + (p.note || ''))) };
     }

@@ -138,7 +138,7 @@ const TABS = [['log', 'Журнал'], ['behave', 'Поведение'], ['chats
 function botCard(b) {
   const s = b.state || {};
   const on = s.status === 'online', conn = s.status === 'connecting';
-  const doing = s.mode === 'follow' ? `идёт за ${s.follow}` : s.mode === 'task' ? `занят: ${s.task}` : s.mode === 'ride' ? 'едет' : on ? 'свободен' : '';
+  const doing = s.mode === 'follow' ? `идёт за ${s.follow}` : s.mode === 'task' ? `занят: ${s.task}` : s.mode === 'ride' ? 'едет' : s.mode === 'life' ? 'сама: ' + s.task : s.mode === 'hold' ? 'ждёт' : on ? 'свободен' : '';
   const head = `<div class="row"><span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span><h3 class="grow">${esc(b.name)}</h3>
       ${s.status === 'off' ? `<button data-a="start" class="small">Включить</button>` : `<button data-a="stop" class="sec small">Выключить</button>`}</div>
     <div class="stats">${on ? `<span class="pill">${esc(s.dim)} ${esc(s.pos.join(' '))}</span><span class="pill ${s.health <= 6 ? 'bad' : 'ok'}">здоровье ${s.health}/20</span><span class="pill ${s.food <= 6 ? 'warn' : ''}">еда ${s.food}/20</span><span class="pill acc">${esc(doing)}</span>` : `<span class="pill">${conn ? 'заходит...' : 'выключен'}</span>`}</div>`;

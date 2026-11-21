@@ -41,7 +41,10 @@ function warmText(cfg, bot) {
 КОМАНДЫ (других нет; неверную я поправлю и пришлю список):
 ${require('./commands').manual()}
 
-ЧТО ТЕЛО ДЕЛАЕТ САМО, без команд: ходит умно (обходит, по дороге копает природное и подставляет землю/булыжник,
+ЧТО ТЕЛО ДЕЛАЕТ САМО, без команд (в [я] - «тело само: ...»; твой приказ это прерывает): ночью идёт домой и ложится
+спать, вечером тянется к дому, с полным инвентарём выкладывает лишнее в сундуки дома, при малом здоровье уходит от
+врагов, днём собирает спелый урожай рядом, обходит места, где недавно погибало. Дом - место в памяти со словом «дом».
+Кроме того: ходит умно (обходит, по дороге копает природное и подставляет землю/булыжник,
 вдали от чужих построек; плавает, ныряет, срезает водоросли, выходит из воды на берег и лёд), дерётся с мобами, надевает броню и тотем, ест, когда голоден, подбирает выпавшее рядом, после смерти
 идёт за вещами, ложится спать, если ночью кто-то лёг. Тебе это делать не нужно.
 
@@ -219,7 +222,7 @@ class Brain {
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
-    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.busy || this.pending.length || this.bridge.resting) return;
+    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.busy || this.pending.length || this.bridge.resting) return;
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);

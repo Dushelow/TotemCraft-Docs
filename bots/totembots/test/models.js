@@ -17,3 +17,17 @@ for (let x = 0; x <= 100; x++) tr.step('nether', { x, y: 64, z: 0 }, st);
 for (let z = 0; z <= 80; z++) tr.step('nether', { x: 100, y: 64, z }, st);
 const r = tr.route('nether', { x: 2, y: 64, z: 1 }, { x: 99, y: 64, z: 79 });
 console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл. по ${r.points.length} точкам` : 'НЕТ МАРШРУТА'));
+
+// жизнь тела: что выберет само в разных случаях
+{
+  const { needs } = require('../app/life');
+  const mk = (time, health, freeSlots, foe) => ({
+    bot: { entity: { position: { x: 0, y: 64, z: 0 } }, time: { timeOfDay: time }, game: { dimension: 'minecraft:overworld' }, health,
+      inventory: { emptySlotCount: () => freeSlots }, entities: foe ? { 1: { position: { x: 3, y: 64, z: 0, distanceTo: () => 3 }, type: 'hostile' } } : {}, findBlock: () => null },
+    memory: { data: { places: { d: { name: 'мой дом', x: 200, y: 64, z: 0, dim: 'обычный мир', at: 1 } } } }, dimName: () => 'обычный мир', skills: { builtNear: () => null } });
+  const pick = (tb) => (needs(tb)[0] || { k: 'ничего' }).k;
+  const r = [['день, всё хорошо', pick(mk(6000, 20, 20)), 'ничего'], ['ночь', pick(mk(15000, 20, 20)), 'ночь'], ['вечер', pick(mk(11500, 20, 20)), 'вечер'],
+    ['полный инвентарь', pick(mk(6000, 20, 1)), 'тяжело'], ['ночь + враг + 5 здоровья', pick(mk(15000, 5, 20, true)), 'опасность']];
+  const bad = r.filter((x) => x[1] !== x[2]);
+  console.log(`--- жизнь тела: ${r.length - bad.length} из ${r.length}${bad.length ? ' НЕ ТАК: ' + bad.map((x) => x[0] + ' -> ' + x[1]).join(', ') : ''}`);
+}
