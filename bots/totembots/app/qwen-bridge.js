@@ -153,7 +153,7 @@ const PICK = (model, mode) => `(async () => {
 
 // Ошибки, после которых пробуем следующую модель из списка
 // лимит - только по настоящим словам лимита (раньше «rate» ловил «generate», а «недоступна модель» тоже считалась лимитом)
-const LIMIT = /limit|лимит|quota|too many requests|429|exceeded/i;
+const LIMIT = /\blimit\b|лимит|quota|too many requests|\b429\b|exceeded/i;
 const MODEL_GONE = /модель недоступна/i;
 const LIMIT_TEXT = /reached (today's|your|the) (chat |daily |usage )?limit|upgrade your (membership|plan)|chat limit|daily limit|limit reached|лимит (сообщений|чатов|на сегодня)|исчерпан/i;
 

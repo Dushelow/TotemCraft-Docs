@@ -13,7 +13,9 @@ const PRESETS = {
   openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-chat-v3-0324:free', keyUrl: 'https://openrouter.ai/keys' },
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com/api_keys' },
 };
-const LIMITED = /limit|quota|429|exceeded|лимит|captcha|не робот/i;
+const LIMITED = /\blimit\b|quota|\b429\b|exceeded|лимит|captcha|не робот/i;
+// признаки того, что сам чат на сайте сломан или пропал (а не временный сбой) - тогда новый чат с пересказом
+const BROKEN_CHAT = /not.?found|\b404\b|не найден|удал|deleted|too long|слишком длин|context|контекст|чат пропал|чат сломан/i;
 
 class Router {
   constructor({ qwen, cfg, log, webs = {}, save = () => {} }) {
@@ -98,12 +100,17 @@ class Router {
         return { answer, chatId: id };
       } catch (e) {
         last = e;
-        // PARENT_NOT_FOUND / CHAT_IN_PROGRESS - чат Qwen сломан: следующий раз - новый чат Qwen с историей
-        if (b.id === 'qwen' && /PARENT_NOT_FOUND|CHAT_IN_PROGRESS/i.test(e.message)) ch.qwenId = '';
+        // Чат сайта бросать только когда он правда сломан (22.11: после любой ошибки - лимит, капча, вход, задержка -
+        // открывался новый чат, и в Qwen и на сайтах копились десятки чатов бота). Qwen: PARENT_NOT_FOUND сразу,
+        // «чат занят» (CHAT_IN_PROGRESS) - только второй раз подряд.
+        if (b.id === 'qwen') {
+          ch.qwenBusy = /CHAT_IN_PROGRESS/i.test(e.message) ? (ch.qwenBusy || 0) + 1 : 0;
+          if (/PARENT_NOT_FOUND/i.test(e.message) || ch.qwenBusy >= 2) { ch.qwenId = ''; ch.qwenBusy = 0; }
+        }
         // отдых: настоящий лимит - 10 мин; нужен вход - 3 мин; обычный сбой - 20 с (не полчаса, как раньше)
         if (b.id !== 'qwen') this.rest[b.id] = Date.now() + (LIMITED.test(e.message) ? 10 * 60000 : /нужен вход|нет поля/.test(e.message) ? 3 * 60000 : 20000);
         if (b.web && /вход|не робот|нет поля/.test(e.message)) this.onAttention(e.message);
-        if (b.web && ch.webIds) delete ch.webIds[b.id];
+        if (b.web && ch.webIds && BROKEN_CHAT.test(e.message)) delete ch.webIds[b.id];
         this.log(`мозг ${b.name}: ${e.message.slice(0, 120)} - пробую следующий`);
       }
     }

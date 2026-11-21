@@ -612,7 +612,10 @@ class Brain {
       // Начать новый чат, вводная прогреется заново, сообщения повторятся уже там.
       const stuck = /CHAT_IN_PROGRESS/i.test(e.message) && ++this.inProgress >= 2;
       if (!/CHAT_IN_PROGRESS/i.test(e.message)) this.inProgress = 0;
-      if ((/PARENT_NOT_FOUND/i.test(e.message) || stuck) && this.botCfg.chatId) {
+      // Новый разговор - только если потерян сам логический чат (router: «чат с прошлого запуска»). Сломанный чат
+      // одного сайта router меняет сам, остальные не трогает (22.11: из-за этого заново начинались чаты на всех сайтах).
+      const lost = /чат с прошлого запуска/i.test(e.message) || ((/PARENT_NOT_FOUND/i.test(e.message) || stuck) && !String(this.botCfg.chatId || '').startsWith('L-'));
+      if (lost && this.botCfg.chatId) {
         this.log('чат Qwen сломан, начинаю новый'); this.botCfg.chatId = ''; this.save(); this.inProgress = 0;
         batch.forEach((x) => { if (!x.renewed) { x.renewed = true; x.retried = false; } });   // в новом чате - ещё попытка, один раз
       }
