@@ -75,9 +75,13 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   try {
     onStatus(`Войдите в ${S.name} в открывшемся окне Chrome`);
     const until = Date.now() + 10 * 60 * 1000;
+    // В профиле входа уже может быть прошлый вход: раньше программа сразу забирала его и закрывала Chrome через
+    // секунду (21.11: владелец хотел войти в другой аккаунт - лимиты). Теперь прошлый вход не берём: ждём, пока
+    // вход сменится (выйти и войти в другой аккаунт). Закрыли Chrome, ничего не меняя, - остаётся прошлый вход.
+    let first;
     while (Date.now() < until) {
       await sleep(2000);
-      if (proc.exitCode !== null) throw new Error('Chrome закрыли до входа');
+      if (proc.exitCode !== null) throw new Error(first ? 'Chrome закрыли - вход не менялся, остался прежний аккаунт' : 'Chrome закрыли до входа');
       let page;
       try { page = await sitePage(S.url); } catch { continue; }
       if (!page) continue;
@@ -85,7 +89,11 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
       try {
         const r = await c.send('Runtime.evaluate', { expression: S.ready, returnByValue: true });
         const token = r.result && r.result.value;
-        if (!token) continue;
+        if (first === undefined) {
+          first = token || '';
+          if (first) { onStatus(`В Chrome уже есть вход в ${S.name}. Чтобы сменить аккаунт - выйдите там и войдите в другой; окно закроется само. Менять не нужно - просто закройте Chrome`); continue; }
+        }
+        if (!token || token === first) continue;
         const { cookies } = await c.send('Network.getCookies', S.all ? {} : { urls: [S.url] });
         onStatus('Вход получен, закрываю Chrome');
         return { cookies, token };
