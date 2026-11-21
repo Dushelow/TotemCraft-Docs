@@ -404,7 +404,8 @@ class TotemBot extends EventEmitter {
     const tod = t === undefined ? '' : t < 1000 ? 'утро' : t < 11500 ? 'день' : t < 13000 ? 'вечер' : t < 23000 ? 'ночь' : 'рассвет';
     // погода: флаг isRaining через ViaVersion застревал (19.11 «дождь» в доме и даже в Незере) - по силе дождя и только в обычном мире
     const over = /overworld/.test(b.game.dimension || '');
-    const weather = !over ? '' : (b.thunderState || 0) > 0.3 ? ', гроза' : (b.rainState || 0) > 0.3 ? ', дождь' : '';
+    const pk = this.precip();
+    const weather = !over || !pk ? '' : (b.thunderState || 0) > 0.3 ? `, ${pk === 'снег' ? 'снег и гроза' : 'гроза'}` : `, ${pk}`;
     const ch = this.worldMap && this.worldMap.load(b.game.dimension).chunks[`${Math.floor(s.pos[0] / 16)},${Math.floor(s.pos[2] / 16)}`];
     // «под землёй» - только если над головой нет неба (свет неба у головы < 8, и над головой твёрдое в 40 блоках);
     // средняя высота чанка врёт у ледяных шипов, гор и деревьев (боевой 15.11: на льду «под землёй»)
@@ -1032,8 +1033,8 @@ class TotemBot extends EventEmitter {
       if (this.wasNight !== undefined && night !== this.wasNight) this.emit('moment', night ? { kind: 'ночь', text: 'стемнело, наступает ночь' } : { kind: 'утро', text: 'рассвело' });
       this.wasNight = night;
     }
-    const rain = /overworld/.test(b.game.dimension || '') && (b.rainState || 0) > 0.3;
-    if (this.wasRain !== undefined && rain && !this.wasRain) this.emit('moment', { kind: 'дождь', text: 'пошёл дождь' + (b.thunderState > 0 ? ', гроза' : '') });
+    const rain = !!this.precip();
+    if (this.wasRain !== undefined && rain && !this.wasRain) this.emit('moment', { kind: 'дождь', text: (this.precip() === 'снег' ? 'пошёл снег' : 'пошёл дождь') + (b.thunderState > 0.3 ? ', гроза' : '') });
     this.wasRain = rain;
   }
 
@@ -1550,6 +1551,26 @@ class TotemBot extends EventEmitter {
     if (!put) throw new Error('выкладывать нечего или сундуки полны');
     const left = out().reduce((s, i) => s + i.count, 0);
     return `выложил ${put} шт. в сундуки дома${left ? `, не поместилось ещё ${left}` : ''}; оставил инструменты, броню и еду`;
+  }
+
+  /**
+   * Что сейчас падает с неба там, где бот: 'дождь', 'снег' или '' (ясно, или биом без осадков - пустыня, саванна).
+   * Как в игре: идёт ли непогода (сила дождя от сервера) + биом под ногами: холодный (температура < 0,15,
+   * в горах ниже с высотой) - снег. 21.11 зимой в заснеженной тайге бот говорил «дождь».
+   */
+  precip() {
+    const b = this.bot;
+    if (!/overworld/.test(b.game.dimension || '') || (b.rainState || 0) <= 0.3) return '';
+    try {
+      const k = b.blockAt(b.entity.position), name = k && k.biome && k.biome.name;
+      const bio = name && b.registry.biomesByName[name];
+      if (bio) {
+        if (bio.has_precipitation === false || bio.precipitation === 'none') return '';
+        const temp = (bio.temperature ?? 0.8) - Math.max(0, b.entity.position.y - 80) * 0.00125;
+        if (temp < 0.15 || /snowy|frozen|ice_spikes|grove|jagged_peaks|frozen_peaks|snowy_slopes/.test(name)) return 'снег';
+      }
+    } catch {}
+    return 'дождь';
   }
 
   /** Таблички рядом (8 блоков): текст с обеих сторон. */
