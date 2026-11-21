@@ -508,7 +508,11 @@ class WorldMap {
         if (i >= 0) chunks[i] = row; else chunks.push(row);
       }
     }
-    return { r: radiusChunks, chunks, poi, total: Object.keys(m.chunks).length, layer, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
+    // радар на карте: кто вокруг (враги, животные, жители, транспорт, игроки) - в блоках от угла карты
+    const ents = [];
+    try { for (const [x, z, g] of tb.radar(64).list) ents.push([x - (pcx - radiusChunks) * 16, z - (pcz - radiusChunks) * 16, g]); } catch {}
+    for (const pl of Object.values(b.players)) if (pl.entity && pl.username !== b.username) ents.push([Math.floor(pl.entity.position.x) - (pcx - radiusChunks) * 16, Math.floor(pl.entity.position.z) - (pcz - radiusChunks) * 16, 'player']);
+    return { r: radiusChunks, chunks, poi, ents, total: Object.keys(m.chunks).length, layer, me: [((Math.floor(p.x) % 16) + 16) % 16, ((Math.floor(p.z) % 16) + 16) % 16], colors: require('./mapgrid').COLORS };
   }
 }
 

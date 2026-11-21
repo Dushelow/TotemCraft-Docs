@@ -561,11 +561,14 @@ async function drawMap() {
   g.putImageData(img, 0, 0);
   const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
   for (const [x, z, kind] of v.poi) { g.fillStyle = COL[kind] || '#bbb'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc((x + v.r) * 16 + 8, (z + v.r) * 16 + 8, 3.5, 0, 7); g.fill(); g.stroke(); }
+  // радар: враги - красные, животные - белые, жители - зелёные, транспорт - коричневые, игроки - синие
+  const EC = { enemy: '#ff4d4d', animal: '#f2f2f2', villager: '#58d68d', vehicle: '#a0703c', player: '#5fa8ff' };
+  for (const [x, z, k] of v.ents || []) { g.fillStyle = EC[k] || '#ccc'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.rect(x - 2, z - 2, 5, 5); g.fill(); g.stroke(); }
   // бот - белая точка с обводкой в своей клетке
   const mx = v.r * 16 + (v.me ? v.me[0] : 8), mz = v.r * 16 + (v.me ? v.me[1] : 8);
   g.fillStyle = '#fff'; g.strokeStyle = '#e5484d'; g.lineWidth = 2; g.beginPath(); g.arc(mx + 0.5, mz + 0.5, 5, 0, 7); g.fill(); g.stroke();
   const info = card.querySelector('[data-f="mapinfo"]');
-  if (info) info.textContent = `${v.layer ? 'Показан ' + v.layer + ' (тёмное - стены, чёрное - обрыв). ' : ''}исследовано чанков: ${v.total}. Север сверху, бот - белая точка. Точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер.`;
+  if (info) info.textContent = `${v.layer ? 'Показан ' + v.layer + ' (тёмное - стены, чёрное - обрыв). ' : ''}исследовано чанков: ${v.total}. Север сверху, бот - белая точка. Точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер. Квадратики: красные - враги, белые - животные, зелёные - жители, синие - игроки.`;
 }
 setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); }, 5000);
 

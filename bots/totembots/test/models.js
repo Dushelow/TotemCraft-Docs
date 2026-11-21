@@ -123,3 +123,16 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const nether = parse('база в незере 120 -40');
   console.log(`--- метки из чата: ${cases.length - bad.length} из ${cases.length}${bad.length ? ' НЕТ: ' + bad.map((x) => x[0]).join(', ') : ''}${nether && nether.dim === 'Незер' ? '' : ' НЕТ: незер не узнан'}`);
 }
+
+// радар: враги со стороной и расстоянием, животные, жители по профессиям
+{
+  const { Perception } = require('../app/perception');
+  const { Vec3 } = require('vec3');
+  const registry = require('prismarine-registry')('1.21.4');
+  const tb = Object.create(Perception.prototype);
+  const ent = (name, x, z, extra = {}) => ({ name, type: 'mob', position: new Vec3(x, 64, z), metadata: [], ...extra });
+  tb.bot = { registry, entity: { position: new Vec3(0, 64, 0) }, entities: { 1: ent('zombie', 0, -10), 2: ent('skeleton', 20, 0), 3: ent('cow', 5, 5), 4: ent('cow', 6, 5), 5: ent('villager', 3, 3, { metadata: [null, { villagerType: 2, villagerProfession: 5, level: 1 }] }), 6: ent('villager', 4, 3, { metadata: [{ villagerProfession: 'minecraft:librarian' }] }) } };
+  const r = tb.radar();
+  const ok = /враги: zombie, skeleton \(ближе всех zombie 10 бл. на север\)/.test(r.text) && /животные: cow x2/.test(r.text) && /жители: фермер, библиотекарь/.test(r.text) && r.list.length === 6;
+  console.log('--- радар: ' + (ok ? r.text : 'НЕТ: ' + r.text));
+}

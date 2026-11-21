@@ -53,6 +53,49 @@ class Perception {
   snapshot() { const { Vision } = require('./vision'); return new Vision(this.bot).snapshot(); }
 
   /** Взгляд (каждое сообщение, дёшево): под ногами, перед собой, в руке, мобы и вещи в 16 блоках. */
+  /**
+   * Радар (как у Xaero и JourneyMap): кто вокруг в 32 блоках по группам - враги (ближайший со стороной света и
+   * расстоянием), животные, жители с профессиями, транспорт. list - для значков на карте в панели.
+   */
+  radar(r = 32) {
+    const b = this.bot, me = b.entity.position, { compass } = require('./worldmap');
+    const PROF = { farmer: 'фермер', librarian: 'библиотекарь', armorer: 'бронник', weaponsmith: 'оружейник', toolsmith: 'инструментальщик', cleric: 'священник', butcher: 'мясник', fisherman: 'рыбак', fletcher: 'лучник', shepherd: 'пастух', leatherworker: 'кожевник', mason: 'каменщик', cartographer: 'картограф', nitwit: 'бездельник', none: 'безработный' };
+    const groups = { enemy: [], animal: [], villager: [], vehicle: [] }, list = [];
+    for (const e of Object.values(b.entities)) {
+      if (e === b.entity || !e.position || e.type === 'player' || e.name === 'item' || e.type === 'orb') continue;
+      const d = e.position.distanceTo(me);
+      if (d > r) continue;
+      const info = b.registry.entitiesByName[e.name] || {};
+      let g = /hostile/i.test(info.category || '') || /^(slime|magma_cube|ghast|phantom|shulker|hoglin|piglin_brute)$/.test(e.name) ? 'enemy'
+        : /^(villager|wandering_trader)$/.test(e.name) ? 'villager'
+          : /boat|raft|minecart/.test(e.name) ? 'vehicle'
+            : /passive|animal|water/i.test(info.category || '') || /^(cow|sheep|pig|chicken|horse|donkey|mule|llama|goat|rabbit|cat|wolf|fox|bee|turtle|frog|camel|sniffer|armadillo|axolotl|parrot|panda|mooshroom|strider)$/.test(e.name) ? 'animal' : null;
+      if (!g) continue;
+      let prof = '';
+      if (g === 'villager') for (const m of e.metadata || []) { const p = m && (m.villagerProfession ?? m.profession); if (p !== undefined && p !== null) { // профессия приходит строкой или номером (порядок реестра 1.21)
+        const ORD = ['none', 'armorer', 'butcher', 'cartographer', 'cleric', 'farmer', 'fisherman', 'fletcher', 'leatherworker', 'librarian', 'mason', 'nitwit', 'shepherd', 'toolsmith', 'weaponsmith'];
+        const k = typeof p === 'number' ? ORD[p] || '' : String(p.name || p).replace(/^minecraft:/, ''); prof = PROF[k] || (isNaN(+k) ? k : ''); } }
+      groups[g].push({ e, d, prof });
+      list.push([Math.floor(e.position.x), Math.floor(e.position.z), g]);
+    }
+    const parts = [];
+    if (groups.enemy.length) {
+      const n = groups.enemy.sort((x, y) => x.d - y.d)[0];
+      const cnt = {}; for (const x of groups.enemy) cnt[x.e.name] = (cnt[x.e.name] || 0) + 1;
+      parts.push(`враги: ${Object.entries(cnt).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ')} (ближе всех ${n.e.name} ${Math.round(n.d)} бл. на ${compass(n.e.position.x - me.x, n.e.position.z - me.z)}${Math.abs(n.e.position.y - me.y) > 3 ? (n.e.position.y > me.y ? ', выше' : ', ниже') : ''})`);
+    }
+    for (const [g, title] of [['animal', 'животные'], ['vehicle', 'транспорт']]) {
+      if (!groups[g].length) continue;
+      const cnt = {}; for (const x of groups[g]) cnt[x.e.name] = (cnt[x.e.name] || 0) + 1;
+      parts.push(`${title}: ${Object.entries(cnt).sort((a, c) => c[1] - a[1]).slice(0, 6).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ')}`);
+    }
+    if (groups.villager.length) {
+      const cnt = {}; for (const x of groups.villager) { const k = x.e.name === 'wandering_trader' ? 'странствующий торговец' : x.prof || 'житель'; cnt[k] = (cnt[k] || 0) + 1; }
+      parts.push(`жители: ${Object.entries(cnt).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ')}`);
+    }
+    return { text: parts.join('; '), list };
+  }
+
   glance() {
     const b = this.bot, e = b.entity, p = e.position;
     const nm = (v) => { const k = b.blockAt(v); return k ? k.name.replace(/^minecraft:/, '') : '?'; };
@@ -64,11 +107,12 @@ class Perception {
       if (x.position.distanceTo(p) > 16) continue;
       if (x.name === 'item') drops++; else if (x.name && x.type !== 'object' && x.type !== 'orb') mobs[x.name] = (mobs[x.name] || 0) + 1;
     }
-    const ml = Object.entries(mobs).sort((a2, b2) => b2[1] - a2[1]).slice(0, 5).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
+    let rd = { text: '', list: [] }; try { rd = this.radar(); } catch {}
+    const ml = rd.text || Object.entries(mobs).sort((a2, b2) => b2[1] - a2[1]).slice(0, 5).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
     const held = b.heldItem ? b.heldItem.name : 'пусто';
     const room = this.houseText() || this.roomText();
     let objs = ''; try { objs = require('./objects').describe(this); } catch {}
-    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; мобы: ${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
+    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; ${rd.text ? '' : 'мобы: '}${ml}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
   }
 
   /**
