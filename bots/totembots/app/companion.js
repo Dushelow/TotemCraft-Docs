@@ -109,7 +109,7 @@ class Companion {
       if (PETS.test(e.name || '') || e.name === 'villager') {
         const p = e.position.floored();
         if (recent(p)) continue;
-        out.push({ w: e.name === 'villager' ? 1 : 1.2, what: e.name === 'villager' ? 'разглядываю жителя' : `глажу ${e.name}`, hand: e.name !== 'villager', look: e.position.offset(0, (e.height || 1) * 0.8, 0), spot: null, ent: e, key: p });
+        out.push({ w: e.name === 'villager' ? 1 : 1.2, what: e.name === 'villager' ? 'разглядываю жителя' : `смотрю на ${e.name}`, hand: false, look: e.position.offset(0, (e.height || 1) * 0.8, 0), spot: null, ent: e, key: p });
       }
     }
     if (this.moreOpportunities) try { out.push(...this.moreOpportunities(center, r, recent, !!(this.followName && this.player(this.followName)))); } catch {}
@@ -123,9 +123,22 @@ class Companion {
   standNear(p) {
     if (!this.standOk) return null;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1], [2, 0], [-2, 0], [0, 2], [0, -2]]) {
-      for (const dy of [0, 1, -1]) if (this.standOk(p.x + dx, p.y + dy, p.z + dz)) return new Vec3(p.x + dx + 0.5, p.y + dy, p.z + dz + 0.5);
+      for (const dy of [0, 1, -1]) if (this.standOk(p.x + dx, p.y + dy, p.z + dz) && this.harmlessSpot(p.x + dx, p.y + dy, p.z + dz)) return new Vec3(p.x + dx + 0.5, p.y + dy, p.z + dz + 0.5);
     }
     return null;
+  }
+
+  /**
+   * Встать сюда ничего не сломает и не включит: под ногами не пашня и не механизм, в клетке нет нажимной плиты,
+   * растяжки, рельса, урожая; рядом нет датчика скалка (сработает от шагов).
+   */
+  harmlessSpot(x, y, z) {
+    const b = this.bot, at = (dy) => b.blockAt(new Vec3(x, y + dy, z));
+    const f = at(0), u = at(-1);
+    if (f && /pressure_plate|tripwire|string|rail|redstone|repeater|comparator|lever|button|_crop|wheat|carrots|potatoes|beetroots|sweet_berry|sapling|turtle_egg|sniffer_egg|frogspawn|flower_pot|potted_|candle|sea_pickle/.test(f.name)) return false;
+    if (u && /farmland|note_block|observer|piston|target|hopper|dropper|dispenser|sculk_sensor|daylight_detector|tnt|composter|scaffolding/.test(u.name)) return false;
+    try { if (b.findBlock({ point: new Vec3(x, y, z), matching: (bl) => /sculk_sensor|calibrated_sculk_sensor/.test(bl.name), maxDistance: 8 })) return false; } catch {}
+    return true;
   }
 
   sandboxStart(o, owner) {

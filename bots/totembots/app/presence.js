@@ -10,7 +10,7 @@
 //  - Помощь вовремя (Элизабет бросает аптечки): у хозяина мало здоровья, а у бота есть еда - бросить ему.
 //  - Комментарии к месту и виду (Иниго, Люсьен): Незер, Энд, пещера, океан, пустыня, снег; новая броня хозяина.
 //  - Свои сундуки дома: без дел заглянуть (крышка открывается - видно со стороны; заодно бот узнаёт, что там).
-//  - Отдых дома (Followers Can Relax): ночью без дел в своём доме - иногда прилечь (/lay), встать - присесть.
+//  - Отдых дома (Followers Can Relax): ночью без дел в своём доме - иногда присесть (/sit, на сервере работает только он), встать - присед.
 const { goals } = require('mineflayer-pathfinder');
 const { Vec3 } = require('vec3');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -139,7 +139,11 @@ class Presence {
     const b = this.bot;
     if (sb.propped) return; sb.propped = true;
     let re = null;
-    if (sb.ent && PET_FOOD[sb.ent.name]) re = PET_FOOD[sb.ent.name];
+    if (sb.ent && PET_FOOD[sb.ent.name]) {
+      const pen = this.skills && this.skills.builtNear && (() => { try { return this.skills.builtNear(sb.ent.position.floored(), 8); } catch { return true; } })();
+      if (pen) return;   // животное в загоне или у чужой постройки - не выманивать
+      re = PET_FOOD[sb.ent.name];
+    }
     else { const p = PROP.find(([w]) => w.test(sb.what)); if (p) re = p[1]; }
     if (!re) return;
     const foods = b.registry.foodsByName || {};
@@ -147,7 +151,8 @@ class Presence {
     if (!item) return;
     sb.prevHeld = b.heldItem ? b.heldItem.name : null;
     try { await b.equip(item, 'hand'); sb.prop = item.name; } catch { return; }
-    if (sb.prop === 'fishing_rod' && sb.water) { try { await b.lookAt(sb.water.offset(0.5, 0.5, 0.5), true); b.activateItem(); sb.cast = Date.now(); } catch {} }
+    const crowd = sb.water && Object.values(b.entities).some((e) => e !== b.entity && e.position && e.name !== 'item' && e.type !== 'object' && (e.position.distanceTo(sb.water) < 8 || e.position.distanceTo(b.entity.position) < 3));
+    if (sb.prop === 'fishing_rod' && sb.water && !crowd) { try { await b.lookAt(sb.water.offset(0.5, 0.5, 0.5), true); b.activateItem(); sb.cast = Date.now(); } catch {} }
   }
   async propOff(sb) {
     const b = this.bot;
@@ -172,9 +177,9 @@ class Presence {
         if (c) { const spot = this.standNear(c); if (spot) out.push({ w: 1, what: 'заглядываю в свой сундук', hand: false, look: c.offset(0.5, 0.5, 0.5), spot, key: c, chest: c }); }
       } catch {}
     }
-    // ночью дома без хозяина - иногда прилечь (GSit /lay)
+    // ночью дома без хозяина - иногда присесть (/sit)
     const h = require('./life').home(this), t = b.time && b.time.timeOfDay;
-    if (!withOwner && h && h.dim === this.dimName() && Math.hypot(h.x - center.x, h.z - center.z) < 12 && t > 13000 && t < 23000) out.push({ w: 0.6, what: 'прилегла отдохнуть', hand: false, look: null, spot: b.entity.position.clone(), key: b.entity.position.floored(), lay: true });
+    if (!withOwner && h && h.dim === this.dimName() && Math.hypot(h.x - center.x, h.z - center.z) < 12 && t > 13000 && t < 23000) out.push({ w: 0.6, what: 'присела отдохнуть', hand: false, look: null, spot: b.entity.position.clone(), key: b.entity.position.floored(), lay: true });
     return out;
   }
 
@@ -187,7 +192,7 @@ class Presence {
       if (!bl || (this.chestVisible && !this.chestVisible(bl))) return;
       try { await b.lookAt(sb.chest.offset(0.5, 0.5, 0.5), true); const c = await b.openContainer(bl); if (this.noteChest) this.noteChest(sb.chest.x, sb.chest.y, sb.chest.z, c.containerItems()); await sleep(1500 + Math.random() * 1500); c.close(); } catch {}
     }
-    if (sb.lay) { try { b.chat('/lay'); this.pose = { kind: 'lay', until: Date.now() + 30000 + Math.random() * 30000 }; } catch {} }
+    if (sb.lay) { try { b.chat('/sit'); this.pose = { kind: 'sit', until: Date.now() + 30000 + Math.random() * 30000 }; } catch {} }
   }
   poseEnd() { const b = this.bot; this.pose = null; try { b.setControlState('sneak', true); setTimeout(() => { try { b.setControlState('sneak', false); } catch {} }, 300); } catch {} }
 }

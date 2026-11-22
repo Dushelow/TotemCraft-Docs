@@ -1570,7 +1570,7 @@ class TotemBot extends EventEmitter {
           case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
           case 'mount': r = await this.mount(a, tok); break;
           case 'dismount': r = await this.dismount(); break;
-          case 'sit': { let ok = await this.sitNear(b0()); if (!ok) { this.bot.chat('/sit'); await new Promise((res) => setTimeout(res, 800)); ok = !!this.bot.vehicle; if (ok) this.seat = { since: Date.now(), at: b0().clone() }; } if (!ok) throw new Error('сесть негде: рядом нет свободной нижней ступеньки, полублока или подушки, /sit не сработал'); r = 'села'; break; }
+          case 'sit': { let ok = this.sitNear ? await this.sitNear(b0()) : false; if (!ok && !this.bot.vehicle) { this.bot.chat('/sit'); await new Promise((res) => setTimeout(res, 800)); ok = !!this.bot.vehicle; if (ok) this.seat = { since: Date.now(), at: b0().clone() }; } if (!ok) throw new Error('сесть негде: рядом нет свободной нижней ступеньки, полублока или подушки, /sit не сработал'); r = 'села'; break; }
           case 'drive': r = await this.drive(a, tok); break;
           case 'discardAll': r = await this.discardAll(a); break;
           case 'duel': r = await this.duel(a, tok); break;
