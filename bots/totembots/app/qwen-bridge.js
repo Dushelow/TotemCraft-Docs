@@ -625,7 +625,18 @@ class QwenBridge {
       // модель «до завтра» и переключал модели и чаты (22.11: Plus и Max выбыли за 2 мин, минуты молчания). Ждать 25 с, не 45
       if (!started && Date.now() > sentAt + (chatId ? 25000 : 90000)) throw new Error('Qwen не начал отвечать (страница зависла, вход или капча)');
       if (r.done) {
-        if (r.done.error && !r.done.answer) throw new Error(r.done.error);
+        // ошибка потока (HTTP 502 и т.п.) не значит, что ответа нет: сайт часто дописывает ответ сам, его видно в чате
+        // Qwen, а в игру он не уходил, и мы слали то же сообщение ещё раз (22.11: «ответила в чат сайта, а не в игру»).
+        // До 25 с смотрим историю чата - ответ на наше сообщение есть - берём его
+        if (r.done.error && !r.done.answer) {
+          for (let k = 0; k < 10; k++) {
+            await sleep(2500);
+            const h = await this.historyAnswer(this.currentChat() || chatId, sentAt).catch(() => null);
+            if (h && h.done && h.text) { this.onAttention(`Qwen: ${r.done.error}, но ответ в чате есть - взяла его`); return { answer: h.text, chatId: this.currentChat() || chatId }; }
+            if (!h) break;   // ответа нет и не пишется
+          }
+          throw new Error(r.done.error);
+        }
         // новый чат получает адрес после первого ответа
         let id = this.currentChat();
         for (let i = 0; i < 20 && !id; i++) { await sleep(250); id = this.currentChat(); }
