@@ -246,6 +246,12 @@ function install(mv, bot) {
     const out = [];
     if (mv.navSwim === false || !waterAt(node.x, node.y, node.z)) return out;
     let surfY = node.y + 24; for (let y = node.y + 1; y < node.y + 24; y++) if (!waterAt(node.x, y, node.z)) { surfY = y; break; }
+    // над клеткой потолок (днище корабля, лёд, свод пещеры) - всплыть некуда: такие клетки дорогие, чтобы путь шёл под
+    // потолком только коротко (22.11: поплыл под днищем корабля и утонул)
+    const ceiled = (x, y, z) => { for (let yy = y + 1; yy < y + 24; yy++) { if (waterAt(x, yy, z)) continue; return cell(x, yy, z).boxes.length > 0; } return true; };
+    // из воды - на лиану или лестницу (корабль, стена, колодец): дальше по ним вверх ведёт обычный модуль пути
+    { const up = cell(node.x, node.y + 1, node.z); const ub = up.b || blk(node.x, node.y + 1, node.z);
+      if (ub && /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/.test(ub.name) && !have.has(`${node.x},${node.y + 1},${node.z}`)) { have.add(`${node.x},${node.y + 1},${node.z}`); const m = new Move(node.x, node.y + 1, node.z, node.remainingBlocks, 1.5, [], []); m.swim = true; out.push(m); } }
     for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0], [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1], [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1], [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1]]) {
       const nx = node.x + dx, ny = node.y + dy, nz = node.z + dz, k = `${nx},${ny},${nz}`;
       if (have.has(k) || !waterAt(nx, ny, nz)) continue;
@@ -254,7 +260,7 @@ function install(mv, bot) {
       if (dx && dz && (cell(node.x + dx, ny, node.z).boxes.length || cell(node.x, ny, node.z + dz).boxes.length)) continue;   // угол не срезать
       const deep = Math.max(0, surfY - ny - 1);
       have.add(k);
-      const m = new Move(nx, ny, nz, node.remainingBlocks, (dx && dz ? 1.5 : 1.1) + (dy ? 0.3 : 0) + Math.min(3, deep * 0.15), [], []);
+      const m = new Move(nx, ny, nz, node.remainingBlocks, (dx && dz ? 1.5 : 1.1) + (dy ? 0.3 : 0) + Math.min(3, deep * 0.15) + (ceiled(nx, ny, nz) ? 6 : 0), [], []);
       m.swim = true;
       out.push(m);
     }

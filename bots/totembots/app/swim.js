@@ -105,4 +105,51 @@ function swimTick(tb) {
   return true;
 }
 
-module.exports = { swimTick, nextPoint, SWIM_FAST, SWIM_SURF };
+/**
+ * Воздух кончается под водой - всплыть туда, где над водой открыто (22.11: зашёл в игру под днищем корабля и утонул
+ * за 20 с: путь вёл к суше под днищем, а «вверх» упиралось в доски). Главнее пути: каждый тик физики.
+ * Воздух: bot.oxygenLevel, а если сервер его не шлёт - своё время под водой (полный запас ~15 с).
+ * Цель - ближайшая клетка воды (до 16 бл.), над которой воздух, а не блок; плыть к ней напрямую, рывком.
+ */
+function airTick(tb) {
+  const b = tb.bot, e = b.entity;
+  if (!e || b.vehicle) return false;
+  const p = e.position, now = Date.now();
+  const headIn = isWater(b, p.offset(0, 1.6, 0).floored());
+  if (!headIn) { tb._underSince = 0; tb._airEsc = null; return false; }
+  tb._underSince = tb._underSince || now;
+  const est = Math.max(0, 20 - (now - tb._underSince) / 750);   // сервер может не слать запас воздуха - тогда своё время под водой
+  const air = Math.min(b.oxygenLevel !== undefined && b.oxygenLevel !== null ? b.oxygenLevel : 20, est);
+  if (air > 8) return false;
+  if (!tb._airEsc || now - tb._airEsc.at > 1000) {
+    const V = p.constructor, f = p.floored();
+    const open = (x, y, z) => { const a = b.blockAt(new V(x, y + 1, z)); return a && !isWater(b, a.position) && a.boundingBox === 'empty'; };
+    // обход в ширину по воде от ног: первая клетка с открытым верхом
+    const seen = new Set([`${f.x},${f.y},${f.z}`]), q = [[f.x, f.y, f.z, 0]];
+    let goal = null;
+    while (q.length && !goal) {
+      const [x, y, z, d] = q.shift();
+      if (open(x, y, z)) { goal = { x: x + 0.5, y: y + 0.2, z: z + 0.5 }; break; }
+      if (d >= 16) continue;
+      for (const [dx, dy, dz] of [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) {
+        const k = `${x + dx},${y + dy},${z + dz}`;
+        if (seen.has(k) || seen.size > 4000) continue;
+        seen.add(k);
+        if (isWater(b, new V(x + dx, y + dy, z + dz))) q.push([x + dx, y + dy, z + dz, d + 1]);
+      }
+    }
+    tb._airEsc = { at: now, goal };
+    if (goal && (!tb._airSaid || now - tb._airSaid > 20000)) { tb._airSaid = now; tb.log(`воздух кончается - всплываю к ${Math.floor(goal.x)} ${Math.floor(goal.y)} ${Math.floor(goal.z)}`); }
+  }
+  const g = tb._airEsc.goal;
+  if (!g) { b.setControlState('jump', true); return false; }
+  const dx = g.x - p.x, dy = g.y - p.y, dz = g.z - p.z, d = Math.hypot(dx, dy, dz) || 1;
+  e.velocity.x += (dx / d * SWIM_FAST - e.velocity.x) * 0.4;
+  e.velocity.z += (dz / d * SWIM_FAST - e.velocity.z) * 0.4;
+  e.velocity.y += (Math.max(-0.05, dy / d * SWIM_FAST + 0.02) - e.velocity.y) * 0.4;
+  b.setControlState('sprint', b.food > 6); b.setControlState('forward', true); b.setControlState('jump', Math.hypot(dx, dz) < 1);
+  b.look(Math.atan2(-dx, -dz), Math.max(-0.8, Math.min(0.8, Math.atan2(dy, Math.hypot(dx, dz) || 1))), true);
+  return true;
+}
+
+module.exports = { swimTick, airTick, nextPoint, SWIM_FAST, SWIM_SURF };
