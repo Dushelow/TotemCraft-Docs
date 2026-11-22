@@ -15,9 +15,13 @@ class Vehicles {
   async mount(a, tok) {
     const b = this.bot, me = b.entity.position, RIDE = RIDE_RE;
     if (b.vehicle) return 'уже сижу';
-    const kind = String(a.what || '').toLowerCase();
+    // мозг пишет в «who» и ник, и название лодки (22.11: mount(pale_oak_boat) - сел в чужую лодку в стороне)
+    let kind = String(a.what || '').toLowerCase();
+    if (a.who && !this.player(a.who) && /boat|raft|horse|donkey|mule|camel|pig|strider|llama|лодк|лошад/i.test(a.who)) { kind = kind || String(a.who).toLowerCase(); a = { ...a, who: '' }; }
     let target = null;
-    const who = a.who ? this.player(a.who) : null;
+    // без ника - сначала лодка хозяина рядом (в которой он сидит или у которой стоит), а не ближайшая к боту
+    const owner = !a.who && (this.opts.masters || [this.followName]).map((n) => n && this.player(n)).find((e) => e && e.position.distanceTo(me) < 24);
+    const who = a.who ? this.player(a.who) : owner && (owner.vehicle || Object.values(b.entities).some((e) => RIDE.test(e.name || '') && e.position.distanceTo(owner.position) < 3)) ? owner : null;
     if (who) {
       target = who.vehicle || Object.values(b.entities).filter((e) => RIDE.test(e.name || '') && e.position.distanceTo(who.position) < 4)
         .sort((x, y) => x.position.distanceTo(who.position) - y.position.distanceTo(who.position))[0];
@@ -32,13 +36,17 @@ class Vehicles {
     if ((target.passengers || []).length >= seats) throw new Error(`в ${target.name} нет места`);
     for (let i = 0; i < 3 && !b.vehicle; i++) {
       this.check(tok);
-      if (target.position.distanceTo(b.entity.position) > 2.5) {
-        try { await this.goto(new goals.GoalFollow(target, 1.5), tok, 20000); } catch (e) { if (isCancel(e)) throw e; }
-        try { b.pathfinder.setGoal(null); } catch {}
+      // подойти на 2 бл. к месту лодки и остановиться (за лодкой «следом» тело упиралось в неё и толкало - 22.11)
+      if (target.position.distanceTo(b.entity.position) > 2.6) {
+        try { await this.goto(new goals.GoalNear(target.position.x, target.position.y, target.position.z, 2), tok, 20000); } catch (e) { if (isCancel(e)) throw e; }
       }
+      try { b.pathfinder.setGoal(null); b.clearControlStates(); } catch {}
+      await sleep(150);
+      const d = target.position.distanceTo(b.entity.position.offset(0, 1.6, 0));
       this.busyLook = true;
-      try { await b.lookAt(target.position.offset(0, 0.4, 0), true); b.mount(target); } finally { this.busyLook = false; }
+      try { await b.lookAt(target.position.offset(0, 0.4, 0), true); if (i % 2 === 0) b.mount(target); else await b.activateEntity(target).catch(() => {}); } finally { this.busyLook = false; }
       for (let w = 0; w < 20 && !b.vehicle; w++) await sleep(100);
+      if (!b.vehicle) this.log(`в ${target.name} не сел (попытка ${i + 1}, до неё ${d.toFixed(1)} бл.)`);
     }
     if (!b.vehicle) throw new Error(`не сел в ${target.name}${/horse|donkey|mule|camel/.test(target.name) ? ' (лошадь должна быть приручена и под седлом)' : ''}`);
     if (this.mode !== 'task') this.mode = 'ride';
