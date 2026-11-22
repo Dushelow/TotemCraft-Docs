@@ -40,9 +40,11 @@ function needs(tb) {
     else if (evening && h && dHome > 30) out.push({ k: 'вечер', s: 45, why: 'вечереет - к дому' });
   }
   if (b.inventory.emptySlotCount() <= 2 && h) out.push({ k: 'тяжело', s: dHome < 16 ? 60 : 40, why: 'инвентарь почти полон - выложить дома' });
-  if (over && t !== undefined && t < 11000 && Date.now() - (tb.lifeHarvestAt || 0) > 5 * 60000) {
+  // урожай сам - только свой: грядки у своего дома (40 бл.), а не чужое или общее поле (22.11: Loki зашёл и пошёл рвать
+  // бамбук и пшеницу на общем поле у спавна). Чужое - только по просьбе
+  if (h && over && t !== undefined && t < 11000 && Date.now() - (tb.lifeHarvestAt || 0) > 5 * 60000) {
     const ripe = b.findBlock({ matching: (bl) => /^(wheat|carrots|potatoes|beetroots)$/.test(bl.name) && bl.getProperties && +bl.getProperties().age >= (bl.name === 'beetroots' ? 3 : 7), maxDistance: 12 });
-    if (ripe && !tb.skills.builtNear(ripe.position, 0)) out.push({ k: 'урожай', s: 25, why: 'спелый урожай рядом' });
+    if (ripe && !tb.skills.builtNear(ripe.position, 0) && Math.hypot(ripe.position.x - h.x, ripe.position.z - h.z) < 40) out.push({ k: 'урожай', s: 25, why: 'спелый урожай у дома', crop: ripe.name });
   }
   return out.sort((x, y) => y.s - x.s);
 }
@@ -67,7 +69,7 @@ async function act(tb, n, tok) {
     await tb.stash({}, tok).catch((e) => tb.log('выложить не вышло: ' + e.message));
     return;
   }
-  if (n.k === 'урожай') { tb.lifeHarvestAt = Date.now(); await tb.harvest({}, tok).catch(() => {}); }
+  if (n.k === 'урожай') { tb.lifeHarvestAt = Date.now(); await tb.harvest({ crop: n.crop }, tok).catch(() => {}); }
 }
 
 /** Раз в 3 с: самое важное дело, если тело свободно. */

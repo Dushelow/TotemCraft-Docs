@@ -599,6 +599,19 @@ class QwenBridge {
       sent = await this.wc.executeJavaScript(SEND(text));
     }
     if (sent.age) throw new Error('Qwen ждёт подтверждения возраста');
+    // текст остался в поле (страница проекта ещё грузит файлы, всплыло окно): перезагрузить и отправить снова; новый
+    // чат в проекте и второй раз не принят - чат вне проекта (22.11: Loki зашёл, а чат так и не открылся, «мозг просыпается»)
+    if (sent.error && /не принял сообщение|кнопка отправки/.test(sent.error) && !image) {
+      this.onAttention('Qwen не принял сообщение - перезагружаю страницу и отправляю снова');
+      this.needReload = true; await this.open(chatId); await this.hook();
+      sent = await this.wc.executeJavaScript(SEND(text));
+      if (sent.error && !chatId && this.projectId()) {
+        this.noProjectUntil = Date.now() + 10 * 60000;
+        this.onAttention('новый чат в проекте Qwen не принимает сообщение - открываю чат вне проекта');
+        await this.open(''); await this.hook();
+        sent = await this.wc.executeJavaScript(SEND(text));
+      }
+    }
     if (sent.error) throw new Error(sent.error);
     const sentAt = Date.now();
     const until = sentAt + 4 * 60 * 1000;

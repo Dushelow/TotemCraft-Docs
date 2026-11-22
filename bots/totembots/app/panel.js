@@ -156,7 +156,7 @@ function renderStart() {
     cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="pri sm" data-go="brains">Войти</button>'),
-    st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Запускать: ${picked.map((b) => b.name).join(', ')}` : 'Не выбран ни один бот', picked.length ? 'кто зайдёт по кнопке ниже' : 'включите «Запускать» у нужных ботов') + `<div class="launchlist">${st.bots.map((b) => `<div class="lrow"><span class="ava sm">${esc((b.name[0] || '?').toUpperCase())}</span><span class="ln">${esc(b.name)}</span><label class="sw" title="Запускать ${esc(b.name)} кнопкой «Запустить»"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span></label></div>`).join('')}</div>`
+    st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Запустятся: ${picked.map((b) => b.name).join(', ')}` : 'Не выбран ни один бот', 'кого запускать - переключатель «Запускать» в карточке бота')
       : check('warn', 'Ботов нет', 'добавьте первого внизу: «Добавить бота»'),
   ];
   const html = out.join('');
