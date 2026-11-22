@@ -57,8 +57,63 @@ class Presence {
     this.spaceTick(owner, now);
     this.helpTick(owner, now, P);
     this.placeTick(owner, now, P);
+    this.formationTick(owner, now);
+    this.socialTick(owner, now, P);
     if (this.pose && (this.mode !== 'idle' || owner || (this.threat && this.threat().level !== 'спокойно') || now > this.pose.until)) this.poseEnd();
     void b;
+  }
+
+  /**
+   * Строй (как спутники в RPG и Элли): идти не впереди хозяина и не на линии его взгляда, а сзади-сбоку. Если бот
+   * оказался впереди него по ходу (мешает смотреть, лезет под стрелы) - отойти за плечо.
+   */
+  formationTick(owner, now) {
+    const b = this.bot;
+    if (!owner || this.mode !== 'follow' || this.sandbox || this.seat || now - (this.formAt || 0) < 1500) return;
+    const v = owner.velocity || { x: 0, z: 0 }, sp = Math.hypot(v.x, v.z);
+    if (sp < 0.08) return;
+    const fx = v.x / sp, fz = v.z / sp, me = b.entity.position;
+    const rx = me.x - owner.position.x, rz = me.z - owner.position.z, ahead = rx * fx + rz * fz, side = -rx * fz + rz * fx;
+    if (ahead < 1 || Math.hypot(rx, rz) > 8) return;   // уже сзади или сбоку
+    this.formAt = now;
+    const s = side >= 0 ? 1 : -1, tx = owner.position.x - fx * 2.5 + -fz * s * 1.5, tz = owner.position.z - fz * 2.5 + fx * s * 1.5;
+    try { b.pathfinder.setGoal(new goals.GoalNear(tx, owner.position.y, tz, 1)); } catch {}
+    setTimeout(() => { try { if (this.mode === 'follow' && !this.sandbox && !this.seat) b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} }, 1800);
+  }
+
+  /**
+   * Общение по своей воле (Серана сама заводит разговор, лагерь в BG3, перки симпатии в Fallout 4) - редко и к месту:
+   *  - хозяин рядом стоит 40+ с, тихо, 25+ мин не говорили по её почину - повод поговорить (мозгу, он и решит, о чём);
+   *  - вечер дома рядом с хозяином - раз за ночь вспомнить день;
+   *  - симпатия к хозяину 40+ - раз в сутки маленький подарок (цветок), если есть;
+   *  - хозяин стоит 5+ мин без движения - «ты тут?» (раз за такую паузу).
+   */
+  socialTick(owner, now, P) {
+    const b = this.bot, C = this.comp;
+    if (!owner || !C || this.mode !== 'follow' || (this.threat && this.threat().level !== 'спокойно') || owner.position.distanceTo(b.entity.position) > 10) return;
+    const still = now - (C.stillSince || now);
+    if (still > 5 * 60000 && !P.afkSaid) { P.afkSaid = true; try { this.say('ты тут?', 'local'); } catch {} return; }
+    if (still < 5000) P.afkSaid = false;
+    if (still > 40000 && still < 5 * 60000 && now - (P.talkAt || 0) > 25 * 60000 && now - (C.barkAt || 0) > 120000) {
+      P.talkAt = now;
+      this.event(`повод поговорить: ${owner.username} рядом, вы давно молчите. Можно самой заговорить коротко и по-живому: спросить, как дела, вспомнить недавнее, рассказать, что видела, предложить дело. Не обязательно - если нечего сказать, промолчи`, true);
+      return;
+    }
+    const t = b.time && b.time.timeOfDay, h = require('./life').home(this);
+    const atHome = h && h.dim === this.dimName() && Math.hypot(h.x - b.entity.position.x, h.z - b.entity.position.z) < 16;
+    const day = Math.floor((b.time && b.time.age || 0) / 24000);
+    if (atHome && t > 12500 && t < 14000 && P.eveningDay !== day && still > 10000) {
+      P.eveningDay = day;
+      this.event('вечер дома с хозяином: можно коротко вспомнить день (что было, что получилось) и сказать, что завтра. Одной-двумя фразами', true);
+      return;
+    }
+    if (this.affinity(owner.username) >= 40 && now - (P.giftAt || 0) > 24 * 3600000 && still > 8000) {
+      const f = b.inventory.items().find((i) => /^(poppy|dandelion|cornflower|allium|azure_bluet|oxeye_daisy|lily_of_the_valley|.*_tulip|blue_orchid|sunflower|peony|rose_bush|lilac)$/.test(i.name));
+      if (f && !this.busyLook) {
+        P.giftAt = now;
+        (async () => { this.busyLook = true; try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(f.type, null, 1); this.log('подарила хозяину ' + f.name); try { this.say('это тебе', 'local'); } catch {} } catch {} finally { this.busyLook = false; } })();
+      }
+    }
   }
 
   /** Хозяин крадётся (присед дольше секунды, не жест) - красться следом. */

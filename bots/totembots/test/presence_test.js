@@ -23,6 +23,9 @@ setTimeout(async () => {
   ok('симпатия словами', t.affinityWord('Griefer') === 'плохое' && t.affinityWord('Friend') === 'тёплое' && t.affinityWord('Nobody') === 'нейтральное');
   const sb = { what: 'разглядываю книги' }; await t.propOn(sb); ok('у кафедры - книга в руке', held === 'book', held);
   const sb2 = { what: 'глажу sheep', ent: { name: 'sheep' } }; await t.propOn(sb2); ok('у овцы - пшеница в руке', held === 'wheat', held);
+  { let goal = null; const t2 = Object.create(Presence.prototype); Object.assign(t2, { bot: { entity: { position: new Vec3(0, 64, 3) }, pathfinder: { setGoal: (g) => { goal = g; } } }, mode: 'follow', followDist: () => 3 });
+    t2.formationTick({ position: new Vec3(0, 64, 0), velocity: new Vec3(0, 0, 0.2) }, Date.now());
+    ok('впереди хозяина - отходит за плечо', goal && goal.z < 0, goal && JSON.stringify({ x: goal.x, z: goal.z })); }
   const bad = res.filter((r) => !r[1]); for (const r of bad) console.log('  НЕ ТАК: ' + r[0] + ' ' + (r[2] || ''));
   console.log(`присутствие: ${res.length - bad.length} из ${res.length}${bad.length ? ' - НЕТ' : ''}`);
 }, 50);
