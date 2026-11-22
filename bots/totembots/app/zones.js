@@ -12,7 +12,61 @@
 // Снимает только хозяин («сюда можно», !allowArea). Внутри зоны (зашла до запрета) - выйти можно, вглубь - нет.
 const NO_SIGN = /вход\s*запрещ|не\s*входить|не\s*заходить|запрещено|закрыт(ая|о)?\s*территори|посторонним|no\s*entry|keep\s*out|охраня/i;
 
+// постройка: блоки, которых в природе нет (стены, полы, заборы); пашня и рельсы - нет (поле рядом с замком - не замок)
+const BUILT = /(_planks|_stairs|_slab|_fence|_fence_gate|_door|_trapdoor|glass|glass_pane|bricks|_brick|_wool|_carpet|_concrete|terracotta|_wall|bookshelf|lantern|torch|barrel|chest|_bed|ladder|polished_|smooth_|chiseled_|cut_|quartz_block|quartz_pillar|iron_bars|chain|_banner|stripped_|cobblestone|purpur|prismarine|_copper|copper_|tuff_bricks|mud_bricks|end_stone_bricks|blackstone_bricks|sea_lantern|spawner|_bars)$/;
+
+/** Выпуклая оболочка точек [x, z] (монотонная цепь). */
+function hull(pts) {
+  const P = [...new Map(pts.map((p) => [p.join(','), p])).values()].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P.length < 3) return P;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], up = [];
+  for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop(); lo.push(p); }
+  for (const p of P.slice().reverse()) { while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], p) <= 0) up.pop(); up.push(p); }
+  return lo.slice(0, -1).concat(up.slice(0, -1));
+}
+
 class Zones {
+  /**
+   * Постройка вокруг точки (22.11, владелец: «если это здание - пусть именно как постройку определит»): столбцы, где
+   * есть строительные блоки (от земли до +24), связанные между собой (щели до 2 бл. - одна постройка), до 64 бл.
+   * Возвращает { poly (оболочка + 3 бл. запаса), cols, w, d } или null, если это не постройка (меньше 12 столбцов).
+   */
+  structureAt(p0) {
+    const b = this.bot, V = b.entity.position.constructor;
+    const y0 = Math.floor(p0.y);
+    const colBuilt = new Map();
+    const built = (x, z) => {
+      const k = x + ',' + z;
+      if (colBuilt.has(k)) return colBuilt.get(k);
+      let r = false;
+      for (let y = y0 - 4; y <= y0 + 24 && !r; y++) { const bl = b.blockAt(new V(x, y, z), false); if (bl === null) break; if (bl && BUILT.test(bl.name)) r = true; }
+      colBuilt.set(k, r); return r;
+    };
+    // старт: ближайший строительный столбец в 4 бл. от точки
+    let start = null;
+    for (let r = 0; r <= 4 && !start; r++) for (let dx = -r; dx <= r && !start; dx++) for (const dz of [-r, r]) { if (built(Math.floor(p0.x) + dx, Math.floor(p0.z) + dz)) { start = [Math.floor(p0.x) + dx, Math.floor(p0.z) + dz]; break; } }
+    if (!start) for (let r = 1; r <= 4 && !start; r++) for (let dz = -r; dz <= r && !start; dz++) for (const dx of [-r, r]) { if (built(Math.floor(p0.x) + dx, Math.floor(p0.z) + dz)) { start = [Math.floor(p0.x) + dx, Math.floor(p0.z) + dz]; break; } }
+    if (!start) return null;
+    const seen = new Set([start.join(',')]), q = [start], cols = [];
+    while (q.length && cols.length < 6000) {
+      const [x, z] = q.shift(); cols.push([x, z]);
+      for (let dx = -3; dx <= 3; dx++) for (let dz = -3; dz <= 3; dz++) {
+        if (!dx && !dz) continue;
+        const nx = x + dx, nz = z + dz, k = nx + ',' + nz;
+        if (seen.has(k) || Math.hypot(nx - start[0], nz - start[1]) > 64) continue;
+        seen.add(k);
+        if (built(nx, nz)) q.push([nx, nz]);
+      }
+    }
+    if (cols.length < 12) return null;
+    const h = hull(cols.flatMap(([x, z]) => [[x, z], [x + 1, z], [x, z + 1], [x + 1, z + 1]]));
+    const cx = h.reduce((a, p) => a + p[0], 0) / h.length, cz = h.reduce((a, p) => a + p[1], 0) / h.length;
+    const poly = h.map(([x, z]) => { const d = Math.hypot(x - cx, z - cz) || 1; return [x + (x - cx) / d * 3, z + (z - cz) / d * 3]; });
+    const xs = cols.map((c) => c[0]), zs = cols.map((c) => c[1]);
+    return { poly, cols: cols.length, w: Math.max(...xs) - Math.min(...xs) + 1, d: Math.max(...zs) - Math.min(...zs) + 1 };
+  }
+
   zones() {
     const m = this.memory;
     if (!m) return [];
@@ -144,11 +198,43 @@ class Zones {
       if (!a.name) this.addZone({ kind: 'можно', name: 'хозяин разрешил', x: p.x, y: p.y, z: p.z, r: 16, by: 'хозяин' });
       return n ? `сняла запрет (${n} зон${n > 1 ? 'ы' : 'а'})` : 'тут запретной зоны нет';
     }
-    const q = this.addZone({ kind: 'запрет', name: a.name || 'запретная зона', x: p.x, y: p.y, z: p.z, r: +a.radius || 16, by: 'хозяин' });
-    // уже внутри - выйти
-    const me = this.bot.entity.position;
-    if (Math.hypot(me.x - q.x, me.z - q.z) <= q.r) this._leaveZone = q;
-    return `запомнила запретную зону «${q.name}»: ${q.x} ${q.z}, радиус ${q.r} - туда не хожу`;
+    // «туда» - а взгляд никуда не попал (небо, дальше 48 бл.): спросить, а не ставить наугад
+    if (a.there && a.x === undefined && !this.ownerAimHit(who)) return this.zoneAsk(who, a.name);
+    return this.zonePlace({ x: p.x, y: p.y, z: p.z }, a.name, +a.radius || 0);
+  }
+
+  /** Поставить запрет в точке: постройка - по её стенам с запасом 3 бл., иначе круг. */
+  zonePlace(p, name, radius) {
+    this._zoneAsk = null;
+    const st = this.structureAt(p);   // постройка - всегда по стенам; радиус - только для открытого места
+    let q;
+    if (st) q = this.addZone({ kind: 'запрет', name: name || 'постройка', poly: st.poly, y: p.y, by: 'хозяин' });
+    else q = this.addZone({ kind: 'запрет', name: name || 'запретная зона', x: p.x, y: p.y, z: p.z, r: radius || 16, by: 'хозяин' });
+    return st ? `запомнила: «${q.name}» - постройка ${st.w}x${st.d} бл. у ${q.x} ${q.z}, по стенам и 3 бл. вокруг - туда не хожу` : `запомнила запретную зону «${q.name}»: ${q.x} ${q.z}, радиус ${q.r} - туда не хожу`;
+  }
+
+  ownerAimHit(name) {
+    const e = this.bot.players[name] && this.bot.players[name].entity;
+    if (!e) return null;
+    const p = this.ownerAim(name, true);
+    return p && p.distanceTo && p.distanceTo(e.position) > 2 ? p : null;
+  }
+
+  /** Не поняла, где: спросить. Ответ - жест (ударить по блоку, глядя туда; прыжки или присед, глядя туда) или координаты в чате. */
+  zoneAsk(who, name) {
+    this._zoneAsk = { who, name: name || '', at: Date.now() };
+    return 'покажи, где нельзя: посмотри туда и ударь рукой (или попрыгай, глядя туда), или напиши координаты, например «300 -610»';
+  }
+
+  /** Ответ на вопрос «где»: жест хозяина или координаты. true - зона поставлена. */
+  zoneAnswer(from, { at, text } = {}) {
+    const A = this._zoneAsk;
+    if (!A || from !== A.who || Date.now() - A.at > 120000) return '';
+    let p = at || null;
+    if (!p && text) { const m = /(-?\d{1,6})[ ,;]+(-?\d{1,3}[ ,;]+)?(-?\d{1,6})/.exec(text); if (m) { const y = m[2] ? parseInt(m[2]) : (this.bot.entity.position.y); p = { x: +m[1], y, z: +m[3] }; } }
+    if (!p && !text) p = this.ownerAimHit(from);
+    if (!p) return '';
+    return this.zonePlace({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }, A.name, 0);
   }
 
   /** Смерть: опасное место; вторая смерть рядом за неделю - запрет. */

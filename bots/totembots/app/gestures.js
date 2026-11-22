@@ -226,6 +226,11 @@ class Gestures {
     if (friend && answer === 'привет' && this.playful && this.playful() && Math.random() < 0.4) answer = 'радость';
     if (answer && canReply && this.mode !== 'task' && !(this.guard && this.guard.fighting)) { R.push(now); this.gReplyAt = now; this.gesture(answer).catch(() => {}); }
     if (k.kind === 'указал' && k.at) this.lookTarget = k.at.offset(0.5, 0.5, 0.5);
+    // ждёт ответа «где нельзя» (zones.js): удар по блоку, прыжки или присед, глядя туда - это и есть ответ
+    if (master && this._zoneAsk && /^(указал|радость|привет|да)$/.test(k.kind) && this.zoneAnswer) {
+      const res = this.zoneAnswer(name, { at: k.kind === 'указал' ? k.at : null });
+      if (res) { try { this.say(res, 'local'); } catch {} this.emit('gesture', { name, kind: 'указал', text: 'показал, где запретная зона: ' + res, master, aff: '' }); return; }
+    }
     // подарок: подобрать, только если от своего и рядом с вещью нет никого ближе бота (не забрать чужое)
     if (k.kind === 'подарок' && friend && this.mode !== 'task') setTimeout(() => {
       const b = this.bot, me = b.entity.position;
