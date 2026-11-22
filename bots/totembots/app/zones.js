@@ -29,12 +29,24 @@ class Zones {
     return Z;
   }
 
+  /** Точка в зоне: круг или многоугольник (граница, которую хозяин обошёл или задал углами). */
+  zoneHas(q, x, z) {
+    if (Math.hypot(q.x - x, q.z - z) > q.r) return false;
+    if (!q.poly) return true;
+    let inside = false;
+    for (let i = 0, j = q.poly.length - 1; i < q.poly.length; j = i++) {
+      const [xi, zi] = q.poly[i], [xj, zj] = q.poly[j];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
   /** Зона в точке (самая строгая): запрет важнее опасности. */
   zoneAt(x, z, dim = this.dimName()) {
     let best = null;
     for (const q of this.zones()) {
       if (q.kind === 'можно') continue;
-      if (q.dim !== dim || Math.hypot(q.x - x, q.z - z) > q.r) continue;
+      if (q.dim !== dim || !this.zoneHas(q, x, z)) continue;
       if (!best || (q.kind === 'запрет' && best.kind !== 'запрет')) best = q;
     }
     return best;
@@ -44,7 +56,14 @@ class Zones {
   addZone(z) {
     const Z = this.zones(), dim = z.dim || this.dimName();
     // хозяин сказал «тут можно» - сама (таблички, блейзы, смерть) тут зону не ставит
-    if (z.by !== 'хозяин' && z.kind !== 'можно' && Z.some((q) => q.kind === 'можно' && q.dim === dim && Math.hypot(q.x - z.x, q.z - z.z) <= q.r)) return null;
+    if (z.by !== 'хозяин' && z.kind !== 'можно' && Z.some((q) => q.kind === 'можно' && q.dim === dim && this.zoneHas(q, z.x, z.z))) return null;
+    if (z.poly) {   // граница точно по месту: не сливать с соседними кругами
+      const cx = z.poly.reduce((a, p) => a + p[0], 0) / z.poly.length, cz = z.poly.reduce((a, p) => a + p[1], 0) / z.poly.length;
+      const q = { kind: z.kind, name: String(z.name || (z.kind === 'запрет' ? 'запретная зона' : 'можно')).slice(0, 60), x: Math.round(cx), y: Math.round(z.y || 64), z: Math.round(cz), r: Math.ceil(Math.max(...z.poly.map((p) => Math.hypot(p[0] - cx, p[1] - cz)))) + 1, poly: z.poly.map((p) => [Math.round(p[0] * 2) / 2, Math.round(p[1] * 2) / 2]), dim, by: z.by || '', at: Date.now() };
+      Z.push(q); this.memory.save(); this._zonesVer = (this._zonesVer || 0) + 1;
+      this.log(`зона: ${q.kind} «${q.name}» по границе из ${q.poly.length} точек, центр ${q.x} ${q.z}`);
+      return q;
+    }
     const near = Z.find((q) => q.dim === dim && q.kind === z.kind && Math.hypot(q.x - z.x, q.z - z.z) < Math.max(q.r, z.r));
     if (near) {
       near.r = Math.max(near.r, Math.round(Math.hypot(near.x - z.x, near.z - z.z) + z.r));
@@ -66,7 +85,7 @@ class Zones {
     const n0 = Z.length;
     for (let i = Z.length - 1; i >= 0; i--) {
       const q = Z[i];
-      if ((name && q.name.toLowerCase().includes(String(name).toLowerCase())) || (x !== undefined && q.dim === dim && Math.hypot(q.x - x, q.z - z) <= q.r)) Z.splice(i, 1);
+      if ((name && q.name.toLowerCase().includes(String(name).toLowerCase())) || (x !== undefined && q.dim === dim && this.zoneHas(q, x, z))) Z.splice(i, 1);
     }
     if (Z.length !== n0) { this.memory.save(); this._zonesVer = (this._zonesVer || 0) + 1; }
     return n0 - Z.length;
@@ -87,9 +106,38 @@ class Zones {
     return e.position.floored();
   }
 
-  /** Действие zone: { on: true|false, name, radius, there, who } - от хозяина. */
+  /**
+   * Граница по месту (22.11, владелец: «рядом территория ок, а чуть подальше начинается не очень»): хозяин говорит
+   * «отмечаю границу», обходит область по краю (или встаёт в углы и говорит «угол»), потом «готово». Обход - точки
+   * каждые 2 бл. его шагов; два угла - прямоугольник; три и больше - многоугольник.
+   */
+  zoneDraw(a, who) {
+    const D = this._draw;
+    if (a.draw === 'start') {
+      this._draw = { who, kind: a.on === false ? 'можно' : 'запрет', name: a.name || '', pts: [], corners: [], at: Date.now() };
+      const p = this.ownerAim(who, false); if (p) this._draw.pts.push([p.x + 0.5, p.z + 0.5]);
+      return `отмечаю границу ${a.on === false ? 'разрешённой' : 'запретной'} зоны: обойди её по краю (или встань в углы и скажи «угол»), в конце скажи «готово»`;
+    }
+    if (!D) return 'границу сейчас не отмечаю - скажи «отмечаю границу»';
+    const p = this.ownerAim(D.who, false);
+    if (a.draw === 'corner') { if (p) D.corners.push([p.x + 0.5, p.z + 0.5]); return `угол ${D.corners.length} запомнила`; }
+    if (a.draw === 'cancel') { this._draw = null; return 'границу не сохраняю'; }
+    // готово
+    this._draw = null;
+    let poly = D.corners.length >= 3 ? D.corners : D.corners.length === 2 ? [[D.corners[0][0], D.corners[0][1]], [D.corners[1][0], D.corners[0][1]], [D.corners[1][0], D.corners[1][1]], [D.corners[0][0], D.corners[1][1]]] : D.pts;
+    if (p && poly === D.pts) poly = poly.concat([[p.x + 0.5, p.z + 0.5]]);
+    if (poly.length < 3) return 'мало точек: обойди область по краю или отметь хотя бы 2 угла';
+    const area = Math.abs(poly.reduce((s, q, i) => { const n = poly[(i + 1) % poly.length]; return s + q[0] * n[1] - n[0] * q[1]; }, 0)) / 2;
+    if (area < 4) return 'область получилась слишком маленькой - обойди её по краю ещё раз';
+    if (D.kind === 'можно') for (const q of this.zones().filter((q) => q.kind !== 'можно' && poly.some((pt) => this.zoneHas(q, pt[0], pt[1])))) this.removeZone({ name: q.name });
+    const q = this.addZone({ kind: D.kind, name: a.name || D.name || (D.kind === 'запрет' ? 'запретная зона' : 'хозяин разрешил'), poly, y: p ? p.y : 64, by: 'хозяин' });
+    return `${D.kind === 'запрет' ? 'запретная' : 'разрешённая'} зона «${q.name}» сохранена по границе: ${poly.length} точек, около ${Math.round(area)} кв. бл.`;
+  }
+
+  /** Действие zone: { on: true|false, name, radius, there, who, draw } - от хозяина. */
   zoneAct(a) {
     const who = a.who || this.followName || (this.opts.masters || [])[0];
+    if (a.draw) return this.zoneDraw(a, who);
     const p = (a.x !== undefined && a.z !== undefined) ? { x: +a.x, y: +(a.y ?? 64), z: +a.z } : this.ownerAim(who, a.there) || this.bot.entity.position.floored();
     if (a.on === false) {
       const n = this.removeZone(a.name ? { name: a.name } : { x: p.x, z: p.z });
@@ -122,6 +170,12 @@ class Zones {
     const b = this.bot;
     if (!b || !b.entity || !this.memory) return;
     const me = b.entity.position, now = Date.now();
+    // хозяин обходит границу - точка каждые 2 бл. его шагов (5 мин максимум)
+    if (this._draw) {
+      const D = this._draw, p = this.ownerAim(D.who, false);
+      if (now - D.at > 300000) { this._draw = null; this.log('граница: 5 мин без «готово» - не сохраняю'); }
+      else if (p) { const l = D.pts[D.pts.length - 1]; if (!l || Math.hypot(l[0] - p.x - 0.5, l[1] - p.z - 0.5) >= 2) { D.pts.push([p.x + 0.5, p.z + 0.5]); if (D.pts.length > 400) D.pts.splice(1, 1); } }
+    }
     if (now - (this._zoneScanAt || 0) > 5000) {
       this._zoneScanAt = now;
       // таблички: зона - за табличкой (по ту сторону, куда она смотрит от бота), радиус 12
@@ -184,7 +238,7 @@ class Zones {
     const me = b.entity.position, dim = this.dimName();
     const near = this.zones().filter((q) => q.kind !== 'можно' && q.dim === dim && Math.hypot(q.x - me.x, q.z - me.z) < 160 + q.r).slice(0, 8);
     if (!near.length) return '';
-    return near.map((q) => `${q.kind === 'запрет' ? 'НЕЛЬЗЯ' : 'опасно'}: «${q.name}» ${q.x} ${q.z} r${q.r}`).join('; ');
+    return near.map((q) => `${q.kind === 'запрет' ? 'НЕЛЬЗЯ' : 'опасно'}: «${q.name}» ${q.poly ? `область по границе вокруг ${q.x} ${q.z}` : `${q.x} ${q.z} r${q.r}`}`).join('; ');
   }
 }
 
