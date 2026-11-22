@@ -141,12 +141,15 @@ function unsafeSay(t) { return UNSAFE.test(String(t || '')); }   // не исп�
 function quickOrder(text, from) {
   const t = String(text || '').toLowerCase().replace(/^(alex|алекс|алекса|бот)[,!:\s]+/i, '').replace(/[.!?)]+$/g, '').replace(/[,\s]+(alex|алекс|алекса|бот)$/i, '').trim();   // и «стой алекс» - имя в конце
   if (t.length > 40) return null;
-  if (/^(за мной|иди за мной|пошли за мной|пошли|следуй за мной|следуй|го за мной|идём|идем)$/.test(t)) return [{ act: 'follow', who: from }];
+  // «за мной» в любом разговорном виде: «пойдём за мной», «идём со мной», «давай за мной», «погнали» (22.11: «пойдем за мной
+  // алекс» уходило в нейросеть, и она шла следом только через 25 с)
+  const t2 = (' ' + t + ' ').replace(/\s(пожалуйста|плиз|давай|ну|быстрее|скорее|бегом)(?=\s)/g, ' ').replace(/\s+/g, ' ').trim();
+  if (/^((иди|пошли|пошл[иа]|пойд[её]м|пойди|ид[её]м|иди-ка|го|гоу|айда|давай|следуй|двигай|топай|бежим)( за мной| со мной| следом)?|за мной|со мной|следом|следуй|погнали|пошли|follow me)$/.test(t2)) return [{ act: 'follow', who: from }];
   if (/^(стой|стоп|подожди|жди|стой тут|стой здесь|замри|жди тут|жди здесь|стой на месте|жди меня|стой и жди|не иди за мной|не ходи за мной)$/.test(t)) return [{ act: 'hold' }];
   if (/^(не дерись|не трогай мобов|не бей мобов|не нападай|мирно)$/.test(t)) return [{ act: 'combat', mode: 'off' }];
   if (/^(дерись|защищай|защищай меня|бей мобов|защищайся)$/.test(t)) return [{ act: 'combat', mode: 'defend' }];
   if (/^(убегай|беги ко мне|не дерись убегай)$/.test(t)) return [{ act: 'combat', mode: 'flee' }];
-  if (/^(иди сюда|ко мне|подойди|сюда|иди ко мне)$/.test(t)) return [{ act: 'come', who: from }];
+  if (/^(иди сюда|ко мне|подойди|сюда|иди ко мне|подойди ко мне|иди сюда ко мне|подойди сюда|беги сюда|сюда иди|ко мне иди)$/.test(t2)) return [{ act: 'come', who: from }];
   if (/(заходи|зайди|прыгай|запрыгивай|иди|лезь|го) (в|во) (портал|него)|^в портал$/.test(t)) return [{ act: 'portal' }];
   if (/(садись|сядь|залезай|залазь|прыгай) (ко мне )?(в лодку|в мою лодку|ко мне)|^в лодку$/.test(t)) return [{ act: 'mount', who: from }];
   if (/(садись|сядь|залезай) на (лошадь|коня|лошадку)/.test(t)) return [{ act: 'mount', what: 'horse' }];
@@ -657,6 +660,15 @@ class Brain {
           // сказать мозгу, иначе он молча повторяет одно и то же (21.11: «выложить» 13 раз подряд, бот стоял)
           if (self) this.pending.push({ line: `[итог] не сделано: ${NEED_MASTER.map((a) => a._cmd || a.act).join(', ')} - это только по просьбе хозяина; выбери другое дело`, from: '@self', fix: true });
         }
+        // идёт дело хозяина, а новых слов от него нет (ответ на итог, событие, своё) - дело не перебивать, только жесты
+        // (22.11: ответ на «[итог] сорвала пшеницу» шёл как приказ хозяина и отменял торговлю, она стояла)
+        const fresh = batch.some((x) => /^\[(чат|голос|приказ|встреча)/.test(x.line || '') && x.from && this.isMaster(x.from));
+        const owned = this.body.mode === 'task' && this.body.taskOwner && this.body.taskOwner.rank >= 3;
+        if (owned && !fresh) {
+          const keep = allowed.filter((a) => ['gesture', 'quiet'].includes(a.act));
+          if (keep.length < allowed.length) this.log('не перебиваю дело хозяина: ' + allowed.filter((a) => !keep.includes(a)).map((a) => a.act).join(', '));
+          allowed.splice(0, allowed.length, ...keep);
+        }
         if (allowed.length) this.runActions(allowed, master ? master.from : self ? 'сам' : '');
       }
     } catch (e) {
@@ -718,6 +730,7 @@ class Brain {
     this.body.runFrom = from && from !== 'сам' ? from : '';
     let result = await this.body.run(actions, label, from === 'сам' ? 'self' : (from && this.isMaster(from) ? 'master' : 'player'));
     if (!result) return;
+    if (/^уже делаю/.test(result)) { this.log(result); return; }   // то же дело идёт - мозгу не отчитываться (иначе снова ответит тем же)
     const failed = /не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result);
     if (!failed && !actions.every((a) => ['look', 'plan', 'craftable', 'lesson', 'remember', 'wait'].includes(a.act))) this.lastOk = actions.map(({ _cmd, ...x }) => x);
     this.done = (this.done || []).concat({ ok: !failed, text: result.replace(/; задание выполнено$/, '').slice(0, 90), at: Date.now() }).slice(-12);

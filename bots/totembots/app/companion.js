@@ -58,6 +58,12 @@ class Companion {
       if (up || !b.vehicle) { this.standUp().then(() => { if (this.mode === 'follow' && owner) try { b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} }).catch(() => {}); }
       return;
     }
+    // хозяин сидит (на ступеньке, подушке, у костра) - сесть рядом скоро, без жеребьёвки; жест «сел» мог не
+    // засчитаться (бот подходил, был далеко), поэтому смотрим и сами
+    if (owner && this.mode === 'follow' && this.sitNear && !this.sandbox && owner.vehicle && owner.position.distanceTo(b.entity.position) < 12) {
+      C.ownerSatAt = C.ownerSatAt || now;
+      if (now - C.ownerSatAt > 2000 && now - (C.sitTry || 0) > 12000) { C.sitTry = now; this.sitNear(owner.position).catch(() => {}); }
+    } else if (owner && !owner.vehicle) C.ownerSatAt = 0;
     // хозяин стоит давно (20+ с) - иногда присесть рядом на ступеньку или подушку, как по РП
     if (owner && this.mode === 'follow' && this.sitNear && !this.sandbox && now - C.stillSince > 20000 && now - (C.sitTry || 0) > 60000 && Math.random() < 0.1) {
       C.sitTry = now; this.sitNear(owner.position).catch(() => {});

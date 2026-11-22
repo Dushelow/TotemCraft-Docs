@@ -93,9 +93,9 @@ class Water {
     const p = e.position;
     if (process.env.TB_DEBUG) console.log('вода:', p.y.toFixed(2), 'fwd', b.getControlState('forward'), 'moving', b.pathfinder.isMoving(), 'yaw', e.yaw.toFixed(2));
     if (!b.getControlState('forward') && !b.pathfinder.isMoving()) return;
-    if (b.pathfinder.isMoving()) {   // ведёт путь: толчок, только если следующая точка выше (вылезти), а не плывём вдоль берега
-      const nx = ((this.lastPath || {}).path || [])[0];
-      if (!nx || nx.y <= Math.floor(e.position.y)) return;
+    if (b.pathfinder.isMoving()) {   // ведёт путь: толчок, только если впереди (3 точки) точка выше - вылезти, а не плывём вдоль берега
+      const near = ((this.lastPath || {}).path || []).slice(0, 4);
+      if (!this.shoreNode && !near.some((n) => n.y > Math.floor(e.position.y) && Math.hypot(n.x - p.x, n.z - p.z) < 3)) return;
     }
     const yaw = e.yaw;
     const front = p.offset(-Math.sin(yaw) * 0.8, 0, -Math.cos(yaw) * 0.8).floored();
@@ -105,7 +105,7 @@ class Water {
     // как в клиенте: сначала всплыть повыше (прыжок в воде), с гребня - толчок 0,3 через край
     if (p.y - Math.floor(p.y) < 0.45) { b.setControlState('jump', true); return; }
     // один толчок на касание, не чаще раза в секунду: толчок каждый такт Vulcan видит как полёт (Flight F, бан на стенде)
-    if (Date.now() - (this.exitAt || 0) < 2000) return;
+    if (Date.now() - (this.exitAt || 0) < 700) return;   // 2 с ждать было долго: в воде толчок гасится, нужно 2-3 подряд
     this.exitAt = Date.now();
     e.velocity.y = 0.3;
   }

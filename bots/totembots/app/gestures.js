@@ -319,7 +319,37 @@ class Gestures {
         target = bl; break;
       }
     }
-    if (!cushion && !target) return false;
+    // ни ступеньки, ни полублока (у костра на траве, на брёвнах) - сесть прямо на землю рядом, /sit работает на
+    // любом блоке (22.11: у костра первый раз села быстро на ступеньку, потом стояла - сидеть было «не на чем»)
+    let ground = null;
+    if (!cushion && !target) {
+      const me = b.entity.position;
+      const cand = [];
+      for (let a = 0; a < 12; a++) for (const r of [1.6, 2.3]) {
+        const v = pos.offset(Math.cos(a * Math.PI / 6) * r, 0, Math.sin(a * Math.PI / 6) * r).floored();
+        for (const dy of [0, -1, 1]) {
+          const fl = b.blockAt(v.offset(0, dy - 1, 0)), at = b.blockAt(v.offset(0, dy, 0)), up = b.blockAt(v.offset(0, dy + 1, 0));
+          if (!fl || fl.boundingBox !== 'block' || /campfire|magma|fire|lava|water|leaves|_glass|glass|farmland|hopper|chest|barrel/.test(fl.name) || !at || at.boundingBox !== 'empty' || /fire|water|lava|rail|pressure_plate|tripwire/.test(at.name) || !up || up.boundingBox !== 'empty') continue;
+          const c = v.offset(0, dy, 0);
+          if (Object.values(b.players).some((p) => p.entity && p.entity !== b.entity && Math.hypot(p.entity.position.x - c.x - 0.5, p.entity.position.z - c.z - 0.5) < 1.4 && Math.abs(p.entity.position.y - c.y) < 2)) continue;
+          cand.push({ v: c, d: c.offset(0.5, 0, 0.5).distanceTo(me) }); break;
+        }
+      }
+      cand.sort((x, y) => x.d - y.d);
+      if (cand.length) ground = cand[0].v;
+    }
+    if (!cushion && !target && !ground) return false;
+    if (ground) {
+      try { await this.goto(new goals.GoalNear(ground.x, ground.y, ground.z, 0.6), this.token, 12000); } catch { return false; }
+      try { await b.lookAt(pos.offset(0, 1.2, 0), true); } catch {}
+      b.chat('/sit');
+      await sleep(800);
+      if (!b.vehicle) return false;
+      this.seat = { since: Date.now(), at: ground };
+      this.task = 'сижу рядом';
+      this.log('села рядом на землю');
+      return true;
+    }
     const where = cushion ? cushion.position : target.position;
     try { await this.goto(cushion ? new goals.GoalNear(where.x, where.y, where.z, 2) : new goals.GoalNear(where.x, where.y + 1, where.z, 0.8), this.token, 15000); } catch { return false; }
     if (!cushion) {

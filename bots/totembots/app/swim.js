@@ -27,7 +27,7 @@ function nextPoint(tb) {
     if (Math.hypot(q.x - p.x, q.z - p.z) > 0.6) {
       // точка впереди на 3 шага: туда смотреть и по ней решать, плыть ли рывком (плавнее и без рыскания)
       const f = path[Math.min(path.length - 1, i + 3)];
-      return { ...q, ahead: { x: Math.floor(f.x) + 0.5, y: f.y, z: Math.floor(f.z) + 0.5 }, last: path[path.length - 1] };
+      return { ...q, i, ahead: { x: Math.floor(f.x) + 0.5, y: f.y, z: Math.floor(f.z) + 0.5 }, last: path[path.length - 1] };
     }
   }
   return null;
@@ -41,11 +41,27 @@ function swimTick(tb) {
   if (!isWater(b, feet) && !isWater(b, feet.offset(0, 1, 0))) { if (tb.swimming2) { tb.swimming2 = false; b.setControlState('sprint', false); } return false; }
   const nx = nextPoint(tb);
   if (!nx) return false;
-  // следующая точка на суше выше воды - это выход на берег: отдать существующей логике (толчок через край)
-  const nxBlock = { x: Math.floor(nx.x), y: Math.floor(nx.y), z: Math.floor(nx.z) };
-  const target = b.blockAt(new (p.constructor)(nxBlock.x, nxBlock.y, nxBlock.z));
-  const landNext = target && !isWater(b, target.position) && nx.y > p.y + 0.3;
-  if (landNext) { tb.swimming2 = false; return false; }
+  const path = tb.lastPath.path;
+  // Пройденные точки убрать из пути pathfinder: он каждый тик поворачивает голову к path[0], а мы плывём к точкам
+  // впереди - голова смотрела назад на пройденную точку («плавает жопой», 22.11), и он, не «дойдя» до неё,
+  // каждые 3,5 с сбрасывал путь (плыла с остановками). Убираем только простые точки (без ломания и стройки).
+  while (nx.i > 0 && path.length > 1 && !(path[0].toBreak || []).length && !(path[0].toPlace || []).length) { path.shift(); nx.i--; }
+  // берег рядом (суша выше воды в ближайших точках пути): лицом к нему, вперёд и вверх - толчок через край даёт
+  // waterExitTick (water.js). Раньше берег отдавался старой логике, только если суша - самая следующая точка, а
+  // мы плыли мимо неё к дальней - и упирались в берег по 15 с («на берег опять долго выходила»)
+  for (let j = nx.i; j < Math.min(path.length, nx.i + 4); j++) {
+    const n = path[j], v = new (p.constructor)(Math.floor(n.x), Math.floor(n.y), Math.floor(n.z));
+    if (isWater(b, v) || n.y <= p.y + 0.3 || Math.hypot(v.x + 0.5 - p.x, v.z + 0.5 - p.z) > 2.6) continue;
+    const ddx = v.x + 0.5 - p.x, ddz = v.z + 0.5 - p.z, dd = Math.hypot(ddx, ddz) || 1;
+    e.velocity.x += (ddx / dd * 0.09 - e.velocity.x) * 0.35;
+    e.velocity.z += (ddz / dd * 0.09 - e.velocity.z) * 0.35;
+    b.setControlState('sprint', false); b.setControlState('forward', true); b.setControlState('jump', true);
+    tb._swimYaw = Math.atan2(-ddx, -ddz); tb._swimPitch = 0;
+    b.look(tb._swimYaw, 0, true);
+    tb.shoreNode = n; tb.swimming2 = true;
+    return true;
+  }
+  tb.shoreNode = null;
 
   const head = isWater(b, p.offset(0, 1.6, 0).floored());
   let depth = 0;
@@ -77,9 +93,14 @@ function swimTick(tb) {
   b.setControlState('sprint', fast && b.food > 6);
   b.setControlState('forward', true);
   b.setControlState('jump', false);
+  // свой плавный поворот: e.yaw к этому тику уже переписан pathfinder (он смотрит на свою точку), поэтому
+  // поворачиваем от своего прошлого угла и каждый тик ставим его заново - голова всегда по ходу
   const yaw = Math.atan2(-dx, -dz), pitch = fast ? Math.max(-0.8, Math.min(0.8, Math.atan2(vy, speed))) : 0;
-  let dyaw = yaw - e.yaw; while (dyaw > Math.PI) dyaw -= 2 * Math.PI; while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
-  if (Math.abs(dyaw) > 0.04 || Math.abs(pitch - e.pitch) > 0.04) b.look(e.yaw + Math.max(-0.3, Math.min(0.3, dyaw)), e.pitch + Math.max(-0.15, Math.min(0.15, pitch - e.pitch)), true);
+  if (!tb.swimming2 || tb._swimYaw === undefined) { tb._swimYaw = e.yaw; tb._swimPitch = e.pitch; }
+  let dyaw = yaw - tb._swimYaw; while (dyaw > Math.PI) dyaw -= 2 * Math.PI; while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
+  tb._swimYaw += Math.max(-0.3, Math.min(0.3, dyaw));
+  tb._swimPitch += Math.max(-0.15, Math.min(0.15, pitch - tb._swimPitch));
+  b.look(tb._swimYaw, tb._swimPitch, true);
   tb.swimming2 = true;
   return true;
 }

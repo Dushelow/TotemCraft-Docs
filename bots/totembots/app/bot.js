@@ -1493,8 +1493,14 @@ class TotemBot extends EventEmitter {
     // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
     const LIGHT = new Set(['combat', 'signs', 'followDist', 'look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
     const resume = this.mode === 'follow' && plain.every((a) => LIGHT.has(a.act)) ? this.followName : '';
+    // то же дело уже идёт (мозг на каждый итог и реплику отвечает той же цепочкой) - не начинать заново
+    // (22.11: «собери урожай и поторгуйся» - каждый новый ответ отменял прежний, «задание отменено» снова будило
+    // нейросеть, и она стояла, ничего не доделав)
+    if (this.mode === 'task' && this.runActs && plain.every((a) => this.runActs.slice(this.runAt || 0).includes(a.act))) return 'уже делаю: ' + plain.map((a) => a.act).join(', ');
+    if (this.mode === 'task') this.replacedTok = this.token;   // прежнее заменено новым: его «отменено» мозгу не нужно
     this.cancel();
     const tok = this.token;
+    this.runActs = plain.map((a) => a.act); this.runAt = 0;
     this.mode = 'task';
     this.task = label || plain.map((a) => a.act).join(', ');
     const done = [];
@@ -1503,6 +1509,7 @@ class TotemBot extends EventEmitter {
     try {
       for (const a of plain) {
         this.check(tok);
+        if (tok === this.token) this.runAt = plain.indexOf(a);
         let r;
         switch (a.act) {
           case 'goto': {
@@ -1613,11 +1620,11 @@ class TotemBot extends EventEmitter {
       }
       return done.join('; ') + '; задание выполнено';
     } catch (e) {
-      if (e instanceof Cancelled) { this.ev('отмена', { label, source }); return done.concat('задание отменено').join('; '); }
+      if (e instanceof Cancelled) { this.ev('отмена', { label, source }); if (tok === this.replacedTok) return ''; return done.concat('задание отменено').join('; '); }
       this.ev('итог_действия', { ok: false, err: String(e.message).slice(0, 200), label, source });
       return done.concat('не получилось: ' + e.message).join('; ');
     } finally {
-      if (tok === this.token) { this.mode = 'idle'; this.task = ''; this.taskOwner = null; try { this.bot.pathfinder.setGoal(null); } catch {} if (resume) this.follow(resume); }
+      if (tok === this.token) { this.mode = 'idle'; this.task = ''; this.taskOwner = null; this.runActs = null; try { this.bot.pathfinder.setGoal(null); } catch {} if (resume) this.follow(resume); }
     }
   }
 }
