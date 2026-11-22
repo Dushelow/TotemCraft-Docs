@@ -32,7 +32,7 @@ class Gestures {
       if (e !== bot.entity) return;
       const p = Object.values(bot.players).map((x) => x.entity).filter((x) => x && x !== bot.entity && x.position.distanceTo(bot.entity.position) < 4.5)
         .sort((a, c) => a.position.distanceTo(bot.entity.position) - c.position.distanceTo(bot.entity.position))[0];
-      if (p) { const g = get(p); if (g) { g.hitAt = Date.now(); g.hitEmpty = !p.heldItem; } this.pvpAt = Date.now(); if (p.heldItem && this.affinityAdd) this.affinityAdd(p.username, -5, 'ударил оружием'); }
+      if (p) { const g = get(p); if (g) { g.hitAt = Date.now(); g.hitEmpty = !p.heldItem; } this.pvpAt = Date.now(); if (p.heldItem && this.affinityAdd) this.affinityAdd(p.username, -5, 'ударил оружием'); if (p.heldItem && this.moodShift) this.moodShift('open', -0.3, 'ударили'); }
     });
     bot.on('entityDead', (e) => { if (e && e.position) this.deadAt = { t: Date.now(), pos: e.position.clone(), player: e.type === 'player' }; });
     // копает или строит - взмахи и кивки не жесты (ломание виден по трещинам, стройка - новый блок рядом с ним)
@@ -200,6 +200,12 @@ class Gestures {
     // симпатия по делам (presence.js): подарок, мир, привет - теплее; насмешка, оружие на бота - холоднее
     const AFF = { 'подарок': 4, 'мир': 2, 'убрал оружие': 1, 'цветок': 2, 'привет': 1, 'без обид': 2, 'насмешка': -4, 'оружие': master ? 0 : -2 };
     if (AFF[k.kind] && this.affinityAdd) this.affinityAdd(name, AFF[k.kind], k.kind);
+    // настроение (mood.js): тепло - открытее, игра - игривее, обида - закрытее
+    if (this.moodShift) {
+      if (/^(привет|подарок|мир|цветок|без обид|убрал оружие)$/.test(k.kind)) this.moodShift('open', 0.15, k.kind);
+      if (/^(радость|кружится)$/.test(k.kind)) this.moodShift('play', 0.15, k.kind);
+      if (/^(насмешка|оружие)$/.test(k.kind) && !master) { this.moodShift('open', -0.25, k.kind); this.moodShift('play', -0.1); }
+    }
     const cold = this.affinity && this.affinity(name) <= -20;
     // кому отвечать жестом: хозяину и знакомым по-доброму (симпатия 10+); незнакомым - только взгляд (и кивок на
     // привет), чтобы не заводить случайных людей и не «болтать» с теми, кто просто играет рядом
@@ -217,6 +223,7 @@ class Gestures {
     // с тем, кто обижал, - холодно: на привет мотает головой и отворачивается, на радость не отвечает
     let answer = cold ? ({ 'привет': 'нет', 'радость': null, 'кружится': null, 'спасибо': 'кивок' }[reply] ?? reply) : reply;
     if (!friend && answer) answer = k.kind === 'привет' ? 'кивок' : null;
+    if (friend && answer === 'привет' && this.playful && this.playful() && Math.random() < 0.4) answer = 'радость';
     if (answer && canReply && this.mode !== 'task' && !(this.guard && this.guard.fighting)) { R.push(now); this.gReplyAt = now; this.gesture(answer).catch(() => {}); }
     if (k.kind === 'указал' && k.at) this.lookTarget = k.at.offset(0.5, 0.5, 0.5);
     // подарок: подобрать, только если от своего и рядом с вещью нет никого ближе бота (не забрать чужое)

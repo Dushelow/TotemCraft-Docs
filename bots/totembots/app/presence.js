@@ -256,6 +256,7 @@ class Presence {
       .sort((x, y) => (foods[y.name].foodPoints + foods[y.name].saturation) - (foods[x.name].foodPoints + foods[x.name].saturation))[0];
     if (!food || this.busyLook) return;
     P.helpAt = now;
+    if (this.moodShift) this.moodShift('play', -0.25, 'хозяин ранен');
     (async () => {
       this.busyLook = true;
       try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(food.type, null, Math.min(food.count, 3)); this.log(`у хозяина ${Math.round(hp)}/20 - бросила ему ${food.name}`); try { this.say(pick(PLACE_BARK.owner_hurt), 'local'); } catch {} }

@@ -50,7 +50,8 @@ class Companion {
     } else C.stop = null;
     this.gestureTick(owner, now);
     this.barkTick(owner, now);
-    if (this.presenceTick) this.presenceTick(owner, now);   // тихий шаг, личное место, помощь, комментарии (presence.js)
+    if (this.presenceTick) this.presenceTick(owner, now);
+    if (this.moodTick) this.moodTick(owner, now);   // оси настроения и реплики по месту, как у Сераны (mood.js)   // тихий шаг, личное место, помощь, комментарии (presence.js)
     // сидит рядом с хозяином (gestures.js): хозяин встал и пошёл - встать и следом
     if (this.seat) {
       const up = !owner || now - C.stillSince < 1500 || owner.position.distanceTo(b.entity.position) > 8 || this.mode !== 'follow';

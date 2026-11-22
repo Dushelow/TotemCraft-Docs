@@ -131,6 +131,7 @@ ${a}
   worldMap.attach(body, (v, dim) => {
     memory.place({ name: `${v.kind} у ${v.x} ${v.z}`, x: v.x, y: v.y, z: v.z, dim, note: 'нашёл по карте' }, bc.name);
     body.emit('moment', { kind: 'место', text: `рядом ${v.kind} (${v.x} ${v.y} ${v.z})`, pos: v });
+    try { if (body.foundComment) body.foundComment(v.kind); } catch {}   // «ого, красиво» при хозяине (mood.js)
   });
   body.on('end', () => { if (body.manual) brain.stop(); });
   Object.assign(l, { body, brain });
