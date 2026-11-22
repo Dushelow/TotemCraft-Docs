@@ -245,7 +245,7 @@ function install(mv, bot) {
     const fy0 = support(cx, cz, node.y + 0.99, node.y - 1);
     // Страховка: своя навигация не видит опоры или ни одного шага - ходить по-старому (ходы модуля пути), а не стоять
     // (22.11 на поле: «путь пустой» десятки раз, бот стоял). Почему так - пишется в журнал (mv._nav.explain).
-    const fallback = (why) => { mv._navFallback = { at: Date.now(), node: `${node.x},${node.y},${node.z}`, why }; return base(node); };
+    const fallback = (why) => { if (trapCheck) return []; mv._navFallback = { at: Date.now(), node: `${node.x},${node.y},${node.z}`, why }; return base(node); };   // проверка ловушки - без запасных ходов модуля пути (он не знает мёда)
     if (fy0 === null) return fallback('нет опоры под ногами');
     for (const c of body(cx, fy0, cz).hit) if (c.open) { inDoor.add(c.k); const p = pairKey(c); if (p) inDoor.add(p); }
     // этим шагом открыли дверь или люк - дальше считать их открытыми (22.11 случайные миры: открыла, вошла, а
@@ -272,6 +272,22 @@ function install(mv, bot) {
         for (const c of w.hit) { const pk = pairKey(c); if (pk && done.has(pk)) continue; done.add(c.k); const pr = c.b.getProperties(); toPlace.push({ x: c.at[0], y: c.at[1], z: c.at[2], want: !(pr.open === true || pr.open === 'true') }); }
         w = { ...w2, opened: true };
       }
+      // барная стойка, проход с люком: прошла бы прыжком или подъёмом через закрытый люк или калитку - открыть и
+      // пройти по полу, как человек (22.11: «можно через люк, а не перепрыгивать тупо»)
+      if (w && !w.opened && !(dx && dz) && (w.jumped || w.feet - fy > 0.3)) {
+        const gates = [];
+        for (const yy of [Math.floor(fy + EPS), Math.floor(fy + EPS) + 1]) { const c = cell(nx, yy, nz); if (c.open && c.b && !(inDoor.has(c.k))) gates.push(c); }
+        if (gates.length) {
+          const flip = new Set([...inDoor, ...gates.map((c) => c.k)]);
+          for (const c of gates) { const pk = pairKey(c); if (pk) flip.add(pk); }
+          const w2 = walk(cx, fy, cz, nx + 0.5, nz + 0.5, flip);
+          if (w2 && !w2.hit.length && !w2.jumped && Math.abs(w2.feet - fy) <= STEP) {
+            const done = new Set(); toPlace = [];
+            for (const c of gates) { const pk = pairKey(c); if (pk && done.has(pk)) continue; done.add(c.k); const pr = c.b.getProperties(); toPlace.push({ x: c.at[0], y: c.at[1], z: c.at[2], want: !(pr.open === true || pr.open === 'true') }); }
+            w = { ...w2, opened: true, gentle: true };
+          }
+        }
+      }
       if (!w) continue;
       // по диагонали (как Baritone): обе соседние клетки свободны на высоте тела и без прыжка - иначе тело
       // шириной 0,6 цепляет угол ступеньки, забора, блока (22.11 случайные миры: путь был, а физика не проходит)
@@ -284,12 +300,16 @@ function install(mv, bot) {
       // под ногами в конце шага: грядку вытаптывает прыжок и падение на неё - такие шаги нельзя; ходить по ней - дорого
       const under = cell(nx, Math.floor(w.feet - 0.01), nz).b, uname = under ? under.name : '';
       if (uname === 'farmland' && (w.jumped || rise < -0.25)) continue;
-      let cost = (dx && dz ? Math.SQRT2 : 1) + (w.jumped ? 1 : rise > EPS ? 0.3 : 0) + (rise < -1 ? -rise * 0.5 : 0) + (w.opened ? 2 : 0);
+      let cost = (dx && dz ? Math.SQRT2 : 1) + (w.jumped ? 1 : rise > EPS ? 0.3 : 0) + (rise < -1 ? -rise * 0.5 : 0) + (w.opened ? (w.gentle ? 0.5 : 2) : 0);
+      // ловушка: спуск туда, откуда не выбраться (яма, загон, медовая яма) - только если цель там же (очень дорого)
+      if (rise < -0.7 && !trapCheck && !escapable(nx, ny, nz, fy)) cost += 60;
       if (uname === 'farmland') cost += 3;
       // цена клетки от тела (дороги дешевле, газоны у чужих домов дороже) - bot.js задаёт mv.navStepCost
       // ошибка в цене клетки не должна ломать поиск пути (22.11: падение -> «путь пустой» десятки раз, бот дёргался)
       if (mv.navStepCost) { try { cost *= mv.navStepCost(nx, ny, nz, uname) || 1; } catch (e) { if (!mv._costErr) { mv._costErr = 1; console.error('nav: цена клетки', e.message); } } }
       const dest = blk(nx, ny, nz);
+      // нажимная плита и растяжка - спусковой крючок ловушек и механизмов: обходить, если можно
+      if (dest && /pressure_plate|^tripwire$/.test(dest.name)) cost += 8;
       cost += mv.exclusionStep(dest) + mv.getNumEntitiesAt(dest && dest.position, 0, 0, 0) * mv.entityCost;
       if (cost >= 100) continue;
       const k = `${nx},${ny},${nz}`;
@@ -304,6 +324,35 @@ function install(mv, bot) {
     if (out.length === n0) return fallback('ни одного шага');
     return out;
   };
+  /**
+   * Выберусь ли из клетки (x, y, z), если спущусь туда с высоты fromY: поиск в ширину по своим же шагам (с открыванием
+   * дверей и калиток, с копанием природного - как модуль пути) до 70 клеток. Да - если дошла до высоты fromY или ушла
+   * на 6+ блоков вбок. Нет - это ловушка: яма глубже прыжка, загон без калитки, медовая яма, огороженный пятачок
+   * (22.11: «куда прыгнет и не вылезет»). Кэш на 3 с, как у клеток.
+   */
+  let trapCheck = false;
+  const trapCache = new Map();
+  function escapable(x, y, z, fromY) {
+    const key = `${x},${y},${z},${Math.floor(fromY)}`;
+    if (Date.now() - (trapCache.at || 0) > 3000) { trapCache.clear(); trapCache.at = Date.now(); }
+    if (trapCache.has(key)) return trapCache.get(key);
+    trapCheck = true;
+    let ok = false;
+    try {
+      const q = [{ x, y, z, remainingBlocks: 0 }], seen = new Set([`${x},${y},${z}`]);
+      for (let i = 0; i < q.length && i < 70 && !ok; i++) {
+        let nb = [];
+        try { nb = navNeighbors(q[i]); } catch { nb = []; }
+        for (const m of nb) {
+          if (m.y >= Math.floor(fromY + EPS) || Math.hypot(m.x - x, m.z - z) >= 6) { ok = true; break; }
+          const k = `${m.x},${m.y},${m.z}`;
+          if (!seen.has(k)) { seen.add(k); q.push({ x: m.x, y: m.y, z: m.z, remainingBlocks: 0, opens: m.opens }); }
+        }
+      }
+    } finally { trapCheck = false; }
+    trapCache.set(key, ok);
+    return ok;
+  }
   /** Почему из клетки нет шагов: опора, и по каждой стороне - что мешает. Для журнала (разбор игры). */
   function explain(x, y, z) {
     const cx = x + 0.5, cz = z + 0.5, parts = [];
@@ -318,7 +367,7 @@ function install(mv, bot) {
     }
     return parts.join('; ');
   }
-  mv._nav = { support, body, walk, cell, leapControl, explain };
+  mv._nav = { support, body, walk, cell, leapControl, explain, escapable };
   if (bot) (bot._navCaches = bot._navCaches || []).push(cache);
   // Точки маршрута. Модуль пути после поиска ставит точку «на верх блока» в клетке; у открытого люка или двери у края
   // клетки это верх тонкой стенки - точка на блок выше пола и смещена к краю, бот до неё «не доходит» и стоит (сбой
