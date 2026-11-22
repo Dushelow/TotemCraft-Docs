@@ -365,6 +365,16 @@ function startProjectSync() {
 // --- панель
 ipcMain.handle('qwen-reload', () => qwen.webContents.loadURL(QWEN_URL));
 ipcMain.handle('qwen-tab', (_e, name) => showTab(name));
+// настоящие текстуры из клиента владельца (mctex.js) и живой вид глазами бота (eyeview.js) для окна «Жизнь»
+const mcTex = new (require('./mctex').McTex)(LOCAL);
+setTimeout(() => { try { mcTex.ensure(cfg.mcJar); } catch {} }, 3000);   // после старта окна, ~1 с один раз
+const eyes = new Map();
+ipcMain.handle('item-icons', (_e, names) => { const out = {}; if (!mcTex.ready) mcTex.ensure(cfg.mcJar); for (const n of (names || []).slice(0, 80)) out[n] = mcTex.icon(n); return out; });
+ipcMain.handle('bot-eye', (_e, name) => {
+  const l = live.get(name); if (!l || !l.body || !l.body.bot || !mcTex.ready) return '';
+  if (!eyes.has(name)) eyes.set(name, new (require('./eyeview').EyeView)(mcTex));
+  return eyes.get(name).frame(l.body);
+});
 ipcMain.handle('panel-full', (_e, on) => { panelFull = !!on; layout(); return panelFull; });
 ipcMain.handle('view-show', (_e, { mode, site }) => showView(mode, site));
 ipcMain.handle('view-nav', (_e, what) => {

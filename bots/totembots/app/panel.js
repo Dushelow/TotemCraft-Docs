@@ -732,17 +732,14 @@ function drawMap() {
 }
 setInterval(() => { if ((botTab.get(selected) || 'life') === 'map') mapFetch(); }, 2000);
 
-// ---------- «Жизнь» (22.11: «как за тамагочи», «РПГ, которая сама в себя играет»; оформление по образцу Merchant RPG:
-// тёплое дерево, пергамент, бронза, рамки, большая сцена в центре, снаряжение, инвентарь, задания, журнал, миникарта).
-// Открывается на всё окно кнопкой «Смотреть её жизнь», выход - «Выйти» или Esc; раскладка под любое окно.
-// Наружные картинки и шрифты панели нельзя (политика безопасности), поэтому всё нарисовано CSS: небо, холмы, лес,
-// фигурка из её скина, предметы-значки. Части живут сами (как карта): ничего не пересоздаётся без нужды.
-const LIFE = { wrap: null, sig: {}, skins: {}, open: false, lastNote: 0, art: {} };
-// нарисованное оформление (app/art/*.png, сгенерировано по списку в LIFE_ART.md): есть файл - он и рисуется, нет - рисунок CSS
-// имя в коде -> файл в app/assets (имена и папки - как принято в геймдеве, см. LIFE_ART.md)
+// ---------- «Жизнь»: окно наблюдения в духе фэнтези-RPG (22.11, бриф владельца по образцу Merchant RPG).
+// В центре - живой вид глазами бота из настоящих текстур клиента владельца (eyeview.js), а не нарисованная сцена;
+// значки предметов - настоящие (mctex.js). Шапка, персонаж, миникарта, вкладки (инвентарь, задания, отношения,
+// журнал), мысли. Всё из данных тела, без выдумок. Выход - «Выйти» или Esc; раскладка 1920-1366 и узкие окна.
+const LIFE = { wrap: null, sig: {}, skins: {}, open: false, lastNote: 0, art: {}, icons: {}, iconAsk: new Set(), tab: 'inv', filter: 'all', eyeAt: 0 };
+const MOOD_COL = { ok: '#8fc45a', warn: '#e8a33d', bad: '#e0533d', muted: '#b7a68a', accent: '#e6c36a' };
 const ART = { frame: 'ui/frames/ui_frame_panel_9s', wood: 'textures/tex_wood_tile', parchment: 'textures/tex_parchment_tile', slot: 'ui/frames/ui_slot', portrait: 'ui/frames/ui_frame_portrait', banner: 'ui/frames/ui_banner_title', icons: 'ui/icons/ui_icons_atlas',
   scene_day: 'scenes/bg_scene_overworld_day', scene_dusk: 'scenes/bg_scene_overworld_dusk', scene_night: 'scenes/bg_scene_overworld_night', scene_dawn: 'scenes/bg_scene_overworld_dawn', scene_cave: 'scenes/bg_scene_cave', scene_nether: 'scenes/bg_scene_nether', scene_snow: 'scenes/bg_scene_snow' };
-const ART_ICON = { heart: 0, drumstick: 1, shield: 2, eye: 3, clock: 4, swords: 5, map: 6, scroll: 7, quill: 8, book: 9, backpack: 10, chest: 11, gem: 12, coin: 13, moon: 14, sun: 15 };
 function artLoad(w) {
   for (const [n, f] of Object.entries(ART)) {
     const im = new Image(), src = `assets/${f}.png`;
@@ -750,82 +747,74 @@ function artLoad(w) {
     im.src = src;
   }
 }
-/** Значок из нарисованного листа icons.png (8x2 по 64), если он есть; иначе обычный значок. */
-function artIcon(name, fallback, size = 16) {
-  if (LIFE.art.icons && ART_ICON[name] !== undefined) { const i = ART_ICON[name]; return `<span class="aic" style="width:${size}px;height:${size}px;background-position:${-(i % 8) * size}px ${-Math.floor(i / 8) * size}px;background-size:${8 * size}px ${2 * size}px"></span>`; }
-  return icon(fallback || name, size);
-}
-const MOOD_COL = { ok: '#7fbf4d', warn: '#e9a23b', bad: '#e0533d', muted: '#b7a68a', accent: '#d9b25f' };
-function skinFigure(url, s = 6) {
-  const part = (x, y, w, h, l, t, z = 1, cls = '') => `<div class="${cls}" style="position:absolute;left:${l * s}px;top:${t * s}px;width:${w * s}px;height:${h * s}px;background:url('${url}') -${x * s}px -${y * s}px / ${64 * s}px ${64 * s}px;image-rendering:pixelated;z-index:${z}"></div>`;
-  if (!url) return `<div class="lifefig" style="width:${16 * s}px;height:${32 * s}px"><div class="lifeghost" style="left:${4 * s}px;top:0;width:${8 * s}px;height:${8 * s}px"></div><div class="lifeghost" style="left:${4 * s}px;top:${8 * s}px;width:${8 * s}px;height:${12 * s}px"></div><div class="lifeghost lifearm l" style="left:0;top:${8 * s}px;width:${4 * s}px;height:${12 * s}px"></div><div class="lifeghost lifearm r" style="left:${12 * s}px;top:${8 * s}px;width:${4 * s}px;height:${12 * s}px"></div><div class="lifeghost" style="left:${4 * s}px;top:${20 * s}px;width:${8 * s}px;height:${12 * s}px"></div></div>`;
-  return `<div class="lifefig" style="width:${16 * s}px;height:${32 * s}px">`
-    + part(8, 8, 8, 8, 4, 0, 3, 'lifehead') + part(40, 8, 8, 8, 4, 0, 4, 'lifehead')
-    + part(20, 20, 8, 12, 4, 8) + part(20, 36, 8, 12, 4, 8, 2)
-    + part(44, 20, 4, 12, 0, 8, 1, 'lifearm l') + part(36, 52, 4, 12, 12, 8, 1, 'lifearm r')
-    + part(4, 20, 4, 12, 4, 20) + part(20, 52, 4, 12, 8, 20)
-    + `</div>`;
-}
-// портрет: голова из скина крупно
-function skinFace(url, s = 10) {
-  if (!url) return `<div class="lifeface ghost"></div>`;
+function skinFace(url, s = 9) {
+  if (!url) return `<div class="lface ghost" style="width:${8 * s}px;height:${8 * s}px"></div>`;
   const p = (x, y) => `<div style="position:absolute;inset:0;background:url('${url}') -${x * s}px -${y * s}px / ${64 * s}px ${64 * s}px;image-rendering:pixelated"></div>`;
-  return `<div class="lifeface" style="width:${8 * s}px;height:${8 * s}px">${p(8, 8)}${p(40, 8)}</div>`;
+  return `<div class="lface" style="width:${8 * s}px;height:${8 * s}px">${p(8, 8)}${p(40, 8)}</div>`;
 }
-// значок предмета: форма по виду (меч, кирка, еда, блок, самоцвет, слиток, зелье, растение), цвет по материалу
+// значок предмета: настоящий из клиента; пока не пришёл или нет такого - аккуратная подпись, а не фигура
 function itemIcon(name) {
   const n = String(name || '');
-  const mat = /netherite/.test(n) ? '#4a3f45' : /diamond/.test(n) ? '#5fe0d9' : /gold/.test(n) ? '#f3cf45' : /iron/.test(n) ? '#d8d8d8' : /copper/.test(n) ? '#d27a4b' : /stone|cobble|andesite|diorite|granite|deepslate|tuff/.test(n) ? '#8b8b8b' : /oak|spruce|birch|jungle|acacia|dark_oak|mangrove|cherry|bamboo|crimson|warped|planks|log|stick|wood/.test(n) ? '#a2753f' : /emerald/.test(n) ? '#3fcf6a' : /lapis/.test(n) ? '#3456c9' : /redstone/.test(n) ? '#d23b2f' : /leather/.test(n) ? '#9a5b33' : /wool|white/.test(n) ? '#ece6d6' : /dirt|mud|clay/.test(n) ? '#7a5634' : /sand/.test(n) ? '#e2d39a' : /coal/.test(n) ? '#2b2b2b' : /torch/.test(n) ? '#ffcf4a' : '#b9a27c';
-  const kind = /_sword$|^trident$|_spear$/.test(n) ? 'sword' : /_pickaxe$|_axe$|_shovel$|_hoe$|^shears$|^fishing_rod$|flint_and_steel/.test(n) ? 'tool' : /^bow$|^crossbow$/.test(n) ? 'bow'
-    : /_helmet$|_chestplate$|_leggings$|_boots$|^shield$|elytra/.test(n) ? 'armor' : /^(diamond|emerald|amethyst_shard|quartz|lapis_lazuli|prismarine_crystals)$/.test(n) ? 'gem' : /_ingot$|^(netherite_scrap|copper_ingot)$|_nugget$/.test(n) ? 'ingot'
-    : /potion|bottle|bucket/.test(n) ? 'potion' : /bread|beef|pork|chicken|mutton|cod|salmon|apple|carrot|potato|cookie|cake|pie|stew|soup|melon|berries|beetroot|kelp|rabbit/.test(n) ? 'food'
-    : /sapling|flower|poppy|dandelion|tulip|wheat|seeds|leaves|fern|grass|mushroom|vine|sugar_cane/.test(n) ? 'plant' : /torch/.test(n) ? 'torch' : 'block';
-  return `<span class="ic ic-${kind}" style="--c:${mat}" title="${esc(n.replace(/_/g, ' '))}"><i></i><b></b></span>`;
+  const url = LIFE.icons[n];
+  if (url === undefined) LIFE.iconAsk.add(n);
+  if (url) return `<img class="lic" src="${url}" alt="" draggable="false">`;
+  return `<span class="lic none">${esc(n.replace(/_/g, ' ').slice(0, 10))}</span>`;
 }
+function iconsFetch() {
+  if (!LIFE.iconAsk.size) return;
+  const ask = [...LIFE.iconAsk].slice(0, 60); ask.forEach((n) => LIFE.iconAsk.delete(n));
+  for (const n of ask) LIFE.icons[n] = LIFE.icons[n] ?? null;
+  T.itemIcons(ask).then((m) => { for (const [k, v] of Object.entries(m || {})) LIFE.icons[k] = v || ''; LIFE.sig.tabbody = LIFE.sig.gear = LIFE.sig.bars = LIFE.sig.wealth = null; if (LIFE.open) lifeDraw(); }).catch(() => {});
+}
+// вид предмета (для фильтра и подсказки)
+const KIND = (n) => /_sword$|^bow$|^crossbow$|^trident$|^mace$|_spear$|_axe$/.test(n) ? 'оружие' : /_helmet$|_chestplate$|_leggings$|_boots$|^shield$|elytra/.test(n) ? 'броня' : /_pickaxe$|_shovel$|_hoe$|^shears$|^fishing_rod$|flint_and_steel|bucket/.test(n) ? 'инструмент'
+  : /bread|beef|pork|chicken|mutton|cod|salmon|apple|carrot|potato|cookie|cake|pie|stew|soup|melon_slice|berries|beetroot|kelp|rabbit/.test(n) ? 'еда' : /^(diamond|emerald|gold_ingot|iron_ingot|netherite_ingot|netherite_scrap|copper_ingot|amethyst_shard|lapis_lazuli|redstone|quartz|coal)$|_nugget$|raw_/.test(n) ? 'ценности' : 'блоки и прочее';
+const RARE = (n) => /netherite|elytra|totem|enchanted|nether_star|beacon|dragon/.test(n) ? 'epic' : /diamond|emerald|golden_apple/.test(n) ? 'rare' : /iron|gold|copper|lapis|redstone/.test(n) ? 'fine' : '';
 const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'только что' : s < 3600 ? Math.round(s / 60) + ' мин назад' : s < 86400 ? Math.round(s / 3600) + ' ч назад' : Math.round(s / 86400) + ' дн назад'; };
-function skyOf(t, dim, rain) {
-  if (/nether/.test(dim)) return { top: '#3a0d0d', bot: '#8a2c12', body: null, stars: false, ground: '#5a1f1f', hill: '#4a1414', tree: '#2a0a0a' };
-  if (/end/.test(dim)) return { top: '#0c0a16', bot: '#2a2440', body: null, stars: true, ground: '#d9d6a6', hill: '#3a3456', tree: '#1c1830' };
-  t = ((t || 0) % 24000 + 24000) % 24000;
-  const k = [[0, '#86c5ff', '#d8eeff'], [5000, '#6fb3ff', '#cfe7ff'], [11000, '#ffa463', '#ffdca0'], [12800, '#4a2f72', '#d86c7c'], [14000, '#0d1433', '#1e2654'], [22000, '#0d1433', '#1e2654'], [23200, '#ff9472', '#ffd5a0'], [24000, '#86c5ff', '#d8eeff']];
-  let i = 0; while (i < k.length - 2 && t >= k[i + 1][0]) i++;
-  const [t0, a0, b0] = k[i], [t1, a1, b1] = k[i + 1], f = (t - t0) / (t1 - t0 || 1);
-  const mix = (x, y) => { const p = (h) => [1, 3, 5].map((j) => parseInt(h.slice(j, j + 2), 16)); const A = p(x), B = p(y); return `rgb(${A.map((v, j) => Math.round(v + (B[j] - v) * f)).join(',')})`; };
-  const day = t < 12500 || t > 23300, ang = ((t + 6000) % 24000) / 24000 * Math.PI * 2;
-  let top = mix(a0, a1), bot = mix(b0, b1);
-  if (rain) { top = '#5d6672'; bot = '#9aa3ad'; }
-  const night = !day;
-  return { top, bot, body: { x: 50 - Math.sin(ang) * 42, y: 58 - Math.cos(ang) * 46, sun: day }, stars: night && !rain, ground: night ? '#2f4a24' : '#5e9a3a', hill: night ? '#22371f' : '#4f8a39', tree: night ? '#15261a' : '#2f6b2e' };
-}
+// тип записи журнала - цвет и подпись
+const LOGKIND = (e) => /дерётся|бой|убегает|отбила|погиб|удержалась/.test(e.x) ? 'fight' : /отметила|в путь|осматрива|деревн|нашла|место/.test(e.x) ? 'explore' : /не вышло/.test(e.x) ? 'fail' : /жест|сказала|присела|приседает|кивнул|мотает|машет/.test(e.x) ? 'social' : /достала|взяла|подобрала|бросила|подарила|постригла/.test(e.x) ? 'loot' : 'life';
+const RU_SLOT = { hand: 'в руке', off: 'вторая рука', head: 'шлем', chest: 'нагрудник', legs: 'поножи', feet: 'ботинки' };
+
 function lifeEnsure() {
   if (LIFE.wrap) return LIFE.wrap;
   const w = document.createElement('div');
   w.className = 'lifeov';
   w.innerHTML = `<header class="lhud">
-      <div class="lhb"><span class="leye">${icon('eye', 16)}</span> Наблюдение <span class="lai"><i></i> сама живёт</span></div>
-      <div class="lhb" data-l="clock"></div>
-      <div class="lhb lgrow" data-l="doinghud"></div>
-      <div class="lhb" data-l="wealth"></div>
-      <label class="lhb lquiet" title="Не пишет в общий и ближний чат - можно молча наблюдать. Личка хозяину остаётся. В игре: «тихо» / «можешь говорить»"><input type="checkbox" data-l="quiet"> Тихо</label>
-      <button class="lhb lclose" data-l="close" title="Вернуться (Esc)">${icon('x', 16)}<span>Выйти</span></button></header>
-    <div class="lgrid">
-      <div class="lframe lchar"><div class="lchead"><div data-l="face"></div><div><div class="lname" data-l="name"></div><div data-l="mood"></div><div class="lxp" data-l="xp"></div></div></div>
+      <div class="llogo">TotemBots<span>наблюдение</span></div>
+      <div class="lpill live" title="Тело и мозг действуют сами, вы только смотрите"><i></i>сама живёт</div>
+      <div class="lpill" data-l="clock"></div>
+      <div class="lpill lgrow" data-l="doinghud"></div>
+      <div class="lpill" data-l="wealth"></div>
+      <label class="lpill lquiet" title="Не пишет в общий и ближний чат - можно молча наблюдать. Личка хозяину остаётся. В игре: «тихо» / «можешь говорить»"><input type="checkbox" data-l="quiet"><span>Тихо</span></label>
+      <button class="lpill lbtn" data-l="close" title="Вернуться (Esc)">${icon('x', 15)}<span>Выйти</span></button></header>
+    <main class="lmain">
+      <aside class="lcard lchar">
+        <div class="lchead"><div class="lportrait" data-l="face"></div><div class="lwho"><div class="lname" data-l="name"></div><div class="lclass">компаньон · <span data-l="mood"></span></div><div class="lxp" data-l="xp"></div></div></div>
         <div class="lbars" data-l="bars"></div>
-        <div class="lsub">Снаряжение</div><div class="lgear" data-l="gear"></div>
-        <div class="lsub">Жизнь в цифрах</div><div class="lstats" data-l="stats"></div>
-        <div class="lsub">Отношения</div><div data-l="rel"></div></div>
-      <div class="lframe lscene"><div class="lstage" data-l="stage"><div class="lsky" data-l="sky"></div><div class="lstars"></div><div class="lorb" data-l="orb"></div>
-          <div class="lhills far" data-l="hill2"></div><div class="lhills" data-l="hill"></div><div class="ltrees" data-l="trees"></div><div class="lground" data-l="ground"><div class="lpath"></div></div>
-          <div class="lprop" data-l="prop"></div><div class="lfigwrap" data-l="fig"></div><div class="lact" data-l="act"></div><div class="lnotes" data-l="notes"></div></div>
-        <div class="lwhere" data-l="where"></div></div>
-      <div class="lright"><div class="lframe lmini"><div class="lsub">Где она</div><div data-l="mapslot" class="lmapslot"></div></div>
-        <div class="lframe lquests"><div class="lsub">${icon('list-checks', 14)} Задания</div><div data-l="quests"></div></div></div>
-      <div class="lframe linv"><div class="lsub">${icon('list-checks', 14)} С собой</div><div class="lslots" data-l="items"></div></div>
-      <div class="lframe llog"><div class="lsub">${icon('scroll-text', 14)} Журнал приключений</div><div class="llogl" data-l="diary"></div></div>
-      <div class="lframe lthink"><div class="lscroll"><div class="lsub">${icon('message-circle', 14)} Мысли</div><div data-l="thoughts"></div></div></div>
-    </div>`;
+        <h3>Снаряжение</h3><div class="lgear" data-l="gear"></div>
+        <h3>Жизнь в цифрах</h3><div class="lstats" data-l="stats"></div>
+      </aside>
+      <div class="lview">
+        <div class="lscreen" data-l="screen"><img class="leye" data-l="eye" alt=""><div class="lscene" data-l="scene"></div>
+          <div class="lvhud"><span data-l="place"></span><span data-l="compass"></span></div>
+          <div class="lact" data-l="act"></div><div class="lnotes" data-l="notes"></div></div>
+      </div>
+      <aside class="lright">
+        <div class="lcard lmini"><h3>${icon('map', 14)} Карта</h3><div data-l="mapslot" class="lmapslot"></div><div class="lwhere" data-l="where"></div></div>
+        <div class="lcard lthink"><h3>${icon('message-circle', 14)} Мысли</h3><div data-l="thoughts"></div></div>
+      </aside>
+      <div class="lcard ltabs">
+        <nav class="ltabbar" data-l="tabbar"></nav>
+        <div class="ltabbody" data-l="tabbody"></div>
+      </div>
+    </main>`;
   w.querySelector('[data-l="quiet"]').addEventListener('change', (e) => { T.botQuiet({ name: selected, on: e.target.checked }); });
   w.querySelector('[data-l="close"]').addEventListener('click', () => lifeClose());
+  w.addEventListener('click', (e) => {
+    const t = e.target.closest('[data-tab],[data-flt]'); if (!t) return;
+    if (t.dataset.tab) LIFE.tab = t.dataset.tab; if (t.dataset.flt) LIFE.filter = t.dataset.flt;
+    LIFE.sig.tabbar = LIFE.sig.tabbody = null; lifeDraw();
+  });
   artLoad(w);
   LIFE.wrap = w;
   return w;
@@ -835,7 +824,7 @@ function lifeOpen() {
   if (!w.isConnected) document.body.appendChild(w);
   LIFE.open = true; LIFE.sig = {};
   try { T.panelFull(true); } catch {}
-  setTimeout(() => w.classList.add('on'), 16);   // не через кадр отрисовки: в свёрнутом окне кадров нет
+  setTimeout(() => w.classList.add('on'), 16);
   const slot = w.querySelector('[data-l="mapslot"]'), m = mapEnsure();
   if (m.parentNode !== slot) slot.appendChild(m);
   MAP.dirty = true; mapFetch();
@@ -850,87 +839,83 @@ function lifeClose() {
 }
 window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && LIFE.open) lifeClose(); });
 setInterval(() => { if (LIFE.open) mapFetch(); }, 2000);
+// живой вид: кадр раз в ~0,4 с, пока окно открыто
+setInterval(async () => {
+  if (!LIFE.open || !LIFE.wrap || !selected) return;
+  try { const f = await T.botEye(selected); const img = LIFE.wrap.querySelector('[data-l="eye"]'); if (f && img) { if (img.src !== f) img.src = f; LIFE.eyeAt = Date.now(); } } catch {}
+  LIFE.wrap.querySelector('[data-l="screen"]').classList.toggle('live', Date.now() - LIFE.eyeAt < 4000);
+}, 400);
 function lifeSet(key, html) { if (LIFE.sig[key] === html) return; LIFE.sig[key] = html; const el = LIFE.wrap.querySelector(`[data-l="${key}"]`); if (el) el.innerHTML = html; }
-function lifeStyle(key, prop, val) { const el = LIFE.wrap.querySelector(`[data-l="${key}"]`); if (el && el.style[prop] !== val) el.style[prop] = val; }
 function lifeTab(b) {
   const v = b.state && b.state.life;
   return `<div class="lifeteaser"><div><b>${v ? esc(v.doing) : 'бот не в игре'}</b><div class="muted">${v ? esc(v.mood.w) + ' · ' + esc(v.time) + ' · ' + esc(v.weather) : 'запустите его, и здесь появится её жизнь'}</div></div>
     <button class="pri" data-a="lifeOpen">${icon('eye', 15)}Смотреть её жизнь</button></div>`;
 }
-const RU_SLOT = { head: 'шлем', chest: 'нагрудник', legs: 'поножи', feet: 'ботинки', hand: 'в руке', off: 'вторая рука' };
 function lifeDraw() {
   if (!LIFE.open || !LIFE.wrap) return;
   const b = st.bots.find((x) => x.name === selected), v = b && b.state && b.state.life;
   if (!v) { lifeSet('doinghud', 'бот не в игре - запустите его, и здесь появится её жизнь'); return; }
-  if (v.skin && LIFE.skins[v.skin] === undefined) { LIFE.skins[v.skin] = ''; T.botSkin(v.skin).then((d) => { LIFE.skins[v.skin] = d || ''; LIFE.sig.fig = LIFE.sig.face = null; }).catch(() => {}); }
+  if (v.skin && LIFE.skins[v.skin] === undefined) { LIFE.skins[v.skin] = ''; T.botSkin(v.skin).then((d) => { LIFE.skins[v.skin] = d || ''; LIFE.sig.face = null; }).catch(() => {}); }
   const skin = LIFE.skins[v.skin] || '';
-  const narrow = window.innerWidth < 700;
-  lifeSet('fig', skinFigure(skin, narrow ? 5 : 6));
-  lifeSet('face', skinFace(skin, narrow ? 8 : 10));
-  // сцена
-  const tod = MAP.data && MAP.data.time !== undefined ? MAP.data.time : ({ рассвет: 23500, утро: 2000, день: 6000, вечер: 12000, ночь: 18000 })[v.time] || 6000;
-  const sky = skyOf(tod, MAP.data ? MAP.data.dim : '', v.weather !== 'ясно');
-  lifeStyle('sky', 'background', `linear-gradient(${sky.top}, ${sky.bot})`);
-  lifeStyle('ground', 'backgroundColor', sky.ground);
-  lifeStyle('hill', 'backgroundColor', sky.hill); lifeStyle('hill2', 'backgroundColor', sky.hill); lifeStyle('trees', 'color', sky.tree);
-  LIFE.wrap.querySelector('.lstars').style.opacity = sky.stars ? '1' : '0';
-  const orb = LIFE.wrap.querySelector('[data-l="orb"]');
-  if (sky.body) { orb.style.display = ''; orb.style.left = sky.body.x + '%'; orb.style.top = sky.body.y + '%'; orb.className = 'lorb ' + (sky.body.sun ? 'sun' : 'moon'); } else orb.style.display = 'none';
-  const stage = LIFE.wrap.querySelector('[data-l="stage"]');
-  {
-    const dim = MAP.data ? MAP.data.dim : '', t = ((tod % 24000) + 24000) % 24000;
-    const want = /nether/.test(dim) ? 'scene_nether' : MAP.data && MAP.data.layer ? 'scene_cave' : /snow|frozen|ice/.test(v.biome || '') ? 'scene_snow'
-      : t >= 22500 || t < 1000 ? 'scene_dawn' : t < 11000 ? 'scene_day' : t < 13200 ? 'scene_dusk' : 'scene_night';
-    const pick = LIFE.art[want] ? want : LIFE.art.scene_day && !/nether|cave/.test(want) ? (t >= 13200 && t < 22500 && LIFE.art.scene_night ? 'scene_night' : 'scene_day') : '';
-    stage.classList.toggle('painted', !!pick);
-    lifeStyle('sky', 'backgroundImage', pick ? `var(--art-${pick})` : '');
-  }
-  stage.dataset.pose = /сид|присел/.test(v.doing) ? 'sit' : /идёт|бежит|в путь|убегает|иду/.test(v.doing) ? 'walk' : /дерётся|защищ/.test(v.doing) ? 'fight' : 'idle';
-  stage.dataset.rain = v.weather !== 'ясно' ? '1' : '';
-  lifeSet('act', `<span>${esc(v.doing)}</span>`);
-  const pk = /костр/.test(v.doing) ? 'fire' : /книг|кафедр/.test(v.doing) ? 'books' : /верстак|наковальн/.test(v.doing) ? 'table' : /рыбач|вод/.test(v.doing) ? 'water' : /печ/.test(v.doing) ? 'furnace' : '';
-  lifeSet('prop', pk ? `<div class="lp ${pk}"><i></i><i></i><i></i></div>` : '');
-  // всплывающие надписи над ней: новое в дневнике
-  const top = v.diary[0];
-  if (top && top.t > LIFE.lastNote) {
-    if (LIFE.lastNote) { const n = document.createElement('div'); n.className = 'lnote'; n.textContent = top.x; LIFE.wrap.querySelector('[data-l="notes"]').appendChild(n); setTimeout(() => n.remove(), 3600); }
-    LIFE.lastNote = top.t;
-  }
   // шапка
-  lifeSet('clock', `${artIcon(v.time === 'ночь' ? 'moon' : 'sun', v.time === 'ночь' ? 'circle-pause' : 'sparkles', 18)} День ${v.day} · ${esc(v.clock)} · ${esc(v.time)}${v.weather !== 'ясно' ? ' · ' + esc(v.weather) : ''}`);
-  lifeSet('doinghud', `${artIcon('swords', 'swords', 18)} ${esc(v.doing)}`);
-  lifeSet('wealth', `<span class="lgem e"></span>${v.emeralds} <span class="lgem d"></span>${v.diamonds}`);
+  lifeSet('clock', `${icon(v.time === 'ночь' ? 'circle-pause' : 'sparkles', 14)}<b>День ${v.day}</b> ${esc(v.clock)} · ${esc(v.time)}${v.weather !== 'ясно' ? ' · ' + esc(v.weather) : ''}`);
+  lifeSet('doinghud', `${icon('activity', 14)} ${esc(v.doing)}`);
+  lifeSet('wealth', `${itemIcon('emerald')}<b>${v.emeralds}</b>${itemIcon('diamond')}<b>${v.diamonds}</b>`);
   const q = LIFE.wrap.querySelector('[data-l="quiet"]'); if (document.activeElement !== q) q.checked = !!v.quiet;
   // персонаж
-  lifeSet('name', `${esc(v.name)}`);
+  lifeSet('face', skinFace(skin, window.innerWidth < 760 ? 7 : 9));
+  lifeSet('name', esc(v.name));
   lifeSet('mood', `<span class="lmood" style="--mc:${MOOD_COL[v.mood.c] || '#b7a68a'}">${esc(v.mood.w)}</span>`);
-  lifeSet('xp', `<span>Ур. ${v.xp}</span><div><i style="width:${v.xpp}%"></i></div><span>${v.xpp}%</span>`);
-  const bar = (ic, val, max, cls, t) => `<div class="lbar ${cls}" title="${t}">${artIcon(ic, ic, 16)}<div><i style="width:${Math.max(0, Math.min(100, val / max * 100))}%"></i><span>${val} / ${max}</span></div></div>`;
-  lifeSet('bars', bar('heart', v.hp, 20, 'hp', 'здоровье') + bar('drumstick', v.food, 20, 'food', 'сытость') + bar('shield', v.armor, 4, 'arm', 'броня, частей'));
-  lifeSet('gear', ['hand', 'head', 'off', 'chest', 'legs', 'feet'].map((k) => `<div class="lslot ${v.gear[k] ? '' : 'empty'}" title="${RU_SLOT[k]}: ${esc((v.gear[k] || 'пусто').replace(/_/g, ' '))}">${v.gear[k] ? itemIcon(v.gear[k]) : `<em>${RU_SLOT[k]}</em>`}</div>`).join(''));
-  lifeSet('stats', [['footprints', 'пройдено', Math.round(v.stats['пройдено блоков'] || 0).toLocaleString('ru-RU') + ' бл.'], ['scroll-text', 'событий', v.stats['событий в дневнике'] || 0], ['user', 'знает людей', v.stats['людей знает'] || 0], ['map', 'мест в памяти', v.places || 0]]
-    .map(([ic, k, n]) => `<div class="lstat">${icon(ic, 13)}<span>${k}</span><b>${n}</b></div>`).join(''));
-  lifeSet('rel', v.rel.length ? v.rel.slice(0, 5).map((r) => `<div class="lrel" title="${esc(r.last || '')}"><span>${esc(r.n)}</span><div><i style="${r.v >= 0 ? 'left:50%;width:' + r.v / 2 + '%;background:#7fbf4d' : 'right:50%;width:' + -r.v / 2 + '%;background:#e0533d'}"></i></div><b>${r.v > 0 ? '+' : ''}${Math.round(r.v)}</b></div>`).join('') : '<div class="lmuted">пока ни к кому особого отношения</div>');
-  lifeSet('where', esc([v.where, `${v.dim} ${v.pos.join(' ')}`, v.biome, v.near.length ? 'рядом: ' + v.near.join(', ') : ''].filter(Boolean).join(' · ')));
-  // задания: поручение по шагам, цель, исследование
-  let qh = '';
-  if (v.quest) qh += `<div class="lq"><div class="lqt">${esc(v.quest.title || 'поручение')}</div>${v.quest.steps.map((s) => `<div class="lqs ${s.st}">${s.st === 'done' ? icon('check', 12) : s.st === 'fail' ? icon('x', 12) : '<i></i>'} ${esc(s.t)}</div>`).join('')}</div>`;
-  if (v.goal) qh += `<div class="lq"><div class="lqt">Своя цель</div><div class="lqs">${esc(v.goal)}</div></div>`;
-  qh += `<div class="lq"><div class="lqt">Исследование</div><div class="lqs">мест в памяти: ${v.places}; пройдено ${Math.round(v.stats['пройдено блоков'] || 0).toLocaleString('ru-RU')} бл.</div></div>`;
-  lifeSet('quests', qh);
-  // инвентарь: сетка ячеек
-  const cells = v.items.map(([n, c]) => `<div class="lslot" title="${esc(n.replace(/_/g, ' '))} ×${c}">${itemIcon(n)}<b>${c > 1 ? c : ''}</b></div>`);
-  while (cells.length < 18) cells.push('<div class="lslot empty"></div>');
-  lifeSet('items', cells.join(''));
-  // журнал и мысли
-  let day = '', dh = '';
-  for (const e of v.diary.slice(0, 40)) {
-    const d = new Date(e.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
-    if (d !== day) { day = d; dh += `<div class="lday">${d}</div>`; }
-    dh += `<div class="lent"><span class="lt">${new Date(e.t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span><span class="ld">${icon(e.i, 13)}</span><span>${esc(e.x)}</span></div>`;
+  lifeSet('xp', `<span>ур. ${v.xp}</span><div><i style="width:${v.xpp}%"></i></div><span>${v.xpp}%</span>`);
+  const bar = (ic, val, max, cls, t) => `<div class="lbar ${cls}" title="${t}">${itemIcon(ic)}<div><i style="width:${Math.max(0, Math.min(100, val / max * 100))}%"></i><span>${val} / ${max}</span></div></div>`;
+  lifeSet('bars', bar('red_dye', v.hp, 20, 'hp', 'здоровье') + bar('cooked_beef', v.food, 20, 'food', 'сытость') + bar('iron_chestplate', v.armor, 4, 'arm', 'броня, частей'));
+  lifeSet('gear', ['hand', 'off', 'head', 'chest', 'legs', 'feet'].map((k) => `<div class="lslot ${v.gear[k] ? RARE(v.gear[k]) : 'empty'}" title="${RU_SLOT[k]}: ${esc((v.gear[k] || 'пусто').replace(/_/g, ' '))}">${v.gear[k] ? itemIcon(v.gear[k]) : `<em>${RU_SLOT[k]}</em>`}</div>`).join(''));
+  lifeSet('stats', [['пройдено', Math.round(v.stats['пройдено блоков'] || 0).toLocaleString('ru-RU') + ' бл.'], ['событий', v.stats['событий в дневнике'] || 0], ['знает людей', v.stats['людей знает'] || 0], ['мест в памяти', v.places || 0]]
+    .map(([k, n]) => `<div class="lstat"><b>${n}</b><span>${k}</span></div>`).join(''));
+  // вид: живой кадр или (пока кадра нет) сцена по времени суток
+  const tod = MAP.data && MAP.data.time !== undefined ? MAP.data.time : 6000;
+  const scr = LIFE.wrap.querySelector('[data-l="screen"]');
+  scr.dataset.tod = tod > 13000 && tod < 23000 ? 'night' : tod > 11500 && tod <= 13000 ? 'dusk' : 'day';
+  lifeSet('place', esc([v.where.split(';')[0], v.biome].filter(Boolean).join(' · ')));
+  lifeSet('compass', `${esc(v.dim)} ${v.pos.join(' ')}`);
+  lifeSet('act', v.doing ? `<span>${esc(v.doing)}</span>` : '');
+  const top = v.diary[0];
+  if (top && top.t > LIFE.lastNote) {
+    if (LIFE.lastNote) { const n = document.createElement('div'); n.className = 'lnote ' + LOGKIND(top); n.textContent = top.x; LIFE.wrap.querySelector('[data-l="notes"]').appendChild(n); setTimeout(() => n.remove(), 4200); }
+    LIFE.lastNote = top.t;
   }
-  lifeSet('diary', dh || '<div class="lmuted">журнал пока пуст - пишется сам, по её делам</div>');
-  lifeSet('thoughts', v.thoughts.length ? v.thoughts.slice(0, 4).map((x) => `<div class="lth ${x.said ? 'said' : ''}"><em>${x.said ? 'сказала' : 'думает'} · ${ago(x.t)}</em>«${esc(x.x)}»</div>`).join('') : '<div class="lmuted">пока молчит</div>');
+  // справа
+  lifeSet('where', esc([v.where, v.near.length ? 'рядом: ' + v.near.join(', ') : ''].filter(Boolean).join(' · ')));
+  lifeSet('thoughts', v.thoughts.length ? v.thoughts.slice(0, 4).map((x) => `<div class="lth ${x.said ? 'said' : ''}"><em>${x.said ? 'сказала' : 'думает'} · ${ago(x.t)}</em>${esc(x.x)}</div>`).join('') : '<div class="lmuted">пока молчит</div>');
+  // вкладки
+  const TABS = [['inv', 'Инвентарь', v.items.length], ['quest', 'Задания', (v.quest ? 1 : 0) + (v.goal ? 1 : 0)], ['rel', 'Отношения', v.rel.length], ['log', 'Журнал', v.diary.length]];
+  lifeSet('tabbar', TABS.map(([k, t, n]) => `<button data-tab="${k}" class="${LIFE.tab === k ? 'on' : ''}">${t}<i>${n}</i></button>`).join(''));
+  let body = '';
+  if (LIFE.tab === 'inv') {
+    const kinds = ['all', 'оружие', 'броня', 'инструмент', 'еда', 'ценности', 'блоки и прочее'];
+    const list = v.items.filter(([n]) => LIFE.filter === 'all' || KIND(n) === LIFE.filter);
+    const cells = list.map(([n, c]) => `<div class="lslot ${RARE(n)}" title="${esc(n.replace(/_/g, ' '))} ×${c} · ${KIND(n)}">${itemIcon(n)}${c > 1 ? `<b>${c}</b>` : ''}</div>`);
+    const total = v.items.reduce((s, x) => s + x[1], 0);
+    while (cells.length < 27) cells.push('<div class="lslot empty"></div>');
+    body = `<div class="lflt">${kinds.map((k) => `<button data-flt="${k}" class="${LIFE.filter === k ? 'on' : ''}">${k === 'all' ? 'всё' : k}</button>`).join('')}<span class="lmuted">${v.items.length} видов, ${total} шт.</span></div><div class="lslots">${cells.join('')}</div>`;
+  } else if (LIFE.tab === 'quest') {
+    if (v.quest) body += `<div class="lq act"><div class="lqt">${icon('list-checks', 14)} ${esc(v.quest.title || 'поручение')}</div>${v.quest.steps.map((s) => `<div class="lqs ${s.st}">${s.st === 'done' ? icon('check', 12) : s.st === 'fail' ? icon('x', 12) : '<i></i>'} ${esc(s.t)}</div>`).join('')}</div>`;
+    if (v.goal) body += `<div class="lq"><div class="lqt">${icon('sparkles', 14)} Своя цель</div><div class="lqs">${esc(v.goal)}</div></div>`;
+    body += `<div class="lq"><div class="lqt">${icon('map', 14)} Исследование</div><div class="lqs">мест в памяти: ${v.places}; пройдено ${Math.round(v.stats['пройдено блоков'] || 0).toLocaleString('ru-RU')} бл.</div></div>`;
+    if (!v.quest && !v.goal) body = `<div class="lmuted" style="margin-bottom:8px">Поручений сейчас нет - дайте ей задачу словами в игре.</div>` + body;
+  } else if (LIFE.tab === 'rel') {
+    body = v.rel.length ? v.rel.map((r) => `<div class="lrel" title="${esc(r.last || '')}"><span class="lrn">${esc(r.n)}</span><div><i style="${r.v >= 0 ? 'left:50%;width:' + r.v / 2 + '%;background:#8fc45a' : 'right:50%;width:' + -r.v / 2 + '%;background:#e0533d'}"></i></div><b>${r.v > 0 ? '+' : ''}${Math.round(r.v)}</b><em>${esc(r.last || '')}</em></div>`).join('') : '<div class="lmuted">Пока ни к кому особого отношения: оно копится по делам - подарки, приветствия, обиды.</div>';
+  } else {
+    let day = '';
+    for (const e of v.diary.slice(0, 60)) {
+      const d = new Date(e.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+      if (d !== day) { day = d; body += `<div class="lday">${d}</div>`; }
+      body += `<div class="lent ${LOGKIND(e)}"><span class="lt">${new Date(e.t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span><span class="ld">${icon(e.i, 13)}</span><span>${esc(e.x)}</span></div>`;
+    }
+    body = `<div class="llog">${body || '<div class="lmuted">Журнал пишется сам, по её делам.</div>'}</div>`;
+  }
+  lifeSet('tabbody', body);
+  iconsFetch();
 }
 
 // ---------- общий цикл
