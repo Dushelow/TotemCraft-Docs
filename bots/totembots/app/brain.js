@@ -611,7 +611,12 @@ class Brain {
         const report = batch.some((x) => /^\[итог\]/.test(x.line || '') && x.from && x.from !== '@self' && /задание выполнено|не получилось|отменено/.test(x.line || ''));
         // сама решила сказать (приставка «рядом:», «лс Ник:», «общий:») - это речь, а не мысль; своё - не чаще раза в 30 с
         // (22.11: хозяин в 7 бл., она «говорила» про криперов, а в игру не ушло ни слова - всё считалось мыслями)
-        const meant = !!r.channel && (Date.now() - (this.selfSaidAt || 0) > 30000);
+        // обращение к хозяину рядом - тоже речь, даже без «рядом:» (22.11: «отец, чем помочь?», «что дальше?» при хозяине
+        // в 4 бл. ушли в мысли - в игре тишина, а в чате Qwen текст). Признаки: вопрос, имя хозяина или обращение
+        const me = this.body.bot && this.body.bot.entity;
+        const ownerNear = me && this.cfg().masters.some((n) => { const e = this.body.bot.players[n] && this.body.bot.players[n].entity; return e && e.position.distanceTo(me.position) <= 16; });
+        const toOwner = ownerNear && (/\?\s*$/.test(r.say) || this.cfg().masters.some((n) => r.say.toLowerCase().includes(n.toLowerCase().slice(0, 4))) || /^(эй|слушай|смотри|хозяин|отец|мам|пап|брат|друг)[\s,!]/i.test(r.say));
+        const meant = (!!r.channel || toOwner) && (Date.now() - (this.selfSaidAt || 0) > 30000);
         if (!spoken && !report && !meant) { this.log('(подумала, вслух не сказала) ' + r.say); r.say = ''; }
         else if (!spoken && !report) this.selfSaidAt = Date.now();
       }

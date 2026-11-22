@@ -206,6 +206,7 @@ class QwenBridge {
   constructor(webContents, log = () => {}) {
     this.wc = webContents;
     this.log = log;
+    this.pageWatch();
     this.onAttention = () => {};
     this.birthYear = () => '';
     this.projectId = () => '';   // новые чаты - внутри проекта Qwen
@@ -519,7 +520,8 @@ class QwenBridge {
     let last, auto = false;
     for (let i = 0; i < models.length && i < 25; i++) {
       try {
-        const r = await this._ask(chatId, text, models[i], opt.mode || '');
+        const r = await this._ask(chatId, text, models[i], opt.mode || '').catch((e) => { this.plog('запрос: ОШИБКА', e.message); throw e; });
+        this.plog('запрос: ответ получен', String(r.answer || '').slice(0, 120));
         // лимит Qwen приходит обычным ответом («You've reached today's chat limit...») - это не реплика бота
         if (LIMIT_TEXT.test(r.answer || '')) throw new Error('лимит Qwen: ' + String(r.answer).slice(0, 80));
         this.goodModel = models[i] || (await this.modelNow()) || this.goodModel;
@@ -574,9 +576,38 @@ class QwenBridge {
     if (!ok) throw new Error('Qwen не принял картинку');
   }
 
+  /**
+   * Журнал страницы Qwen (22.11, владелец: «логируй, что происходит со страницей, чтобы потом проверить»):
+   * local/logs/qwen-page.log - каждый шаг запроса (проект, открытие, модель, отправка, ожидание, ответ) со временем
+   * и адресом, а также события самой страницы: переходы, сбои загрузки, зависания, ошибки в её консоли.
+   */
+  plog(step, extra = '') {
+    try {
+      const f = require('path').join(__dirname, '..', 'local', 'logs', 'qwen-page.log');
+      try { if (require('fs').statSync(f).size > 3e6) require('fs').renameSync(f, f + '.old'); } catch {}
+      let url = ''; try { url = this.wc.getURL().replace('https://chat.qwen.ai', ''); } catch {}
+      require('fs').appendFileSync(f, `${new Date().toISOString()} ${step}${extra ? ' - ' + String(extra).replace(/\s+/g, ' ').slice(0, 300) : ''} [${url}]
+`);
+    } catch {}
+  }
+  pageWatch() {
+    const w = this.wc;
+    if (!w || !w.on) return;
+    w.on('did-start-navigation', (_e, url, inPlace, main) => { if (main && !inPlace) this.plog('страница: переход', url.replace('https://chat.qwen.ai', '')); });
+    w.on('did-finish-load', () => this.plog('страница: загружена'));
+    w.on('did-fail-load', (_e, code, desc, url, main) => { if (main) this.plog('страница: НЕ ЗАГРУЗИЛАСЬ', `${code} ${desc} ${url}`); });
+    w.on('unresponsive', () => this.plog('страница: ЗАВИСЛА (не отвечает)'));
+    w.on('responsive', () => this.plog('страница: снова отвечает'));
+    w.on('render-process-gone', (_e, d) => this.plog('страница: ПРОЦЕСС УПАЛ', d && d.reason));
+    w.on('console-message', (_e, level, msg) => { if (level >= 3 || /error|failed|limit|captcha|401|403|429|5\d\d/i.test(String(msg))) this.plog('консоль страницы', `${level >= 3 ? 'ошибка: ' : ''}${msg}`); });
+  }
+
   async _ask(chatId, text, model, mode, image) {
-    if (!chatId && !((this.noProjectUntil || 0) > Date.now())) await this.beforeNewChat();
+    const t0 = Date.now(), ms = () => `${((Date.now() - t0) / 1000).toFixed(1)} с`;
+    this.plog('запрос: начало', `чат ${chatId || 'новый'}, модель ${model || 'текущая'}, ${String(text).length} знаков`);
+    if (!chatId && !((this.noProjectUntil || 0) > Date.now())) { await this.beforeNewChat(); this.plog('запрос: проект готов', ms()); }
     await this.open(chatId);
+    this.plog('запрос: страница открыта', ms());
     await this.hook();
     if (model || mode) {
       const r = await this.wc.executeJavaScript(PICK(model, mode)).catch(() => null);
@@ -585,6 +616,7 @@ class QwenBridge {
     }
     if (image) await this.pasteImage(image);
     let sent = await this.wc.executeJavaScript(SEND(text));
+    this.plog('запрос: отправка', sent.error ? 'ОШИБКА: ' + sent.error : sent.age ? 'просят возраст' : 'ушло ' + ms());
     // Qwen спрашивает возраст: отвечает сам владелец в окне справа, ждём до 10 минут и отправляем снова
     for (let i = 0; sent.age && i < 120; i++) {
       const year = this.birthYear();
@@ -617,7 +649,9 @@ class QwenBridge {
     const until = sentAt + 4 * 60 * 1000;
     let started = false;
     let lastHistory = 0;
+    let tickLog = Date.now();
     while (Date.now() < until) {
+      if (Date.now() - tickLog > 10000) { tickLog = Date.now(); this.plog('запрос: жду ответ', `${ms()}, ответ ${started ? 'пишется' : 'ещё не начат'}`); }
       await sleep(400);
       const r = await this.wc.executeJavaScript(
         `(() => { const tb = window.__tb; if (!tb) return null; const k = Object.keys(tb.done).map(Number).filter((n) => n > ${sent.rid}).sort((a,b)=>a-b)[0]; return { started: tb.rid > ${sent.rid}, done: k ? tb.done[k] : null }; })()`
