@@ -460,15 +460,19 @@ class TotemBot extends EventEmitter {
     // тика (из async-кода) Vulcan отмечал как Kill Aura / Aim (стенд 15.11, 36 отметок; после правки - ноль).
     this.trace = new (require('./movetrace').MoveTrace)(this, require('path').join(__dirname, '..', 'local', 'logs'));
     b.on('physicsTick', () => {
-      try { this.trace.tick(); } catch {}
       try { if (this._interactQ) this.interactTick(); } catch {}   // клик по существу - в тике, как клиент (vehicles.js)
       try { b._client.write('tick_end', {}); } catch {}
       this.lookTick();
       if (this.guard) this.guard.combatTick();
       // своё плавание (swim.js); не взялось (суша впереди, нет пути) - старая логика воды и выхода на берег
-      { const sw = require('./swim'); sw.swimPhysics(this); if (!sw.airTick(this) && !sw.swimTick(this) && !sw.floatTick(this)) this.swimTick(); }   // физика пловца как в игре; воздух кончается - всплыть важнее пути   // воздух кончается - всплыть важнее пути
-      this.waterExitTick();
+      // Вода - только swim.js (22.11: прыгал без конца - кроме него клавишами в воде управляли старое плавание water.js и
+      // толчок на берег, и каждый тянул своё). Порядок: воздух -> путь -> держаться на воде. Толчок на берег - только
+      // когда swim.js сам ведёт к берегу (shoreNode)
+      { const sw = require('./swim'); sw.swimPhysics(this);
+        this._waterBy = sw.airTick(this) ? 'воздух' : sw.swimTick(this) ? (this.shoreNode ? 'к берегу' : 'плыву') : sw.floatTick(this) ? 'на плаву' : '';
+        if (this._waterBy === 'к берегу') this.waterExitTick(); }
       try { this.dodgeTick(); } catch {}   // уворот от стрел и огненных шаров (chores.js)
+      try { this.trace.tick(); } catch {}   // журнал движения - в конце такта: клавиши такие, какие ушли на сервер
     });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
   }

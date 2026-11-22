@@ -217,9 +217,13 @@ function overhead(b, p) {
  *  борта без единой клавиши, медленно тонул и смотрел вверх на хозяина). */
 function floatTick(tb) {
   const b = tb.bot, e = b.entity;
-  if (!e || b.vehicle || b.pathfinder.isMoving()) return false;
+  if (!e || b.vehicle) return false;
   const f = e.position.floored();
   if (!isWater(b, f) && !isWater(b, f.offset(0, 1, 0))) { if (tb._floating) { tb._floating = false; b.setControlState('jump', false); } return false; }
+  // путь есть, но точка рядом (swimTick не взялся) - доплыть к ней спокойно; иначе модуль пути держит «прыжок» в воде
+  // каждый такт, и бот подпрыгивал без конца (22.11)
+  const n0 = b.pathfinder.isMoving() && ((tb.lastPath || {}).path || [])[0];
+  if (n0) { const p = e.position; steer(tb, n0.x - p.x, n0.y - p.y, n0.z - p.z, isWater(b, p.offset(0, 1.6, 0).floored())); return true; }
   let surf = 0; for (let k = 1; k < 30 && isWater(b, f.offset(0, k, 0)); k++) surf = k;
   const topY = f.y + surf + 0.89;
   tb._floating = true;
