@@ -255,6 +255,7 @@ class Brain {
     // (22.11: хозяин в 5 блоках, бот отвечал в общий чат всему серверу)
     const replyCh = ch === 'global' && dist !== null && dist <= 32 ? 'local' : ch;
     if (kind === 'address') this.attn.lastAddr = { channel: replyCh, from, at: Date.now() };
+    try { if (this.body.attend) this.body.attend(from, 6000); } catch {}   // повернуться к говорящему сразу, пока думает
     // режим «только хозяин» - словами хозяина
     if (this.isMaster(from)) {
       const t = String(text).toLowerCase();
@@ -284,7 +285,7 @@ class Brain {
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
-    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.body._errandBusy || this.busy || this.pending.length || this.bridge.resting) return;
+    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.body._errandBusy || this.body.sandbox || this.busy || this.pending.length || this.bridge.resting) return;   // занята сама (песочница) - не дёргать нейросеть
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
     if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
     const mins = Math.round((Date.now() - this.lastEvent) / 60000);
