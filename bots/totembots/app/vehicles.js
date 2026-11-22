@@ -85,6 +85,31 @@ class Vehicles {
     q.res();
   }
 
+  /**
+   * Забрать лодку (выбить: несколько ударов, лодка выпадает предметом, кто в ней - выходит). Только по слову хозяина:
+   * обычно в лодки сажают животных и мобов нарочно - перевезти или сохранить, это чужое (22.11, владелец). С игроком в
+   * лодке - никогда. Какую: ближайшую к хозяину (он показывает, стоя рядом) или к точке x z.
+   */
+  async takeBoat(a, tok) {
+    const b = this.bot;
+    const near = a.x !== undefined ? new Vec3(+a.x, b.entity.position.y, +a.z) : (this.player(a.who) || b.entity).position;
+    const boat = Object.values(b.entities).filter((e) => /boat|raft/.test(e.name || '') && e.position.distanceTo(near) < 8)
+      .sort((x, y) => x.position.distanceTo(near) - y.position.distanceTo(near))[0];
+    if (!boat) throw new Error('рядом нет лодки');
+    if ((boat.passengers || []).some((p) => p.type === 'player')) throw new Error('в лодке игрок - не трогаю');
+    const who = (boat.passengers || []).map((p) => p.name).join(', ');
+    if (boat.position.distanceTo(b.entity.position) > 2.8) { try { await this.goto(new goals.GoalNear(boat.position.x, boat.position.y, boat.position.z, 2), tok, 20000); } catch (e) { if (isCancel(e)) throw e; } }
+    for (let i = 0; i < 10 && b.entities[boat.id]; i++) {
+      this.check(tok);
+      try { await b.lookAt(boat.position.offset(0, 0.3, 0), true); b.attack(boat); } catch {}
+      await sleep(300);
+    }
+    if (b.entities[boat.id]) throw new Error('лодку выбить не вышло');
+    await sleep(400);
+    try { const it = Object.values(b.entities).find((e) => e.name === 'item' && e.position.distanceTo(boat.position) < 4); if (it) await this.goto(new goals.GoalNear(it.position.x, it.position.y, it.position.z, 0.5), tok, 8000); } catch {}
+    return `забрала лодку${who ? ' (в ней были: ' + who + ' - вышли)' : ''}`;
+  }
+
   /** Поставить свою лодку на воду или лёд рядом (как игрок: лодка в руке, правый клик по блоку). */
   async placeBoat(tok) {
     const b = this.bot;

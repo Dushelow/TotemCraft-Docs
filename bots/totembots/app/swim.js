@@ -122,8 +122,13 @@ function airLeft(tb) {
   const b = tb.bot, now = Date.now();
   // сервер шлёт запас (видели его ниже 20) - верить ему: свой счёт сбивался, когда голова у самой поверхности
   // (плывёт в позе плавания - то под водой, то над), и бот всплывал зря
-  if (typeof b.oxygenLevel === 'number' && b.oxygenLevel < 20) tb._oxyLive = true;
-  if (tb._oxyLive) return b.oxygenLevel;
+  // запас воздуха от сервера бывает неверным: журнал движения показал «воздух 0» на поверхности, с головой над водой -
+  // бот считал, что задыхается, и всё время всплывал, а не нырял за хозяином (22.11). Неверное значение (меньше 20,
+  // когда голова над водой) - больше ему не верить, считать самим
+  const headIn = (() => { try { const k = b.blockAt(b.entity.position.offset(0, 1.6, 0).floored()); return !!(k && /water|bubble_column/.test(k.name)); } catch { return false; } })();
+  if (typeof b.oxygenLevel === 'number' && b.oxygenLevel < 19 && !headIn && !tb._oxyBad) { tb._oxyBad = true; tb._oxyLive = false; }
+  if (!tb._oxyBad && typeof b.oxygenLevel === 'number' && b.oxygenLevel < 20 && headIn) tb._oxyLive = true;
+  if (tb._oxyLive && !tb._oxyBad) return b.oxygenLevel;
   if (!tb._underSince) return 20;
   return Math.max(0, 20 - (now - tb._underSince) / 750);
 }

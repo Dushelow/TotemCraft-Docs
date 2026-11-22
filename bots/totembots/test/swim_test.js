@@ -51,3 +51,11 @@ nodes.length = 0; for (let x = 1; x <= 35; x++) nodes.push({ x, y: 61, z: 0 });
   let minY = 99, maxY = 0, jumps = 0, last = false;
   for (let t = 0; t < 160; t++) { swimTick(tb); if (control.jump && !last) jumps++; last = control.jump; physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot); swimPhysics(tb); if (t > 40) { minY = Math.min(minY, bot.entity.position.y); maxY = Math.max(maxY, bot.entity.position.y); } }
   const p = bot.entity.position; console.log(`с поверхности: за 8 с ${(p.x - 0.5).toFixed(1)} бл., высота ${minY.toFixed(2)}-${maxY.toFixed(2)} (вода до 61.9), поза ${control.sprint}, нажатий прыжка ${jumps}`); }
+// за хозяином на дно, а сервер шлёт неверный запас воздуха 0 (22.11: «воздух 0» на поверхности - бот только всплывал)
+nodes.length = 0; for (let k = 1; k <= 6; k++) nodes.push({ x: k, y: 61 - k, z: 0 }); for (let x = 7; x <= 20; x++) nodes.push({ x, y: 56, z: 0 });
+{ const { bot, control } = makeBot(); bot.oxygenLevel = 0; bot.entity.position = new Vec3(0.5, 61.3, 0.5); const tb = { bot, lastPath: { path: nodes } };
+  let minY = 99;
+  for (let t = 0; t < 120; t++) { swimTick(tb); physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot); swimPhysics(tb); minY = Math.min(minY, bot.entity.position.y); }
+  const ok = minY < 58;
+  console.log(`${ok ? 'да ' : 'НЕТ'} нырнул за целью на дно при неверном «воздух 0»: глубже всего ${minY.toFixed(2)}`);
+  if (!ok) process.exitCode = 1; }

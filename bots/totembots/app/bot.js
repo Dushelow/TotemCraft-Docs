@@ -1657,6 +1657,7 @@ class TotemBot extends EventEmitter {
           case 'hunt': r = await this.skills.hunt(a, tok); break;
           case 'shear': r = await this.skills.shear(a, tok); break;
           case 'breed': r = await this.breed(a, tok); break;
+          case 'takeBoat': r = await this.takeBoat(a, tok); break;
           case 'bonemeal': r = await this.bonemeal(a, tok); break;
           case 'cocoa': r = await this.cocoa(a, tok); break;
           case 'toss': r = await this.skills.toss(a, tok); break;
