@@ -13,8 +13,12 @@ class Vehicles {
 
   /** Сесть: в лодку или на животное рядом; who - к этому игроку (в его лодку, свободное место). */
   async mount(a, tok) {
-    const b = this.bot, me = b.entity.position, RIDE = RIDE_RE;
-    if (b.vehicle) return 'уже сижу';
+    const b = this.bot, RIDE = RIDE_RE;
+    // сидит на ступеньке или полублоке (GSit: невидимое сиденье) - встать, а не «уже сижу» (22.11: «поставь лодку» -
+    // так и сидел на фонарном столбе)
+    if (b.vehicle && !RIDE.test(b.vehicle.name || '')) { await this.standUp(); for (let w = 0; w < 15 && b.vehicle; w++) await sleep(100); }
+    if (b.vehicle) return 'уже сижу в ' + (b.vehicle.name || 'чём-то');
+    const me = b.entity.position;
     // мозг пишет в «who» и ник, и название лодки (22.11: mount(pale_oak_boat) - сел в чужую лодку в стороне)
     let kind = String(a.what || '').toLowerCase();
     if (a.who && !this.player(a.who) && /boat|raft|horse|donkey|mule|camel|pig|strider|llama|лодк|лошад/i.test(a.who)) { kind = kind || String(a.who).toLowerCase(); a = { ...a, who: '' }; }
@@ -162,8 +166,8 @@ class Vehicles {
   }
   rideStop() { if (this._rideTimer) clearInterval(this._rideTimer); this._rideTimer = null; this._ride = null; }
   rideTick() {
-    const b = this.bot, v = b.vehicle, R = this._ride;
-    if (!v || !R) { this.rideStop(); return; }
+    const b = this.bot, v = b && b.vehicle, R = this._ride;
+    if (!b || !v || !R) { this.rideStop(); return; }
     const c = (k) => !!b.getControlState(k);
     const ps = v.passengers || [];
     const driver = /boat|raft/.test(v.name || '') && (!ps.length || ps[0] === b.entity);
@@ -200,7 +204,8 @@ class Vehicles {
 
   async drive(a, tok) {
     const b = this.bot;
-    if (!b.vehicle) throw new Error('я ни на чём не сижу - сначала !mount');
+    if (!b.vehicle) throw new Error('я ни на чём не сижу - сначала !boardBoat');
+    if (!RIDE_RE.test(b.vehicle.name || '')) throw new Error('сижу не в лодке и не на лошади (на сиденье) - сначала !boardBoat');
     // рулит тот, кто сел первым (так в игре): пассажир править не может (22.11: Loki сел к хозяину и «плыл» на месте)
     const ps = b.vehicle.passengers || [];
     if (ps.length && ps[0] !== b.entity) { const d = ps[0]; throw new Error(`рулит ${d.username || d.name || 'другой'}: я пассажир, править не могу - пусть рулит он, или он пересядет, и я сяду первым`); }
