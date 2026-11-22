@@ -811,7 +811,9 @@ class Brain {
     if (!failed && from && from !== 'сам' && this.isMaster(from) && this.ownerTask && /задание выполнено/.test(result)) this.ownerTask.done = Date.now();
     this.log('итог: ' + result);
     // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop/remember - без отчёта
-    if (actions.some((a) => !['follow', 'stop', 'remember', 'forget', 'equip', 'wait'].includes(a.act))) {
+    // жест, сесть, встать, тихий режим, зона - мгновенные: итог мозгу не нужен (22.11: на «[итог] показала жест» мозг
+    // заводил разговор сам с собой - лишний запрос и реплика в никуда)
+    if (actions.some((a) => !['follow', 'stop', 'remember', 'forget', 'equip', 'wait', 'gesture', 'sit', 'stand', 'quiet', 'zone'].includes(a.act))) {
       // своё дело: итог - снова от себя (можно продолжить: дошёл - осмотрелся - пошёл дальше), до 3 дел подряд
       // своя цель - цикл без пауз (как self-prompting в Mindcraft) до 25 шагов; 3 неудачи подряд - стоп и подумать
       const goal = this.memory && this.memory.bot(this.botCfg.name).goal;

@@ -156,7 +156,7 @@ class Perception {
     }
     if (best) parts.push(`${bd < 16 ? 'ты у места' : 'рядом место'} «${best.name}»${bd >= 16 ? ` (${Math.round(bd)} бл.)` : ''}`);
     const signs = Object.values(m.data.signs || {}).filter((s) => s.dim === dim && Math.hypot(s.x - me.x, s.z - me.z) <= 24)
-      .sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z)).slice(0, 3).map((s) => `«${s.text.slice(0, 40)}»`);
+      .sort((a, c) => Math.hypot(a.x - me.x, a.z - me.z) - Math.hypot(c.x - me.x, c.z - me.z)).filter((s, i, A) => A.findIndex((o) => o.text === s.text) === i).slice(0, 6).map((s) => `«${s.text.slice(0, 90)}»`);   // до 6 и целиком (22.11: из двух табличек у дерева видна была одна, и та обрезана)
     if (signs.length) parts.push('таблички рядом: ' + signs.join(', '));
     return parts.join('; ');
   }

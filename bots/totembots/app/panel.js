@@ -337,7 +337,7 @@ function botCard(b) {
 let lastHtml = '';
 function renderBots() {
   const box = $('bots');
-  if (!selected && st.bots[0]) selected = st.bots[0].name;
+  // при запуске ни одна карточка не раскрыта: раскрывается по щелчку (22.11)
   const sel = st.bots.find((b) => b.name === selected);
   const log = box.querySelector('[data-f="log"]');
   // не перерисовывать карточку, пока человек печатает: только журнал

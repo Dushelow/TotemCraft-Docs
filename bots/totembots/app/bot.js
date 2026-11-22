@@ -1499,7 +1499,7 @@ class TotemBot extends EventEmitter {
     // жест и «встать» - не дело: текущее не прерывают
     if (plain.length && plain.every((a) => a.act === 'zone')) return plain.map((a) => this.zoneAct(a)).join('; ');   // зона - не дело, текущее не прерывает
     if (plain.length === 1 && plain[0].act === 'quiet') { this.opts.quiet = plain[0].on !== false; if (this.onQuiet) this.onQuiet(this.opts.quiet); return this.opts.quiet ? 'тихий режим: в чат не пишу' : 'снова могу говорить в чат'; }
-    if (plain.length && plain.every((a) => a.act === 'gesture' || a.act === 'stand')) { for (const a of plain) { if (a.act === 'gesture') await this.gesture(String(a.kind || 'привет').toLowerCase()); else await this.standUp(); } return plain.map((a) => a.act === 'gesture' ? 'показала жест «' + (a.kind || 'привет') + '»' : 'встала').join('; '); }
+    if (plain.length && plain.every((a) => a.act === 'gesture' || a.act === 'stand')) { for (const a of plain) { if (a.act === 'gesture') await this.gesture(String(a.kind || 'привет').toLowerCase()); else await this.standUp(); } return plain.map((a) => a.act === 'gesture' ? 'жест «' + (a.kind || 'привет') + '» показан' : 'встал(а)').join('; '); }
     // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
     // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
     const LIGHT = new Set(['combat', 'signs', 'followDist', 'look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
