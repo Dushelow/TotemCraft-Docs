@@ -153,10 +153,13 @@ class Voice {
           // номер чата у бота - логический (router.js); читать вслух нужно в настоящем чате Qwen, и только ответ Qwen
           // «Прочитать вслух» у Qwen читает весь его ответ: с приставкой «рядом:», лишними словами. Ответ дословно
           // не та фраза, что ушла в игру, - озвучить через «дикторский» чат ровно её (22.11: «рядом» в начале фраз)
+          // Отдельный «дикторский» чат на каждую фразу убран (22.11, владелец: лишний чат и трата запросов, и он держал
+          // очередь Qwen по несколько секунд - бот дольше отвечал). Ответ Qwen не ровно та фраза (приставка «рядом:»,
+          // лишние слова) - эта фраза без голоса Qwen: «Прочитать вслух» прочёл бы и приставку. Текст в чате есть.
           const plain = (t) => String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/^\s*!\w+\(.*\)\s*$/gm, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
           const same = !o.raw || plain(o.raw) === plain(text);
           let qid = !same ? null : this.qwenChat ? this.qwenChat(botCfg.chatId) : botCfg.chatId;
-          if (!qid && !same && this.bridge.ask && !this.bridge.resting && !this.bridge.captcha) qid = await this.echo(text, botCfg);
+          if (!same) throw new Error('ответ Qwen длиннее сказанной фразы - эту фразу без голоса (дикторский чат отключён)');
           // ответ дала другая нейросеть (DeepSeek...): голосом Qwen через «голосовой» чат - Qwen повторяет фразу слово
           // в слово, её и озвучиваем. Тратит один короткий запрос Qwen на фразу, задержка несколько секунд (галочка)
           if (!qid && s.echo && this.bridge.ask && !this.bridge.resting && !this.bridge.captcha) qid = await this.echo(text, botCfg);

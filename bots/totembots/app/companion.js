@@ -69,7 +69,10 @@ class Companion {
       C.sitTry = now; this.sitNear(owner.position).catch(() => {});
     }
     const busy = this.mode === 'task' || this.mode === 'life' || this.mode === 'hold' || this._errandBusy || this.travelling || this.eating || b.isSleeping || b.vehicle
-      || (this.guard && (this.guard.fighting || this.guard.fleeing)) || (this.threat && this.threat().level !== 'спокойно') || b.entity.isInWater;
+      || (this.guard && (this.guard.fighting || this.guard.fleeing)) || (this.threat && this.threat().level === 'опасно') || b.entity.isInWater;
+    // «осторожно» занятиям не мешает: туда попадают мобы в пещерах под ногами и ночь (22.11: в городе у спавна
+    // криперы на глубине 30 бл. держали её «насторожённой», и она стояла истуканом); враг рядом и виден - не время
+    const foeNear = Object.values(b.entities).some((e) => e.position && e !== b.entity && this.guard && this.guard.isHostile && this.guard.isHostile(e) && e.position.distanceTo(b.entity.position) < 12 && Math.abs(e.position.y - b.entity.position.y) < 5);
     const sb = this.sandbox;
     if (sb) {
       // конец занятия: хозяин пошёл, отошли далеко, пришло дело, время вышло
@@ -95,11 +98,11 @@ class Companion {
       }
       return;
     }
-    if (busy) return;
+    if (busy || foeNear) return;
     // начать: следом за хозяином, он стоит 6+ с - иногда (не каждый раз, чтобы было живо, а не по таймеру)
-    const ownerStill = owner && this.mode === 'follow' && now - C.stillSince > 6000 && owner.position.distanceTo(b.entity.position) < 10;
-    const idle = !owner && this.mode === 'idle' && now - (this.lastRunAt || 0) > 30000 && now - (C.endAt || 0) > 20000;
-    if (!(ownerStill || idle) || Math.random() > (ownerStill ? 0.3 : 0.08)) return;
+    const ownerStill = owner && this.mode === 'follow' && now - C.stillSince > 4000 && owner.position.distanceTo(b.entity.position) < 10;
+    const idle = !owner && this.mode === 'idle' && now - (this.lastRunAt || 0) > 15000 && now - (C.endAt || 0) > 8000;
+    if (!(ownerStill || idle) || Math.random() > (ownerStill ? 0.35 : 0.2)) return;
     const center = ownerStill ? owner.position : b.entity.position;
     const o = this.findOpportunity(center, ownerStill ? 9 : 10);
     if (o) this.sandboxStart(o, owner);
