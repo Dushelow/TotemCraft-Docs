@@ -120,8 +120,18 @@ class LifeView {
       thoughts: (this.thoughts || []).slice(-8).reverse(),
       diary: (this.diary || (this.memory && this.memory.data.diary) || []).slice(-60).reverse(),
       rel, stats: { 'пройдено блоков': Math.round(S['пройдено блоков'] || 0), 'событий в дневнике': S['событий'] || 0, 'людей знает': Object.keys(A).length },
-      items: Object.entries(b.inventory.items().reduce((o, i) => (o[i.name] = (o[i.name] || 0) + i.count, o), {})).sort((a, c) => c[1] - a[1]).slice(0, 12),
+      items: Object.entries(b.inventory.items().reduce((o, i) => (o[i.name] = (o[i.name] || 0) + i.count, o), {})).sort((a, c) => c[1] - a[1]).slice(0, 27),
       at: now,
+      // для HUD: день мира, опыт до уровня, снаряжение, ценности, задание
+      day: b.time && b.time.day !== undefined ? b.time.day : Math.floor((b.time && b.time.age || 0) / 24000),
+      clock: t === undefined ? '' : (() => { const m = Math.floor(((t + 6000) % 24000) / 1000 * 60); return String(Math.floor(m / 60)).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0'); })(),
+      xpp: b.experience ? Math.round((b.experience.progress || 0) * 100) : 0,
+      gear: (() => { const sl = b.inventory.slots, n = (i) => (sl[i] ? sl[i].name : ''); return { head: n(5), chest: n(6), legs: n(7), feet: n(8), hand: b.heldItem ? b.heldItem.name : '', off: n(45) }; })(),
+      emeralds: b.inventory.items().filter((i) => i.name === 'emerald').reduce((s, i) => s + i.count, 0),
+      diamonds: b.inventory.items().filter((i) => i.name === 'diamond').reduce((s, i) => s + i.count, 0),
+      quest: (() => { try { const e = this.errand && this.errand(); if (e && e.state !== 'done' && e.state !== 'cancel') return { title: e.text, steps: e.steps.map((x) => ({ t: x.title, st: x.st })) }; } catch {} return null; })(),
+      goal: (() => { try { const m = this.memory && this.memory.bot && this.memory.bot(b.username); return m && m.goal ? m.goal.text : ''; } catch { return ''; } })(),
+      places: (() => { try { return Object.values((this.memory && this.memory.data.places) || {}).filter((x) => x.dim === this.dimName()).length; } catch { return 0; } })(),
     };
   }
 }
