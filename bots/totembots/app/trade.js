@@ -70,7 +70,15 @@ class Trade {
     this.check(tok);
     if (d() > 3.4) throw new Error(`не подойти к жителю (ближе ${d().toFixed(1)} бл. пути нет)`);
     await this.bot.lookAt(e.position.offset(0, 1.5, 0), true);
-    const v = await withTimeout(this.bot.openVillager(e), 5000, 'житель не открыл окно торговли');
+    // что сервер прислал в ответ на клик (окно, список торгов) - чтобы знать, где рвётся: окно не открылось вовсе
+    // или открылось, но mineflayer его не понял (через ViaVersion 26.3 -> 1.21.11)
+    const seen = [];
+    const spy = (data, meta) => { if (/open_window|open_screen|trade_list|merchant|window_items|container|set_slot|close_window|system_chat|action_bar/.test(meta.name) && seen.length < 12) seen.push(meta.name + (data && data.windowType !== undefined ? ':' + JSON.stringify(data.windowType).slice(0, 30) : '') + (data && data.trades ? ':' + data.trades.length + ' торгов' : '')); };
+    this.bot._client.on('packet', spy);
+    let v;
+    try { v = await withTimeout(this.bot.openVillager(e), 5000, 'житель не открыл окно торговли'); }
+    catch (err) { throw new Error(`${err.message} (сервер прислал: ${seen.join(', ') || 'ничего'}; до жителя ${d().toFixed(1)} бл.)`); }
+    finally { this.bot._client.removeListener('packet', spy); }
     for (let k = 0; k < 10 && !(v.trades && v.trades.length); k++) await sleep(200);
     return v;
   }

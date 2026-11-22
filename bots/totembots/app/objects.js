@@ -39,10 +39,18 @@ async function use(tb, a, tok) {
   if (o.kind === 'container') {
     const c = await tb.openLocked(v.x, v.y, v.z, tok);
     try {
-      const items = c.containerItems();
+      // содержимое приходит отдельным пакетом после открытия: сразу после открытия бывает «пусто» (22.11: в бочке
+      // лежала жареная рыба, а бот сказал «пусто»). Ждать до 1 с, пока придёт
+      let items = c.containerItems();
+      for (let i = 0; i < 10 && !items.length; i++) { await new Promise((r) => setTimeout(r, 100)); items = c.containerItems(); }
       const m = {}; for (const i of items) m[i.name] = (m[i.name] || 0) + i.count;
       const list = Object.entries(m).sort((p, q) => q[1] - p[1]).slice(0, 12).map(([n, x]) => `${n} ×${x}`).join(', ');
-      return `в сундуке ${v.x} ${v.y} ${v.z}: ${list || 'пусто'}${tb.skills.mine(v) ? ' (мой)' : ''}`;
+      const what = /barrel/.test(k.name) ? 'в бочке' : /shulker/.test(k.name) ? 'в шалкере' : /furnace|smoker/.test(k.name) ? 'в печи' : 'в сундуке';
+      // рядом ещё не открытые - сказать, чтобы смотрела все, а не один (22.11: открыла один сундук с горшками и ушла)
+      const seen = (tb._peeked = tb._peeked || new Map()); seen.set(`${v.x},${v.y},${v.z}`, Date.now());
+      let more = '';
+      try { more = b.findBlocks({ point: v, maxDistance: 8, count: 12, matching: (bl) => /^(chest|trapped_chest|barrel|.*shulker_box)$/.test(bl.name) }).filter((p) => !(Date.now() - (seen.get(`${p.x},${p.y},${p.z}`) || 0) < 600000)).slice(0, 5).map((p) => `${b.blockAt(p).name.replace(/_/g, ' ')} ${p.x} ${p.y} ${p.z}`).join('; '); } catch {}
+      return `${what} ${v.x} ${v.y} ${v.z}: ${list || 'пусто'}${tb.skills.mine(v) ? ' (мой)' : ''}${more ? `; рядом ещё не открыты: ${more}` : ''}`;
     } finally { c.close(); }
   }
   if (o.kind === 'furnace' || o.kind === 'table') return `${o.what}: ${o.how}`;
