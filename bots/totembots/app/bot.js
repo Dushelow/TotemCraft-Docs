@@ -213,6 +213,7 @@ class TotemBot extends EventEmitter {
       this.ev('смерть', {});
       // опасное место: путь будет его обходить сутки (память опасности, как у мобов и NPC)
       if (this.memory) { const dd = this.memory.data.danger = (this.memory.data.danger || []).filter((x) => Date.now() - x.at < 86400000); dd.push({ ...this.deathPoint, dim: this.dimName() }); if (dd.length > 50) dd.shift(); this.memory.save(); }
+      try { this.zoneDeath(this.deathPoint); } catch (e) { this.log('зона смерти: ' + e.message); }
       if (this.memory) this.memory.journal(this.opts.name, `умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z} (${this.dimName()})`);
       this.cancel();
       // после возрождения (spawn) - забрать вещи, как waypoint смерти в Baritone
@@ -485,6 +486,7 @@ class TotemBot extends EventEmitter {
     this.tick('torches', () => this.torchTick());
     this.tick('hands', () => this.handsTick());
     this.tick('reflexes', () => this.reflexTick());
+    this.tick('zones', () => this.zonesTick());   // запретные и опасные зоны (zones.js)
     this.tick('water', () => this.shoreTick());
     this.tick('companion', () => this.companionTick());
     this.tick('lifeview', () => this.lifeTick());   // песочница, жесты, реплики (companion.js)
@@ -668,15 +670,9 @@ class TotemBot extends EventEmitter {
     const m = this.memory;
     if (!m) return 0;
     const dim = this.dimName();
-    // где недавно погиб - обходить, если есть другой путь (дороже, но не запрещено)
-    for (const x of m.data.danger || []) if (x.dim === dim && Date.now() - x.at < 86400000 && Math.abs(x.x - block.position.x) < 5 && Math.abs(x.z - block.position.z) < 5 && Math.abs(x.y - block.position.y) < 5) return 25;
-    if (!this.forbidden || this.forbidden.version !== m.version) {
-      this.forbidden = { version: m.version, list: Object.values(m.data.places).filter((p) => /нельзя|чуж|не заход|запрет/i.test(p.name + ' ' + (p.note || ''))) };
-    }
-    for (const p of this.forbidden.list) {
-      if (p.dim === dim && Math.abs(p.x - block.position.x) < 16 && Math.abs(p.z - block.position.z) < 16) return 100;
-    }
-    return 0;
+    // зоны (zones.js): запрет - клетка закрыта, опасно (смерть, блейзы) - дорого
+    void dim;
+    return this.zoneCost(block.position.x + 0.5, block.position.z + 0.5);
   }
 
   // Сам замечает и запоминает: порталы рядом, новых игроков. Раз в 10 с, дёшево.
@@ -1091,6 +1087,8 @@ class TotemBot extends EventEmitter {
   async goto(goal, tok, timeoutMs = 120000) {
     const b = this.bot;
     const until = Date.now() + timeoutMs;
+    // цель в запретной зоне - не идти вовсе (22.11: шла к жителям в Главный замок и гибла от блейзов)
+    if (goal.x !== undefined && goal.z !== undefined && !goal.entity) this.zoneGuard(goal.x, goal.z);
     // бой (отбежать от крипера, отступить к хозяину) перехватывает путь - после него идти дальше, до 6 раз
     // сторож: 20 с без приближения к цели хотя бы на блок - пути отсюда нет, бросить (бот упирался в корпус корабля)
     const gx = goal.x !== undefined ? goal.x : goal.entity ? null : null, gz = goal.z;
@@ -1489,6 +1487,7 @@ class TotemBot extends EventEmitter {
     if (plain.length === 1 && plain[0].act === 'follow') return this.follow(plain[0].who);
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
     // жест и «встать» - не дело: текущее не прерывают
+    if (plain.length && plain.every((a) => a.act === 'zone')) return plain.map((a) => this.zoneAct(a)).join('; ');   // зона - не дело, текущее не прерывает
     if (plain.length === 1 && plain[0].act === 'quiet') { this.opts.quiet = plain[0].on !== false; if (this.onQuiet) this.onQuiet(this.opts.quiet); return this.opts.quiet ? 'тихий режим: в чат не пишу' : 'снова могу говорить в чат'; }
     if (plain.length && plain.every((a) => a.act === 'gesture' || a.act === 'stand')) { for (const a of plain) { if (a.act === 'gesture') await this.gesture(String(a.kind || 'привет').toLowerCase()); else await this.standUp(); } return plain.map((a) => a.act === 'gesture' ? 'показала жест «' + (a.kind || 'привет') + '»' : 'встала').join('; '); }
     // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
@@ -1632,7 +1631,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

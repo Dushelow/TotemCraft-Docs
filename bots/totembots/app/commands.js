@@ -85,6 +85,8 @@ const C = [
   ['note', 'fact,memo', 'текст', 'запомнить факт о сервере или мире', (a) => ({ act: 'remember', kind: 'fact', text: a[0] })],
   ['journal', 'diary,log', 'текст', 'записать в свой дневник', (a) => ({ act: 'remember', kind: 'journal', text: a[0] })],
   ['forget', 'forgetPlace', 'место', 'забыть место', (a) => ({ act: 'forget', kind: 'place', name: a[0] })],
+  ['forbidArea', 'noGo,forbid,dangerZone', 'название[, радиус]', 'запретная зона там, где стоит хозяин (он сказал «сюда не ходи»): путь туда больше не ведёт', (a) => ({ act: 'zone', on: true, name: a[0], radius: a[1] })],
+  ['allowArea', 'allow,unforbid', 'название', 'снять запретную зону (только по слову хозяина)', (a) => ({ act: 'zone', on: false, name: a[0] })],
   ['setGoal', 'goal,newGoal', 'текст', 'поставить себе цель (видна в [я], между делами продолжай её)', (a) => ({ act: 'goal', text: a[0] })],
   ['endGoal', 'goalDone,finishGoal', '', 'цель достигнута', () => ({ act: 'goal', done: true })],
 ];

@@ -26,7 +26,7 @@ const withTimeout = (p, ms, why) => Promise.race([p, new Promise((_, no) => setT
 class Trade {
   villagersNear(r = 24) {
     const me = this.bot.entity.position;
-    return Object.values(this.bot.entities).filter((e) => isVillager(e) && e.position.distanceTo(me) <= r && !/^(none|nitwit)$/.test(profession(e))).sort((a, b) => a.position.distanceTo(me) - b.position.distanceTo(me));
+    return Object.values(this.bot.entities).filter((e) => isVillager(e) && e.position.distanceTo(me) <= r && !/^(none|nitwit)$/.test(profession(e)) && !(this.zoneAt && this.zoneAt(e.position.x, e.position.z) && this.zoneAt(e.position.x, e.position.z).kind === 'запрет')).sort((a, b) => a.position.distanceTo(me) - b.position.distanceTo(me));
   }
   villagerKey(e) { return `${this.dimName()}:${Math.round(e.position.x)},${Math.round(e.position.y)},${Math.round(e.position.z)}`; }
 
