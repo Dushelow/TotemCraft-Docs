@@ -599,7 +599,7 @@ class QwenBridge {
     w.on('unresponsive', () => this.plog('страница: ЗАВИСЛА (не отвечает)'));
     w.on('responsive', () => this.plog('страница: снова отвечает'));
     w.on('render-process-gone', (_e, d) => this.plog('страница: ПРОЦЕСС УПАЛ', d && d.reason));
-    w.on('console-message', (_e, level, msg) => { if (level >= 3 || /error|failed|limit|captcha|401|403|429|5\d\d/i.test(String(msg))) this.plog('консоль страницы', `${level >= 3 ? 'ошибка: ' : ''}${msg}`); });
+    w.on('console-message', (_e, level, msg) => { msg = String(msg || ''); if (/^Error$|adjust-sdk|React error #418/.test(msg.trim()) || (this._lastCon === msg && Date.now() - this._lastConAt < 10000)) return; this._lastCon = msg; this._lastConAt = Date.now(); if (level >= 3 || /error|failed|limit|captcha|401|403|429|5\d\d/i.test(String(msg))) this.plog('консоль страницы', `${level >= 3 ? 'ошибка: ' : ''}${msg}`); });
   }
 
   async _ask(chatId, text, model, mode, image) {

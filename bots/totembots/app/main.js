@@ -362,6 +362,7 @@ let projectState = { status: '', syncedVersion: -1, syncedAt: 0, busy: false };
 function projectEnabled() { return !cfg.qwenProject || cfg.qwenProject.enabled !== false; }
 async function projectSync(force = false) {
   if (!projectEnabled() || projectState.busy || cfg.paused) return;
+  if (bridge && (bridge.resting || bridge.captcha)) return;   // лимит или проверка: не открывать проект зря (22.11: «начала новый проект на том же сайте»)
   if (!force && ![...live.values()].some((l) => l.body && l.body.status !== 'off')) return;   // до «Старт» - не трогать Qwen
   const memVer = [...memories.values()].reduce((s, m) => s + m.version, 0);
   if (!force && (memVer === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
@@ -675,11 +676,18 @@ ipcMain.handle('bot-chat', (_e, name) => {
 
 // Вход в любой сайт через настоящий Chrome: куки и localStorage - в окно сайта; сайт отмечается «вошёл»
 ipcMain.handle('site-login-chrome', (_e, site) => loginSite(site));
+// Вход через Chrome - каждый раз чистый профиль (22.11: Google сразу входил прежним аккаунтом, другой не выбрать).
+// Прежний профиль - в .old (на случай отката), старый .old убирается.
+function freshProfile(dir) {
+  try { fs.rmSync(dir + '.old', { recursive: true, force: true }); } catch {}
+  try { if (fs.existsSync(dir)) fs.renameSync(dir, dir + '.old'); } catch {}
+  return dir;
+}
 async function loginSite(site) {
   const status = (t) => win.webContents.send('qwen-login-status', t);
   if (!SITES[site]) return { ok: false };
   try {
-    const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login-' + site), status, site);
+    const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-' + site)), status, site);
     const v = webView(site), ses = v.webContents.session;
     for (const c of cookies) {
       try { await ses.cookies.set({ url: 'https://' + c.domain.replace(/^\./, '') + c.path, name: c.name, value: c.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: SAME_SITE[c.sameSite] || 'unspecified', ...(c.expires > 0 ? { expirationDate: c.expires } : {}) }); } catch {}
@@ -701,7 +709,7 @@ ipcMain.handle('deepseek-login-chrome', () => loginDeepseek());
 async function loginDeepseek() {
   const status = (t) => win.webContents.send('qwen-login-status', t);
   try {
-    const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login-deepseek'), status, 'deepseek');
+    const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-deepseek')), status, 'deepseek');
     const ds = dsView.webContents.session;
     for (const c of cookies) {
       await ds.cookies.set({ url: 'https://' + c.domain.replace(/^\./, '') + c.path, name: c.name, value: c.value, domain: c.domain,
@@ -722,7 +730,7 @@ ipcMain.handle('qwen-login-chrome', () => loginQwen());
 async function loginQwen() {
   const status = (t) => win.webContents.send('qwen-login-status', t);
   try {
-    const { cookies, token } = await loginViaChrome(path.join(app.getPath('userData'), 'chrome-login'), status);
+    const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login')), status);
     const qs = qwen.webContents.session;
     for (const c of cookies) {
       await qs.cookies.set({

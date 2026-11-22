@@ -44,7 +44,7 @@ class Router {
       return p && k ? { id, name: p.name, url: p.url, key: k, model: (c.models || {})[id] || p.model, claude: !!p.claude } : null;
     }).filter(Boolean);
     // выбран вручную (панель, «Мозг») - он первый, остальные запасные только если включено «запасные»
-    if (c.pin) { const i = list.findIndex((x) => x.id === c.pin); if (i > 0) list.unshift(...list.splice(i, 1)); if (i >= 0 && c.pinOnly) list.splice(1); }
+    if (c.pin) { const i = list.findIndex((x) => x.id === c.pin); if (i > 0) list.unshift(...list.splice(i, 1)); if (i >= 0 && c.pinOnly && !this.isResting(c.pin)) list.splice(1); }   // выбранный упёрся в лимит - запасные всё равно (22.11: бот молчал час при живых DeepSeek и ChatGPT)
     return list.length ? list : [{ id: 'qwen', name: 'Qwen (сайт)' }];
   }
 
