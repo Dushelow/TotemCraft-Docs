@@ -156,7 +156,7 @@ function renderStart() {
     cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="pri sm" data-go="brains">Войти</button>'),
-    st.bots.length ? check(picked.length ? 'ok' : 'warn', 'Кто заходит', picked.length ? '' : 'никто не отмечен', `<div class="picks">${st.bots.map((b) => `<span class="pickrow">${esc(b.name)} <label class="sw" title="${b.pick ? 'Заходит по кнопке «Запустить»' : 'Не заходит по кнопке «Запустить» (включить можно вручную)'}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span><span class="sl">в запуске</span></label></span>`).join('')}</div>`)
+    st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Запускать: ${picked.map((b) => b.name).join(', ')}` : 'Не выбран ни один бот', picked.length ? 'кто зайдёт по кнопке ниже' : 'включите «Запускать» у нужных ботов') + `<div class="launchlist">${st.bots.map((b) => `<div class="lrow"><span class="ava sm">${esc((b.name[0] || '?').toUpperCase())}</span><span class="ln">${esc(b.name)}</span><label class="sw" title="Запускать ${esc(b.name)} кнопкой «Запустить»"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span></label></div>`).join('')}</div>`
       : check('warn', 'Ботов нет', 'добавьте первого внизу: «Добавить бота»'),
   ];
   const html = out.join('');
@@ -273,7 +273,7 @@ function botCard(b) {
   const power = off && !st.running ? '' : off ? `<button data-a="start" class="go sm" title="Зайти на сервер">${icon('play', 14)}Включить</button>`
     : `<button data-a="stop" class="ghost sm" title="Бот выйдет с сервера">${icon('power', 14)}Выключить</button>`;
   const head = `<div class="bothead"><div class="ava">${esc(b.name[0] || '?').toUpperCase()}<span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span></div>
-    <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}<label class="sw" title="${b.pick ? 'Заходит по кнопке «Запустить»' : 'Не заходит по кнопке «Запустить» (включить можно вручную)'}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span><span class="sl">в запуске</span></label></div>`;
+    <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}<label class="sw" title="${b.pick ? 'Запускается кнопкой «Запустить» и при автозапуске' : 'Кнопкой «Запустить» не запускается (включить можно вручную в карточке)'}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span><span class="sl">Запускать</span></label></div>`;
   const stats = on ? `<div class="meters">${meter('heart', s.health, 'здоровье')}${meter('drumstick', s.food, 'еда')}
     <div class="doing">${icon(s.mode === 'paused' ? 'circle-pause' : s.mode === 'hold' ? 'hand' : s.mode === 'follow' ? 'footprints' : 'activity', 14)}<b>${esc(doingText(s, on))}</b></div></div>` : '';
   // поручение: шаги с отметками - видно, где бот и что не вышло; продолжить и отменить - тут же
@@ -400,7 +400,7 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'remove' && ask(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
 });
 // тумблер «в запуске» в карточке бота
-$('bots').addEventListener('change', (e) => { const n = e.target.dataset && e.target.dataset.pick; if (n) { e.stopPropagation(); act(async () => { await T.botPick({ name: n, pick: e.target.checked }); lastHtml = ''; }, null, e.target.checked ? `${n} заходит по «Запустить»` : `${n} не заходит по «Запустить»`); } });
+$('bots').addEventListener('change', (e) => { const n = e.target.dataset && e.target.dataset.pick; if (n) { e.stopPropagation(); act(async () => { await T.botPick({ name: n, pick: e.target.checked }); lastHtml = ''; }, null, e.target.checked ? `${n}: запускается вместе со всеми` : `${n}: не запускается вместе со всеми`); } });
 $('bots').addEventListener('input', (e) => { if (e.target.dataset.f === 'fd') { const c = e.target.closest('.bot'); c.querySelector('[data-f="fdv"]').textContent = e.target.value; } });
 $('bots').addEventListener('change', (e) => {
   if (e.target.dataset.f === 'aliases') { const name = e.target.closest('.bot').dataset.name; act(async () => { await T.botChatMode({ name, aliases: e.target.value }); lastHtml = ''; }, null, 'прозвища сохранены'); return; } if (e.target.dataset.f === 'fd') { const name = e.target.closest('.bot').dataset.name; e.target.blur(); act(async () => { await T.botFollowDist({ name, dist: +e.target.value }); lastHtml = ''; }); } });
@@ -865,13 +865,13 @@ setInterval(async () => {
 function lifeSet(key, html) { if (LIFE.sig[key] === html) return; LIFE.sig[key] = html; const el = LIFE.wrap.querySelector(`[data-l="${key}"]`); if (el) el.innerHTML = html; }
 function lifeTab(b) {
   const v = b.state && b.state.life;
-  return `<div class="lifeteaser"><div><b>${v ? esc(v.doing) : 'бот не в игре'}</b><div class="muted">${v ? esc(v.mood.w) + ' · ' + esc(v.time) + ' · ' + esc(v.weather) : 'запустите его, и здесь появится её жизнь'}</div></div>
-    <button class="pri" data-a="lifeOpen">${icon('eye', 15)}Смотреть её жизнь</button></div>`;
+  return `<div class="lifeteaser"><div><b>${v ? esc(v.doing) : 'бот не в игре'}</b><div class="muted">${v ? esc(v.mood.w) + ' · ' + esc(v.time) + ' · ' + esc(v.weather) : 'запустите бота, и здесь появится его жизнь'}</div></div>
+    <button class="pri" data-a="lifeOpen">${icon('eye', 15)}Открыть «Жизнь» ${esc(b.name)}</button></div>`;
 }
 function lifeDraw() {
   if (!LIFE.open || !LIFE.wrap) return;
   const b = st.bots.find((x) => x.name === selected), v = b && b.state && b.state.life;
-  if (!v) { lifeSet('doinghud', 'бот не в игре - запустите его, и здесь появится её жизнь'); return; }
+  if (!v) { lifeSet('doinghud', 'бот не в игре - запустите бота, и здесь появится его жизнь'); return; }
   if (v.skin && LIFE.skins[v.skin] === undefined) { LIFE.skins[v.skin] = ''; T.botSkin(v.skin).then((d) => { LIFE.skins[v.skin] = d || ''; LIFE.sig.face = null; }).catch(() => {}); }
   const skin = LIFE.skins[v.skin] || '';
   // шапка
@@ -929,7 +929,7 @@ function lifeDraw() {
       if (d !== day) { day = d; body += `<div class="lday">${d}</div>`; }
       body += `<div class="lent ${LOGKIND(e)}"><span class="lt">${new Date(e.t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span><span class="ld">${icon(e.i, 13)}</span><span>${esc(e.x)}</span></div>`;
     }
-    body = `<div class="llog">${body || '<div class="lmuted">Журнал пишется сам, по её делам.</div>'}</div>`;
+    body = `<div class="llog">${body || '<div class="lmuted">Журнал пишется сам, по делам бота.</div>'}</div>`;
   }
   lifeSet('tabbody', body);
   iconsFetch();

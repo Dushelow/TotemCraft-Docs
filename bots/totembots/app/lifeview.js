@@ -32,6 +32,10 @@ const DIARY = [
   [/^\[сервер\] (\S+) joined the game/, (m) => ['user', `${m[1]} зашёл на сервер`]],
 ];
 
+// женские формы дневника -> мужские (бот-парень)
+const MASC = [[/присела/g, 'присел'], [/бросила/g, 'бросил'], [/подарила/g, 'подарил'], [/погибла/g, 'погиб'], [/отбила/g, 'отбил'], [/пошла/g, 'пошёл'], [/отметила/g, 'отметил'], [/удержалась/g, 'удержался'], [/поставила/g, 'поставил'], [/сказала/g, 'сказал'], [/села/g, 'сел'], [/ранена/g, 'ранен'], [/голодна/g, 'голоден'], [/насторожена/g, 'насторожен'], [/рада/g, 'рад'], [/сонная/g, 'сонный'], [/занята/g, 'занят'], [/спокойна/g, 'спокоен'], [/своим/g, 'своим']];
+const masc = (t) => MASC.reduce((x, [re, to]) => x.replace(re, to), String(t));
+
 class LifeView {
   /** Из log(): важное - в дневник (до 300 записей, переживают перезапуск в памяти). */
   diaryFrom(text) {
@@ -40,6 +44,7 @@ class LifeView {
       if (!m) continue;
       const e = f(m);
       if (!e) return;
+      if (this.opts && this.opts.gender === 'm') e[1] = masc(e[1]);   // бот-парень: «присел», «погиб», «отметил»
       const D = (this.diary = this.diary || (this.memory && this.memory.data.diary) || []);
       const last = D[D.length - 1];
       if (last && last.x === e[1] && Date.now() - last.t < 60000) return;   // то же самое подряд
@@ -74,7 +79,8 @@ class LifeView {
   }
 
   /** Настроение одним словом и цветом по нуждам и событиям. */
-  moodNow() {
+  moodNow() { const m = this._moodNow(); if (this.opts && this.opts.gender === 'm') m.w = masc(m.w); return m; }
+  _moodNow() {
     const b = this.bot, now = Date.now();
     const th = this.threat ? this.threat().level : 'спокойно';
     const D = this.diary || [];
@@ -101,7 +107,7 @@ class LifeView {
     try { skin = (me && me.skinData && me.skinData.url) || ''; } catch {}
     const t = b.time && b.time.timeOfDay;
     const doing = (this.sandbox && this.sandbox.phase === 'at' && this.sandbox.what) || (this.seat && 'сидит рядом') || this.task
-      || (this.mode === 'follow' ? `идёт за ${this.followName}` : this.mode === 'hold' ? 'ждёт на месте' : this.mode === 'life' ? 'занята своим' : 'стоит, смотрит по сторонам');
+      || (this.mode === 'follow' ? `идёт за ${this.followName}` : this.mode === 'hold' ? 'ждёт на месте' : this.mode === 'life' ? (this.opts && this.opts.gender === 'm' ? 'занят своим' : 'занята своим') : 'стоит, смотрит по сторонам');
     const A = (this.memory && this.memory.data.affinity) || {};
     const rel = Object.entries(A).map(([n, e]) => ({ n, v: e.v, last: e.last })).sort((a, c) => Math.abs(c.v) - Math.abs(a.v)).slice(0, 8);
     let where = '';

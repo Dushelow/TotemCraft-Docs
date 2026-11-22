@@ -116,7 +116,9 @@ function startBot(name) {
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
   const memory = memFor(bc.name);   // своя память бота
-  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet });
+  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet,
+    // пол персонажа - для текстов «Жизни» и дневника: из настройки, иначе по характеру (девушка - женский), Alex без характера - девушка
+    gender: bc.gender || (/девушк|женщин|девочк|она|о себе в женском/i.test(bc.persona || '') || (!bc.persona && /^alex$/i.test(bc.name)) ? 'f' : 'm') });
   body.onQuiet = (v) => { bc.quiet = !!v; saveCfg(); };
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
   body.onCombat = (m) => { bc.combat = m; saveCfg(); };
