@@ -120,8 +120,12 @@ function face(tb, dx, dy, dz, usePitch) {
 /** Запас воздуха 0-20: от сервера, но не больше своего счёта времени под водой (сервер может не слать). */
 function airLeft(tb) {
   const b = tb.bot, now = Date.now();
-  if (!tb._underSince) return b.oxygenLevel ?? 20;
-  return Math.min(b.oxygenLevel ?? 20, Math.max(0, 20 - (now - tb._underSince) / 750));
+  // сервер шлёт запас (видели его ниже 20) - верить ему: свой счёт сбивался, когда голова у самой поверхности
+  // (плывёт в позе плавания - то под водой, то над), и бот всплывал зря
+  if (typeof b.oxygenLevel === 'number' && b.oxygenLevel < 20) tb._oxyLive = true;
+  if (tb._oxyLive) return b.oxygenLevel;
+  if (!tb._underSince) return 20;
+  return Math.max(0, 20 - (now - tb._underSince) / 750);
 }
 
 /**
@@ -180,4 +184,19 @@ function airTick(tb) {
   return true;
 }
 
-module.exports = { swimTick, airTick, swimPhysics, nextPoint, SWIM_FAST, SWIM_SURF };
+/** Стоит в воде без пути (ждёт, смотрит на хозяина) - поплавком: прыжок, когда осел (22.11, журнал движения: висел у
+ *  борта без единой клавиши, медленно тонул и смотрел вверх на хозяина). */
+function floatTick(tb) {
+  const b = tb.bot, e = b.entity;
+  if (!e || b.vehicle || b.pathfinder.isMoving()) return false;
+  const f = e.position.floored();
+  if (!isWater(b, f) && !isWater(b, f.offset(0, 1, 0))) { if (tb._floating) { tb._floating = false; b.setControlState('jump', false); } return false; }
+  let surf = 0; for (let k = 1; k < 30 && isWater(b, f.offset(0, k, 0)); k++) surf = k;
+  const topY = f.y + surf + 0.89;
+  tb._floating = true;
+  b.setControlState('forward', false); b.setControlState('sprint', false);
+  b.setControlState('jump', e.position.y < topY - 1.0);
+  return true;
+}
+
+module.exports = { swimTick, airTick, floatTick, swimPhysics, nextPoint, SWIM_FAST, SWIM_SURF };

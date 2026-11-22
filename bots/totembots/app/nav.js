@@ -253,7 +253,18 @@ function install(mv, bot) {
     const ceiled = (x, y, z) => { for (let yy = y + 1; yy < y + 24; yy++) { if (waterAt(x, yy, z)) continue; return cell(x, yy, z).boxes.length > 0; } return true; };
     // из воды - на лиану или лестницу (корабль, стена, колодец): дальше по ним вверх ведёт обычный модуль пути
     { const up = cell(node.x, node.y + 1, node.z); const ub = up.b || blk(node.x, node.y + 1, node.z);
-      void ub; const CL = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/;
+      void ub;
+      // из воды на берег или уступ на блок выше (модуль пути из воды не выпрыгивает - «cant jump from water»): так
+      // путь из моря шёл только «к ближайшей точке» и обрывался у борта (22.11, журнал движения: путь до днища и стоп)
+      if (!waterAt(node.x, node.y + 1, node.z)) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const up of [0, 1]) {
+        const x = node.x + ax, z = node.z + az, y = node.y + up, k = `${x},${y},${z}`;
+        if (have.has(k) || waterAt(x, y, z)) continue;
+        const under = cell(x, y - 1, z), at = cell(x, y, z), head = cell(x, y + 1, z);
+        if (!under.boxes.length || under.bad || at.boxes.length || head.boxes.length || at.bad) continue;
+        if (up && cell(node.x, node.y + 2, node.z).boxes.length) continue;   // над головой низко - не выпрыгнуть
+        have.add(k); out.push(new Move(x, y, z, node.remainingBlocks, 2 + up, [], [])); break;
+      }
+      const CL = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/;
       for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) for (const up of [1, 2]) {
         const x = node.x + ax, z = node.z + az, y = node.y + up, k = `${x},${y},${z}`;
         const v = blk(x, y, z);
@@ -279,7 +290,15 @@ function install(mv, bot) {
   mv.getNeighbors = function (node) {
     let r;
     try { r = navNeighbors(node); } catch (e) { if (bot && bot._tb && bot._tb.fault) bot._tb.fault('nav', e); r = base(node); }
-    try { const have = new Set(r.map((m) => `${m.x},${m.y},${m.z}`)); return r.concat(swimMoves(node, have)); } catch { return r; }
+    try {
+      const have = new Set(r.map((m) => `${m.x},${m.y},${m.z}`)), extra = swimMoves(node, have);
+      // под лианой или лестницей (начинается на уровне головы) - прыжок вверх в неё: лезть можно, только когда
+      // ноги в лиане (так в игре), а модуль пути без этого считал, что вверх нельзя
+      const CLB = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/;
+      const up = blk(node.x, node.y + 1, node.z), feet = blk(node.x, node.y, node.z);
+      if (up && CLB.test(up.name) && !(feet && CLB.test(feet.name)) && !have.has(`${node.x},${node.y + 1},${node.z}`) && !cell(node.x, node.y + 2, node.z).boxes.length) extra.push(new Move(node.x, node.y + 1, node.z, node.remainingBlocks, 2, [], []));
+      return r.concat(extra);
+    } catch { return r; }
   };
   const navNeighbors = function (node) {
     if (Date.now() - cacheAt > 3000) { cache.clear(); cacheAt = Date.now(); ox = node.x; oz = node.z; cache.ox = ox; cache.oz = oz; }

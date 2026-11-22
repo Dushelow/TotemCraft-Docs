@@ -10,7 +10,9 @@
 //   опасно - путь обходит, если можно (дорого), дела туда идут, но мозг знает. Ставит смерть (7 дней) и блейз в
 //            обычном мире (их там ставят как охрану).
 // Снимает только хозяин («сюда можно», !allowArea). Внутри зоны (зашла до запрета) - выйти можно, вглубь - нет.
-const NO_SIGN = /вход\s*запрещ|не\s*входить|не\s*заходить|запрещено|закрыт(ая|о)?\s*территори|посторонним|no\s*entry|keep\s*out|охраня/i;
+// только запрет ВХОДА: «запрещено воровство, PvP» на спавне - правила сервера, а не закрытая территория (22.11: бот
+// закрыл себе площадь у спавна и всё время «выходил» из неё, а не шёл за хозяином)
+const NO_SIGN = /вход\s*(строго\s*)?запрещ|не\s*входить|не\s*заходить|посторонним|закрыт(ая|о)\s*территори|без\s*спроса\s*не\s*входить|no\s*entry|keep\s*out|private\s*property/i;
 
 // постройка: блоки, которых в природе нет (стены, полы, заборы); пашня и рельсы - нет (поле рядом с замком - не замок)
 const BUILT = /(_planks|_stairs|_slab|_fence|_fence_gate|_door|_trapdoor|glass|glass_pane|bricks|_brick|_wool|_carpet|_concrete|terracotta|_wall|bookshelf|lantern|torch|barrel|chest|_bed|ladder|polished_|smooth_|chiseled_|cut_|quartz_block|quartz_pillar|iron_bars|chain|_banner|stripped_|cobblestone|purpur|prismarine|_copper|copper_|tuff_bricks|mud_bricks|end_stone_bricks|blackstone_bricks|sea_lantern|spawner|_bars)$/;
@@ -79,7 +81,7 @@ class Zones {
     }
     const now = Date.now();
     const Z = m.data.zones;
-    for (let i = Z.length - 1; i >= 0; i--) if (Z[i].until && now > Z[i].until) Z.splice(i, 1);
+    for (let i = Z.length - 1; i >= 0; i--) if ((Z[i].until && now > Z[i].until) || (Z[i].by === 'табличка' && !NO_SIGN.test(Z[i].name))) Z.splice(i, 1);   // и табличные зоны по старому правилу
     return Z;
   }
 

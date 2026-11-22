@@ -1,6 +1,6 @@
 // Отладка движения (22.11, владелец: «логируй движения и мир рядом, как он видит; не всю историю, последние события»).
 // local/logs/<бот>.move.log перезаписывается раз в 2 с: последние 60 с движения (4 строки в секунду) и срез мира вокруг
-// бота (9x9, от 3 бл. ниже ног до 4 выше), как его видит тело. При застревании, смерти и «нет пути» снимок
+// бота (9x9, от 3 бл. ниже ног до 8 выше), как его видит тело. При застревании, смерти и «нет пути» снимок
 // копируется в <бот>.move.<время>.log (последние 10 таких) - чтобы разобрать именно тот случай.
 const fs = require('fs');
 const path = require('path');
@@ -33,7 +33,8 @@ class MoveTrace {
     const ctl = ['forward', 'back', 'left', 'right', 'jump', 'sprint', 'sneak'].map((k, i) => (c(k) ? 'fblrjSn'[i] : '-')).join('');
     let goal = '';
     try { const g = b.pathfinder.goal; if (g) goal = g.constructor.name + (g.x !== undefined ? ` ${Math.floor(g.x)},${Math.floor(g.y ?? 0)},${Math.floor(g.z)}` : g.entity ? ' ' + (g.entity.username || g.entity.name) : ''); } catch {}
-    const pathS = ((tb.lastPath || {}).path || []).slice(0, 3).map((n) => `${Math.floor(n.x)},${Math.floor(n.y)},${Math.floor(n.z)}${n.swim ? 's' : ''}${n.leap ? 'L' : ''}`).join(' ');
+    const st = (tb.lastPath || {}).status || '';
+    const pathS = (st && st !== 'success' ? `[${st}] ` : '') + ((tb.lastPath || {}).path || []).slice(0, 3).map((n) => `${Math.floor(n.x)},${Math.floor(n.y)},${Math.floor(n.z)}${n.swim ? 's' : ''}${n.leap ? 'L' : ''}`).join(' ');
     let headIn = false; try { const h = b.blockAt(p.offset(0, 1.6, 0)); headIn = !!(h && /water/.test(h.name)); } catch {}
     const line = `${new Date().toISOString().slice(11, 23)} ${p.x.toFixed(2)} ${p.y.toFixed(2)} ${p.z.toFixed(2)} v${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)} yaw${e.yaw.toFixed(2)} p${e.pitch.toFixed(2)} ${ctl}`
       + ` ${e.onGround ? 'земля' : 'воздух'}${e.isInWater ? ' вода' : ''}${headIn ? ' голова-в-воде' : ''}${tb._pose ? ' поза' : ''} воздух${b.oxygenLevel ?? '?'}`
@@ -48,7 +49,7 @@ class MoveTrace {
     const b = this.tb.bot, e = b.entity, f = e.position.floored(), out = [];
     const ents = {};
     for (const x of Object.values(b.entities)) { if (!x.position || x === e) continue; const q = x.position.floored(); ents[`${q.x},${q.y},${q.z}`] = x.type === 'player' ? 'P' : 'M'; }
-    for (let dy = 4; dy >= -3; dy--) {
+    for (let dy = 8; dy >= -3; dy--) {
       const rows = [];
       for (let dz = -4; dz <= 4; dz++) {
         let r = '';

@@ -462,7 +462,7 @@ class TotemBot extends EventEmitter {
       this.lookTick();
       if (this.guard) this.guard.combatTick();
       // своё плавание (swim.js); не взялось (суша впереди, нет пути) - старая логика воды и выхода на берег
-      { const sw = require('./swim'); sw.swimPhysics(this); if (!sw.airTick(this) && !sw.swimTick(this)) this.swimTick(); }   // физика пловца как в игре; воздух кончается - всплыть важнее пути   // воздух кончается - всплыть важнее пути
+      { const sw = require('./swim'); sw.swimPhysics(this); if (!sw.airTick(this) && !sw.swimTick(this) && !sw.floatTick(this)) this.swimTick(); }   // физика пловца как в игре; воздух кончается - всплыть важнее пути   // воздух кончается - всплыть важнее пути
       this.waterExitTick();
       try { this.dodgeTick(); } catch {}   // уворот от стрел и огненных шаров (chores.js)
     });

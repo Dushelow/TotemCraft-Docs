@@ -631,7 +631,7 @@ class Brain {
         // в 4 бл. ушли в мысли - в игре тишина, а в чате Qwen текст). Признаки: вопрос, имя хозяина или обращение
         const me = this.body.bot && this.body.bot.entity;
         const ownerNear = me && this.cfg().masters.some((n) => { const e = this.body.bot.players[n] && this.body.bot.players[n].entity; return e && e.position.distanceTo(me.position) <= 16; });
-        const toOwner = ownerNear && (/\?\s*$/.test(r.say) || this.cfg().masters.some((n) => r.say.toLowerCase().includes(n.toLowerCase().slice(0, 4))) || /^(эй|слушай|смотри|хозяин|отец|мам|пап|брат|друг)[\s,!]/i.test(r.say));
+        const toOwner = ownerNear && (/\?\s*$/.test(r.say) || this.cfg().masters.some((n) => r.say.toLowerCase().includes(n.toLowerCase().slice(0, 4))) || /^(эй|слушай|смотри|хозяин|отец|мам|пап|брат|друг|привет|здравствуй|здорово|хай|йо|салют|доброе|добрый)([\s,!.]|$)/i.test(r.say));   // и приветствие хозяину рядом
         const meant = (!!r.channel || toOwner) && (Date.now() - (this.selfSaidAt || 0) > 30000);
         if (!spoken && !report && !meant) { this.log('(подумала, вслух не сказала) ' + r.say); this.unsaid(r.say, 'это была мысль: без вопроса человека и без «рядом:» в чат не уходит'); r.say = ''; }
         else if (!spoken && !report) this.selfSaidAt = Date.now();
