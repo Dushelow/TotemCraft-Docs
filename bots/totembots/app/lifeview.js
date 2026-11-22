@@ -115,7 +115,7 @@ class LifeView {
       held: b.heldItem ? b.heldItem.name : '',
       doing, mood: this.moodNow(), dim: this.dimName(), pos: [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)], where, biome,
       time: t === undefined ? '' : t < 1000 || t > 23000 ? 'рассвет' : t < 6000 ? 'утро' : t < 11000 ? 'день' : t < 13000 ? 'вечер' : 'ночь',
-      weather: b.thunderState > 0 ? 'гроза' : b.isRaining ? 'дождь' : 'ясно',
+      weather: (() => { const p = this.precip ? this.precip() : ''; return !p ? 'ясно' : (b.thunderState || 0) > 0.3 ? 'гроза' : p; })(),
       near: Object.values(b.players).filter((x) => x.entity && x.username !== b.username && x.entity.position.distanceTo(p) < 32).map((x) => x.username),
       thoughts: (this.thoughts || []).slice(-8).reverse(),
       diary: (this.diary || (this.memory && this.memory.data.diary) || []).slice(-60).reverse(),

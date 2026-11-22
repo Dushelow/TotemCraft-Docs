@@ -715,7 +715,30 @@ async function loginQwen() {
   }
 }
 
-app.whenReady().then(() => { loadCfg();
+// Начать с чистого листа (метка local/reset.flag, 22.11 «почистим ей базу, я по новой с ней играю»): копия в
+// local/backup-<время>/, затем пустая память (места, люди, факты, дневник, симпатии, сундуки, жители), новые чаты
+// с нейросетью, старые журналы - в local/logs/old-<время>/. Карта мира и тропы остаются: это рельеф, а не воспоминания.
+function resetIfAsked() {
+  const flag = path.join(LOCAL, 'reset.flag');
+  if (!fs.existsSync(flag)) return;
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const ud = process.env.TOTEMBOTS_MEMORY || app.getPath('userData');
+  const bk = path.join(LOCAL, 'backup-' + stamp);
+  try {
+    fs.mkdirSync(bk, { recursive: true });
+    const mem = path.join(ud, 'memory');
+    if (fs.existsSync(mem)) { fs.cpSync(mem, path.join(bk, 'memory'), { recursive: true }); for (const f of fs.readdirSync(mem)) fs.rmSync(path.join(mem, f), { recursive: true, force: true }); }
+    try { fs.copyFileSync(cfgPath(), path.join(bk, 'config.json')); } catch {}
+    for (const b of cfg.bots || []) for (const k of ['chatId', 'chats', 'warmHash', 'chatTurns', 'eyesChat', 'voiceChat']) delete b[k];
+    saveCfg();
+    const logs = path.join(LOCAL, 'logs'), old = path.join(logs, 'old-' + stamp);
+    if (fs.existsSync(logs)) { fs.mkdirSync(old, { recursive: true }); for (const f of fs.readdirSync(logs)) if (/\.(log|jsonl)$/.test(f)) fs.renameSync(path.join(logs, f), path.join(old, f)); }
+    fs.rmSync(flag, { force: true });
+    fs.writeFileSync(path.join(bk, 'ЧТО ЭТО.txt'), 'Копия памяти и настроек перед сбросом ' + stamp + '. Вернуть: закрыть программу, скопировать memory обратно в ' + path.join(ud, 'memory') + ' и config.json в ' + cfgPath());
+  } catch (e) { try { fs.writeFileSync(path.join(LOCAL, 'reset-error.txt'), String(e && e.stack || e)); } catch {} }
+}
+
+app.whenReady().then(() => { loadCfg(); resetIfAsked();
   try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); travel.memory = memory; passCache = new (require('./passcache').PassCache)(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel.passCache = passCache; Menu.setApplicationMenu(null); createWindow();
   // боты заходят по кнопке «Старт»; сами - только если на стартовом экране отмечено «запускать сразу»
   if (cfg.startOnLaunch) setTimeout(() => { cfg.paused = false; for (const b of cfg.bots) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);

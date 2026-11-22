@@ -260,8 +260,12 @@ class Companion {
     };
     const t = b.time && b.time.timeOfDay, over = /overworld/.test(b.game.dimension || '');
     if (over && t !== undefined) { if (C.prevT !== undefined && C.prevT < 12300 && t >= 12300 && t < 13500 && say('ночь')) { C.prevT = t; return; } C.prevT = t; }
-    if (over && b.isRaining && !C.wasRain) { C.wasRain = true; if (say(b.thunderState > 0 ? 'гроза' : 'дождь')) return; }
-    if (!b.isRaining) C.wasRain = false;
+    // дождь - по силе дождя (флаг isRaining через ViaVersion залипает) и только при смене: при входе в игру не «пошёл»
+    // (22.11: зашла на сервер - «о, дождь пошёл», а дождя нет)
+    const rain = !!(this.precip && this.precip());
+    if (C.wasRain === undefined || now - (this.onlineAt || 0) < 20000) C.wasRain = rain;
+    else if (rain && !C.wasRain) { C.wasRain = true; if (say((b.thunderState || 0) > 0.3 ? 'гроза' : 'дождь')) return; }
+    else if (!rain) C.wasRain = false;
     if (b.health <= 8 && (C.prevHp || 20) > 8 && say('ранена')) { C.prevHp = b.health; return; }
     C.prevHp = b.health;
     const cr = Object.values(b.entities).find((e) => e.name === 'creeper' && e.position.distanceTo(b.entity.position) < 10 && (!this.seesEntity || this.seesEntity(e)));

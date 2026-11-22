@@ -651,7 +651,7 @@ class WorldMap {
     for (const pl of Object.values(b.players)) if (pl.entity && pl.username !== b.username) ents.push([pl.entity.position.x, pl.entity.position.z, 'player', pl.username]);
     const labels = [];
     if (tb.memory) for (const pl of Object.values(tb.memory.data.places || {})) if (pl.dim === tb.dimName() && !/^табличка/.test(pl.name) && inR(pl.x, pl.z)) labels.push([pl.x, pl.z, pl.name]);
-    return { dim, me: [p.x, p.y, p.z, b.entity.yaw], chunks, slice, poi, ents, labels, layer, total: Object.keys(m.chunks).length, colors: mg.COLORS, time: b.time ? b.time.timeOfDay : 6000, rain: !!b.isRaining };
+    return { dim, me: [p.x, p.y, p.z, b.entity.yaw], chunks, slice, poi, ents, labels, layer, total: Object.keys(m.chunks).length, colors: mg.COLORS, time: b.time ? b.time.timeOfDay : 6000, rain: !!(tb.precip && tb.precip()) };
   }
 
   view(tb, radiusChunks = 16) {

@@ -48,7 +48,7 @@ class Mood {
     const dt = Math.min(5, (now - m.at) / 1000); m.at = now;
     // к своему фону (за ~3 мин наполовину): днём чуть игривее, ночью чуть серьёзнее
     const t0 = b.time && b.time.timeOfDay, nightBase = t0 !== undefined && /overworld/.test(b.game.dimension || '') && t0 > 13000 && t0 < 23000;
-    const base = { open: 0.1, play: nightBase ? -0.15 : b.isRaining ? 0 : 0.1 }, k0 = 1 - Math.pow(0.996, dt);
+    const base = { open: 0.1, play: nightBase ? -0.15 : (this.precip && this.precip()) ? 0 : 0.1 }, k0 = 1 - Math.pow(0.996, dt);
     for (const k of ['open', 'play']) m[k] += (base[k] - m[k]) * k0;
     const th = this.threat ? this.threat().level : 'спокойно';
     if (th === 'опасно') this.moodShift('play', -0.05 * dt);
