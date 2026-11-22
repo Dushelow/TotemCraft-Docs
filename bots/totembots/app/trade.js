@@ -21,6 +21,30 @@ function profession(e) {
 function isBaby(e) { try { return (e.metadata || []).some((m, i) => i === 16 && m === true); } catch { return false; } }
 // кто что покупает за изумруды (ваниль): по своим вещам сразу идти к нужному жителю, а не обходить всех
 const BUYS = { farmer: /^(wheat|potato|carrot|beetroot|pumpkin|melon)$/, fisherman: /^(string|coal|cod|salmon|tropical_fish|pufferfish)$/, shepherd: /_wool$/, fletcher: /^(stick|flint|string|feather|tripwire_hook)$/, librarian: /^(paper|book|ink_sac|writable_book)$/, cartographer: /^(paper|glass_pane|compass)$/, cleric: /^(rotten_flesh|gold_ingot|rabbit_foot|scute|turtle_scute|glass_bottle|nether_wart)$/, butcher: /^(chicken|porkchop|rabbit|beef|mutton|dried_kelp_block|sweet_berries|coal)$/, leatherworker: /^(leather|rabbit_hide|flint)$/, mason: /^(clay_ball|stone|granite|andesite|diorite|quartz)$/, armorer: /^(coal|iron_ingot|lava_bucket|diamond)$/, toolsmith: /^(coal|iron_ingot|flint|diamond)$/, weaponsmith: /^(coal|iron_ingot|flint|diamond)$/ };
+/**
+ * Цель «встать, откуда дотянуться» (как GoalGetToBlock / rightClickOnArrival в Baritone): клетка, где глаза в 2,9 бл.
+ * от жителя и между ними нет стены. Не «в 2 бл. от него» - за прилавком и на поле такой клетки часто нет, а
+ * кликнуть через прилавок можно.
+ */
+class GoalReach {
+  constructor(bot, e) { this.bot = bot; this.e = e; this.at = e.position.clone(); this.x = e.position.x; this.y = e.position.y; this.z = e.position.z; }
+  heuristic(n) { return Math.max(0, Math.hypot(n.x + 0.5 - this.e.position.x, n.y + 1.62 - this.e.position.y - 1.4, n.z + 0.5 - this.e.position.z) - 2.6); }
+  isEnd(n) {
+    const ex = this.e.position.x, ey = this.e.position.y + 1.4, ez = this.e.position.z;
+    const sx = n.x + 0.5, sy = n.y + 1.62, sz = n.z + 0.5;
+    const d = Math.hypot(ex - sx, ey - sy, ez - sz);
+    if (d > 2.9) return false;
+    const V = this.e.position.constructor, steps = Math.ceil(d * 4);
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps, b = this.bot.blockAt(new V(Math.floor(sx + (ex - sx) * t), Math.floor(sy + (ey - sy) * t), Math.floor(sz + (ez - sz) * t)), false);
+      if (b && b.boundingBox === 'block' && !/_slab$|_stairs$|_fence|_wall$|_trapdoor$|carpet|composter/.test(b.name)) return false;   // прилавок (полублок, забор) не мешает - сквозь стену нельзя
+    }
+    return true;
+  }
+  hasChanged() { return this.e.position.distanceTo(this.at) > 1.5 && (this.at = this.e.position.clone(), true); }
+  isValid() { return true; }
+}
+
 const withTimeout = (p, ms, why) => Promise.race([p, new Promise((_, no) => setTimeout(() => no(new Error(why)), ms))]);
 
 class Trade {
@@ -37,9 +61,11 @@ class Trade {
     // Жители на поле и за прилавком: точно «рядом в 2 бл.» пути часто нет («No path to the goal», 22.11 - торговля
     // не вышла ни разу). Торговать можно с 3 бл.: сначала 2, нет пути - 3, и пробуем открыть, если дотянуться можно
     const d = () => e.position.distanceTo(this.bot.entity.position);
-    for (const r of [2, 3]) {
-      if (d() <= 3) break;
-      try { await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, r), tok, 12000); } catch (err) { if (this.isCancel(err)) throw err; }
+    const g = new GoalReach(this.bot, e);
+    if (!g.isEnd(this.bot.entity.position.floored())) {
+      try { await this.goto(g, tok, 15000); } catch (err) { if (this.isCancel(err)) throw err; }
+      // не вышло - запасной подход по-старому
+      if (d() > 3) for (const r of [2, 3]) { if (d() <= 3) break; try { await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, r), tok, 10000); } catch (err) { if (this.isCancel(err)) throw err; } }
     }
     this.check(tok);
     if (d() > 3.4) throw new Error(`не подойти к жителю (ближе ${d().toFixed(1)} бл. пути нет)`);

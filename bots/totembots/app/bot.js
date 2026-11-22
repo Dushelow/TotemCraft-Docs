@@ -161,6 +161,13 @@ class TotemBot extends EventEmitter {
           const dd = Math.min(Math.hypot(t.pos.x - x - 0.5, t.pos.z - z - 0.5), ahead);
           if (dd < 2 && Math.abs(t.pos.y - y) < 3) foe = Math.max(foe, t.name === 'creeper' ? 6 : 2.5); else if (dd < 4 && Math.abs(t.pos.y - y) < 3) foe = Math.max(foe, t.name === 'creeper' ? 3 : 1.4);
         }
+        // стрелки (скелет, блейз, ведьма, разбойник) бьют издалека: их клетки в 10 бл. дороже (как mobAvoidanceRadius у Baritone),
+        // а не только вплотную - 22.11 погибала от блейзов у замка, проходя мимо
+        for (const t of (this.tracks || new Map()).values()) {
+          if (t.kind !== 'enemy' || t.d > 32 || !/^(skeleton|stray|bogged|blaze|witch|pillager|ghast|breeze|evoker)$/.test(t.name)) continue;
+          const dd = Math.hypot(t.pos.x - x - 0.5, t.pos.z - z - 0.5);
+          if (dd < 10 && Math.abs(t.pos.y - y) < 10) foe = Math.max(foe, t.name === 'blaze' || t.name === 'ghast' ? 3 : 2);
+        }
         if (foe > 1) return foe;
         const d = require('./travel').dkey(bot.game.dimension);
         if (this.travel.trails.heat(d, x, y, z) >= 2) return 1;
