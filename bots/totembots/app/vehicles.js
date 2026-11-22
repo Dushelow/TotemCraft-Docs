@@ -117,6 +117,59 @@ class Vehicles {
   }
 
   /** Вести лодку или лошадь к точке (x, z). Лошадь идёт по взгляду; лодку поворачивают «влево/вправо». */
+  /**
+   * Езда (22.11: сел в лодку - и стоит): пока бот на чём-то сидит, физика mineflayer выключена совсем - нет ни сигнала
+   * «конец такта» (без него сервер 1.21.2+ не применяет ввод), ни движения лодки. А лодку в Minecraft двигает сам
+   * водитель у себя и шлёт серверу её место (vehicle_move). Здесь это сделано как в клиенте (Boat.controlBoat и
+   * floatBoat): вперёд +0,04 за такт, поворот ±1° за такт, трение воды 0,9 (лёд 0,98, синий лёд 0,989), стоп у берега.
+   * Пассажир шлёт только «конец такта» и ввод.
+   */
+  vehiclesAttach(bot) {
+    bot.on('mount', () => this.rideStart());
+    bot.on('dismount', () => this.rideStop());
+  }
+  rideStart() {
+    this.rideStop();
+    const b = this.bot;
+    this._ride = { yawDeg: null, dRot: 0, vx: 0, vz: 0 };
+    this._rideTimer = setInterval(() => { try { this.rideTick(); } catch (e) { this.log('езда: ' + e.message); } }, 50);
+    this.log('еду: ' + ((b.vehicle && b.vehicle.name) || 'что-то'));
+  }
+  rideStop() { if (this._rideTimer) clearInterval(this._rideTimer); this._rideTimer = null; this._ride = null; }
+  rideTick() {
+    const b = this.bot, v = b.vehicle, R = this._ride;
+    if (!v || !R) { this.rideStop(); return; }
+    const c = (k) => !!b.getControlState(k);
+    const ps = v.passengers || [];
+    const driver = /boat|raft/.test(v.name || '') && (!ps.length || ps[0] === b.entity);
+    try { b._client.write('player_input', { inputs: { forward: c('forward'), backward: c('back'), left: c('left'), right: c('right'), jump: false, shift: false, sprint: false } }); } catch {}
+    if (driver) {
+      if (R.yawDeg === null) R.yawDeg = 180 - (v.yaw || 0) * 180 / Math.PI;   // mineflayer: yaw = рад(180 - градусы игры)
+      if (c('left')) R.dRot -= 1;
+      if (c('right')) R.dRot += 1;
+      let f = 0;
+      if (c('right') !== c('left') && !c('forward') && !c('back')) f += 0.005;
+      R.yawDeg += R.dRot;
+      if (c('forward')) f += 0.04;
+      if (c('back')) f -= 0.005;
+      const ry = R.yawDeg * Math.PI / 180;
+      R.vx += Math.sin(-ry) * f; R.vz += Math.cos(ry) * f;
+      const p = v.position, V = p.constructor;
+      const under = b.blockAt(new V(Math.floor(p.x), Math.floor(p.y - 0.1), Math.floor(p.z)));
+      const inv = under && /blue_ice/.test(under.name) ? 0.989 : under && /ice/.test(under.name) ? 0.98 : under && /water/.test(under.name) ? 0.9 : 0.5;
+      // берег, борт, стена впереди - стоп (лодка - 1,375 в ширину: проверка на 0,7 впереди)
+      const nx = p.x + R.vx, nz = p.z + R.vz, d = Math.hypot(R.vx, R.vz) || 1;
+      const ahead = b.blockAt(new V(Math.floor(nx + R.vx / d * 0.7), Math.floor(p.y + 0.2), Math.floor(nz + R.vz / d * 0.7)));
+      if (ahead && ahead.boundingBox === 'block') { R.vx = 0; R.vz = 0; }
+      else { p.x = nx; p.z = nz; }
+      R.vx *= inv; R.vz *= inv; R.dRot *= inv;
+      v.yaw = (180 - R.yawDeg) * Math.PI / 180;
+      b._client.write('vehicle_move', { x: p.x, y: p.y, z: p.z, yaw: R.yawDeg, pitch: 0, onGround: false });
+      try { b._client.write('steer_boat', { leftPaddle: c('forward') || c('right'), rightPaddle: c('forward') || c('left') }); } catch {}
+    }
+    try { b._client.write('tick_end', {}); } catch {}
+  }
+
   async drive(a, tok) {
     const b = this.bot;
     if (!b.vehicle) throw new Error('я ни на чём не сижу - сначала !mount');
@@ -138,14 +191,14 @@ class Vehicles {
         const want = Math.atan2(-(x - v.x), -(z - v.z));
         await b.look(want, 0, true);
         let err = want - (b.vehicle.yaw || 0); while (err > Math.PI) err -= 2 * Math.PI; while (err < -Math.PI) err += 2 * Math.PI;
-        // направление поворота лодки на 26.x не проверено: ошибка за 2 с выросла - поворачиваем в другую сторону
+        // курс лодки считаем сами (rideTick): ошибка за 2 с выросла - поворачиваем в другую сторону (страховка знака)
         if (boat && Date.now() - errAt > 2000) { if (lastErr !== null && Math.abs(err) > Math.abs(lastErr) + 0.2) flip = -flip; lastErr = err; errAt = Date.now(); }
         const turn = boat && Math.abs(err) > 0.25 ? Math.sign(err) * flip : 0;
         const go = !boat || Math.abs(err) < 1.2;
         b.setControlState('forward', go);
         b.setControlState('left', turn > 0);
         b.setControlState('right', turn < 0);
-        try { b.moveVehicle(turn, go ? 1 : 0); } catch {}
+        if (!boat) { try { b.moveVehicle(turn, go ? 1 : 0); } catch {} }   // лодку ведёт rideTick по клавишам
         await sleep(100);
       }
     } finally { b.clearControlStates(); try { b.moveVehicle(0, 0); } catch {} this.busyLook = false; }

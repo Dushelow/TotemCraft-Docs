@@ -256,6 +256,7 @@ class TotemBot extends EventEmitter {
     if (this.partOn('hearing')) this.listen(bot);   // слух (hearing.js)
     if (this.partOn('balance')) this.balanceAttach(bot);
     if (this.partOn('gestures')) this.gesturesAttach(bot);
+    this.vehiclesAttach(bot);   // езда: конец такта и движение лодки, пока физика mineflayer выключена (vehicles.js)
     if (this.partOn('companion')) this.musicAttach(bot);   // музыка рядом - пританцовывать (mood.js)   // язык тела: узнать жесты игроков и ответить (gestures.js)   // равновесие после толчка (steer.js)
     // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
     bot.on('blockUpdate', (o, n) => {
