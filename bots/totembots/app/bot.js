@@ -1152,7 +1152,9 @@ class TotemBot extends EventEmitter {
         }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < (this.travelling ? 8 : 30) && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }   // в дороге бой короткий
-        this.log('продолжаю путь');
+        if (Date.now() - (this._contAt || 0) > 3000) this.log('продолжаю путь');   // без 10 строк в одну миллисекунду
+        this._contAt = Date.now();
+        await sleep(300);
       } finally { clearTimeout(timer); clearInterval(watch); }
     }
     this.check(tok);

@@ -411,6 +411,8 @@ ipcMain.handle('brain-pin', (_e, { id, only, model }) => {
 });
 // мозги: ключи (только на этом компьютере, local/config.json), модели, порядок
 // переписка бота с нейросетью дословно (logs/<имя>.qwen.log) - открыть в блокноте для разбора
+// кнопка «Начать с нуля» (22.11, владелец: «чтобы каждый раз не просил»): метка сброса и перезапуск программы
+ipcMain.handle('full-reset', () => { fs.writeFileSync(path.join(LOCAL, 'reset.flag'), new Date().toISOString()); app.relaunch(); app.exit(0); return true; });
 ipcMain.handle('open-transcript', (_e, name) => { const f = path.join(LOCAL, 'logs', String(name || '').replace(/[^\w.-]/g, '') + '.qwen.log'); if (fs.existsSync(f)) require('electron').shell.openPath(f); return fs.existsSync(f); });
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });
 ipcMain.handle('brains-save', (_e, v) => {
@@ -726,10 +728,12 @@ function resetIfAsked() {
   const bk = path.join(LOCAL, 'backup-' + stamp);
   try {
     fs.mkdirSync(bk, { recursive: true });
-    const mem = path.join(ud, 'memory');
-    if (fs.existsSync(mem)) { fs.cpSync(mem, path.join(bk, 'memory'), { recursive: true }); for (const f of fs.readdirSync(mem)) fs.rmSync(path.join(mem, f), { recursive: true, force: true }); }
+    // всё, что она помнит: память, карта, проект Qwen, кэш проходимости, снимки глаз - переносом в копию (не удаление)
+    for (const d of ['memory', 'map', 'project', 'passcache', 'travel']) { const src = path.join(ud, d); if (fs.existsSync(src)) { fs.renameSync(src, path.join(bk, d)); fs.mkdirSync(src, { recursive: true }); } }
+    { const v = path.join(LOCAL, 'vision'); if (fs.existsSync(v)) { fs.renameSync(v, path.join(bk, 'vision')); fs.mkdirSync(v, { recursive: true }); } }
     try { fs.copyFileSync(cfgPath(), path.join(bk, 'config.json')); } catch {}
     for (const b of cfg.bots || []) for (const k of ['chatId', 'chats', 'warmHash', 'chatTurns', 'eyesChat', 'voiceChat']) delete b[k];
+    delete cfg.routerChats; delete cfg.serviceChat;
     saveCfg();
     const logs = path.join(LOCAL, 'logs'), old = path.join(logs, 'old-' + stamp);
     if (fs.existsSync(logs)) { fs.mkdirSync(old, { recursive: true }); for (const f of fs.readdirSync(logs)) if (/\.(log|jsonl)$/.test(f)) fs.renameSync(path.join(logs, f), path.join(old, f)); }

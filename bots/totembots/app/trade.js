@@ -13,7 +13,7 @@ function profession(e) {
     if (!m || typeof m !== 'object') continue;
     const v = m.villagerProfession ?? m.profession;
     if (v === undefined) continue;
-    if (typeof v === 'number') return PROF[v] || '';
+    if (typeof v === 'number') return '';   // номер из реестра: порядок в 26.3 не проверен - не гадать
     return String(v).replace(/^minecraft:/, '');
   }
   return '';
@@ -26,7 +26,7 @@ const withTimeout = (p, ms, why) => Promise.race([p, new Promise((_, no) => setT
 class Trade {
   villagersNear(r = 24) {
     const me = this.bot.entity.position;
-    return Object.values(this.bot.entities).filter((e) => isVillager(e) && e.position.distanceTo(me) <= r && !isBaby(e) && !/^(none|nitwit)$/.test(profession(e))).sort((a, b) => a.position.distanceTo(me) - b.position.distanceTo(me));
+    return Object.values(this.bot.entities).filter((e) => isVillager(e) && e.position.distanceTo(me) <= r && !/^(none|nitwit)$/.test(profession(e))).sort((a, b) => a.position.distanceTo(me) - b.position.distanceTo(me));
   }
   villagerKey(e) { return `${this.dimName()}:${Math.round(e.position.x)},${Math.round(e.position.y)},${Math.round(e.position.z)}`; }
 
@@ -34,15 +34,25 @@ class Trade {
   async openTrader(e, tok) {
     // 15 с на подход, 5 с на окно: безработный, ребёнок или занятый житель окно не открывает, и mineflayer ждал его
     // вечно (22.11: «подошла, а торгов нет, и долго»)
-    await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, 2), tok, 15000);
+    // Жители на поле и за прилавком: точно «рядом в 2 бл.» пути часто нет («No path to the goal», 22.11 - торговля
+    // не вышла ни разу). Торговать можно с 3 бл.: сначала 2, нет пути - 3, и пробуем открыть, если дотянуться можно
+    const d = () => e.position.distanceTo(this.bot.entity.position);
+    for (const r of [2, 3]) {
+      if (d() <= 3) break;
+      try { await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, r), tok, 12000); } catch (err) { if (this.isCancel(err)) throw err; }
+    }
     this.check(tok);
+    if (d() > 3.4) throw new Error(`не подойти к жителю (ближе ${d().toFixed(1)} бл. пути нет)`);
     await this.bot.lookAt(e.position.offset(0, 1.5, 0), true);
-    return withTimeout(this.bot.openVillager(e), 5000, 'житель не открыл торговлю');
+    const v = await withTimeout(this.bot.openVillager(e), 5000, 'житель не открыл окно торговли');
+    for (let k = 0; k < 10 && !(v.trades && v.trades.length); k++) await sleep(200);
+    return v;
   }
 
   /** Запомнить предложения жителя. */
   noteOffers(e, v) {
     const m = this.memory; if (!m) return [];
+    if (!(v.trades || []).length) return [];
     const offers = (v.trades || []).map((t) => ({ give: [itemText(t.inputItem1), itemText(t.inputItem2)].filter(Boolean).join(' + '), price: t.realPrice, get: itemText(t.outputItem), out: t.outputItem && t.outputItem.name, left: Math.max(0, t.maximumNbTradeUses - t.nbTradeUses), off: !!t.tradeDisabled }));
     const V = (m.data.villagers = m.data.villagers || {});
     V[this.villagerKey(e)] = { x: Math.round(e.position.x), y: Math.round(e.position.y), z: Math.round(e.position.z), dim: this.dimName(), offers, at: Date.now() };
@@ -56,7 +66,7 @@ class Trade {
     const list = this.villagersNear(+a.radius || 24);
     if (!list.length) return 'жителей рядом нет';
     const V = (this.memory && this.memory.data.villagers) || {};
-    const out = [];
+    const out = [], why = [];
     // порядок обхода: каждый следующий - ближайший к предыдущему (без беготни туда-сюда); известные недавно - из памяти
     const order = [], rest = list.slice(0, 6);
     let at = this.bot.entity.position;
@@ -67,13 +77,15 @@ class Trade {
       let offers = known && Date.now() - known.at < 1800000 ? known.offers : null;
       if (!offers) {
         let v;
-        try { v = await this.openTrader(e, tok); } catch (err) { if (this.isCancel(err)) throw err; continue; }
+        try { v = await this.openTrader(e, tok); } catch (err) { if (this.isCancel(err)) throw err; why.push(`${profession(e) || 'житель'}: ${err.message}`); this.log(`торговля: ${profession(e) || 'житель'} у ${Math.round(e.position.x)} ${Math.round(e.position.z)} - ${err.message}`); continue; }
         try { await sleep(250); offers = this.noteOffers(e, v); } finally { try { v.close(); } catch {} }
       }
       const open = offers.filter((o) => !o.off && o.left > 0);
       if (open.length) out.push(`${profession(e) || 'житель'} у ${Math.round(e.position.x)} ${Math.round(e.position.z)}: ` + open.slice(0, 6).map((o, i) => `${i + 1}) ${o.give} -> ${o.get}`).join('; '));
     }
-    return out.length ? out.join(' | ') : 'жители рядом сейчас ничего не продают (всё раскуплено или безработные)';
+    if (out.length) return out.join(' | ') + (why.length ? ` (не вышло с ${why.length}: ${why[0]})` : '');
+    if (why.length) throw new Error(`ни один житель не открыл торговлю (${why.length}): ${why.slice(0, 2).join('; ')}`);
+    return 'жители рядом сейчас ничего не продают (всё раскуплено или безработные)';
   }
 
   /**
@@ -104,7 +116,7 @@ class Trade {
       const known = V[this.villagerKey(e)];
       if (known && Date.now() - known.at < 1800000 && !known.offers.some((o) => (o.out || '').includes(want) && !o.off && o.left > 0)) continue;
       let v;
-      try { v = await this.openTrader(e, tok); } catch (err) { if (this.isCancel(err)) throw err; lastWhy = err.message; if (++fails >= 4) break; continue; }
+      try { v = await this.openTrader(e, tok); } catch (err) { if (this.isCancel(err)) throw err; lastWhy = err.message; this.log(`торговля: ${profession(e) || 'житель'} у ${Math.round(e.position.x)} ${Math.round(e.position.z)} - ${err.message}`); if (++fails >= 4) break; continue; }
       try {
         await sleep(250);
         this.noteOffers(e, v);
