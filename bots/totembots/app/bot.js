@@ -470,7 +470,10 @@ class TotemBot extends EventEmitter {
       // когда swim.js сам ведёт к берегу (shoreNode)
       { const sw = require('./swim'); sw.swimPhysics(this);
         this._waterBy = sw.airTick(this) ? 'воздух' : sw.swimTick(this) ? (this.shoreNode ? 'к берегу' : 'плыву') : sw.floatTick(this) ? 'на плаву' : '';
-        if (this._waterBy === 'к берегу') this.waterExitTick(); }
+        if (this._waterBy === 'к берегу') this.waterExitTick();
+        // «прыжок в очереди» mineflayer: модуль пути жмёт прыжок в воде каждый такт, а флаг очереди в воде сам не
+        // сбрасывается - тело всплывало и подпрыгивало, хотя клавиша отпущена (стенд 26.3, 22.11: не нырял за хозяином)
+        if (this._waterBy && !b.getControlState('jump')) b.jumpQueued = false; }
       try { this.dodgeTick(); } catch {}   // уворот от стрел и огненных шаров (chores.js)
       try { this.trace.tick(); } catch {}   // журнал движения - в конце такта: клавиши такие, какие ушли на сервер
     });

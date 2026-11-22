@@ -37,7 +37,7 @@ class MoveTrace {
     const pathS = (st && st !== 'success' ? `[${st}] ` : '') + ((tb.lastPath || {}).path || []).slice(0, 3).map((n) => `${Math.floor(n.x)},${Math.floor(n.y)},${Math.floor(n.z)}${n.swim ? 's' : ''}${n.leap ? 'L' : ''}`).join(' ');
     let headIn = false; try { const h = b.blockAt(p.offset(0, 1.6, 0)); headIn = !!(h && /water/.test(h.name)); } catch {}
     const line = `${new Date().toISOString().slice(11, 23)} ${p.x.toFixed(2)} ${p.y.toFixed(2)} ${p.z.toFixed(2)} v${v.x.toFixed(2)},${v.y.toFixed(2)},${v.z.toFixed(2)} yaw${e.yaw.toFixed(2)} p${e.pitch.toFixed(2)} ${ctl}`
-      + ` ${e.onGround ? 'земля' : 'воздух'}${e.isInWater ? ' вода' : ''}${headIn ? ' голова-в-воде' : ''}${tb._pose ? ' поза' : ''}${tb._waterBy ? ' [' + tb._waterBy + ']' : ''} воздух${b.oxygenLevel ?? '?'}`
+      + ` ${e.onGround ? 'земля' : 'воздух'}${e.isInWater ? ' вода' : ''}${headIn ? ' голова-в-воде' : ''}${tb._pose ? ' поза' : ''}${tb._waterBy ? ' [' + tb._waterBy + (tb._phys ? '/' + tb._phys : '') + ']' : ''} воздух${b.oxygenLevel ?? '?'}`
       + ` | ${tb.mode}${tb.task ? ':' + tb.task : ''} | цель ${goal || '-'} | путь ${pathS || '-'}${b.pathfinder.isMoving() ? '' : ' (стоит)'}${tb.guard && tb.guard.fighting ? ' | БОЙ' : ''}`;
     this.lines.push(line);
     if (this.lines.length > 240) this.lines.shift();

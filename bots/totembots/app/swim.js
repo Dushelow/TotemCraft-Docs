@@ -109,8 +109,10 @@ function steer(tb, dx, dy, dz, head) {
 /** Повернуть голову к направлению плавно (до 0,3 рад за тик), со своим углом: pathfinder переписывает e.yaw каждый тик. */
 function face(tb, dx, dy, dz, usePitch) {
   const b = tb.bot, e = b.entity;
-  const yaw = Math.atan2(-dx, -dz), pitch = usePitch ? Math.max(-1.2, Math.min(1.2, Math.atan2(dy, Math.hypot(dx, dz) || 0.01))) : 0;
+  const hd = Math.hypot(dx, dz);
   if (!tb.swimming2 || tb._swimYaw === undefined) { tb._swimYaw = e.yaw; tb._swimPitch = e.pitch; }
+  // цель прямо под или над нами - курс не менять (atan2 от нулей крутил бота волчком)
+  const yaw = hd > 0.3 ? Math.atan2(-dx, -dz) : tb._swimYaw, pitch = usePitch ? Math.max(-1.2, Math.min(1.2, Math.atan2(dy, hd || 0.01))) : 0;
   let d = yaw - tb._swimYaw; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
   tb._swimYaw += Math.max(-0.3, Math.min(0.3, d));
   tb._swimPitch += Math.max(-0.2, Math.min(0.2, pitch - tb._swimPitch));
@@ -139,11 +141,15 @@ function airLeft(tb) {
  * что делает клиент, поэтому античит видит обычного пловца.
  */
 function swimPhysics(tb) {
+  // поза - по своему решению прошлого такта (tb._pose): модуль пути в начале такта сбрасывает бег в воде, и по клавише
+  // поза «пропадала» (стенд 26.3, 22.11: нырял по 0,4 бл./с)
   const b = tb.bot, e = b.entity;
-  if (!e || !e.isInWater || !b.getControlState('sprint') || b.food <= 6) return;
-  if (!isWater(b, e.position.offset(0, 1.6, 0).floored())) return;   // поза плавания - только с головой под водой
+  tb._phys = !e ? 'нет тела' : !e.isInWater ? 'не в воде' : !(tb._pose || b.getControlState('sprint')) ? 'без бега' : b.food <= 6 ? 'голоден' : !isWater(b, e.position.offset(0, 1.6, 0).floored()) ? 'голова над водой' : 'пловец';
+  if (tb._phys !== 'пловец') return;
   e.velocity.x *= 0.9 / 0.8; e.velocity.z *= 0.9 / 0.8;
-  const lookY = Math.sin(e.pitch);   // у mineflayer pitch > 0 - взгляд вверх
+  // наклон - свой (tb._swimPitch): модуль пути в начале такта ставит голове наклон 0, и тело «смотрело прямо», хотя
+  // бот смотрел вниз (стенд, 22.11: нырял по 0,4 бл./с). У mineflayer pitch > 0 - взгляд вверх
+  const lookY = Math.sin(tb._swimPitch !== undefined ? tb._swimPitch : e.pitch);
   const waterAbove = isWater(b, e.position.offset(0, 1.9, 0).floored());
   if (lookY <= 0 || b.getControlState('jump') || waterAbove) e.velocity.y += (lookY - e.velocity.y) * (lookY < -0.2 ? 0.085 : 0.06);
 }
