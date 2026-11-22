@@ -33,5 +33,19 @@ ok('загон с калиткой - выбраться можно', esc(pen(tru
   const r = find(b, [0, 65, 0], new goals.GoalBlock(6, 65, 0));
   ok('цель за ямой - обходит, не спускается', r.status === 'success' && !r.path.some((m) => m.y < 65), r.path.map((m) => `${m.x},${m.y},${m.z}`).join(' '));
 }
+// 6. второй этаж: спуск через люк в полу по лестнице к хозяину внизу (22.11: «нет пути» за долю секунды)
+{
+  const twoFloors = (hatchOpen) => (set) => {
+    for (let x = -6; x <= 12; x++) for (let z = -6; z <= 6; z++) set(x, 68, z, 'oak_planks');   // пол второго этажа
+    set(2, 68, 0, 'oak_trapdoor', { facing: 'north', half: 'bottom', open: hatchOpen, powered: false, waterlogged: false });
+    for (let y = 65; y <= 67; y++) { set(2, y, 1, 'stone'); set(2, y, 0, 'ladder', { facing: 'north', waterlogged: false }); }
+  };
+  const b = world(twoFloors(false));
+  const r = find(b, [0, 69, 0], new goals.GoalNear(0, 65, 0, 1));
+  const hatch = r.path.find((m) => m.hatch === 'down');
+  ok('второй этаж: вниз через люк', r.status === 'success' && hatch && hatch.opens && hatch.y === 65, r.status + ' ' + r.path.map((m) => `${m.x},${m.y},${m.z}${m.hatch ? '(люк)' : ''}`).join(' '));
+  const r2 = find(world(twoFloors(false)), [0, 65, 0], new goals.GoalNear(0, 69, 0, 1));
+  ok('первый этаж: наверх через люк', r2.status === 'success' && r2.path.some((m) => m.hatch === 'up'), r2.status + ' ' + r2.path.map((m) => `${m.x},${m.y},${m.z}${m.hatch ? '(люк)' : ''}`).join(' '));
+}
 const bad = res.filter((r) => !r[1]); for (const r of bad) console.log('  НЕ ТАК: ' + r[0] + ' ' + (r[2] || ''));
 console.log(`ловушки и стойки: ${res.length - bad.length} из ${res.length}${bad.length ? ' - НЕТ' : ''}`);

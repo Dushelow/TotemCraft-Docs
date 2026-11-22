@@ -236,6 +236,8 @@ function install(mv, bot) {
       const vertical = m.x === node.x && m.z === node.z;
       const water = cell(m.x, m.y, m.z).bad || cell(node.x, node.y, node.z).bad || cell(m.x, m.y - 1, m.z).bad;
       const gate = m.toPlace.length && m.toPlace.every((p) => p.useOne);
+      // вниз по лестнице сквозь закрытый люк модуль пути не умеет (не откроет) - этот ход делает hatches()
+      if (vertical && m.y < node.y && [cell(node.x, node.y, node.z), cell(node.x, node.y - 1, node.z)].some((c) => isHatch(c) && !(c.b.getProperties().open === true || c.b.getProperties().open === 'true'))) continue;
       if (m.toBreak.length || (m.toPlace.length && !gate) || vertical || water) out.push(m);
     }
     // где на самом деле ноги: на кровати, люке, плите - не целая клетка
@@ -245,7 +247,10 @@ function install(mv, bot) {
     const fy0 = support(cx, cz, node.y + 0.99, node.y - 1);
     // Страховка: своя навигация не видит опоры или ни одного шага - ходить по-старому (ходы модуля пути), а не стоять
     // (22.11 на поле: «путь пустой» десятки раз, бот стоял). Почему так - пишется в журнал (mv._nav.explain).
-    const fallback = (why) => { if (trapCheck) return []; mv._navFallback = { at: Date.now(), node: `${node.x},${node.y},${node.z}`, why }; return base(node); };   // проверка ловушки - без запасных ходов модуля пути (он не знает мёда)
+    // люк в полу или потолке (спуск и подъём по лестнице через люк) - модуль пути считает закрытый люк сплошным
+    // полом и не находит пути вовсе (22.11: на втором этаже, «нет пути» к хозяину внизу за долю секунды)
+    const hatchMoves = hatches(node);
+    const fallback = (why) => { if (trapCheck) return hatchMoves; if (hatchMoves.length) return hatchMoves.concat(base(node)); mv._navFallback = { at: Date.now(), node: `${node.x},${node.y},${node.z}`, why }; return base(node); };   // проверка ловушки - только свои ходы (модуль пути не знает мёда); люк - свои ходы + его
     if (fy0 === null) return fallback('нет опоры под ногами');
     for (const c of body(cx, fy0, cz).hit) if (c.open) { inDoor.add(c.k); const p = pairKey(c); if (p) inDoor.add(p); }
     // этим шагом открыли дверь или люк - дальше считать их открытыми (22.11 случайные миры: открыла, вошла, а
@@ -321,9 +326,62 @@ function install(mv, bot) {
       out.push(m);
     }
     if (mv.navLeaps !== false) leaps(node, fy, out, seen);
+    for (const m of hatchMoves) if (!seen.has(`${m.x},${m.y},${m.z}`)) { seen.add(`${m.x},${m.y},${m.z}`); out.push(m); }
     if (out.length === n0) return fallback('ни одного шага');
     return out;
   };
+  const CLIMB = /^(ladder|vine|scaffolding|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/;
+  const isHatch = (c) => c && c.b && /_trapdoor$/.test(c.b.name) && !/^iron_/.test(c.b.name);
+  const passable = (c, flip) => c && !c.bad && (!c.b || c.b.boundingBox === 'empty' || CLIMB.test(c.b.name) || flip);
+  /**
+   * Ходы через люк: вниз - стоит на люке (или над открытым), под ним лестница или пустота до пола (с лестницей до 24 бл.,
+   * без - до 3); вверх - в столбе лестницы над головой люк, над ним пол рядом: выйти на соседнюю клетку.
+   * Ход помнит люк в opens (want: открыт) - тело открывает его само (physicsTick ниже).
+   */
+  function hatches(node) {
+    const out = [], x = node.x, z = node.z, y = node.y;
+    // вниз: люк в клетке пола под ногами (или нижний люк в своей же клетке - стоит на нём)
+    const own = cell(x, y, z), ownHatch = isHatch(own) && own.b.getProperties().half === 'bottom';
+    const ty = ownHatch ? y : y - 1, t = ownHatch ? own : cell(x, y - 1, z);
+    if (isHatch(t)) {
+      let ladder = false, yy = ty - 1, land = null;
+      for (let i = 0; i < 26; i++, yy--) {
+        const c = cell(x, yy, z);
+        if (c.b && CLIMB.test(c.b.name)) { ladder = true; continue; }
+        if (passable(c)) continue;
+        if (c.bad) break;
+        if (c.b && c.b.boundingBox === 'block') { land = yy + 1; break; }
+        break;
+      }
+      if (land !== null && (ladder || y - land <= 3) && passable(cell(x, land, z)) && passable(cell(x, land + 1, z))) {
+        const m = new Move(x, land, z, node.remainingBlocks, 2 + (y - land) * 0.3, [], []);
+        m.opens = [{ x, y: ty, z, want: true }]; m.feet = land; m.cell = [x, z]; m.hatch = 'down';
+        out.push(m);
+      }
+    }
+    // вверх: в лестнице (или под ней), над головой через 1-6 клеток люк; над люком свободно и рядом пол
+    const here = cell(x, y, z), up1 = cell(x, y + 1, z);
+    if ((here.b && CLIMB.test(here.b.name)) || (up1.b && CLIMB.test(up1.b.name))) {
+      for (let h = 1; h <= 24; h++) {
+        const c = cell(x, y + h, z);
+        if (isHatch(c)) {
+          const yt = y + h;
+          if (!passable(cell(x, yt + 1, z)) || !passable(cell(x, yt + 2, z))) break;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const fl = cell(x + dx, yt, z + dz);
+            if (!fl.b || fl.b.boundingBox !== 'block' || isHatch(fl)) continue;
+            if (!passable(cell(x + dx, yt + 1, z + dz)) || !passable(cell(x + dx, yt + 2, z + dz))) continue;
+            const m = new Move(x + dx, yt + 1, z + dz, node.remainingBlocks, 2 + h * 0.4, [], []);
+            m.opens = [{ x, y: yt, z, want: true }]; m.feet = yt + 1; m.cell = [x + dx, z + dz]; m.hatch = 'up';
+            out.push(m);
+          }
+          break;
+        }
+        if (!(c.b && CLIMB.test(c.b.name)) && !passable(c)) break;
+      }
+    }
+    return out;
+  }
   /**
    * Выберусь ли из клетки (x, y, z), если спущусь туда с высоты fromY: поиск в ширину по своим же шагам (с открыванием
    * дверей и калиток, с копанием природного - как модуль пути) до 70 клеток. Да - если дошла до высоты fromY или ушла
