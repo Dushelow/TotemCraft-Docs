@@ -40,6 +40,25 @@ if (!process.env.TOTEMBOTS_CONFIG) {
 }
 
 let win, qwen, dsView, bridge, router, voice, memory, project, worldMap, travel, passCache;
+// Память у каждого бота своя (22.11, владелец: «всё развести, общим - только объективное, мир»): места, люди, факты,
+// дневник, симпатии, зоны, жители - в memory/totemcraft-<ник>.json. Общие только карта мира (worldmap), тропы
+// (travel) и кэш проходимости: это рельеф, а не воспоминания. Старая общая память достаётся ботам, что уже были.
+const memories = new Map();
+function memFor(name) {
+  if (memories.has(name)) return memories.get(name);
+  const dir = process.env.TOTEMBOTS_MEMORY || app.getPath('userData');
+  const own = path.join(dir, 'memory', `totemcraft-${name}.json`), shared = path.join(dir, 'memory', 'totemcraft.json');
+  try {
+    if (!fs.existsSync(own) && fs.existsSync(shared)) {
+      const old = JSON.parse(fs.readFileSync(shared, 'utf8'));
+      const had = Object.keys(old.bots || {}).includes(name) || (cfg.bots[0] && cfg.bots[0].name === name);
+      if (had) fs.copyFileSync(shared, own);
+    }
+  } catch {}
+  const m = new Memory(dir, `totemcraft-${name}`);
+  memories.set(name, m);
+  return m;
+}
 // Что показано справа: окно бота на сайте (mode 'work', там работает программа) или своё окно владельца (mode 'mine',
 // тот же вход, бот туда не заходит). Одинаково для всех сайтов: Qwen, DeepSeek, Kimi...
 let view = { mode: 'work', site: 'qwen' };
@@ -96,6 +115,7 @@ function startBot(name) {
   let l = live.get(name);
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
+  const memory = memFor(bc.name);   // своя память бота
   const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet });
   body.onQuiet = (v) => { bc.quiet = !!v; saveCfg(); };
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
@@ -127,7 +147,7 @@ ${a}
   body.travel = travel;
   // деревни, спавнеры, сооружения с карты - сразу в память мест; рядом - «момент» (может, захочет сказать)
   // находка не подтвердилась (чанк перечитан строже) - забыть и место в памяти
-  worldMap.onLost = (v, dim) => { for (const [k, p] of Object.entries(memory.data.places || {})) if (p.name === `${v.kind} у ${v.x} ${v.z}` && /нашёл по карте/.test(p.note || '')) { delete memory.data.places[k]; memory.save(); logTo(bc.name, `карта: «${p.name}» не подтвердилось - забыла`); } };
+  worldMap.onLost = (v, dim) => { for (const [bn, mem] of memories) for (const [k, p] of Object.entries(mem.data.places || {})) if (p.name === `${v.kind} у ${v.x} ${v.z}` && /нашёл по карте/.test(p.note || '')) { delete mem.data.places[k]; mem.save(); logTo(bn, `карта: «${p.name}» не подтвердилось - забыла`); } };   // карта общая - находку забывают все
   worldMap.attach(body, (v, dim) => {
     memory.place({ name: `${v.kind} у ${v.x} ${v.z}`, x: v.x, y: v.y, z: v.z, dim, note: 'нашёл по карте' }, bc.name);
     body.emit('moment', { kind: 'место', text: `рядом ${v.kind} (${v.x} ${v.y} ${v.z})`, pos: v });
@@ -157,7 +177,7 @@ function stateForPanel() {
         ...Object.entries(PRESETS).filter(([k]) => ((cfg.brains || {}).keys || {})[k]).map(([k, p]) => ({ id: k, name: p.name + ' (ключ)' }))],
       now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
     voice: voice ? { ...voice.settings(), piper: voice.piperState(), silero: voice.sileroState() } : {},
-    background: { waiting: background.lines.length, status: background.status, news: (memory && memory.data.news || []).slice(-3).map((n) => n.text) },
+    background: { waiting: background.lines.length, status: background.status, news: ([...memories.values()][0] ? [...memories.values()][0].data.news || [] : []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
       const l = live.get(b.name);
@@ -324,7 +344,7 @@ async function summarizeBackground(force = false) {
     cfg.serviceChat = sc; saveCfg();
     const lines = String(answer).replace(/```[a-z]*|```/gi, '').split('\n').map((l) => l.replace(/^[-*•\d.)\s]+/, '').trim())
       .filter((l) => l && !/^пусто\.?$/i.test(l)).slice(0, 6);
-    if (lines.length) memory.news(lines);
+    if (lines.length) for (const m of memories.values()) m.news(lines);   // новости сервера - каждому
     background.status = `${new Date().toLocaleTimeString('ru-RU')}: сжато ${chunk.length} строк → ${lines.length} новостей`;
     for (const name of live.keys()) logTo(name, 'фон чата: ' + background.status);
   } catch (e) {
@@ -342,15 +362,17 @@ function projectEnabled() { return !cfg.qwenProject || cfg.qwenProject.enabled !
 async function projectSync(force = false) {
   if (!projectEnabled() || projectState.busy || cfg.paused) return;
   if (!force && ![...live.values()].some((l) => l.body && l.body.status !== 'off')) return;   // до «Старт» - не трогать Qwen
-  if (!force && (memory.version === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
+  const memVer = [...memories.values()].reduce((s, m) => s + m.version, 0);
+  if (!force && (memVer === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
   projectState.busy = true;
   try {
     const logged = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")').catch(() => false);
     if (!logged) { projectState.status = 'ждёт входа в Qwen'; return; }
     if (!project.id || !(await project.run(() => project.exists()))) await project.ensure();
-    const v = memory.version;
+    const v = memVer;
     projectState.status = 'обновляю память...';
-    const r = await project.syncMemory(memory.markdown());
+    // в проекте - разделами по ботам: каждый читает только свою (так сказано во вводной)
+    const r = await project.syncMemory([...memories.entries()].map(([n, m]) => `# ПАМЯТЬ БОТА ${n} (только для ${n}, другим ботам - не их)\n\n` + m.markdown()).join('\n\n'));
     projectState.syncedVersion = v; projectState.syncedAt = Date.now();
     projectState.status = r + ', ' + new Date().toLocaleTimeString('ru-RU');
   } catch (e) {
@@ -746,7 +768,7 @@ function resetIfAsked() {
 }
 
 app.whenReady().then(() => { loadCfg(); resetIfAsked();
-  try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} memory = new Memory(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); travel.memory = memory; passCache = new (require('./passcache').PassCache)(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel.passCache = passCache; Menu.setApplicationMenu(null); createWindow();
+  try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); travel.memory = memory; passCache = new (require('./passcache').PassCache)(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel.passCache = passCache; Menu.setApplicationMenu(null); createWindow();
   // боты заходят по кнопке «Старт»; сами - только если на стартовом экране отмечено «запускать сразу»
   if (cfg.startOnLaunch) setTimeout(() => { cfg.paused = false; for (const b of cfg.bots.filter((x) => x.pick !== false)) { try { startBot(b.name); } catch (e) { logTo(b.name, 'автозапуск: ' + e.message); } } }, 8000);
 });
