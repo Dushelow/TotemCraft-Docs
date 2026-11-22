@@ -32,7 +32,7 @@ class Gestures {
       if (e !== bot.entity) return;
       const p = Object.values(bot.players).map((x) => x.entity).filter((x) => x && x !== bot.entity && x.position.distanceTo(bot.entity.position) < 4.5)
         .sort((a, c) => a.position.distanceTo(bot.entity.position) - c.position.distanceTo(bot.entity.position))[0];
-      if (p) { const g = get(p); if (g) { g.hitAt = Date.now(); g.hitEmpty = !p.heldItem; } this.pvpAt = Date.now(); }
+      if (p) { const g = get(p); if (g) { g.hitAt = Date.now(); g.hitEmpty = !p.heldItem; } this.pvpAt = Date.now(); if (p.heldItem && this.affinityAdd) this.affinityAdd(p.username, -5, 'ударил оружием'); }
     });
     bot.on('entityDead', (e) => { if (e && e.position) this.deadAt = { t: Date.now(), pos: e.position.clone() }; });
     bot.on('itemDrop', (e) => {
@@ -139,6 +139,10 @@ class Gestures {
   onGesture(name, k, p, now) {
     const master = this.isMasterName ? this.isMasterName(name) : name === this.followName;
     this.log(`жест: ${name} ${k.text}`);
+    // симпатия по делам (presence.js): подарок, мир, привет - теплее; насмешка, оружие на бота - холоднее
+    const AFF = { 'подарок': 4, 'мир': 2, 'убрал оружие': 1, 'цветок': 2, 'привет': 1, 'без обид': 2, 'насмешка': -4, 'оружие': master ? 0 : -2 };
+    if (AFF[k.kind] && this.affinityAdd) this.affinityAdd(name, AFF[k.kind], k.kind);
+    const cold = this.affinity && this.affinity(name) <= -20;
     this.lastGesture = { name, ...k, t: now };
     if (this.attend) this.attend(name, 2500);
     const reply = {
@@ -146,7 +150,9 @@ class Gestures {
       'тычок': 'кивок', 'эй': 'кивок', 'подарок': 'спасибо', 'мир': 'привет', 'убрал оружие': 'кивок', 'цветок': 'привет',
       'указал': 'кивок', 'за мной': 'кивок', 'сел': null, 'оружие': null, 'насмешка': null,
     }[k.kind];
-    if (reply && this.mode !== 'task' && !(this.guard && this.guard.fighting)) this.gesture(reply).catch(() => {});
+    // с тем, кто обижал, - холодно: на привет мотает головой и отворачивается, на радость не отвечает
+    const answer = cold ? ({ 'привет': 'нет', 'радость': null, 'кружится': null, 'спасибо': 'кивок' }[reply] ?? reply) : reply;
+    if (answer && this.mode !== 'task' && !(this.guard && this.guard.fighting)) this.gesture(answer).catch(() => {});
     if (k.kind === 'указал' && k.at) this.lookTarget = k.at.offset(0.5, 0.5, 0.5);
     if (k.kind === 'подарок' && this.mode === 'idle') setTimeout(() => this.pickup && this.pickup({ radius: 4 }, this.token).catch(() => {}), 600);
     // хозяин позвал жестом - идти следом сразу (без нейросети)
@@ -154,7 +160,7 @@ class Gestures {
     // хозяин сел - сесть рядом, если есть куда
     if (master && k.kind === 'сел' && this.mode === 'follow') this.sitNear(p.position).catch(() => {});
     // мозгу - смысловые (решать есть что); приветы и радость - нет, тело ответило само
-    if (/^(да|нет|указал|подарок|оружие|насмешка|тычок|за мной)$/.test(k.kind)) this.emit('gesture', { name, kind: k.kind, text: k.text, master });
+    if (/^(да|нет|указал|подарок|оружие|насмешка|тычок|за мной)$/.test(k.kind)) this.emit('gesture', { name, kind: k.kind, text: k.text, master, aff: this.affinityWord ? this.affinityWord(name) : '' });
   }
 
   /**

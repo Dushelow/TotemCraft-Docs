@@ -50,6 +50,7 @@ class Companion {
     } else C.stop = null;
     this.gestureTick(owner, now);
     this.barkTick(owner, now);
+    if (this.presenceTick) this.presenceTick(owner, now);   // тихий шаг, личное место, помощь, комментарии (presence.js)
     // сидит рядом с хозяином (gestures.js): хозяин встал и пошёл - встать и следом
     if (this.seat) {
       const up = !owner || now - C.stillSince < 1500 || owner.position.distanceTo(b.entity.position) > 8 || this.mode !== 'follow';
@@ -70,6 +71,8 @@ class Companion {
       if (sb.phase === 'go' && b.entity.position.distanceTo(sb.spot) < 1.3) { sb.phase = 'at'; this.task = sb.what; this.log('сама: ' + sb.what); }
       if (sb.phase === 'go' && now - sb.at > 12000) { this.sandboxEnd('не дошла'); return; }
       if (sb.phase === 'at') {
+        if (this.propOn) this.propOn(sb).catch(() => {});
+        if (this.opportunityAct) this.opportunityAct(sb).catch(() => {});
         // смотреть на дело, иногда на хозяина; рукой - у верстака и наковальни
         this.lookTarget = owner && Math.random() < 0.2 ? owner.position.offset(0, 1.6, 0) : sb.look;
         if (sb.hand && Math.random() < 0.35) { try { b.swingArm('right'); } catch {} }
@@ -109,6 +112,7 @@ class Companion {
         out.push({ w: e.name === 'villager' ? 1 : 1.2, what: e.name === 'villager' ? 'разглядываю жителя' : `глажу ${e.name}`, hand: e.name !== 'villager', look: e.position.offset(0, (e.height || 1) * 0.8, 0), spot: null, ent: e, key: p });
       }
     }
+    if (this.moreOpportunities) try { out.push(...this.moreOpportunities(center, r, recent, !!(this.followName && this.player(this.followName)))); } catch {}
     if (!out.length) return null;
     let t = Math.random() * out.reduce((s, o) => s + o.w, 0);
     for (const o of out) { t -= o.w; if (t <= 0) return o; }
@@ -129,7 +133,7 @@ class Companion {
     const spot = o.spot || (o.ent ? o.ent.position.clone() : null);
     if (!spot) return;
     C.spots.push(o.key); if (C.spots.length > 5) C.spots.shift();
-    this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + rnd(15000, 40000), ent: o.ent || null };
+    this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + rnd(15000, 40000), ent: o.ent || null, water: o.water || null, chest: o.chest || null, lay: !!o.lay };
     try { b.pathfinder.setGoal(o.ent ? new goals.GoalFollow(o.ent, 1.5) : new goals.GoalNear(spot.x, spot.y, spot.z, 0.6), !!o.ent); } catch { this.sandbox = null; }
   }
 
@@ -138,6 +142,8 @@ class Companion {
     this.sandbox = null;
     if (this.comp) this.comp.endAt = Date.now();
     if (!sb) return;
+    if (this.propOff) this.propOff(sb).catch(() => {});
+    if (sb.lay && this.pose) this.poseEnd();
     if (this.task === sb.what) this.task = '';
     if (why) this.log(`закончила: ${sb.what} (${why})`);
     if (sb.token !== this.token) return;   // пришло новое дело - его цель не трогать

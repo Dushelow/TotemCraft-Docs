@@ -201,14 +201,15 @@ class Brain {
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
     body.isMasterName = (n) => this.isMaster(n);
     // жест игрока (gestures.js): тело уже ответило своим жестом; мозгу - смысл, если есть что решать
-    body.on('gesture', ({ name, text, master }) => { this.push(`[жест] ${name}${master ? ' (хозяин)' : ''} без слов: ${text}`, true, name, 'local'); });
+    body.on('gesture', ({ name, text, master, aff }) => { this.push(`[жест] ${name}${master ? ' (хозяин)' : ''} без слов: ${text}${aff && aff !== 'нейтральное' ? ` (твоё отношение к нему: ${aff})` : ''}`, true, name, 'local'); });
     // встреча после разлуки (senses.js): хозяина и знакомых - поздороваться, как живой; недавно виделись - молча
     body.on('reunion', ({ name, gap }) => {
       try {
         const known = this.isMaster(name) || !!(this.body.memory && Object.values(this.body.memory.data.people || {}).some((p) => p.name.toLowerCase() === name.toLowerCase()));
         if (!known || (gap === null && !this.isMaster(name))) return;
         const h = gap === null ? 'давно не виделись (ты только зашла в игру)' : `не виделись ${gap >= 60 ? Math.floor(gap / 60) + ' ч ' : ''}${gap % 60} мин`;
-        this.push(`[встреча] к тебе подошёл ${name}${this.isMaster(name) ? ' (хозяин)' : ''}, ${h}. Поздоровайся коротко, по-живому (можно сказать, чем занималась, или спросить, как дела). Дело, которым занята, не бросай.`, true, name, 'local');
+        const aw = this.body.affinityWord ? this.body.affinityWord(name) : '';
+        this.push(`[встреча] к тебе подошёл ${name}${this.isMaster(name) ? ' (хозяин)' : ''}, ${h}${aw && aw !== 'нейтральное' ? `, твоё отношение к нему: ${aw}` : ''}. Поздоровайся коротко, по-живому (можно сказать, чем занималась, или спросить, как дела). Дело, которым занята, не бросай.`, true, name, 'local');
       } catch {}
     });
     body.on('moment', (m) => { try { this.moment(m); } catch {} });
