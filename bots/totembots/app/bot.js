@@ -1176,7 +1176,8 @@ class TotemBot extends EventEmitter {
   }
 
   /** Как близко идти следом (блоков): настройка бота «Поведение», меняется и словами («ближе», «подальше»). */
-  followDist() { const d = +this.opts.followDist || 3; return Math.max(1.2, d + rnd(-0.3, 0.3)); }
+  // удобная дистанция (presence.js): теснее в доме, пещере и опасности, свободнее на просторе и когда хозяин бежит; не ближе 1,6
+  followDist() { const d = +this.opts.followDist || 3; const k = this.comfortShift ? this.comfortShift() : 0; return Math.max(1.6, d + k + rnd(-0.3, 0.3)); }
   setFollowDist(d) {
     this.opts.followDist = Math.max(1.5, Math.min(12, +d || 3));
     if (this.mode === 'follow' && this.followName) { const e = this.player(this.followName); if (e) this.bot.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true); }

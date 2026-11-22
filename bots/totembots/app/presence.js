@@ -58,6 +58,8 @@ class Presence {
     this.helpTick(owner, now, P);
     this.placeTick(owner, now, P);
     this.formationTick(owner, now);
+    this.comfortTick(owner, now);
+    this.ownerEventsTick(owner, now, P);
     this.socialTick(owner, now, P);
     if (this.pose && (this.mode !== 'idle' || owner || (this.threat && this.threat().level !== 'спокойно') || now > this.pose.until)) this.poseEnd();
     void b;
@@ -113,6 +115,66 @@ class Presence {
         P.giftAt = now;
         (async () => { this.busyLook = true; try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(f.type, null, 1); this.log('подарила хозяину ' + f.name); try { this.say('это тебе', 'local'); } catch {} } catch {} finally { this.busyLook = false; } })();
       }
+    }
+  }
+
+  /**
+   * Удобная дистанция: в доме, пещере, тесном проходе и при опасности - ближе (-1); на открытом месте днём и когда
+   * хозяин бежит - дальше (+1); много людей вокруг - чуть ближе. Меняется - путь следом перестраивается сразу.
+   */
+  comfortShift() {
+    const b = this.bot, owner = this.followName ? this.player(this.followName) : null;
+    if (!b || !b.entity) return 0;
+    let k = 0;
+    try {
+      const head = b.blockAt(b.entity.position.offset(0, 2, 0)), sky = b.blockAt(b.entity.position.offset(0, 1, 0));
+      const roofed = (head && head.boundingBox === 'block') || (sky && (sky.skyLight || 0) < 8);
+      if (roofed) k -= 1;
+      if (this.threat && this.threat().level !== 'спокойно') k -= 1;
+      const v = owner && owner.velocity ? Math.hypot(owner.velocity.x, owner.velocity.z) : 0;
+      if (!roofed && v > 0.2) k += 1;
+      const crowd = Object.values(b.players).filter((p) => p.entity && p.entity !== b.entity && p.entity.position.distanceTo(b.entity.position) < 8).length;
+      if (crowd >= 3) k -= 0.5;
+    } catch {}
+    return Math.max(-1.5, Math.min(1.5, k));
+  }
+  comfortTick(owner, now) {
+    const b = this.bot;
+    if (!owner || this.mode !== 'follow' || this.sandbox || this.seat || now - (this.comfAt || 0) < 2000) return;
+    const k = this.comfortShift();
+    if (this.comfK === undefined || Math.abs(k - this.comfK) >= 0.5) {
+      this.comfK = k; this.comfAt = now;
+      const g = b.pathfinder.goal;
+      if (g && g.constructor && g.constructor.name === 'GoalFollow') try { b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {}
+    }
+  }
+
+  /**
+   * Что делает хозяин - и бот рядом по-живому, без нейросети:
+   *  - лёг спать ночью - тоже идёт спать (ночь пропускается быстрее, если спят все);
+   *  - открыл сундук - бот не подглядывает: отводит взгляд по сторонам;
+   *  - рыбачит (поплавок рядом) - присесть рядом (/sit) и смотреть на поплавок;
+   *  - погиб - сказать «ой!», встать у места его смерти и ждать его там (вещи не брать).
+   */
+  ownerEventsTick(owner, now, P) {
+    const b = this.bot;
+    if (!this.ownerHooked && b) {
+      this.ownerHooked = true;
+      b.on('entitySleep', (e) => { try { if (e && e.username && e.username === this.followName && this.mode === 'follow' && this.goSleep && !b.isSleeping) { this.log('хозяин лёг спать - иду спать тоже'); this.goSleep(this.token).catch(() => {}); } } catch {} });
+      b.on('chestLidMove', (bl, open) => { try { const o = this.followName && this.player(this.followName); if (o && open && bl.position.distanceTo(o.position) < 4) { this.attendUntil = 0; this.lookTarget = b.entity.position.offset(Math.random() * 10 - 5, 1.6, Math.random() * 10 - 5); this.privacyUntil = Date.now() + 4000; } } catch {} });
+      b.on('entityDead', (e) => { try { if (e && e.username && e.username === this.followName) { this.ownerDied = { at: Date.now(), pos: e.position.clone() }; this.say('ой!', 'local'); } } catch {} });
+    }
+    // хозяин погиб: подойти к месту и ждать его там (5 мин), пока не вернётся
+    if (this.ownerDied && now - this.ownerDied.at < 300000 && this.mode === 'follow' && !owner && !this.ownerDied.went) {
+      this.ownerDied.went = true;
+      this.log('хозяин погиб - иду к месту, буду ждать там');
+      this.goto(new goals.GoalNear(this.ownerDied.pos.x, this.ownerDied.pos.y, this.ownerDied.pos.z, 2), this.token, 60000).catch(() => {});
+    }
+    if (owner && this.ownerDied && this.ownerDied.went && owner.position.distanceTo(this.ownerDied.pos) < 10) { this.ownerDied = null; try { this.say('я тут, вещи твои рядом', 'local'); } catch {} }
+    // рыбачит: поплавок у хозяина
+    if (owner && this.mode === 'follow' && !this.seat && now - (P.fishSitAt || 0) > 120000) {
+      const bob = Object.values(b.entities).find((e) => /fishing_bobber/.test(e.name || '') && e.position.distanceTo(owner.position) < 25);
+      if (bob && now - (this.comp && this.comp.stillSince || now) > 8000 && this.sitNear) { P.fishSitAt = now; this.lookTarget = bob.position; this.sitNear(owner.position).catch(() => {}); }
     }
   }
 

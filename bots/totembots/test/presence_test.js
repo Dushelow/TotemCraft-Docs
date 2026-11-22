@@ -26,6 +26,8 @@ setTimeout(async () => {
   { let goal = null; const t2 = Object.create(Presence.prototype); Object.assign(t2, { bot: { entity: { position: new Vec3(0, 64, 3) }, pathfinder: { setGoal: (g) => { goal = g; } } }, mode: 'follow', followDist: () => 3 });
     t2.formationTick({ position: new Vec3(0, 64, 0), velocity: new Vec3(0, 0, 0.2) }, Date.now());
     ok('впереди хозяина - отходит за плечо', goal && goal.z < 0, goal && JSON.stringify({ x: goal.x, z: goal.z })); }
+  { const mk2 = (head, vel, threat) => { const t3 = Object.create(Presence.prototype); Object.assign(t3, { followName: 'V', player: () => ({ velocity: new Vec3(vel, 0, 0) }), threat: () => ({ level: threat }), bot: { entity: { position: new Vec3(0, 64, 0) }, players: {}, blockAt: (v) => (v.y >= 66 && head ? { boundingBox: 'block', skyLight: 0 } : { boundingBox: 'empty', skyLight: 15 }) } }); return t3.comfortShift(); };
+    ok('в доме - ближе, на просторе бегом - дальше, опасно - ближе', mk2(true, 0, 'спокойно') < 0 && mk2(false, 0.3, 'спокойно') > 0 && mk2(false, 0, 'опасно') < 0, [mk2(true, 0, 'спокойно'), mk2(false, 0.3, 'спокойно'), mk2(false, 0, 'опасно')].join(',')); }
   const bad = res.filter((r) => !r[1]); for (const r of bad) console.log('  НЕ ТАК: ' + r[0] + ' ' + (r[2] || ''));
   console.log(`присутствие: ${res.length - bad.length} из ${res.length}${bad.length ? ' - НЕТ' : ''}`);
 }, 50);

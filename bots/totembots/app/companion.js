@@ -197,6 +197,7 @@ class Companion {
    */
   gazePick() {
     const b = this.bot, now = Date.now(), me = b.entity.position;
+    if ((this.privacyUntil || 0) > now) return null;   // хозяин в сундуке - не подглядывать
     if (this.attendUntil > now) { const e = this.player(this.attendTo); if (e) return e.position.offset(0, 1.6, 0); }
     if (this.sandbox && this.sandbox.phase === 'at') return null;   // занята делом - смотрит на дело
     if (this.heardPrime && now - this.heardPrime.at < 2500 && this.heardPrime.pos) return this.heardPrime.pos.offset ? this.heardPrime.pos.offset(0, 1, 0) : null;
