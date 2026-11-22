@@ -1513,6 +1513,12 @@ class TotemBot extends EventEmitter {
     if (plain.length > 1) plain = plain.filter((a) => a.act !== 'stop');
     // одиночные мгновенные: идти за кем-то, стоп
     if (plain.length === 1 && plain[0].act === 'follow') return this.follow(plain[0].who);
+    // «садись» одним словом - по обстановке (22.11): хозяин в лодке или у лодки (в 3 бл.) - к нему в лодку, иначе - присесть
+    if (plain.length === 1 && plain[0].act === 'sitOrMount') {
+      const o = this.player(plain[0].who);
+      const boat = o && (o.vehicle || Object.values(this.bot.entities).some((e) => /boat|raft/.test(e.name || '') && e.position.distanceTo(o.position) < 3));
+      plain[0] = boat ? { act: 'mount', who: plain[0].who } : { act: 'sit' };
+    }
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
     // жест и «встать» - не дело: текущее не прерывают
     if (plain.length && plain.every((a) => a.act === 'zone')) return plain.map((a) => this.zoneAct(a)).join('; ');   // зона - не дело, текущее не прерывает
