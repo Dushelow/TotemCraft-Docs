@@ -49,60 +49,75 @@ function swimTick(tb) {
   // берег рядом (суша выше воды в ближайших точках пути): лицом к нему, вперёд и вверх - толчок через край даёт
   // waterExitTick (water.js). Раньше берег отдавался старой логике, только если суша - самая следующая точка, а
   // мы плыли мимо неё к дальней - и упирались в берег по 15 с («на берег опять долго выходила»)
+  // берег рядом (суша выше воды в ближайших точках пути): лицом к нему, вперёд и прыжок - через край выносит сама
+  // физика игры (толчок 0,3 при упоре в стену), как у клиента
   for (let j = nx.i; j < Math.min(path.length, nx.i + 4); j++) {
     const n = path[j], v = new (p.constructor)(Math.floor(n.x), Math.floor(n.y), Math.floor(n.z));
     if (isWater(b, v) || n.y <= p.y + 0.3 || Math.hypot(v.x + 0.5 - p.x, v.z + 0.5 - p.z) > 2.6) continue;
-    const ddx = v.x + 0.5 - p.x, ddz = v.z + 0.5 - p.z, dd = Math.hypot(ddx, ddz) || 1;
-    e.velocity.x += (ddx / dd * 0.09 - e.velocity.x) * 0.35;
-    e.velocity.z += (ddz / dd * 0.09 - e.velocity.z) * 0.35;
-    b.setControlState('sprint', false); b.setControlState('forward', true); b.setControlState('jump', true);
-    tb._swimYaw = Math.atan2(-ddx, -ddz); tb._swimPitch = 0;
-    b.look(tb._swimYaw, 0, true);
+    face(tb, v.x + 0.5 - p.x, 0, v.z + 0.5 - p.z, 0);
+    b.setControlState('sprint', false); b.setControlState('forward', true); b.setControlState('jump', true); b.setControlState('sneak', false);
     tb.shoreNode = n; tb.swimming2 = true;
     return true;
   }
   tb.shoreNode = null;
-
   const head = isWater(b, p.offset(0, 1.6, 0).floored());
-  let depth = 0;
-  for (let dy = 0; dy < 6 && isWater(b, feet.offset(0, -dy, 0)); dy++) depth++;
   const aim = nx.ahead && Math.hypot(nx.ahead.x - p.x, nx.ahead.z - p.z) > 1 ? nx.ahead : nx;
-  const dx = aim.x - p.x, dz = aim.z - p.z, hd = Math.hypot(dx, dz);
-  const air = b.oxygenLevel !== undefined ? b.oxygenLevel : 20;
-  const fast = (depth >= 2 || head) && hd > 1.8 && air > 6;
-
-  let vy;
-  if (fast) {
-    // рывком: целимся в точку пути, но под поверхностью (на 0,6 ниже уровня воды) - так быстрее и как у игроков
-    let surf = p.y; for (let dy = 0; dy < 12 && isWater(b, feet.offset(0, dy + 1, 0)); dy++) surf = feet.y + dy + 1;
-    const wantY = Math.min(nx.y + 0.2, surf - 0.6);
-    vy = Math.max(-0.12, Math.min(0.12, (wantY - p.y) * 0.25));
-  } else {
-    // у поверхности: держаться на воде (лицо над водой), как игрок с зажатым прыжком; воздух мало - вверх
-    vy = head ? 0.06 : (p.y - Math.floor(p.y) < 0.6 ? 0.03 : 0.0);
-    if (nx.y < p.y - 0.8 && air > 10) vy = -0.06;   // путь уходит вниз - нырнуть
-  }
-  if (air <= 6 && head) vy = 0.09;   // воздух кончается - сначала наверх
-  const speed = fast ? SWIM_FAST : SWIM_SURF;
-  const k = hd > 0.01 ? Math.min(speed, hd * 0.5) / hd : 0;
-  // плавный разгон: к нужной скорости за несколько тиков, без рывков
-  e.velocity.x += (dx * k - e.velocity.x) * 0.35;
-  e.velocity.z += (dz * k - e.velocity.z) * 0.35;
-  e.velocity.y += (vy - e.velocity.y) * 0.35;
-  // поза и взгляд: рывок под водой - sprint (сервер включает позу плавания); голова - по ходу, плавно
-  b.setControlState('sprint', fast && b.food > 6);
-  b.setControlState('forward', true);
-  b.setControlState('jump', false);
-  // свой плавный поворот: e.yaw к этому тику уже переписан pathfinder (он смотрит на свою точку), поэтому
-  // поворачиваем от своего прошлого угла и каждый тик ставим его заново - голова всегда по ходу
-  const yaw = Math.atan2(-dx, -dz), pitch = fast ? Math.max(-0.8, Math.min(0.8, Math.atan2(vy, speed))) : 0;
-  if (!tb.swimming2 || tb._swimYaw === undefined) { tb._swimYaw = e.yaw; tb._swimPitch = e.pitch; }
-  let dyaw = yaw - tb._swimYaw; while (dyaw > Math.PI) dyaw -= 2 * Math.PI; while (dyaw < -Math.PI) dyaw += 2 * Math.PI;
-  tb._swimYaw += Math.max(-0.3, Math.min(0.3, dyaw));
-  tb._swimPitch += Math.max(-0.15, Math.min(0.15, pitch - tb._swimPitch));
-  b.look(tb._swimYaw, tb._swimPitch, true);
+  steer(tb, aim.x - p.x, nx.y + 0.2 - p.y, aim.z - p.z, head);
   tb.swimming2 = true;
   return true;
+}
+
+/**
+ * Плыть к точке только клавишами и взглядом, как клиент (22.11: Vulcan забанил Loki за Jesus B - скорость тела
+ * задавалась напрямую, у поверхности он «стоял» на воде). Физика - как в игре: под водой с бегом - поза плавания,
+ * тело идёт туда, куда смотрит (и вниз, и вверх), быстрее (инерция 0,9 вместо 0,8); на поверхности - вперёд и прыжок.
+ * Вниз без бега - не держать прыжок (тонет медленно); вверх - прыжок. Воздуха мало для глубины - всплывать.
+ */
+function steer(tb, dx, dy, dz, head) {
+  const b = tb.bot, e = b.entity, hd = Math.hypot(dx, dz);
+  const swimPose = head && b.food > 6 && (hd > 1.2 || Math.abs(dy) > 1.2);
+  // запас воздуха на всплытие: глубина / скорость подъёма (~3 бл./с) + 3 с запаса
+  let surf = 0; { const f = e.position.floored(); for (let k = 1; k < 30 && isWater(b, f.offset(0, k, 0)); k++) surf = k; }
+  const airSec = airLeft(tb) * 0.75;
+  if (head && airSec < surf / 3 + 3) dy = Math.max(dy, surf + 1);   // не хватит воздуха - сначала наверх
+  b.setControlState('forward', hd > 0.3 || swimPose);
+  b.setControlState('sprint', swimPose);
+  b.setControlState('sneak', false);
+  b.setControlState('jump', !swimPose && (dy > -0.6 || !head));   // у поверхности держаться; вниз - отпустить
+  face(tb, dx, swimPose ? dy : 0, dz, swimPose ? 1 : 0);
+}
+
+/** Повернуть голову к направлению плавно (до 0,3 рад за тик), со своим углом: pathfinder переписывает e.yaw каждый тик. */
+function face(tb, dx, dy, dz, usePitch) {
+  const b = tb.bot, e = b.entity;
+  const yaw = Math.atan2(-dx, -dz), pitch = usePitch ? Math.max(-1.2, Math.min(1.2, Math.atan2(dy, Math.hypot(dx, dz) || 0.01))) : 0;
+  if (!tb.swimming2 || tb._swimYaw === undefined) { tb._swimYaw = e.yaw; tb._swimPitch = e.pitch; }
+  let d = yaw - tb._swimYaw; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
+  tb._swimYaw += Math.max(-0.3, Math.min(0.3, d));
+  tb._swimPitch += Math.max(-0.2, Math.min(0.2, pitch - tb._swimPitch));
+  b.look(tb._swimYaw, tb._swimPitch, true);
+}
+
+/** Запас воздуха 0-20: от сервера, но не больше своего счёта времени под водой (сервер может не слать). */
+function airLeft(tb) {
+  const b = tb.bot, now = Date.now();
+  if (!tb._underSince) return b.oxygenLevel ?? 20;
+  return Math.min(b.oxygenLevel ?? 20, Math.max(0, 20 - (now - tb._underSince) / 750));
+}
+
+/**
+ * Физика плавания игрока, которой нет в prismarine-physics (после её шага, каждый тик): поза плавания под водой с
+ * бегом - горизонтальная инерция 0,9 вместо 0,8 и вертикаль по взгляду (как LivingEntity.travel в игре). Это ровно то,
+ * что делает клиент, поэтому античит видит обычного пловца.
+ */
+function swimPhysics(tb) {
+  const b = tb.bot, e = b.entity;
+  if (!e || !e.isInWater || !b.getControlState('sprint') || b.food <= 6) return;
+  if (!isWater(b, e.position.offset(0, 1.6, 0).floored())) return;   // поза плавания - только с головой под водой
+  e.velocity.x *= 0.9 / 0.8; e.velocity.z *= 0.9 / 0.8;
+  const lookY = Math.sin(e.pitch);   // у mineflayer pitch > 0 - взгляд вверх
+  const waterAbove = isWater(b, e.position.offset(0, 1.9, 0).floored());
+  if (lookY <= 0 || b.getControlState('jump') || waterAbove) e.velocity.y += (lookY - e.velocity.y) * (lookY < -0.2 ? 0.085 : 0.06);
 }
 
 /**
@@ -118,8 +133,7 @@ function airTick(tb) {
   const headIn = isWater(b, p.offset(0, 1.6, 0).floored());
   if (!headIn) { tb._underSince = 0; tb._airEsc = null; return false; }
   tb._underSince = tb._underSince || now;
-  const est = Math.max(0, 20 - (now - tb._underSince) / 750);   // сервер может не слать запас воздуха - тогда своё время под водой
-  const air = Math.min(b.oxygenLevel !== undefined && b.oxygenLevel !== null ? b.oxygenLevel : 20, est);
+  const air = airLeft(tb);
   if (air > 8) return false;
   if (!tb._airEsc || now - tb._airEsc.at > 1000) {
     const V = p.constructor, f = p.floored();
@@ -143,13 +157,8 @@ function airTick(tb) {
   }
   const g = tb._airEsc.goal;
   if (!g) { b.setControlState('jump', true); return false; }
-  const dx = g.x - p.x, dy = g.y - p.y, dz = g.z - p.z, d = Math.hypot(dx, dy, dz) || 1;
-  e.velocity.x += (dx / d * SWIM_FAST - e.velocity.x) * 0.4;
-  e.velocity.z += (dz / d * SWIM_FAST - e.velocity.z) * 0.4;
-  e.velocity.y += (Math.max(-0.05, dy / d * SWIM_FAST + 0.02) - e.velocity.y) * 0.4;
-  b.setControlState('sprint', b.food > 6); b.setControlState('forward', true); b.setControlState('jump', Math.hypot(dx, dz) < 1);
-  b.look(Math.atan2(-dx, -dz), Math.max(-0.8, Math.min(0.8, Math.atan2(dy, Math.hypot(dx, dz) || 1))), true);
+  steer(tb, g.x - p.x, g.y - p.y + 1, g.z - p.z, true);
   return true;
 }
 
-module.exports = { swimTick, airTick, nextPoint, SWIM_FAST, SWIM_SURF };
+module.exports = { swimTick, airTick, swimPhysics, nextPoint, SWIM_FAST, SWIM_SURF };

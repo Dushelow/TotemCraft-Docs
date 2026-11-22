@@ -15,9 +15,9 @@ t.bot.pathfinder.isMoving = () => true; t.bot.entity.position = new Vec3(0.8, 64
 // стрела летит в неё с запада
 t.bot.entity.position = new Vec3(-2.5, 64, 0.5); t.bot.entity.velocity = new Vec3(0, 0, 0);
 t.bot.entities = { 1: { name: 'arrow', position: new Vec3(-12, 65, 0.5), velocity: new Vec3(1.5, 0, 0) } };
-t.dodgeTick(); ok('стрела в неё - шаг вбок', Math.abs(t.bot.entity.velocity.z) > 0.2, t.bot.entity.velocity.z.toFixed(2));
-t._dodgeAt = 0; t.bot.entity.velocity = new Vec3(0, 0, 0); t.bot.entities = { 1: { name: 'arrow', position: new Vec3(-12, 65, 6), velocity: new Vec3(1.5, 0, 0) } };
-t.dodgeTick(); ok('стрела мимо - стоит', t.bot.entity.velocity.z === 0);
+t.dodgeTick(); ok('стрела в неё - шаг вбок клавишей', ctl.left || ctl.right, ctl.left ? 'влево' : ctl.right ? 'вправо' : 'нет');
+t._dodgeAt = 0; ctl.left = ctl.right = false; t.bot.entities = { 1: { name: 'arrow', position: new Vec3(-12, 65, 6), velocity: new Vec3(1.5, 0, 0) } };
+t.dodgeTick(); ok('стрела мимо - стоит', !ctl.left && !ctl.right);
 // разведение: в стаде предел
 const cows = {}; for (let i = 0; i < 12; i++) cows[i] = { id: i, name: 'cow', position: new Vec3(i % 4, 64, Math.floor(i / 4)), metadata: [] };
 Object.assign(t.bot, { entities: cows, inventory: { items: () => [{ name: 'wheat', count: 20 }] } });

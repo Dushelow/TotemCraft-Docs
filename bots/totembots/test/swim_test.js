@@ -6,7 +6,7 @@ const registry = require(R + '/prismarine-registry')('1.21.4');
 const Block = require(R + '/prismarine-block')(registry);
 const { Vec3 } = require(R + '/vec3');
 const { Physics, PlayerState } = require(R + '/prismarine-physics');
-const { swimTick } = require(path.resolve(__dirname, '../app/swim.js'));
+const { swimTick, swimPhysics } = require(path.resolve(__dirname, '../app/swim.js'));
 const W = registry.blocksByName.water.defaultState, S = registry.blocksByName.stone.defaultState, A = registry.blocksByName.air.defaultState;
 const world = { getBlock: (v) => { v = v.floored(); let st = A; if (v.y <= 55) st = S; else if (v.y <= 61 && v.x > -5 && v.x < 45 && Math.abs(v.z) < 6) st = W; else if (v.y <= 61) st = S; const b = Block.fromStateId(st, 0); b.position = v; return b; } };
 function makeBot() {
@@ -31,6 +31,7 @@ function run(useNew) {
   for (let t = 0; t < 160; t++) {
     if (!(useNew && swimTick(tb))) { control.forward = true; control.jump = true; control.sprint = false; bot.entity.yaw = -Math.PI / 2; }
     physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot);
+    if (useNew) swimPhysics(tb);   // как в bot.js: физика пловца после шага
     minY = Math.min(minY, bot.entity.position.y); maxY = Math.max(maxY, bot.entity.position.y);
   }
   const p = bot.entity.position;
@@ -40,5 +41,5 @@ run(false); run(true);
 // поворот: 12 блоков на восток, потом 4 на юг (в бассейне шириной 10)
 nodes.length = 0; for (let x = 1; x <= 12; x++) nodes.push({ x, y: 59, z: 0 }); for (let z = 1; z <= 4; z++) nodes.push({ x: 12, y: 59, z });
 { const { bot, control } = makeBot(); const tb = { bot, lastPath: { path: nodes } };
-  for (let t = 0; t < 160; t++) { swimTick(tb); physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot); }
+  for (let t = 0; t < 160; t++) { swimTick(tb); physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot); swimPhysics(tb); }
   const p = bot.entity.position; console.log(`поворот: дошёл до ${p.x.toFixed(1)} ${p.z.toFixed(1)} (цель 12.5 4.5)`); }

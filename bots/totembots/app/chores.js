@@ -72,7 +72,9 @@ class Chores {
         const x = Math.floor(e.position.x + hx * sgn * 1.2), z = Math.floor(e.position.z + hz * sgn * 1.2), y = Math.floor(e.position.y);
         if (this.standOk && !this.standOk(x, y, z)) continue;
         this._dodgeAt = now;
-        e.velocity.x += hx * sgn * 0.35; e.velocity.z += hz * sgn * 0.35;   // шаг вбок, как стрейф игрока
+        // шаг вбок клавишей (влево или вправо от взгляда), как стрейф игрока: своя скорость тела античит видит как Speed
+        const rx = Math.cos(e.yaw), rz = -Math.sin(e.yaw), side = (hx * sgn * rx + hz * sgn * rz) > 0 ? 'right' : 'left';
+        b.setControlState(side, true); setTimeout(() => { try { b.setControlState(side, false); } catch {} }, 450);
         if (!this._dodgeSaid || now - this._dodgeSaid > 30000) { this._dodgeSaid = now; this.log(`уворачиваюсь от ${s.name}`); }
         return;
       }
