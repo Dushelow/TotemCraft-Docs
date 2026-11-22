@@ -362,7 +362,11 @@ let projectState = { status: '', syncedVersion: -1, syncedAt: 0, busy: false };
 function projectEnabled() { return !cfg.qwenProject || cfg.qwenProject.enabled !== false; }
 async function projectSync(force = false) {
   if (!projectEnabled() || projectState.busy || cfg.paused) return;
-  if (bridge && (bridge.resting || bridge.captcha)) return;   // лимит или проверка: не открывать проект зря (22.11: «начала новый проект на том же сайте»)
+  if (bridge && (bridge.resting || bridge.captcha)) return;
+  // память в проект - только в тишине: не во время ответа и не сразу после (22.11: чат ещё грузил ответ, а синхронизация
+  // открыла проект поверх и окно застряло). Мозги ботов ждут ответа - тоже не сейчас
+  if (bridge && (bridge.busy > 0 || Date.now() - (bridge.lastAskAt || 0) < 30000)) return;
+  if ([...live.values()].some((l) => l.brain && (l.brain.busy || (l.brain.pending || []).length))) return;   // лимит или проверка: не открывать проект зря (22.11: «начала новый проект на том же сайте»)
   if (!force && ![...live.values()].some((l) => l.body && l.body.status !== 'off')) return;   // до «Старт» - не трогать Qwen
   const memVer = [...memories.values()].reduce((s, m) => s + m.version, 0);
   if (!force && (memVer === projectState.syncedVersion || Date.now() - projectState.syncedAt < 10 * 60000)) return;
@@ -374,7 +378,8 @@ async function projectSync(force = false) {
     const v = memVer;
     projectState.status = 'обновляю память...';
     // в проекте - разделами по ботам: каждый читает только свою (так сказано во вводной)
-    const r = await project.syncMemory([...memories.entries()].map(([n, m]) => `# ПАМЯТЬ БОТА ${n} (только для ${n}, другим ботам - не их)\n\n` + m.markdown()).join('\n\n'));
+    // синхронизация зависла (окно проекта не открылось) - бросить через 60 с и вернуть страницу, чтобы мозг не встал
+    const r = await Promise.race([project.syncMemory([...memories.entries()].map(([n, m]) => `# ПАМЯТЬ БОТА ${n} (только для ${n}, другим ботам - не их)\n\n` + m.markdown()).join('\n\n')), new Promise((_, no) => setTimeout(() => no(new Error('синхронизация памяти зависла - пропущена')), 60000))]).catch(async (e) => { try { bridge.needReload = true; await qwen.webContents.loadURL('https://chat.qwen.ai/'); } catch {} throw e; });
     projectState.syncedVersion = v; projectState.syncedAt = Date.now();
     projectState.status = r + ', ' + new Date().toLocaleTimeString('ru-RU');
   } catch (e) {

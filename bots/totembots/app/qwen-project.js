@@ -23,7 +23,8 @@ class QwenProject {
   get id() { return (this.cfg().qwenProject || {}).id || ''; }
 
   // в общей очереди моста: вкладка Qwen одна
-  run(fn) { return this.bridge.exclusive(fn); }
+  // дело с проектом зависло (окно не открылось) - через 90 с отпустить очередь моста, иначе мозг ботов стоит (22.11)
+  run(fn) { return this.bridge.exclusive(() => Promise.race([fn(), new Promise((_, no) => setTimeout(() => no(new Error('дело с проектом Qwen зависло - пропущено')), 90000))])); }
 
   dbg() { this.bridge.attachDebugger(); return this.wc.debugger; }
   ev(expr) { return this.wc.executeJavaScript(expr).catch((e) => { throw new Error('скрипт на странице упал: ' + expr.replace(/s+/g, ' ').slice(0, 120)); }); }

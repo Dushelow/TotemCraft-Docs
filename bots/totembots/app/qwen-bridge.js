@@ -341,6 +341,7 @@ class QwenBridge {
       this.busy++;
       await this.wc.executeJavaScript(BUSY_ON).catch(() => {});
       try { return await fn(); } finally {
+        this.lastAskAt = Date.now();
         if (--this.busy === 0) await this.wc.executeJavaScript(BUSY_OFF).catch(() => {});
       }
     };
@@ -627,6 +628,7 @@ class QwenBridge {
 
   async _ask(chatId, text, model, mode, image) {
     const t0 = Date.now(), ms = () => `${((Date.now() - t0) / 1000).toFixed(1)} с`;
+    this.lastAskAt = Date.now();   // синхронизация памяти в проект ждёт тишины (main.js projectSync)
     this.plog('запрос: начало', `чат ${chatId || 'новый'}, модель ${model || 'текущая'}, ${String(text).length} знаков`);
     if (!chatId && !((this.noProjectUntil || 0) > Date.now())) { await this.beforeNewChat(); this.plog('запрос: проект готов', ms()); }
     await this.open(chatId);
