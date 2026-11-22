@@ -123,10 +123,16 @@ class Router {
   async askQwen(ch, text, opt) {
     // новый чат без вводной - мозг не знал, что управляет телом, и писал планы как ассистент (19.11)
     if (!ch.qwenId && !ch.warm) ch.warm = Object.values(this.warms || {}).pop() || '';
-    let send = text;
-    if (!ch.qwenId && ch.turns.length) send = this.recap(ch) + '\n\n' + text;
-    else if (!ch.qwenId && ch.warm && ch.warm !== text) send = ch.warm + '\n\n' + text;
-    const r = await this.qwen.ask(ch.qwenId, send, opt);
+    // сменился аккаунт Qwen (вошли в другой из-за лимита) - все старые чаты не наши: начать заново с вводной
+    try { const acc = this.qwen.accountId ? await this.qwen.accountId() : ''; if (acc && this.qwenAcc && acc !== this.qwenAcc) { for (const c of this.chats.values()) c.qwenId = ''; this.log('Qwen: другой аккаунт - чаты начинаются заново, с вводной'); } if (acc) this.qwenAcc = acc; } catch {}
+    const build = () => (!ch.qwenId && ch.turns.length ? this.recap(ch) + '\n\n' + text : !ch.qwenId && ch.warm && ch.warm !== text ? ch.warm + '\n\n' + text : text);
+    let r;
+    try { r = await this.qwen.ask(ch.qwenId, build(), opt); }
+    catch (e) {
+      if (!/CHAT_GONE/.test(e.message) || !ch.qwenId) throw e;
+      ch.qwenId = '';   // чата нет на этом аккаунте - новый, с вводной и кратким пересказом
+      r = await this.qwen.ask('', build(), opt);
+    }
     ch.qwenId = r.chatId || ch.qwenId;
     return r.answer;
   }

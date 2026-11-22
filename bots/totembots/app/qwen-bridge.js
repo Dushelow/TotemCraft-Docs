@@ -427,6 +427,13 @@ class QwenBridge {
     try { return { pcm: await got, rate: 24000 }; } finally { this.ttsWait = null; }
   }
 
+  /** Есть ли чат у текущего аккаунта (API сайта). Не удалось проверить - считаем, что есть. */
+  async chatExists(chatId) {
+    const r = await this.wc.executeJavaScript(`(async () => { try { const r = await fetch('/api/v2/chats/${chatId}', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } }); if (r.status === 404 || r.status === 403) return false; const j = await r.json().catch(() => null); return !(j && j.success === false); } catch { return true; } })()`).catch(() => true);
+    return r !== false;
+  }
+  /** Номер аккаунта Qwen (из токена входа): сменился - старые чаты и проект не наши. */
+  accountId() { return this.wc.executeJavaScript(`(() => { try { const t = localStorage.getItem('token') || ''; const p = JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))); return p.id || p.sub || p.email || t.slice(-16); } catch { return ''; } })()`).catch(() => ''); }
   currentChat() {
     // только настоящий номер чата: при создании адрес на миг бывает /c/new-chat (его принимали за номер - стенд 15.11)
     const m = /^https:\/\/chat\.qwen\.ai\/c\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i.exec(this.wc.getURL());
@@ -441,6 +448,9 @@ class QwenBridge {
     this.needReload = false;
     await this.wc.loadURL(want);
     await this.hook();
+    // чат с другого аккаунта или удалённый: страница открывается пустой, и сообщение уходило в новый чат без вводной
+    // (22.11: сменили аккаунт из-за лимита - бот написал в чистый чат «[снова в игре]» без объяснений)
+    if (chatId && !(await this.chatExists(chatId))) { this.plog('запрос: чата нет на этом аккаунте', chatId); throw new Error('CHAT_GONE: чата нет на этом аккаунте Qwen'); }
     // ждать готовности страницы, а не фиксированное время: страница проекта через 1,5 с ещё пустая (модель не выбрана),
     // и отправленное туда сообщение молча пропадало - бот молчал (15.11)
     for (let i = 0; i < 60; i++) {
