@@ -120,6 +120,9 @@ class Vehicles {
   async drive(a, tok) {
     const b = this.bot;
     if (!b.vehicle) throw new Error('я ни на чём не сижу - сначала !mount');
+    // рулит тот, кто сел первым (так в игре): пассажир править не может (22.11: Loki сел к хозяину и «плыл» на месте)
+    const ps = b.vehicle.passengers || [];
+    if (ps.length && ps[0] !== b.entity) { const d = ps[0]; throw new Error(`рулит ${d.username || d.name || 'другой'}: я пассажир, править не могу - пусть рулит он, или он пересядет, и я сяду первым`); }
     const x = +a.x, z = +a.z;
     if (!isFinite(x) || !isFinite(z)) throw new Error('куда? нужны x и z');
     const boat = /boat|raft/.test(b.vehicle.name || '');

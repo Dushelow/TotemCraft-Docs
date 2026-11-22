@@ -1550,11 +1550,13 @@ class TotemBot extends EventEmitter {
     // то же дело уже идёт (мозг на каждый итог и реплику отвечает той же цепочкой) - не начинать заново
     // (22.11: «собери урожай и поторгуйся» - каждый новый ответ отменял прежний, «задание отменено» снова будило
     // нейросеть, и она стояла, ничего не доделав)
-    if (this.mode === 'task' && this.runActs && plain.every((a) => this.runActs.slice(this.runAt || 0).includes(a.act))) return 'уже делаю: ' + plain.map((a) => a.act).join(', ');
+    // то же самое - это то же действие с теми же данными (22.11: !drive к новым координатам считался «уже делаю»)
+    const sig = (a) => JSON.stringify(Object.entries(a).filter(([k]) => k !== '_cmd').sort());
+    if (this.mode === 'task' && this.runActs && plain.every((a) => this.runActs.slice(this.runAt || 0).includes(sig(a)))) return 'уже делаю: ' + plain.map((a) => a.act).join(', ');
     if (this.mode === 'task') this.replacedTok = this.token;   // прежнее заменено новым: его «отменено» мозгу не нужно
     this.cancel();
     const tok = this.token;
-    this.runActs = plain.map((a) => a.act); this.runAt = 0;
+    this.runActs = plain.map((a) => JSON.stringify(Object.entries(a).filter(([k]) => k !== '_cmd').sort())); this.runAt = 0;
     this.mode = 'task';
     this.task = label || plain.map((a) => a.act).join(', ');
     const done = [];

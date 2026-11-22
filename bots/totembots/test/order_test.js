@@ -9,7 +9,7 @@ ok('«отдавай» и «иди копай» - не приказ', !f('отд
 // тело: идёт harvest → trades → trade; мозг снова прислал trades, trade - «уже делаю», не отмена
 const tb = Object.create(TotemBot.prototype);
 let cancels = 0;
-Object.assign(tb, { bot: { entity: {} }, status: 'online', opts: {}, mode: 'task', runActs: ['harvest', 'trades', 'trade'], runAt: 0, taskOwner: { rank: 3, at: Date.now() }, token: 5, claim: () => '', cancel() { cancels++; }, log() {} });
+Object.assign(tb, { bot: { entity: {} }, status: 'online', opts: {}, mode: 'task', runActs: [{ act: 'harvest' }, { act: 'trades' }, { act: 'trade' }].map((a) => JSON.stringify(Object.entries(a).sort())), runAt: 0, taskOwner: { rank: 3, at: Date.now() }, token: 5, claim: () => '', cancel() { cancels++; }, log() {} });
 tb.run([{ act: 'trades' }, { act: 'trade' }], 'x', 'master').then((r) => {
   ok('та же цепочка от мозга - не начинать заново', /^уже делаю/.test(r) && cancels === 0, r);
   let bad = 0; for (const [n, c, i] of res) { console.log(`${c ? 'да ' : 'НЕТ'} ${n}${i !== undefined ? ' - ' + i : ''}`); if (!c) bad++; }
