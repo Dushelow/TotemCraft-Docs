@@ -158,9 +158,19 @@ function airTick(tb) {
   tb._underSince = tb._underSince || now;
   const air = airLeft(tb);
   if (air > 8) return false;
+  // Жмём «вверх», а тело не поднимается 1,2 с - над головой что-то, чего нет в блоках: лодка, корабельная шлюпка,
+  // другой игрок (22.11, журнал движения: 15 с на одной высоте 61,20 с зажатым прыжком под лодкой у борта, и утонул).
+  // Эту клетку - в закрытые на 15 с, искать выход в другом месте
+  const B = (tb._blockedCols = (tb._blockedCols || new Map()));
+  for (const [k, t] of B) if (now - t > 15000) B.delete(k);
+  if (b.getControlState('jump') || tb._airEsc) {
+    const S = tb._riseChk;
+    if (!S || Math.abs(S.x - p.x) > 0.6 || Math.abs(S.z - p.z) > 0.6 || p.y > S.y + 0.15) tb._riseChk = { x: p.x, y: p.y, z: p.z, at: now };
+    else if (now - S.at > 1200) { const k = `${Math.floor(p.x)},${Math.floor(p.z)}`; if (!B.has(k)) { B.set(k, now); tb.log(`всплыть не выходит - над головой преграда (${(overhead(b, p) || 'не блок')}), ищу другой выход`); tb._airEsc = null; } tb._riseChk = null; }
+  }
   if (!tb._airEsc || now - tb._airEsc.at > 1000) {
     const V = p.constructor, f = p.floored();
-    const open = (x, y, z) => { const a = b.blockAt(new V(x, y + 1, z)); return a && !isWater(b, a.position) && a.boundingBox === 'empty'; };
+    const open = (x, y, z) => { if (B.has(`${x},${z}`)) return false; const a = b.blockAt(new V(x, y + 1, z)); return a && !isWater(b, a.position) && a.boundingBox === 'empty' && !entityIn(b, x, y + 0.3, z, 2); };
     // обход в ширину по воде от ног: первая клетка с открытым верхом
     const seen = new Set([`${f.x},${f.y},${f.z}`]), q = [[f.x, f.y, f.z, 0]];
     let goal = null;
@@ -182,6 +192,20 @@ function airTick(tb) {
   if (!g) { b.setControlState('jump', true); return false; }
   steer(tb, g.x - p.x, g.y - p.y + 1, g.z - p.z, true);
   return true;
+}
+
+/** Сущность с телом (лодка, игрок, моб) в клетке x z от высоты y на h блоков вверх - туда не всплыть. */
+function entityIn(b, x, y, z, h) {
+  for (const e of Object.values(b.entities)) {
+    if (!e.position || e === b.entity || e.name === 'item' || e.name === 'experience_orb') continue;
+    const w = (e.width || 0.6) / 2, eh = e.height || 1;
+    if (Math.abs(e.position.x - (x + 0.5)) < w + 0.5 && Math.abs(e.position.z - (z + 0.5)) < w + 0.5 && e.position.y < y + h && e.position.y + eh > y) return true;
+  }
+  return false;
+}
+function overhead(b, p) {
+  for (const e of Object.values(b.entities)) if (e.position && e !== b.entity && Math.hypot(e.position.x - p.x, e.position.z - p.z) < 1.5 && e.position.y > p.y && e.position.y - p.y < 3.5) return e.name || e.username || e.type;
+  return '';
 }
 
 /** Стоит в воде без пути (ждёт, смотрит на хозяина) - поплавком: прыжок, когда осел (22.11, журнал движения: висел у

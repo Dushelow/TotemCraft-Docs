@@ -6,7 +6,7 @@
 // Зона - круг на карте (x, z, радиус) в измерении:
 //   запрет - путь не заходит совсем (клетка непроходима), туда не ведёт ни одно дело, жители внутри не в счёт.
 //            Ставит хозяин словами («сюда не ходи», «туда нельзя» - туда, куда он смотрит), командой мозга, табличка
-//            «вход запрещён» (её зона - за табличкой), вторая смерть рядом с опасным местом.
+//            «вход запрещён» (её зона - за табличкой). Смерти - только «опасно».
 //   опасно - путь обходит, если можно (дорого), дела туда идут, но мозг знает. Ставит смерть (7 дней) и блейз в
 //            обычном мире (их там ставят как охрану).
 // Снимает только хозяин («сюда можно», !allowArea). Внутри зоны (зашла до запрета) - выйти можно, вглубь - нет.
@@ -81,7 +81,8 @@ class Zones {
     }
     const now = Date.now();
     const Z = m.data.zones;
-    for (let i = Z.length - 1; i >= 0; i--) if ((Z[i].until && now > Z[i].until) || (Z[i].by === 'табличка' && !NO_SIGN.test(Z[i].name))) Z.splice(i, 1);   // и табличные зоны по старому правилу
+    for (let i = Z.length - 1; i >= 0; i--) if ((Z[i].until && now > Z[i].until) || (Z[i].by === 'табличка' && !NO_SIGN.test(Z[i].name))) Z.splice(i, 1);
+    for (const q of Z) if (q.by === 'смерть' && q.kind === 'запрет') { q.kind = 'опасно'; q.until = now + 3 * 86400000; }   // прежние «запреты за смерти» - в «опасно»   // и табличные зоны по старому правилу
     return Z;
   }
 
@@ -245,9 +246,14 @@ class Zones {
     const dim = this.dimName(), b = this.bot;
     const foes = [...new Set(Object.values(b.entities).filter((e) => e.position && e !== b.entity && this.guard && this.guard.isHostile && this.guard.isHostile(e) && e.position.distanceTo(b.entity.position) < 16).map((e) => e.name))];
     const old = this.zones().find((q) => q.dim === dim && q.kind === 'опасно' && Math.hypot(q.x - pt.x, q.z - pt.z) < q.r + 12);
+    // Смерть - только «опасно» (путь обходит, если можно), а не запрет: погибнуть дважды - не повод больше туда не
+    // ходить (22.11, владелец: «несправедливо», зона легла на спавн у корабля). Запрет ставит только хозяин или
+    // табличка о запрете входа. Повторная смерть рядом - зона чуть шире и держится дольше
     if (old) {
       old.deaths = (old.deaths || 1) + 1;
-      this.addZone({ kind: 'запрет', name: `погибала тут ${old.deaths} раза${foes.length ? ' (' + foes.join(', ') + ')' : ''}`, x: (old.x + pt.x) / 2, y: pt.y, z: (old.z + pt.z) / 2, r: Math.max(12, old.r + 4), by: 'смерть' });
+      old.name = `погибала тут ${old.deaths} раза${foes.length ? ' (' + foes.join(', ') + ')' : ''}`;
+      old.r = Math.min(12, old.r + 2); old.until = Date.now() + 3 * 86400000; old.at = Date.now();
+      this.memory.save(); this.log(`зона: опасно «${old.name}» ${old.x} ${old.z}, радиус ${old.r}`);
       return;
     }
     this.addZone({ kind: 'опасно', name: `погибла тут${foes.length ? ' (' + foes.join(', ') + ')' : ''}`, x: pt.x, y: pt.y, z: pt.z, r: 8, by: 'смерть', until: Date.now() + 7 * 86400000 });
@@ -263,6 +269,18 @@ class Zones {
       const D = this._draw, p = this.ownerAim(D.who, false);
       if (now - D.at > 300000) { this._draw = null; this.log('граница: 5 мин без «готово» - не сохраняю'); }
       else if (p) { const l = D.pts[D.pts.length - 1]; if (!l || Math.hypot(l[0] - p.x - 0.5, l[1] - p.z - 0.5) >= 2) { D.pts.push([p.x + 0.5, p.z + 0.5]); if (D.pts.length > 400) D.pts.splice(1, 1); } }
+    }
+    // места, записанные под водой (тело тогда было в воде), - не место: убрать (раз в минуту, видимые чанки)
+    if (now - (this._placeChkAt || 0) > 60000) {
+      this._placeChkAt = now;
+      try {
+        const P = this.memory.data.places || {}, V = me.constructor;
+        for (const [k, pl] of Object.entries(P)) {
+          if (pl.dim !== this.dimName() || Math.hypot(pl.x - me.x, pl.z - me.z) > 64) continue;
+          const a = b.blockAt(new V(pl.x, pl.y, pl.z)), c = b.blockAt(new V(pl.x, pl.y + 1, pl.z));
+          if (a && c && /water/.test(a.name) && /water/.test(c.name)) { delete P[k]; this.memory.save(); this.log(`место «${pl.name}» было под водой - убрала из памяти`); }
+        }
+      } catch {}
     }
     if (now - (this._zoneScanAt || 0) > 5000) {
       this._zoneScanAt = now;

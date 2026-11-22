@@ -1449,6 +1449,22 @@ class TotemBot extends EventEmitter {
     const who = this.opts.name + (by ? ` (${by})` : '');
     const kind = a.kind || (a.text ? 'fact' : a.note && !a.x ? 'person' : 'place');
     if (kind === 'place') {
+      // дом и базу называет хозяин (22.11: при входе под водой у корабля мозг сам записал «база» - на дне, и потом
+      // плыл туда и тонул)
+      if (a.x === undefined && this.runSource !== 'master' && /^(мой |моя |наш |наша )?(дом|база|хата|жильё)/i.test(String(a.name || ''))) return `«${a.name}» не записываю: дом и базу называет хозяин`;
+      // точка под водой или в воздухе - ближайшее место, где можно стоять (до 8 бл.), иначе не записывать
+      if (a.x === undefined) {
+        const f = this.bot.entity.position.floored(), here = this.bot.blockAt(f);
+        if (here && /water|lava/.test(here.name) || !(this.standOk && this.standOk(f.x, f.y, f.z))) {
+          let best = null;
+          for (let r = 1; r <= 8 && !best; r++) for (let dx = -r; dx <= r && !best; dx++) for (let dz = -r; dz <= r && !best; dz++) for (let dy = 4; dy >= -2; dy--) {
+            const x = f.x + dx, y = f.y + dy, z = f.z + dz, k = this.bot.blockAt(new Vec3(x, y, z));
+            if (this.standOk && this.standOk(x, y, z) && k && !/water/.test(k.name)) { best = { x, y, z }; break; }
+          }
+          if (!best) return `«${a.name}» не записываю: тут нельзя стоять (вода или воздух), твёрдого места рядом нет`;
+          a = { ...a, x: best.x, y: best.y, z: best.z };
+        }
+      }
       const p = this.bot.entity.position;
       return m.place({ name: a.name, x: a.x ?? Math.floor(p.x), y: a.y ?? Math.floor(p.y), z: a.z ?? Math.floor(p.z), dim: a.dim || this.dimName(), note: a.note }, who);
     }

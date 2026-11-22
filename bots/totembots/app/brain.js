@@ -318,7 +318,7 @@ class Brain {
       if (res) { try { this.body.say(res, ch === 'whisper' ? 'whisper' : 'local', ch === 'whisper' ? from : ''); } catch {} this.push(`[чат ${label}] ${from}${role} (${where}): ${text}
 [сделано по слову хозяина] ${res}`, true, from, replyCh); return; }
     }
-    let quick = this.isMaster(from) && (dist !== null && dist <= 32 || ch === 'whisper') ? quickOrder(text, from) : null;
+    let quick = this.isMaster(from) && (dist !== null && dist <= 32 || ch === 'whisper' || ch === 'local') ? quickOrder(text, from) : null;   // ближний чат - всегда рядом
     // «готово», «угол» - про границу, только пока она отмечается; иначе это обычные слова для мозга
     if (quick && quick[0].act === 'zone' && quick[0].draw && quick[0].draw !== 'start' && !this.body._draw) quick = null;
     if (quick) {

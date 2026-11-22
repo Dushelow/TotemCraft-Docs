@@ -57,6 +57,9 @@ class Attention {
     if (m.channel === 'whisper') kind = 'address';
     else if (m.channel === 'voice') kind = (mention || inConvo || m.master || this.mode !== 'quiet') ? 'address' : 'near';   // голос рядом слышен как живой
     else if (mention) kind = 'address';
+    // хозяин в ближнем чате - всегда к нам (22.11: «садись», «в лодку ко мне» ушли в «вокруг», бот их не услышал):
+    // ближний чат слышат только рядом, а хозяину бот и служит
+    else if (m.master && m.channel === 'local') kind = 'address';
     else if (this.mode === 'quiet') kind = near ? 'near' : 'background';
     else if (inConvo) kind = 'address';
     else if (m.master && m.dist !== null && m.dist <= MASTER_BLOCKS && !(m.channel === 'global' && other)) kind = 'address';
