@@ -53,6 +53,13 @@ function install(mv, bot) {
     cache.set(n, c);
     return c;
   }
+  /** Клетка - вода (или в воде: водоросли, пузыри, затопленное без коробки). */
+  function waterAt(x, y, z) {
+    const b = blk(x, y, z);
+    if (!b) return false;
+    if (/^(water|bubble_column|kelp|kelp_plant|seagrass|tall_seagrass)$/.test(b.name)) return true;
+    try { return b.boundingBox === 'empty' && b.getProperties && b.getProperties().waterlogged === true; } catch { return false; }
+  }
   /** Коробки блока, если его открыть/закрыть (для дверей, калиток, люков; двери - обе половины). */
   function flipped(c) {
     if (c.flip) return c.flip;
@@ -232,8 +239,31 @@ function install(mv, bot) {
   }
 
   // сбой своей навигации - не роняет поиск пути: ходы модуля пути по-старому, сбой считается (health.js)
+  // Плавание под водой (22.11: «только над водой плавает, а под водой не может»): модуль пути под воду не ходит совсем
+  // («dont go underwater»). Здесь ходы сквозь толщу воды во все стороны и вверх-вниз; ведёт их swim.js (рывком, в позе
+  // плавания), воздух кончается - всплывает. Глубже поверхности - дороже, чтобы без нужды не нырял.
+  function swimMoves(node, have) {
+    const out = [];
+    if (mv.navSwim === false || !waterAt(node.x, node.y, node.z)) return out;
+    let surfY = node.y + 24; for (let y = node.y + 1; y < node.y + 24; y++) if (!waterAt(node.x, y, node.z)) { surfY = y; break; }
+    for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0], [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1], [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1], [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1]]) {
+      const nx = node.x + dx, ny = node.y + dy, nz = node.z + dz, k = `${nx},${ny},${nz}`;
+      if (have.has(k) || !waterAt(nx, ny, nz)) continue;
+      const head = cell(nx, ny + 1, nz);
+      if (head.boxes.length && !waterAt(nx, ny + 1, nz)) continue;   // над головой твёрдое - тело не пройдёт
+      if (dx && dz && (cell(node.x + dx, ny, node.z).boxes.length || cell(node.x, ny, node.z + dz).boxes.length)) continue;   // угол не срезать
+      const deep = Math.max(0, surfY - ny - 1);
+      have.add(k);
+      const m = new Move(nx, ny, nz, node.remainingBlocks, (dx && dz ? 1.5 : 1.1) + (dy ? 0.3 : 0) + Math.min(3, deep * 0.15), [], []);
+      m.swim = true;
+      out.push(m);
+    }
+    return out;
+  }
   mv.getNeighbors = function (node) {
-    try { return navNeighbors(node); } catch (e) { if (bot && bot._tb && bot._tb.fault) bot._tb.fault('nav', e); return base(node); }
+    let r;
+    try { r = navNeighbors(node); } catch (e) { if (bot && bot._tb && bot._tb.fault) bot._tb.fault('nav', e); r = base(node); }
+    try { const have = new Set(r.map((m) => `${m.x},${m.y},${m.z}`)); return r.concat(swimMoves(node, have)); } catch { return r; }
   };
   const navNeighbors = function (node) {
     if (Date.now() - cacheAt > 3000) { cache.clear(); cacheAt = Date.now(); ox = node.x; oz = node.z; cache.ox = ox; cache.oz = oz; }
@@ -333,6 +363,7 @@ function install(mv, bot) {
       out.push(m);
     }
     if (mv.navLeaps !== false) leaps(node, fy, out, seen);
+
     for (const m of hatchMoves) if (!seen.has(`${m.x},${m.y},${m.z}`)) { seen.add(`${m.x},${m.y},${m.z}`); out.push(m); }
     if (out.length === n0) return fallback('ни одного шага');
     return out;
