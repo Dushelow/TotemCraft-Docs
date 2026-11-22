@@ -44,14 +44,45 @@ class Vehicles {
       await sleep(150);
       const d = target.position.distanceTo(b.entity.position.offset(0, 1.6, 0));
       this.busyLook = true;
-      try { await b.lookAt(target.position.offset(0, 0.4, 0), true); if (i % 2 === 0) b.mount(target); else await b.activateEntity(target).catch(() => {}); } finally { this.busyLook = false; }
-      for (let w = 0; w < 20 && !b.vehicle; w++) await sleep(100);
-      if (!b.vehicle) this.log(`в ${target.name} не сел (попытка ${i + 1}, до неё ${d.toFixed(1)} бл.)`);
+      let heard = '';
+      try { await b.lookAt(target.position.offset(0, (target.height || 0.5) / 2, 0), true); heard = await this.interactEntity(target, () => !!b.vehicle); } finally { this.busyLook = false; }
+      if (!b.vehicle) this.log(`в ${target.name} не сел (попытка ${i + 1}, до неё ${d.toFixed(1)} бл.; сервер прислал: ${heard || 'ничего'})`);
     }
     if (!b.vehicle) throw new Error(`не сел в ${target.name}${/horse|donkey|mule|camel/.test(target.name) ? ' (лошадь должна быть приручена и под седлом)' : ''}`);
     if (this.mode !== 'task') this.mode = 'ride';
     const driver = !(target.passengers || []).some((x) => x !== b.entity);
     return `сел в ${target.name}${driver ? ' (я за рулём: !drive(x, z))' : ' пассажиром'}`;
+  }
+
+  /**
+   * Правый клик по существу (лодка, житель) как у клиента игры: присед отпущен, взгляд на середину тела, в тике физики
+   * сначала «клик в точку» (interact_at), затем «клик» (interact) - mineflayer шлёт только второе и вне тика, и сервер
+   * 26.3 молча не сажал в лодку и не открывал торговлю (22.11: по 3 попытки в 2 бл. - ничего). Возвращает, что
+   * сервер прислал в ответ (для журнала), ждёт до 2 с, пока done() не станет true.
+   */
+  async interactEntity(target, done) {
+    const b = this.bot, seen = [];
+    const spy = (data, meta) => { if (/passengers|open_window|open_screen|trade_list|mount|entity_link|system_chat|action_bar/.test(meta.name) && seen.length < 8) seen.push(meta.name); };
+    b._client.on('packet', spy);
+    try {
+      if (b.getControlState('sneak')) { b.setControlState('sneak', false); await sleep(150); }
+      await new Promise((res) => { this._interactQ = { target, res }; setTimeout(res, 1500); });
+      for (let w = 0; w < 20 && !(done && done()); w++) await sleep(100);
+    } finally { b._client.removeListener('packet', spy); this._interactQ = null; }
+    return seen.join(', ');
+  }
+  /** Из тика физики (bot.js): отправить клик по существу, если ждёт. */
+  interactTick() {
+    const q = this._interactQ, b = this.bot;
+    if (!q || !b.entity) return;
+    this._interactQ = null;
+    const t = q.target, hit = { x: 0, y: (t.height || 0.5) / 2, z: 0 };
+    try {
+      b._client.write('use_entity', { target: t.id, mouse: 2, sneaking: false, hand: 0, x: hit.x, y: hit.y, z: hit.z });
+      b._client.write('use_entity', { target: t.id, mouse: 0, sneaking: false, hand: 0 });
+      b.swingArm('right');
+    } catch (e) { this.log('клик по существу: ' + e.message); }
+    q.res();
   }
 
   /** Поставить свою лодку на воду или лёд рядом (как игрок: лодка в руке, правый клик по блоку). */

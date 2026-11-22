@@ -82,7 +82,7 @@ class Zones {
     const now = Date.now();
     const Z = m.data.zones;
     for (let i = Z.length - 1; i >= 0; i--) if ((Z[i].until && now > Z[i].until) || (Z[i].by === 'табличка' && !NO_SIGN.test(Z[i].name))) Z.splice(i, 1);
-    for (const q of Z) if (q.by === 'смерть' && q.kind === 'запрет') { q.kind = 'опасно'; q.until = now + 3 * 86400000; }   // прежние «запреты за смерти» - в «опасно»   // и табличные зоны по старому правилу
+    for (const q of Z) if (q.by === 'смерть' && (q.kind === 'запрет' || !q.until || q.until - now > 2 * 86400000)) { q.kind = 'опасно'; q.until = Math.min(q.until || Infinity, now + 86400000); }   // прежние «запреты за смерти» - в «опасно»   // и табличные зоны по старому правилу
     return Z;
   }
 
@@ -240,23 +240,29 @@ class Zones {
     return this.zonePlace({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) }, A.name, 0);
   }
 
-  /** Смерть: опасное место; вторая смерть рядом за неделю - запрет. */
-  zoneDeath(pt) {
+  /**
+   * Смерть: опасно, только если убило что-то снаружи - моб, лава, огонь, взрыв, ловушка, магма, кактус, порошковый
+   * снег (22.11, владелец: «если умер из-за херни - не факт, что опасность, может это он тупой»). Утонул, задохнулся
+   * в стене, разбился, умер с голоду - своя ошибка: зону не ставить, только в журнал. Зона на сутки, повтор - на двое.
+   */
+  zoneDeath(pt, msg = '') {
     if (!this.memory) return;
-    const dim = this.dimName(), b = this.bot;
+    const dim = this.dimName(), b = this.bot, m = String(msg).replace(this.opts.name, '').trim();
+    const OWN = /drown|suffocat|starv|hit the ground|fell from|fell off|fell out of the world|experienced kinetic|squash|died$|^died|утонул|задохнул|разбил|упал|голод/i;
+    const REAL = /slain|shot|blown up|blew up|burn|flames|lava|fire|magma|hot floor|pricked|cactus|stung|frozen|powder snow|fireball|magic|wither|killed|impaled|squished|sonic|stalagmite|stalactite|anvil|trident|убит|застрел|взорв|сгорел|лав|огн/i;
     const foes = [...new Set(Object.values(b.entities).filter((e) => e.position && e !== b.entity && this.guard && this.guard.isHostile && this.guard.isHostile(e) && e.position.distanceTo(b.entity.position) < 16).map((e) => e.name))];
-    const old = this.zones().find((q) => q.dim === dim && q.kind === 'опасно' && Math.hypot(q.x - pt.x, q.z - pt.z) < q.r + 12);
-    // Смерть - только «опасно» (путь обходит, если можно), а не запрет: погибнуть дважды - не повод больше туда не
-    // ходить (22.11, владелец: «несправедливо», зона легла на спавн у корабля). Запрет ставит только хозяин или
-    // табличка о запрете входа. Повторная смерть рядом - зона чуть шире и держится дольше
+    const real = m ? REAL.test(m) && !OWN.test(m) : foes.length > 0;
+    if (!real) { this.log(`смерть ${m ? '(«' + m + '»)' : ''} - своя ошибка, а не опасность места: зону не ставлю`); return; }
+    const why = m || foes.join(', ');
+    const old = this.zones().find((q) => q.dim === dim && q.kind === 'опасно' && Math.hypot(q.x - pt.x, q.z - pt.z) < q.r + 8);
     if (old) {
       old.deaths = (old.deaths || 1) + 1;
-      old.name = `погибала тут ${old.deaths} раза${foes.length ? ' (' + foes.join(', ') + ')' : ''}`;
-      old.r = Math.min(12, old.r + 2); old.until = Date.now() + 3 * 86400000; old.at = Date.now();
+      old.name = `погибала тут ${old.deaths} раза (${why})`.slice(0, 60);
+      old.r = Math.min(12, old.r + 2); old.until = Date.now() + 2 * 86400000; old.at = Date.now();
       this.memory.save(); this.log(`зона: опасно «${old.name}» ${old.x} ${old.z}, радиус ${old.r}`);
       return;
     }
-    this.addZone({ kind: 'опасно', name: `погибла тут${foes.length ? ' (' + foes.join(', ') + ')' : ''}`, x: pt.x, y: pt.y, z: pt.z, r: 8, by: 'смерть', until: Date.now() + 7 * 86400000 });
+    this.addZone({ kind: 'опасно', name: `погибла тут (${why})`.slice(0, 60), x: pt.x, y: pt.y, z: pt.z, r: 8, by: 'смерть', until: Date.now() + 86400000 });
   }
 
   /** Раз в 5 с: таблички «вход запрещён», блейзы в обычном мире, выход из зоны, если оказалась внутри. */

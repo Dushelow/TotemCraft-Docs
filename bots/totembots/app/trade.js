@@ -76,7 +76,8 @@ class Trade {
     const spy = (data, meta) => { if (/open_window|open_screen|trade_list|merchant|window_items|container|set_slot|close_window|system_chat|action_bar/.test(meta.name) && seen.length < 12) seen.push(meta.name + (data && data.windowType !== undefined ? ':' + JSON.stringify(data.windowType).slice(0, 30) : '') + (data && data.trades ? ':' + data.trades.length + ' торгов' : '')); };
     this.bot._client.on('packet', spy);
     let v;
-    try { v = await withTimeout(this.bot.openVillager(e), 5000, 'житель не открыл окно торговли'); }
+    // окно торговли открывает клик как у клиента (interactEntity): openVillager ждёт окно, клик - наш, в тике
+    try { const pOpen = this.bot.openVillager(e); this.interactEntity(e, () => !!this.bot.currentWindow).catch(() => {}); v = await withTimeout(pOpen, 5000, 'житель не открыл окно торговли'); }
     catch (err) { throw new Error(`${err.message} (сервер прислал: ${seen.join(', ') || 'ничего'}; до жителя ${d().toFixed(1)} бл.)`); }
     finally { this.bot._client.removeListener('packet', spy); }
     for (let k = 0; k < 10 && !(v.trades && v.trades.length); k++) await sleep(200);

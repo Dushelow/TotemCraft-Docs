@@ -212,6 +212,8 @@ class TotemBot extends EventEmitter {
     bot.on('path_update', (r) => { this.lastPath = { status: r.status, path: r.path, at: Date.now() }; });
     bot.on('messagestr', (msg, pos, json, sender) => {
       if (pos === 'system' || pos === 'game_info') { this.lastSystem = (this.lastSystem || []).concat(String(msg).slice(0, 160)).slice(-10); }
+      // сообщение сервера о своей смерти («Loki drowned», «Loki was slain by Zombie») - причина для зоны (zones.js)
+      try { const t = String(msg || ''); if (t.startsWith(this.opts.name + ' ') && !/joined|left|has made|получил|был кикнут/.test(t)) this.deathMsg = { text: t, at: Date.now() }; } catch {}
       this.onMessage(msg, pos, json, sender);
     });
     // чат разбирается в onMessage (каналы по оформлению Essentials); события mineflayer chat/whisper не используем:
@@ -224,7 +226,7 @@ class TotemBot extends EventEmitter {
       this.ev('смерть', {});
       // опасное место: путь будет его обходить сутки (память опасности, как у мобов и NPC)
       if (this.memory) { const dd = this.memory.data.danger = (this.memory.data.danger || []).filter((x) => Date.now() - x.at < 86400000); dd.push({ ...this.deathPoint, dim: this.dimName() }); if (dd.length > 50) dd.shift(); this.memory.save(); }
-      try { this.zoneDeath(this.deathPoint); } catch (e) { this.log('зона смерти: ' + e.message); }
+      { const pt = this.deathPoint; setTimeout(() => { try { this.zoneDeath(pt, this.deathMsg && Date.now() - this.deathMsg.at < 4000 ? this.deathMsg.text : ''); } catch (e) { this.log('зона смерти: ' + e.message); } }, 1500); }   // причина приходит сообщением сервера
       if (this.memory) this.memory.journal(this.opts.name, `умер на ${this.deathPoint.x} ${this.deathPoint.y} ${this.deathPoint.z} (${this.dimName()})`);
       this.cancel();
       // после возрождения (spawn) - забрать вещи, как waypoint смерти в Baritone
@@ -458,6 +460,7 @@ class TotemBot extends EventEmitter {
     this.trace = new (require('./movetrace').MoveTrace)(this, require('path').join(__dirname, '..', 'local', 'logs'));
     b.on('physicsTick', () => {
       try { this.trace.tick(); } catch {}
+      try { if (this._interactQ) this.interactTick(); } catch {}   // клик по существу - в тике, как клиент (vehicles.js)
       try { b._client.write('tick_end', {}); } catch {}
       this.lookTick();
       if (this.guard) this.guard.combatTick();

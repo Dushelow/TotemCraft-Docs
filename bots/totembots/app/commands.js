@@ -14,7 +14,7 @@ const C = [
   ['enterPortal', 'portal,usePortal', '[x, y, z]', 'войти в портал (без координат - в ближайший)', (a) => ({ act: 'portal', x: a[0], y: a[1], z: a[2] })],
   ['wander', 'explore,walkAround', '[сторона света]', 'прогуляться, поисследовать (без стороны - где ещё не был)', (a) => ({ act: 'wander', dir: a[0] })],
   ['surface', 'goUp,toSurface', '', 'подняться на поверхность из пещеры или шахты', () => ({ act: 'surface' })],
-  ['mount', 'ride,board,getIn,sit,enterBoat,mountHorse', '[что или игрок]', 'сесть в лодку или на лошадь рядом (boat, horse); лодки рядом нет, а в инвентаре есть - сама поставлю на воду или лёд; с ником игрока - к нему в лодку пассажиром', (a) => (a[0] && /^[A-Za-z0-9_]{3,16}$/.test(String(a[0])) && !/^(boat|horse|donkey|mule|camel|pig|minecart|raft|llama|strider)$/i.test(String(a[0])) ? { act: 'mount', who: a[0] } : { act: 'mount', what: a[0] })],
+  ['boardBoat', 'mount,ride,board,getIn,enterBoat,mountHorse', '[boat|horse или ник хозяина лодки]', 'сесть в лодку или на лошадь рядом; с ником - в лодку, где сидит или у которой стоит этот игрок (на самих игроков сесть нельзя); лодки нет, а в инвентаре есть - поставлю на воду или лёд', (a) => (a[0] && /^[A-Za-z0-9_]{3,16}$/.test(String(a[0])) && !/^(boat|horse|donkey|mule|camel|pig|minecart|raft|llama|strider)$/i.test(String(a[0])) ? { act: 'mount', who: a[0] } : { act: 'mount', what: a[0] })],
   ['dismount', 'getOut,leaveBoat,unmount', '', 'слезть с лошади, выйти из лодки', () => ({ act: 'dismount' })],
   ['drive', 'row,steer,rideTo,sail', 'x, z', 'сидишь в лодке или на лошади за рулём - плыть/ехать к точке', (a) => ({ act: 'drive', x: a[0], z: a[1] })],
   // --- работа
