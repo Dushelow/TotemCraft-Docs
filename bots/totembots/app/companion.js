@@ -68,14 +68,21 @@ class Companion {
       // конец занятия: хозяин пошёл, отошли далеко, пришло дело, время вышло
       const gone = owner && (owner.position.distanceTo(C.stop || owner.position) > 1.5 || now - C.stillSince < 1000 || owner.position.distanceTo(b.entity.position) > 14);
       if (busy || sb.token !== this.token || gone || now > sb.until || (this.mode === 'follow' && !owner)) { this.sandboxEnd(gone ? 'хозяин пошёл' : ''); return; }
-      if (sb.phase === 'go' && b.entity.position.distanceTo(sb.spot) < 1.3) { sb.phase = 'at'; this.task = sb.what; this.log('сама: ' + sb.what); }
+      if (sb.phase === 'go' && b.entity.position.distanceTo(sb.spot) < 1.3) { sb.phase = 'at'; this.task = sb.what; if (!sb.hops) this.log('сама: ' + sb.what); }
       if (sb.phase === 'go' && now - sb.at > 12000) { this.sandboxEnd('не дошла'); return; }
       if (sb.phase === 'at') {
         if (this.propOn) this.propOn(sb).catch(() => {});
         if (this.opportunityAct) this.opportunityAct(sb).catch(() => {});
         // смотреть на дело, иногда на хозяина; рукой - у верстака и наковальни
         // осматривается: по очереди на точки интереса, по 2-3 с; иногда на хозяина
-        if (sb.looks) { if (!sb.lookAt || now - sb.lookAt > 2000 + Math.random() * 1500) { sb.li = (sb.li || 0) + 1; sb.cur = sb.looks[sb.li % sb.looks.length]; sb.lookAt = now; } }
+        if (sb.looks) {
+          if (!sb.lookAt || now - sb.lookAt > 1400 + Math.random() * 1200) { sb.li = (sb.li || 0) + 1; sb.cur = sb.looks[sb.li % sb.looks.length]; sb.lookAt = now; }
+          // не стоять столбом: после 2-3 взглядов - пара шагов к другому месту рядом и снова смотреть (22.11: «стоит слишком долго»)
+          if (sb.li >= 2 + (sb.hops || 0) * 3 && (sb.hops || 0) < 3 && this.lookSpot) {
+            const ns = this.lookSpot(sb.center, sb.spot);
+            if (ns) { sb.hops = (sb.hops || 0) + 1; sb.spot = ns; sb.phase = 'go'; sb.at = now; try { b.pathfinder.setGoal(new goals.GoalNear(ns.x, ns.y, ns.z, 0.6)); } catch {} }
+          }
+        }
         this.lookTarget = owner && Math.random() < 0.15 ? owner.position.offset(0, 1.6, 0) : (sb.looks ? sb.cur : sb.look);
         if (sb.hand && Math.random() < 0.35) { try { b.swingArm('right'); } catch {} }
       }
@@ -121,6 +128,16 @@ class Companion {
     return out[0];
   }
 
+  /** Соседнее место для осмотра: 3-6 бл. от прошлого, не дальше 9 от центра (хозяина), безопасное. */
+  lookSpot(center, prev) {
+    for (let k = 0; k < 14; k++) {
+      const a = Math.random() * Math.PI * 2, d = 3 + Math.random() * 3, x = Math.floor(prev.x + Math.cos(a) * d), z = Math.floor(prev.z + Math.sin(a) * d);
+      if (Math.hypot(x + 0.5 - center.x, z + 0.5 - center.z) > 9) continue;
+      for (const dy of [0, 1, -1]) { const y = Math.floor(prev.y) + dy; if (this.standOk && this.standOk(x, y, z) && this.harmlessSpot(x, y, z)) return new Vec3(x + 0.5, y, z + 0.5); }
+    }
+    return null;
+  }
+
   /** Свободная клетка рядом с блоком (1-2 бл.), где можно стоять. */
   standNear(p) {
     if (!this.standOk) return null;
@@ -150,7 +167,7 @@ class Companion {
     const spot = o.spot || (o.ent ? o.ent.position.clone() : null);
     if (!spot) return;
     C.spots.push(o.key); if (C.spots.length > 5) C.spots.shift();
-    this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + rnd(15000, 40000), ent: o.ent || null, water: o.water || null, chest: o.chest || null, lay: !!o.lay, looks: o.looks || null };
+    this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + (o.looks ? rnd(14000, 24000) : /костр|рыбач|присела/.test(o.what) ? rnd(14000, 28000) : /верстак|наковальн|печ|варочн/.test(o.what) ? rnd(4000, 8000) : rnd(6000, 12000)), hops: 0, center: (owner ? owner.position : this.bot.entity.position).clone(), ent: o.ent || null, water: o.water || null, chest: o.chest || null, lay: !!o.lay, looks: o.looks || null };
     try { b.pathfinder.setGoal(o.ent ? new goals.GoalFollow(o.ent, 1.5) : new goals.GoalNear(spot.x, spot.y, spot.z, 0.6), !!o.ent); } catch { this.sandbox = null; }
   }
 

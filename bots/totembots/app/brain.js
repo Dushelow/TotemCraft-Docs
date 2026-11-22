@@ -318,7 +318,7 @@ class Brain {
     const own = this.cfg().masters.map((n) => b.players[n] && b.players[n].entity).find((e) => e && b.entity && e.position.distanceTo(b.entity.position) <= 24);
     const when = (night ? ' Сейчас НОЧЬ: снаружи мобы, далеко от дома не уходи - дело дома или рядом (сундуки, крафт, печь, грядки, кровать).' : '')
       + (own ? ` Хозяин ${own.username} рядом (${Math.round(own.position.distanceTo(b.entity.position))} бл.): можно побыть с ним, спросить, чем помочь, - а не уходить по своим делам.` : '');
-    this.push(`[свободное время] ${mins} мин тебя ни о чём не просят. Чем займёшься? Придумай сам дело в мире и сделай его - шаг вперёд от того, что уже есть (лучше инструменты, еда, дом, исследование).${when}${progress}${following}`, true, '@self', '', { want: ['map', 'inventory'] });
+    this.push(`[свободное время] ${mins} мин тебя ни о чём не просят. Чем займёшься? Придумай сам дело в мире и сделай его командами - шаг вперёд от того, что уже есть (лучше инструменты, еда, дом, исследование). Не спрашивай хозяина, что делать, и не повторяй старые вопросы - выбери сам.${when}${progress}${following}`, true, '@self', '', { want: ['map', 'inventory'] });
     this.selfChain = 0;
   }
 
@@ -394,7 +394,8 @@ class Brain {
     const want = new Set(batch.flatMap((x) => x.want || []));
     const said = batch.map((x) => x.line.replace(/^\[[^\]]*\]\s*/, '')).join(' ').toLowerCase();
     const goal = this.memory && this.memory.bot(this.botCfg.name).goal;
-    let s = `\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text : ''}\n[вижу] ${P.sees}`;
+    const gAge = goal && goal.at ? Date.now() - goal.at : 0;
+    let s = `\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text + (gAge > 6 * 3600000 ? ` (поставлена ${Math.round(gAge / 3600000)} ч назад; не выходит - отложи и займись другим, не спрашивай об одном и том же)` : '') : ''}\n[вижу] ${P.sees}`;
     // тихий режим: мозг знает, что вслух ничего не уйдёт - не обращается к людям, а действует (22.11: «говорила, не понимая, что режим тихий»)
     if (this.body.opts && this.body.opts.quiet) s += '\n[тихий режим] хозяин попросил не писать в чат: никому не пиши и не обращайся к людям (реплики не уйдут). Только дела командами; мысли для себя - коротко или без них. Личка хозяину можно, если он сам написал в личку.';
     const inv = hash(P.inv);
@@ -469,9 +470,12 @@ class Brain {
       const wait = 600 - (Date.now() - this.lastAsk);
       if (wait > 0) await sleep(wait);
       await sleep(250);   // вдруг допишут ещё
+      // длинный чат тянет старые привычки (22.11: «просто общается» - в чате сотни прошлых ответов «спрошу хозяина»):
+      // после 120 обменов или при новой вводной - свежий чат; память и дела приходят с первым же сообщением
+      this.botCfg.chatTurns = (this.botCfg.chatTurns || 0) + 1;
+      const stale = this.botCfg.chatId && (this.botCfg.chatTurns > 120 || this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg)));
+      if (stale) { this.log(`новый чат: ${this.botCfg.chatTurns > 120 ? 'старый длинный (' + this.botCfg.chatTurns + ' обменов)' : 'обновились правила'}`); this.botCfg.chatId = ''; this.botCfg.chatTurns = 1; this.save(); this.pending.push({ line: '[память] ' + (this.memory ? this.memory.digest(this.botCfg.name).replace(/^\[память\]\n/, '') : ''), from: '@self' }); }
       if (!this.botCfg.chatId) await this.warm();
-      // вводная изменилась (обновление программы, характер, хозяева) - повторить её в этом же чате
-      else if (this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg))) await this.warm(this.botCfg.chatId);
       batch = this.pending.splice(0);
       if (this.bridge.ensureWarm) this.bridge.ensureWarm(this.botCfg.chatId, warmText(this.cfg(), this.botCfg));
       let msg = batch.map((x) => x.line).join('\n');

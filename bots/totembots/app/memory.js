@@ -169,7 +169,10 @@ class Memory {
     const places = Object.values(this.data.places).sort((a, b) => b.at - a.at).slice(0, 40)
       .map((p) => `${p.name}: ${p.x} ${p.y} ${p.z} (${p.dim})${p.note ? ' - ' + p.note : ''}`);
     const people = Object.values(this.data.people).sort((a, b) => b.at - a.at).slice(0, 30).map((p) => `${p.name}: ${p.note}`);
-    const facts = this.data.facts.slice(-20).map((f) => f.text);
+    // задачи стареют (22.11: «передать шерсть капитану» висела сутки - бот только спрашивал хозяина про шерсть)
+    const age = (t) => Date.now() - (t || 0);
+    const facts = this.data.facts.slice(-20).filter((f) => !(/^(задача|надо|нужно|поручение)/i.test(f.text) && age(f.at) > 2 * 86400000))
+      .map((f) => /^(задача|надо|нужно|поручение)/i.test(f.text) && age(f.at) > 6 * 3600000 ? `${f.text} (давно, ${Math.round(age(f.at) / 3600000)} ч назад - может быть уже неактуально; не зацикливайся)` : f.text);
     const journal = this.bot(botName).journal.slice(-10).map((j) => `${d(j.at)} ${j.text}`);
     return [
       '[память]',

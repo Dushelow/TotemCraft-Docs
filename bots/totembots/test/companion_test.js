@@ -23,6 +23,12 @@ ok('хозяин пошёл - снова следом', !t.sandbox && goal && go
 t.mode = 'task'; owner.position = new Vec3(8.5, 65, 0.5); for (let i = 0; i < 10; i++) { now += 1000; t.companionTick(); }
 ok('занята делом - песочницы нет', !t.sandbox);
 t.mode = 'follow'; t.gestures.get('V').crouch.push(now - 500, now - 200); now += 100; t.companionTick();
+// осматривается на ходу: после пары взглядов - переход к другому месту, а не стоять
+t.mode = 'follow'; t.token = 2; t.comp.stillSince = now - 10000; owner.position = new Vec3(2.5, 65, 0.5); t.comp.stop = owner.position.clone();
+t.sandbox = { phase: 'at', spot: new Vec3(0.5, 65, 0.5), look: new Vec3(3, 66, 3), looks: [new Vec3(3, 66, 3), new Vec3(-3, 66, 2), new Vec3(0, 66, -4)], what: 'осматриваюсь', token: 2, at: now, until: now + 20000, hops: 0, center: owner.position.clone() };
+for (let i = 0; i < 6; i++) { now += 3000; t.companionTick(); if (t.sandbox && t.sandbox.phase === 'go') { t.bot.entity.position = t.sandbox.spot.clone(); } }
+ok('осматривается на ходу: переходит', t.sandbox ? t.sandbox.hops >= 1 : false, t.sandbox && JSON.stringify({ hops: t.sandbox.hops, li: t.sandbox.li }));
+const plain = { phase: 'at' }; void plain;
 Date.now = realNow; Math.random = rnd;
 setTimeout(() => {
   ok('присела в ответ', (ctl.sneak || []).includes(true), JSON.stringify(ctl.sneak));
