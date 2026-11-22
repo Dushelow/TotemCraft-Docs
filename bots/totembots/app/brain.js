@@ -456,6 +456,9 @@ class Brain {
       ? `\n[задача] ${T.from} ${Math.round(tAge / 60000)} мин назад: «${T.text}» - ${T.done ? 'сделано' : 'сейчас: ' + (this.body.task || ({ follow: 'иду следом', hold: 'жду', idle: 'ничего не делаю' })[this.body.mode] || this.body.mode)}` : '';
     const uns = (this.unsaidList || []).splice(0);
     let s = `${task}${uns.length ? '\n[не ушло в чат] ' + uns.join('; ') + ' (люди этого не видели)' : ''}\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text + (gAge > 6 * 3600000 ? ` (поставлена ${Math.round(gAge / 3600000)} ч назад; не выходит - отложи и займись другим, не спрашивай об одном и том же)` : '') : ''}\n[вижу] ${P.sees}`;
+    // «на спавн» - точка спавна мира от сервера (у каждого сервера своя), а не догадка (22.11: поплыл к 0 1000)
+    try { const sp = this.body.bot && this.body.bot.spawnPoint; if (sp && /спавн|spawn|точк[уа] появлен/.test(said)) s += `
+[спавн] спавн мира: ${Math.floor(sp.x)} ${Math.floor(sp.y)} ${Math.floor(sp.z)}`; } catch {}
     try { const zt = this.body.zonesText && this.body.zonesText(); if (zt) s += `\n[зоны] ${zt}`; } catch {}   // как с ними быть - во вводной
     try { if (this.body.moodWord) s += `\n[настроение] ${this.body.moodWord()}`; } catch {}
     // тихий режим: мозг знает, что вслух ничего не уйдёт - не обращается к людям, а действует (22.11: «говорила, не понимая, что режим тихий»)

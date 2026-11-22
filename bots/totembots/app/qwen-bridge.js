@@ -369,6 +369,19 @@ class QwenBridge {
     })()`).catch(() => null);
   }
 
+  /** Самый свежий свой чат, созданный после sentAt (список чатов аккаунта; поля бывают разные - читаем терпимо). */
+  async newestChat(sentAt) {
+    return this.wc.executeJavaScript(`(async () => {
+      try {
+        const r = await fetch('/api/v2/chats/?page=1', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
+        const j = await r.json(); const list = Array.isArray(j.data) ? j.data : (j.data && (j.data.list || j.data.chats || j.data.data)) || [];
+        const t = (c) => { const v = c.created_at || c.createdAt || c.updated_at || c.updatedAt || 0; return v > 1e12 ? v : v * 1000; };
+        const fresh = list.filter((c) => c && c.id && t(c) >= ${sentAt} - 8000).sort((a, b) => t(b) - t(a));
+        return fresh.length ? fresh[0].id : '';
+      } catch { return ''; }
+    })()`).catch(() => '');
+  }
+
   async lastAnswer(chatId) {
     return this.wc.executeJavaScript(`(async () => {
       const r = await fetch('/api/v2/chats/${chatId}', { headers: { Authorization: 'Bearer ' + localStorage.getItem('token') } });
@@ -658,7 +671,7 @@ class QwenBridge {
     const sentAt = Date.now();
     const until = sentAt + 4 * 60 * 1000;
     let started = false;
-    let lastHistory = 0;
+    let lastHistory = 0, newId = '';
     let tickLog = Date.now();
     while (Date.now() < until) {
       if (Date.now() - tickLog > 10000) { tickLog = Date.now(); this.plog('запрос: жду ответ', `${ms()}, ответ ${started ? 'пишется' : 'ещё не начат'}`); }
@@ -671,8 +684,12 @@ class QwenBridge {
       if ((!r || !r.started) && Date.now() - lastHistory > 3000) {
         lastHistory = Date.now();
         if (!r) await this.hook().catch(() => {});
-        const h = await this.historyAnswer(this.currentChat() || chatId, sentAt);
-        if (h && h.done && h.text) return { answer: h.text, chatId: this.currentChat() || chatId };
+        // новый чат в проекте: адрес страницы остаётся /p/..., а чат уже создан и отвечает (22.11: владелец видел
+        // открытый чат с ответом, а программа ждала 90 с) - найти его в списке своих чатов по времени создания
+        if (!chatId && !this.currentChat() && !newId) { newId = await this.newestChat(sentAt); if (newId) this.plog('запрос: новый чат найден по списку', newId); }
+        const id0 = this.currentChat() || chatId || newId;
+        const h = await this.historyAnswer(id0, sentAt);
+        if (h && h.done && h.text) return { answer: h.text, chatId: id0 };
         if (h) started = true;   // ответ пишется - ждём дальше
       }
       if (!r) continue;
@@ -680,7 +697,7 @@ class QwenBridge {
       // первое сообщение нового чата (длинная вводная, в проекте Qwen ещё читает файлы) - дать больше времени
       // не начал отвечать - это зависшая страница, а не лимит: слово «лимит» тут считалось лимитом модели, бот помечал
       // модель «до завтра» и переключал модели и чаты (22.11: Plus и Max выбыли за 2 мин, минуты молчания). Ждать 25 с, не 45
-      if (!started && Date.now() > sentAt + (chatId ? 25000 : 90000)) throw new Error('Qwen не начал отвечать (страница зависла, вход или капча)');
+      if (!started && Date.now() > sentAt + (chatId ? 25000 : 40000)) throw new Error('Qwen не начал отвечать (страница зависла, вход или капча)');
       if (r.done) {
         // ошибка потока (HTTP 502 и т.п.) не значит, что ответа нет: сайт часто дописывает ответ сам, его видно в чате
         // Qwen, а в игру он не уходил, и мы слали то же сообщение ещё раз (22.11: «ответила в чат сайта, а не в игру»).
@@ -695,7 +712,8 @@ class QwenBridge {
           throw new Error(r.done.error);
         }
         // новый чат получает адрес после первого ответа
-        let id = this.currentChat();
+        let id = this.currentChat() || newId;
+        if (!id && !chatId) id = await this.newestChat(sentAt);   // ответ пришёл, а адрес /p/... - номер чата из списка
         for (let i = 0; i < 20 && !id; i++) { await sleep(250); id = this.currentChat(); }
         const ab = await this.wc.executeJavaScript(AB).catch(() => null);
         if (ab) {
