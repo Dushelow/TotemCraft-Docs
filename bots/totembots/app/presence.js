@@ -71,16 +71,56 @@ class Presence {
    */
   formationTick(owner, now) {
     const b = this.bot;
-    if (!owner || this.mode !== 'follow' || this.sandbox || this.seat || now - (this.formAt || 0) < 1500) return;
+    if (!owner || this.mode !== 'follow' || this.sandbox || this.seat || now - (this.formAt || 0) < 700) return;
     const v = owner.velocity || { x: 0, z: 0 }, sp = Math.hypot(v.x, v.z);
-    if (sp < 0.08) return;
-    const fx = v.x / sp, fz = v.z / sp, me = b.entity.position;
-    const rx = me.x - owner.position.x, rz = me.z - owner.position.z, ahead = rx * fx + rz * fz, side = -rx * fz + rz * fx;
-    if (ahead < 1 || Math.hypot(rx, rz) > 8) return;   // уже сзади или сбоку
+    if (sp < 0.08) { if (this.post) { this.post = null; try { b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} } return; }   // хозяин стоит - обычное следование и занятия
     this.formAt = now;
-    const s = side >= 0 ? 1 : -1, tx = owner.position.x - fx * 2.5 + -fz * s * 1.5, tz = owner.position.z - fz * 2.5 + fx * s * 1.5;
-    try { b.pathfinder.setGoal(new goals.GoalNear(tx, owner.position.y, tz, 1)); } catch {}
-    setTimeout(() => { try { if (this.mode === 'follow' && !this.sandbox && !this.seat) b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} }, 1800);
+    const post = this.pickPost(owner, v, sp);
+    if (!post) { if (this.post) { this.post = null; try { b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} } return; }   // поста нет (тесно) - просто следом
+    // гистерезис: менять пост, только если новый заметно лучше или старый стал плох (иначе бот мечется)
+    if (this.post && this.post.ok && post.score < this.post.score + 1.5 && now - this.post.at < 4000) {
+      const P = this.post; P.x += post.dx; P.z += post.dz;   // пост едет вместе с хозяином
+    } else this.post = { ...post, at: now, ok: true };
+    const P = this.post;
+    try { b.pathfinder.setGoal(new goals.GoalNear(P.x, P.y, P.z, 1)); } catch {}
+  }
+
+  /**
+   * Пост для следования (как у напарников в Uncharted 4 и The Last of Us): веер мест вокруг хозяина, каждое проходит
+   * три проверки прохода - от хозяина до места, от места до точки впереди по ходу, от неё обратно к хозяину (так
+   * пост не за стеной и не за обрывом). Очки: сзади-сбоку лучше, чем впереди; ближе к нынешнему месту бота лучше
+   * (меньше бегать); на удобной дистанции. Возвращает { x, y, z, score, dx, dz } или null.
+   */
+  pickPost(owner, v, sp) {
+    const b = this.bot, o = owner.position, me = b.entity.position;
+    const fx = v.x / sp, fz = v.z / sp, R = Math.max(2, this.followDist ? this.followDist() : 3);
+    const ahead = { x: o.x + fx * 4, z: o.z + fz * 4 };
+    const clear = (x0, z0, x1, z1, y) => {   // прямой проход по клеткам: везде можно стоять (на 1 бл. вверх-вниз)
+      const n = Math.ceil(Math.hypot(x1 - x0, z1 - z0) / 0.7);
+      let yy = y;
+      for (let i = 1; i <= n; i++) {
+        const x = Math.floor(x0 + (x1 - x0) * i / n), z = Math.floor(z0 + (z1 - z0) * i / n);
+        let okk = false;
+        for (const dy of [0, 1, -1]) if (this.standOk && this.standOk(x, yy + dy, z)) { yy += dy; okk = true; break; }
+        if (!okk) return null;
+      }
+      return yy;
+    };
+    let best = null;
+    for (let i = 0; i < 12; i++) {
+      const ang = Math.PI * (0.55 + i / 11 * 0.9);   // от «сбоку» через «сзади» к другому боку (без переднего сектора)
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const dx = fx * ca - fz * sa, dz = fz * ca + fx * sa;
+      const px = o.x + dx * R, pz = o.z + dz * R, y0 = Math.floor(o.y + 0.01);
+      const y1 = clear(o.x, o.z, px, pz, y0); if (y1 === null) continue;
+      if (clear(px, pz, ahead.x, ahead.z, y1) === null) continue;
+      if (clear(ahead.x, ahead.z, o.x, o.z, y1) === null) continue;
+      if (this.harmlessSpot && !this.harmlessSpot(Math.floor(px), y1, Math.floor(pz))) continue;
+      const behind = -(dx * fx + dz * fz);   // 1 - прямо сзади, 0 - сбоку
+      const score = behind * 2 + (1 - Math.min(1, Math.hypot(px - me.x, pz - me.z) / 8)) * 2;
+      if (!best || score > best.score) best = { x: Math.floor(px) + 0.5, y: y1, z: Math.floor(pz) + 0.5, score, dx: fx * sp * 14, dz: fz * sp * 14 };
+    }
+    return best;
   }
 
   /**

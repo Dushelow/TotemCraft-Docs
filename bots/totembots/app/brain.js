@@ -504,6 +504,7 @@ class Brain {
       this.inProgress = 0;
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
+      if (r.say && this.pending.some((x) => x.from && x.from !== '@self' && this.isMaster(x.from) && /^\[(чат|голос)/.test(x.line || ''))) { this.log('(устарело: хозяин уже написал новое) ' + r.say); r.say = ''; }
       if (this.transcript) try { this.transcript(msg, answer); } catch {}
       this.log('← ' + JSON.stringify(r));
       this.lastDecision = { at: Date.now(), say: r.say, acts: r.actions.map((a) => a && (a._cmd || a.act)).filter(Boolean), model: this.bridge.lastPick ? this.bridge.lastPick.model : '' };
@@ -706,6 +707,13 @@ class Brain {
 
   async runActions(actions, from) {
     const label = actions.map((a) => a.act).join(' → ');
+    const loopKey = actions.map((a) => `${a.act}:${a.x ?? ''},${a.z ?? ''}:${a.block || a.item || a.who || a.name || ''}`).join('|');
+    const recentFails = (this.fails || []).filter((f) => f.key === loopKey && Date.now() - f.at < 10 * 60000).length;
+    if (recentFails >= 3 && from === 'сам') {
+      this.log(`не повторяю (${recentFails} раза не вышло): ${label}`);
+      this.pending.push({ line: `[итог] не сделано: ${actions.map((a) => a._cmd || a.act).join(', ')} - это уже ${recentFails} раза подряд не вышло, тело 10 минут за это не берётся. Сделай другое: другой способ, другое место или другое дело`, from: '@self', fix: true });
+      return;
+    }
     this.body.runFrom = from && from !== 'сам' ? from : '';
     let result = await this.body.run(actions, label, from === 'сам' ? 'self' : (from && this.isMaster(from) ? 'master' : 'player'));
     if (!result) return;
@@ -714,8 +722,9 @@ class Brain {
     this.done = (this.done || []).concat({ ok: !failed, text: result.replace(/; задание выполнено$/, '').slice(0, 90), at: Date.now() }).slice(-12);
     this.failStreak = failed ? (this.failStreak || 0) + 1 : 0;
     // память неудач: одно и то же не вышло снова - сказать прямо, чтобы не ходил по кругу
-    if (/не получилось|не добыл|не дошёл|нельзя|не ломаю/.test(result)) {
-      const key = actions.map((a) => `${a.act}:${a.x ?? ''},${a.z ?? ''}:${a.block || a.item || a.who || a.name || ''}`).join('|');
+    // «дошёл почти (ближе пути нет)» - тоже не вышло: иначе мозг шлёт тот же goTo по кругу (22.11, люк на втором этаже)
+    if (/не получилось|не добыл|не дошёл|нельзя|не ломаю|ближе пути нет/.test(result)) {
+      const key = loopKey;
       this.fails = (this.fails || []).filter((f) => Date.now() - f.at < 20 * 60000);
       const n = this.fails.filter((f) => f.key === key).length + 1;
       this.fails.push({ key, at: Date.now() });
