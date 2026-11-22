@@ -183,7 +183,7 @@ class TotemBot extends EventEmitter {
       require('./life').start(this);   // нужды и распорядок дня - само тело (life.js)
       this.retry = 0;
       this.log('на сервере');
-      this.event('ты зашёл на сервер');
+      this.event('вход на сервер');
       this.loops();
     });
     bot.on('spawn', () => {
@@ -565,7 +565,7 @@ class TotemBot extends EventEmitter {
     // компаньон: потерял из виду - сказать один раз
     if (this.mode === 'follow') {
       if (!owner) {
-        if (!this.lostReported) { this.lostReported = true; this.event(`ты потерял из виду ${this.followName} (далеко или в другом измерении)`, true); }
+        if (!this.lostReported) { this.lostReported = true; this.event(`${this.followName} пропал из виду (далеко или в другом измерении)`, true); }
       } else if (this.lostReported) {
         this.lostReported = false;
         b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true);
@@ -642,7 +642,7 @@ class TotemBot extends EventEmitter {
     b.setControlState('jump', true);
     b.setControlState(dir, true);
     setTimeout(() => { try { b.setControlState('jump', false); b.setControlState(dir, false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
-    if (this.stuck.tries === 3 && Date.now() - (this.stuckSaidAt || 0) > 180000) { this.stuckSaidAt = Date.now(); this.event('ты застрял и не можешь пройти дальше (тело пробует выбраться само; писать об этом в чат не нужно)', true); }
+    if (this.stuck.tries === 3 && Date.now() - (this.stuckSaidAt || 0) > 180000) { this.stuckSaidAt = Date.now(); this.event('тело застряло и не может пройти дальше (тело пробует выбраться само; писать об этом в чат не нужно)', true); }
   }
 
   // Сон: на сервере ночь пропускается, когда спят все не-AFK. Кто-то лёг, ночь, кровать в 16 блоках - ложимся.
@@ -700,7 +700,7 @@ class TotemBot extends EventEmitter {
       if (!known) {
         const r = m.place({ name: `портал ${dim === 'Незер' ? 'в Незере' : 'в обычном мире'} ${p.x} ${p.z}`, x: p.x, y: p.y, z: p.z, dim, note: 'нашёл сам' }, this.opts.name);
         this.log(r);
-        this.event(`ты нашёл портал в Незер: ${p.x} ${p.y} ${p.z} (${dim}), запомнил`, false);
+        this.event(`найден портал в Незер: ${p.x} ${p.y} ${p.z} (${dim}), записан в память`, false);
       }
     }
     this.met = this.met || new Set();
@@ -1323,7 +1323,7 @@ class TotemBot extends EventEmitter {
     const d = this.deathPoint;
     if (!d || !this.bot) return;
     const follow = this.resumeFollow;
-    this.event(`ты умер на ${d.x} ${d.y} ${d.z} и возродился, иду забирать вещи`, true);
+    this.event(`смерть на ${d.x} ${d.y} ${d.z}, возрождение; тело идёт забирать вещи`, true);
     const res = await this.run([{ act: 'recover' }], 'забрать вещи после смерти');
     this.event('после смерти: ' + res, true);
     if (follow && this.player(follow)) this.follow(follow);
