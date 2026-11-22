@@ -317,7 +317,6 @@ function botCard(b) {
       <button data-a="chatNote" class="quiet icon sm" title="Подписать" aria-label="Подписать">${icon('pencil', 14)}</button><button data-a="chatForget" class="quiet icon sm" title="Убрать из списка (в Qwen чат останется)" aria-label="Убрать">${icon('x', 14)}</button>
     </div>`).join('') || `<div class="empty">${icon('message-circle', 22)}чатов пока нет</div>`}</div>`;
   if (tab === 'persona') body = `
-    <label>Пол персонажа (так бот говорит о себе)</label><select data-f="gender"><option value="f"${b.gender === 'f' ? ' selected' : ''}>Женский</option><option value="m"${b.gender !== 'f' ? ' selected' : ''}>Мужской</option></select>
     <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="8">${esc(b.persona || '')}</textarea>
     <div class="row" style="margin-top:var(--s3)"><button data-a="savePersona" class="pri">${icon('check', 14)}Сохранить характер</button></div>`;
   if (tab === 'map') body = `<div data-f="mapslot"></div>`;
@@ -397,7 +396,7 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'aliases') act(async () => { await T.botChatMode({ name, aliases: f('aliases').value }); f('aliases').blur(); re(); }, t, 'прозвища сохранены');
   if (a === 'combat') act(async () => { await T.botCombat({ name, combat: t.dataset.v }); re(); });
   if (a === 'newchat') act(() => T.botNewChat(name), t, 'начнётся новый чат');
-  if (a === 'savePersona') act(async () => { await T.botPersona({ name, persona: f('persona').value, gender: f('gender').value }); f('persona').blur(); re(); }, t, 'характер сохранён');
+  if (a === 'savePersona') act(async () => { await T.botPersona({ name, persona: f('persona').value }); f('persona').blur(); re(); }, t, 'характер сохранён');
   if (a === 'remove' && ask(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
 });
 // тумблер «в запуске» в карточке бота
@@ -414,8 +413,8 @@ $('newName').addEventListener('keydown', (e) => { if (e.key === 'Escape') addOpe
 $('add').onclick = () => act(async () => {
   const name = $('newName').value.trim();
   if (!name) throw new Error('впишите ник');
-  await T.botAdd({ name, persona: $('newPersona').value, gender: $('newGender').value });
-  selected = name; botTab.set(name, 'server'); $('newName').value = ''; $('newPersona').value = ''; $('newGender').value = ''; addOpen(false); lastHtml = '';
+  await T.botAdd({ name, persona: $('newPersona').value });
+  selected = name; botTab.set(name, 'server'); $('newName').value = ''; $('newPersona').value = ''; addOpen(false); lastHtml = '';
 }, $('add'), 'бот добавлен: выполните команды на сервере');
 
 // ---------- мозги: все сайты одинаково
@@ -533,14 +532,7 @@ T.onVoiceSystem(({ text, volume }) => {
 document.querySelectorAll('#srvSeg button').forEach((b) => { b.onclick = () => { $('host').value = b.dataset.h; $('port').value = b.dataset.p; paintSrvSeg(); }; });
 function paintSrvSeg() { document.querySelectorAll('#srvSeg button').forEach((b) => b.classList.toggle('on', b.dataset.h === $('host').value.trim() && b.dataset.p === $('port').value.trim())); }
 $('host').oninput = paintSrvSeg; $('port').oninput = paintSrvSeg;
-// как боты обращаются к каждому хозяину: в мужском роде, в женском или без родовых форм
-function paintMastersGender() {
-  const names = $('masters').value.split(/[\s,]+/).filter(Boolean), G = (st && st.mastersGender) || {};
-  const cur = {}; document.querySelectorAll('#mastersGender select').forEach((s) => { cur[s.dataset.m] = s.value; });
-  $('mastersGender').innerHTML = names.length ? '<label style="margin:0">Как боты обращаются к хозяевам</label>' + names.map((n) => { const g = cur[n] || G[n] || 'n'; return `<div class="mg"><b>${esc(n)}</b><select data-m="${esc(n)}"><option value="m"${g === 'm' ? ' selected' : ''}>в мужском роде</option><option value="f"${g === 'f' ? ' selected' : ''}>в женском роде</option><option value="n"${g === 'n' ? ' selected' : ''}>без родовых форм</option></select></div>`; }).join('') : '';
-}
-const mastersGenderValue = () => { const o = {}; document.querySelectorAll('#mastersGender select').forEach((s) => { o[s.dataset.m] = s.value; }); return o; };
-const saveSettings = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, mastersGender: mastersGenderValue(), birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }),
+const saveSettings = () => act(() => T.saveSettings({ host: $('host').value, port: $('port').value, masters: $('masters').value, birthYear: $('birthYear').value, chatMode: $('chatMode').value, planMode: $('planMode').value, models: $('models').value, serviceModels: $('serviceModels').value }),
   null, 'сохранено' + (st.running ? ' (новый сервер - после перезапуска ботов)' : ''));
 $('sec-settings').addEventListener('change', (e) => { if (e.target.closest('input,select') && !e.target.dataset.part) saveSettings(); });
 document.querySelectorAll('#srvSeg button').forEach((b) => b.addEventListener('click', () => saveSettings()));
@@ -950,7 +942,7 @@ async function refresh() {
   if (!settingsFilled) {
     $('host').value = st.host; $('port').value = st.port; $('masters').value = st.masters.join(', '); $('birthYear').value = st.birthYear || '';
     $('chatMode').value = st.qwen.chatMode ?? 'fast'; $('planMode').value = st.qwen.planMode ?? 'auto'; $('models').value = (st.qwen.models || []).join(', '); $('serviceModels').value = (st.qwen.serviceModels || []).join(', ');
-    settingsFilled = true; paintSrvSeg(); paintMastersGender();
+    settingsFilled = true; paintSrvSeg();
   }
   if (st.project) {
     if (document.activeElement !== $('pEnabled')) $('pEnabled').checked = st.project.enabled;
@@ -962,5 +954,3 @@ async function refresh() {
 setInterval(refresh, 1000);
 refresh();
 
-$('masters').addEventListener('input', () => paintMastersGender());
-document.addEventListener('change', (e) => { if (e.target.closest && e.target.closest('#mastersGender')) saveSettings(); });

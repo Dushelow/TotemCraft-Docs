@@ -117,8 +117,7 @@ function startBot(name) {
   if (!l) { l = { log: [] }; live.set(name, l); }
   const memory = memFor(bc.name);   // своя память бота
   const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet,
-    // пол персонажа - для текстов «Жизни» и дневника: из настройки, иначе по характеру (девушка - женский), Alex без характера - девушка
-    gender: bc.gender || (bc.gender = /^alex$/i.test(bc.name) ? 'f' : 'm', saveCfg(), bc.gender) });
+    gender: require('./brain').personaGender(bc) });   // пол - из характера (если там написан), иначе без родовых форм
   body.onQuiet = (v) => { bc.quiet = !!v; saveCfg(); };
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
   body.onCombat = (m) => { bc.combat = m; saveCfg(); };
@@ -165,7 +164,7 @@ ${a}
 
 function stateForPanel() {
   return {
-    host: cfg.host, port: cfg.port, masters: cfg.masters, mastersGender: cfg.mastersGender || {}, paused: !!cfg.paused, startOnLaunch: !!cfg.startOnLaunch, features: cfg.features || {},
+    host: cfg.host, port: cfg.port, masters: cfg.masters, paused: !!cfg.paused, startOnLaunch: !!cfg.startOnLaunch, features: cfg.features || {},
     running: [...live.values()].filter((l) => l.body && l.body.status !== 'off').length,
     sites: Object.fromEntries(Object.entries(SITES).map(([k, s]) => [k, { name: s.name, logged: k === 'deepseek' || !!(cfg.webLogged || {})[k] }])),
     siteList: siteList().map((x) => ({ id: x.id, name: x.name, logged: x.id === 'qwen' ? !!siteLogged.qwen : (siteLogged[x.id] ?? !!(cfg.webLogged || {})[x.id]),
@@ -476,8 +475,6 @@ ipcMain.handle('save-settings', (_e, s) => {
   cfg.host = String(s.host || '').trim() || 'play.totemcraft.net';
   cfg.port = +s.port || 20098;
   cfg.masters = String(s.masters || '').split(/[\s,]+/).filter(Boolean);
-  // как обращаться к хозяевам: род задаёт сам человек в настройках (не угадывать по нику)
-  if (s.mastersGender && typeof s.mastersGender === 'object') cfg.mastersGender = Object.fromEntries(Object.entries(s.mastersGender).filter(([n, g]) => cfg.masters.includes(n) && /^(m|f|n)$/.test(g)));
   const MODES = ['fast', 'auto', 'think', ''];
   cfg.qwen = {
     chatMode: MODES.includes(s.chatMode) ? s.chatMode : 'fast',
@@ -491,10 +488,9 @@ ipcMain.handle('save-settings', (_e, s) => {
 });
 ipcMain.handle('bot-add', (_e, { name, persona, gender }) => {
   name = String(name || '').trim();
-  if (gender !== 'f' && gender !== 'm') throw new Error('выберите пол персонажа');
   if (!/^[A-Za-z0-9_]{3,16}$/.test(name)) throw new Error('ник: 3-16 латинских букв, цифр или _');
   if (cfg.bots.some((b) => b.name.toLowerCase() === name.toLowerCase())) throw new Error('такой бот уже есть');
-  cfg.bots.push({ name, gender, persona: String(persona || '').trim() || DEFAULT_PERSONA, password: crypto.randomBytes(9).toString('base64url'), chatId: '' });
+  cfg.bots.push({ name, persona: String(persona || '').trim() || DEFAULT_PERSONA, password: crypto.randomBytes(9).toString('base64url'), chatId: '' });
   saveCfg();
   return true;
 });
@@ -508,7 +504,7 @@ ipcMain.handle('bot-remove', (_e, name) => {
 });
 ipcMain.handle('bot-persona', (_e, { name, persona, gender }) => {
   const b = cfg.bots.find((x) => x.name === name);
-  if (b) { b.persona = String(persona || '').trim() || DEFAULT_PERSONA; if (gender === 'f' || gender === 'm') b.gender = gender; b.chatId = ''; saveCfg(); }   // новый характер - новый чат
+  if (b) { b.persona = String(persona || '').trim() || DEFAULT_PERSONA; b.chatId = ''; saveCfg(); }   // новый характер - новый чат
   return true;
 });
 ipcMain.handle('bot-follow-dist', (_e, { name, dist }) => {

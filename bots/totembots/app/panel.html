@@ -137,8 +137,6 @@
   .lrow .ava.sm { width: 24px; height: 24px; font-size: 12px; border-radius: 6px; }
   .lrow .sw { margin: 0; }
   .sw .tr { flex: none; }
-  .mgender { display: flex; flex-direction: column; gap: 4px; margin-top: var(--s2); }
-  .mgender .mg { display: flex; align-items: center; gap: var(--s3); } .mgender .mg b { flex: 1; font-weight: 600; font-size: var(--f-sm); } .mgender select { width: auto; }
   .ava { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-weight: 700; font-size: var(--f-md); background: #2e3140; color: var(--acc-text); position: relative; flex: none; }
   .ava .dot { position: absolute; right: -2px; bottom: -2px; width: 11px; height: 11px; border: 2px solid var(--surface); }
   .bothead .nm { font-size: var(--f-md); font-weight: 600; }
@@ -414,7 +412,6 @@
       <div class="card" id="addBox" style="display:none;margin-top:var(--s3)">
         <h2><i data-i="plus"></i>Новый бот</h2>
         <label>Ник на сервере</label><input id="newName" placeholder="например Steve2">
-        <label>Пол персонажа (так бот говорит о себе: «пришла» или «пришёл»)</label><select id="newGender"><option value="">Выберите</option><option value="f">Женский</option><option value="m">Мужской</option></select>
         <label>Характер (можно пусто: дружелюбный игрок)</label><textarea id="newPersona" rows="3" placeholder="весёлый строитель, любит помогать новичкам"></textarea>
         <div class="muted" style="margin-top:var(--s2)">После добавления откроется вкладка «Сервер»: там команды, которые надо один раз выполнить на сервере.</div>
         <div class="row" style="margin-top:var(--s3)"><button id="add" class="pri"><i data-i="plus"></i>Добавить</button></div>
@@ -488,7 +485,6 @@
         <div class="seg" id="srvSeg"><button data-h="play.totemcraft.net" data-p="20098">TotemCraft</button><button data-h="ru.totemcraft.net" data-p="20098">Российский вход</button><button data-h="127.0.0.1" data-p="25566">Тестовый</button></div>
         <div class="row" style="margin-top:2px;align-items:flex-end"><div class="grow"><label>Адрес</label><input id="host"></div><div style="width:110px"><label>Порт</label><input id="port"></div></div>
         <label>Хозяева: ники через запятую, первый - вы. Только их приказы с действиями бот выполняет</label><input id="masters">
-        <div id="mastersGender" class="mgender"></div>
       </div>
       <div class="card">
         <h2><i data-i="activity"></i>Части тела</h2>
