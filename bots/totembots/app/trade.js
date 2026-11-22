@@ -171,4 +171,4 @@ class Trade {
   }
 }
 
-module.exports = { Trade, profession };
+module.exports = { Trade, profession, GoalReach };

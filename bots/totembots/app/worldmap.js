@@ -651,7 +651,10 @@ class WorldMap {
     for (const pl of Object.values(b.players)) if (pl.entity && pl.username !== b.username) ents.push([pl.entity.position.x, pl.entity.position.z, 'player', pl.username]);
     const labels = [];
     if (tb.memory) for (const pl of Object.values(tb.memory.data.places || {})) if (pl.dim === tb.dimName() && !/^табличка/.test(pl.name) && inR(pl.x, pl.z)) labels.push([pl.x, pl.z, pl.name]);
-    return { dim, me: [p.x, p.y, p.z, b.entity.yaw], chunks, slice, poi, ents, labels, layer, total: Object.keys(m.chunks).length, colors: mg.COLORS, time: b.time ? b.time.timeOfDay : 6000, rain: !!(tb.precip && tb.precip()) };
+    // зоны (zones.js): запрет красным, опасно жёлтым - видно, что она запомнила
+    let zones = [];
+    try { zones = (tb.zones ? tb.zones() : []).filter((q) => q.kind !== 'можно' && q.dim === tb.dimName() && Math.abs(Math.floor(q.x / 16) - ccx) <= r + 4 && Math.abs(Math.floor(q.z / 16) - ccz) <= r + 4).map((q) => ({ k: q.kind, n: q.name, x: q.x, z: q.z, r: q.r, poly: q.poly || null })); } catch {}
+    return { dim, me: [p.x, p.y, p.z, b.entity.yaw], chunks, slice, poi, ents, labels, zones, layer, total: Object.keys(m.chunks).length, colors: mg.COLORS, time: b.time ? b.time.timeOfDay : 6000, rain: !!(tb.precip && tb.precip()) };
   }
 
   view(tb, radiusChunks = 16) {

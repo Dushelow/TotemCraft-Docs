@@ -672,6 +672,17 @@ function mapFrame() {
   // свет по времени суток (как у миникарт): день - как есть, сумерки - тёплые, ночь - тёмно-синяя; под землёй и в Незере - без
   const lt = mapLight(v);
   if (lt) { g.fillStyle = lt; g.fillRect(0, 0, Wc, Hc); }
+  // зоны: запрет - красная штриховая область, опасно - жёлтая
+  for (const q of v.zones || []) {
+    const red = q.k === 'запрет';
+    g.beginPath();
+    if (q.poly) q.poly.forEach(([x, z], i) => (i ? g.lineTo(sx(x), sz(z)) : g.moveTo(sx(x), sz(z))));
+    else g.arc(sx(q.x + 0.5), sz(q.z + 0.5), q.r * Z, 0, 7);
+    g.closePath();
+    g.fillStyle = red ? 'rgba(229,72,77,.18)' : 'rgba(233,162,59,.16)'; g.fill();
+    g.setLineDash([5, 4]); g.lineWidth = 1.5; g.strokeStyle = red ? 'rgba(229,72,77,.9)' : 'rgba(233,162,59,.9)'; g.stroke(); g.setLineDash([]);
+    if (q.r * Z > 18) { g.font = '600 11px Segoe UI, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.8)'; const t = (red ? 'нельзя: ' : 'опасно: ') + q.n; g.strokeText(t, sx(q.x + 0.5), sz(q.z + 0.5)); g.fillStyle = red ? '#ffb4b6' : '#ffd99a'; g.fillText(t, sx(q.x + 0.5), sz(q.z + 0.5)); }
+  }
   for (const [x, z, kind] of v.poi) {
     const X = sx(x + 0.5), Y = sz(z + 0.5);
     if (X < -8 || Y < -8 || X > Wc + 8 || Y > Hc + 8) continue;

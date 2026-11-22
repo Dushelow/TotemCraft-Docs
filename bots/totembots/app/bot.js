@@ -458,6 +458,7 @@ class TotemBot extends EventEmitter {
       // своё плавание (swim.js); не взялось (суша впереди, нет пути) - старая логика воды и выхода на берег
       if (!require('./swim').swimTick(this)) this.swimTick();
       this.waterExitTick();
+      try { this.dodgeTick(); } catch {}   // уворот от стрел и огненных шаров (chores.js)
     });
     this.timer = setInterval(() => this.slowTick().catch(() => {}), 1000);
   }
@@ -493,7 +494,9 @@ class TotemBot extends EventEmitter {
     this.tick('torches', () => this.torchTick());
     this.tick('hands', () => this.handsTick());
     this.tick('reflexes', () => this.reflexTick());
-    this.tick('zones', () => this.zonesTick());   // запретные и опасные зоны (zones.js)
+    this.tick('zones', () => this.zonesTick());
+    this.tick('edge', () => this.edgeTick());   // присед у обрыва (chores.js)
+    this.tick('kit', () => this.kitTick());     // быстрый доступ, починка опытом   // запретные и опасные зоны (zones.js)
     this.tick('water', () => this.shoreTick());
     this.tick('companion', () => this.companionTick());
     this.tick('lifeview', () => this.lifeTick());   // песочница, жесты, реплики (companion.js)
@@ -1607,6 +1610,9 @@ class TotemBot extends EventEmitter {
           case 'smelt': r = await this.skills.smelt(a, tok); break;
           case 'hunt': r = await this.skills.hunt(a, tok); break;
           case 'shear': r = await this.skills.shear(a, tok); break;
+          case 'breed': r = await this.breed(a, tok); break;
+          case 'bonemeal': r = await this.bonemeal(a, tok); break;
+          case 'cocoa': r = await this.cocoa(a, tok); break;
           case 'toss': r = await this.skills.toss(a, tok); break;
           case 'build': r = await this.skills.build(a, tok); break;
           case 'look': r = 'посмотрел'; break;
@@ -1638,7 +1644,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

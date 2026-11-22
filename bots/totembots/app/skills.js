@@ -385,6 +385,15 @@ class Skills {
     const LEVEL = { diamond: -58, redstone: -58, lapis: 0, gold: -16, iron: 16, copper: 48, coal: 48, emerald: 100, ancient_debris: 15, quartz: 40, nether_gold: 40 };
     let got = 0;
     const left = Date.now() + Math.min(20, +a.minutes || 8) * 60000;
+    // по-честному и по-умному (Baritone MineProcess legit): подходящая кирка - сразу, а не после спуска
+    const TIER = { wooden_pickaxe: 0, golden_pickaxe: 0, stone_pickaxe: 1, iron_pickaxe: 2, diamond_pickaxe: 3, netherite_pickaxe: 4 };
+    const NEED = { coal: 0, quartz: 0, nether_gold: 0, copper: 1, iron: 1, lapis: 1, gold: 2, redstone: 2, diamond: 2, emerald: 2, debris: 3, ancient_debris: 3 };
+    const picks = () => b.inventory.items().filter((i) => TIER[i.name] !== undefined && (!i.maxDurability || i.maxDurability - (i.durabilityUsed || 0) > 8));
+    const best = () => Math.max(-1, ...picks().map((i) => TIER[i.name]));
+    if (best() < (NEED[q] ?? 0)) throw new Error(`для ${q} нужна кирка ${['деревянная', 'каменная', 'железная', 'алмазная', 'незеритовая'][NEED[q] ?? 0]} или лучше - сначала её (!craft или !obtain)`);
+    const full = () => { try { return b.inventory.emptySlotCount() === 0; } catch { return false; } };   // некуда класть - хватит
+    // лава в 4 бл. по ходу (и на шаг вбок, до 2 бл. выше и 1 ниже) - туда не копать
+    const lavaAhead = (dx, dz) => { const p = b.entity.position.floored(); for (let k = 1; k <= 4; k++) for (const s of [-1, 0, 1]) for (let dy = -1; dy <= 2; dy++) { const v = p.offset(dx * k + (dz ? s : 0), dy, dz * k + (dx ? s : 0)); const bl = b.blockAt(v); if (bl && /lava/.test(bl.name)) return true; } return false; };
     return this.withDig(async () => {
       got += await this.pickVisible(ids, 24, want, tok);
       if (got >= want) return `накопал ${q}: ${got}`;
@@ -393,19 +402,24 @@ class Skills {
       if (Math.abs(me.y - y) > 3) {
         tb.log(`спускаюсь в шахту на высоту ${y}`);
         await tb.goto(new goals.GoalNear(me.x + 2, y, me.z + 2, 1), tok, Math.max(30000, left - Date.now()));
+        try { const p = b.entity.position; if (tb.memory) tb.memory.place({ name: `шахта ${q}`, x: p.x, y: p.y, z: p.z, dim: tb.dimName(), note: 'копала тут, можно продолжить' }, tb.opts.name); } catch {}
       }
       const dirs = { 'север': [0, -1], 'юг': [0, 1], 'восток': [1, 0], 'запад': [-1, 0] };
       let [dx, dz] = dirs[a.dir] || Object.values(dirs)[Math.floor(Math.random() * 4)];
       let dug = 0;
+      let stop = '';
       while (got < want && Date.now() < left) {
         tb.check(tok);
+        if (best() < (NEED[q] ?? 0)) { stop = 'кирка почти сломалась'; break; }
+        if (full()) { stop = 'инвентарь полный'; break; }
+        if (lavaAhead(dx, dz)) { tb.log('впереди лава - поворачиваю'); [dx, dz] = [-dz, dx]; if (++dug > 8) break; continue; }
         const p = b.entity.position.floored();
         try { await tb.goto(new goals.GoalBlock(p.x + dx * 3, p.y, p.z + dz * 3), tok, 30000); }
         catch (e) { if (tb.isCancel(e)) throw e; [dx, dz] = [-dz, dx]; if (++dug > 8) break; continue; }   // упёрлись (вода, лава, постройка) - поворот
         got += await this.pickVisible(ids, 5, want - got, tok);
       }
-      if (!got) throw new Error(`руды ${q} не нашёл за время`);
-      return `накопал ${q}: ${got}${got < want ? ' из ' + want : ''}`;
+      if (!got) throw new Error(`руды ${q} не нашёл${stop ? ' (' + stop + ')' : ' за время'}`);
+      return `накопал ${q}: ${got}${got < want ? ' из ' + want : ''}${stop ? ' (остановилась: ' + stop + ')' : ''}`;
     });
   }
 
