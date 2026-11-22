@@ -24,6 +24,8 @@ const OPENABLE = /(_door|_fence_gate|_trapdoor)$/;
 const BAD = /^(water|lava|fire|soul_fire|cobweb|bubble_column|sweet_berry_bush|powder_snow)$/;
 
 function install(mv, bot) {
+  // лианы - лестница, как в игре (в модуле пути строка с лианами закомментирована: по лианам на корабль не лез, 22.11)
+  for (const n of ['vine', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'cave_vines', 'cave_vines_plant']) { const r = mv.bot.registry.blocksByName[n]; if (r) mv.climbables.add(r.id); }
   const base = mv.getNeighbors.bind(mv);
   const Block = require('prismarine-block')(mv.bot.registry);
   const cache = new Map();   // коробки блока по координатам; сбрасывается раз в 3 с и при изменении блока
@@ -251,7 +253,15 @@ function install(mv, bot) {
     const ceiled = (x, y, z) => { for (let yy = y + 1; yy < y + 24; yy++) { if (waterAt(x, yy, z)) continue; return cell(x, yy, z).boxes.length > 0; } return true; };
     // из воды - на лиану или лестницу (корабль, стена, колодец): дальше по ним вверх ведёт обычный модуль пути
     { const up = cell(node.x, node.y + 1, node.z); const ub = up.b || blk(node.x, node.y + 1, node.z);
-      if (ub && /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/.test(ub.name) && !have.has(`${node.x},${node.y + 1},${node.z}`)) { have.add(`${node.x},${node.y + 1},${node.z}`); const m = new Move(node.x, node.y + 1, node.z, node.remainingBlocks, 1.5, [], []); m.swim = true; out.push(m); } }
+      void ub; const CL = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/;
+      for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) for (const up of [1, 2]) {
+        const x = node.x + ax, z = node.z + az, y = node.y + up, k = `${x},${y},${z}`;
+        const v = blk(x, y, z);
+        if (!v || !CL.test(v.name) || have.has(k)) continue;
+        if (up === 2 && cell(x, y - 1, z).boxes.length && !waterAt(x, y - 1, z)) continue;   // между водой и лианой - твёрдое
+        if ((ax || az) && cell(x, node.y + 1, z).boxes.length && !CL.test((blk(x, node.y + 1, z) || {}).name || '')) continue;
+        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 1.5 + up * 0.5, [], []); m.swim = true; out.push(m); break;
+      } }
     for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0], [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1], [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1], [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1]]) {
       const nx = node.x + dx, ny = node.y + dy, nz = node.z + dz, k = `${nx},${ny},${nz}`;
       if (have.has(k) || !waterAt(nx, ny, nz)) continue;

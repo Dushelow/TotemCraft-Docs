@@ -44,7 +44,11 @@ class TotemBot extends EventEmitter {
     this.lookTarget = null;
   }
 
-  log(text) { this.emit('log', text); if (this.diaryFrom) try { this.diaryFrom(String(text)); } catch {} }
+  log(text) {
+    this.emit('log', text); if (this.diaryFrom) try { this.diaryFrom(String(text)); } catch {}
+    // отладка движения (movetrace.js): застрял, умер, нет пути - снимок того момента отдельным файлом (не чаще раза в 10 с)
+    if (this.trace && /^застрял:|^умер на|No path|не дошёл|не доплыл|воздух кончается/.test(String(text)) && Date.now() - (this._snapAt || 0) > 10000) { this._snapAt = Date.now(); this.trace.snapshot(String(text).slice(0, 200)); }
+  }
   event(text, important = false) { this.emit('event', { text, important }); }
 
   start() {
@@ -451,7 +455,9 @@ class TotemBot extends EventEmitter {
     // physicsTick у mineflayer вызывается до отправки движения, поэтому tick_end здесь закрывает прошлый тик, а удар
     // (guard.combatTick) уходит синхронно внутри этого тика. Без tick_end сервер 1.21.2+ не применяет шаги; удар вне
     // тика (из async-кода) Vulcan отмечал как Kill Aura / Aim (стенд 15.11, 36 отметок; после правки - ноль).
+    this.trace = new (require('./movetrace').MoveTrace)(this, require('path').join(__dirname, '..', 'local', 'logs'));
     b.on('physicsTick', () => {
+      try { this.trace.tick(); } catch {}
       try { b._client.write('tick_end', {}); } catch {}
       this.lookTick();
       if (this.guard) this.guard.combatTick();
