@@ -14,11 +14,29 @@ class Containers {
     return list.filter((i) => i.name === w || i.name.endsWith('_' + w) || i.name.startsWith(w + '_') || i.name.includes(w));
   }
 
+  /** Луч из глаз к середине сундука первым упирается в сам сундук (или его вторую половину) и не дальше 4,5 бл. */
+  chestVisible(block) {
+    const b = this.bot, eye = b.entity.position.offset(0, b.entity.height ? b.entity.height * 0.9 : 1.62, 0), to = block.position.offset(0.5, 0.5, 0.5);
+    const d = to.minus(eye), len = d.norm();
+    if (len > 4.5) return false;
+    let hit = null;
+    try { hit = b.world.raycast(eye, d.normalize(), len + 0.5); } catch { return true; }
+    if (!hit) return false;
+    if (hit.position.equals(block.position)) return true;
+    return hit.name === block.name && hit.position.distanceTo(block.position) <= 1;   // вторая половина двойного сундука
+  }
+
   async openAt(x, y, z, tok) {
     const b = this.bot;
     const block = b.blockAt(new Vec3(x, y, z));
     if (!block) throw new Error(`блок ${x} ${y} ${z} не загружен (далеко)`);
     await this.goto(new goals.GoalLookAtBlock(block.position, b.world, { reach: 4 }), tok);   // видеть сундук, а не открывать сквозь стену (16.11)
+    // проверить своими глазами: модуль пути считает «видно» от клетки, а тело встаёт чуть иначе - и открывало сквозь
+    // стену или стекло (22.11). Не видно - подойти вплотную; всё равно не видно - не открывать.
+    if (!this.chestVisible(block)) {
+      try { await this.goto(new goals.GoalNear(x, y, z, 1), tok, 20000); } catch (e) { if (isCancel(e)) throw e; }
+      if (!this.chestVisible(block)) throw new Error(`сундук ${x} ${y} ${z} за препятствием - не открываю сквозь стену`);
+    }
     this.busyLook = true;
     try {
       await b.lookAt(block.position.offset(0.5, 0.5, 0.5));

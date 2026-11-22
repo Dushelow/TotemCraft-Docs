@@ -155,6 +155,9 @@ const PICK = (model, mode) => `(async () => {
 // лимит - только по настоящим словам лимита (раньше «rate» ловил «generate», а «недоступна модель» тоже считалась лимитом)
 const LIMIT = /\blimit\b|лимит|quota|too many requests|\b429\b|exceeded/i;
 const MODEL_GONE = /модель недоступна/i;
+// лимит чатов всего аккаунта на день (не модели): «You've reached today's chat limit. Upgrade your membership to unlock more chats»
+const CHAT_CAP = /today'?s chat limit|unlock more chats|daily chat limit|лимит (чатов|сообщений) на сегодня/i;
+const MODEL_CAP = /this model|for (the |this )?model|model.{0,24}(limit|quota|unavailable)|эт(ой|а) модел/i;
 const LIMIT_TEXT = /reached (today's|your|the) (chat |daily |usage )?limit|upgrade your (membership|plan)|chat limit|daily limit|limit reached|лимит (сообщений|чатов|на сегодня)|исчерпан/i;
 
 // Qwen иногда отвечает двумя вариантами («Which response do you prefer?») и ждёт выбора: поток тогда содержит оба
@@ -525,6 +528,14 @@ class QwenBridge {
         last = e;
         if (MODEL_GONE.test(e.message)) { if (i === models.length - 1) throw e; continue; }   // модели нет в меню - просто следующая
         if (!LIMIT.test(e.message)) throw e;
+        // какой лимит: дневной на чаты всего аккаунта («today's chat limit... unlock more chats») - модели перебирать
+        // бесполезно (22.11: 7 запросов подряд впустую и все модели помечены «до завтра»); про модель - следующая модель
+        if (CHAT_CAP.test(e.message) && !MODEL_CAP.test(e.message)) {
+          this.restUntil = Date.now() + 60 * 60000; this.limitKind = 'чаты аккаунта';
+          this.onAttention(`Qwen: дневной лимит чатов аккаунта, а не модели («${String(e.message).replace(/^лимит Qwen: /, '').slice(0, 90)}») - модели не перебираю, через час попробую одним запросом`);
+          throw new Error('лимит Qwen на всех моделях (дневной лимит чатов аккаунта)');
+        }
+        this.limitKind = 'модель';
         const used = models[i] || (await this.modelNow());
         if (used) lim.add(used);
         if (this.goodModel === used) this.goodModel = '';
@@ -534,7 +545,7 @@ class QwenBridge {
           models.push(...all.filter((n) => !lim.has(n) && !models.includes(n)));
         }
         if (i === models.length - 1) { this.restUntil = Date.now() + 30 * 60000; this.onAttention('Qwen: лимит на всех моделях этого аккаунта - 30 мин не спрашиваю (другой аккаунт - лимиты свои)'); throw new Error('лимит Qwen на всех моделях'); }
-        this.onAttention(`Qwen: ${used || 'модель'} упёрлась в лимит (до завтра не трогаю), переключаюсь на ${models[i + 1]}`);
+        this.onAttention(`Qwen: ${used || 'модель'} упёрлась в лимит (до завтра не трогаю; Qwen пишет: «${String(e.message).replace(/^лимит Qwen: /, '').slice(0, 70)}»), переключаюсь на ${models[i + 1]}`);
       }
     }
     throw last;

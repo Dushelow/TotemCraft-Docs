@@ -475,6 +475,7 @@ class TotemBot extends EventEmitter {
     this.tick('atlas', () => this.atlasTick());
     this.tick('senses', () => this.sensesTick());
     this.tick('marks', () => this.marksTick());
+    if (this.worldMap) this.tick('atlas', () => this.worldMap.seenTick(this));   // места на карту - только увиденные
     this.tick('torches', () => this.torchTick());
     this.tick('hands', () => this.handsTick());
     this.tick('reflexes', () => this.reflexTick());

@@ -54,6 +54,22 @@ function compass(dx, dz) {
   return COMPASS[Math.round(a / 45) % 8];
 }
 
+/** Видно ли блок x y z из глаз: луч шагами по 0,2 доходит до его клетки, не упираясь в другой непрозрачный блок. */
+function sees(b, eye, x, y, z, SEE_THROUGH) {
+  const tx = x + 0.5, ty = y + 0.5, tz = z + 0.5, dx = tx - eye.x, dy = ty - eye.y, dz = tz - eye.z, len = Math.hypot(dx, dy, dz);
+  const n = Math.ceil(len / 0.2);
+  let last = '';
+  for (let i = 1; i <= n; i++) {
+    const px = Math.floor(eye.x + dx * i / n), py = Math.floor(eye.y + dy * i / n), pz = Math.floor(eye.z + dz * i / n);
+    if (px === x && py === y && pz === z) return true;
+    const k = px + ',' + py + ',' + pz;
+    if (k === last) continue; last = k;
+    const bl = b.blockAt(new (require('vec3').Vec3)(px, py, pz));
+    if (bl && bl.boundingBox === 'block' && !SEE_THROUGH.test(bl.name)) return false;
+  }
+  return true;
+}
+
 class WorldMap {
   constructor(dir) {
     this.dir = path.join(dir, 'map');
@@ -99,6 +115,52 @@ class WorldMap {
   }
 
   /** Полный скан сразу (для проверок). */
+  /** Найденное в чанке, но ещё не виденное глазами: ждёт, пока бот на него посмотрит (до 3000 мест). */
+  pend(dim, key, rec) {
+    const P = (this.load(dim).pend = this.load(dim).pend || {});   // в файле карты: после перезапуска не теряется
+    P[key] = rec;
+    const ks = Object.keys(P); if (ks.length > 3000) delete P[ks[0]];
+  }
+
+  /**
+   * Раз в секунду: что из найденного бот сейчас видит глазами (до 40 бл., луч до блока не упирается в другой
+   * непрозрачный блок) - становится точкой карты и памяти. Старые точки без отметки «видела» - туда же, на проверку.
+   */
+  seenTick(tb) {
+    const b = tb.bot;
+    if (!b || !b.entity) return;
+    const dim = String(b.game.dimension), m = this.load(dim);
+    if (!m.verified) {   // точки, записанные до 22.11 (иксреем), - снова на проверку глазами
+      m.verified = 1;
+      for (const [k, v] of Object.entries(m.poi)) if (!v.seen) { this.pend(dim, k, { ...v, pts: v.pts || [[v.x, v.y, v.z]] }); delete m.poi[k]; }
+      this.dirty = true;
+    }
+    const P = m.pend || {};
+    const { SEE_THROUGH } = require('./steer');
+    const eye = b.entity.position.offset(0, 1.62, 0);
+    let checks = 0;
+    for (const [key, r] of Object.entries(P)) {
+      const p = { key, rec: r };
+      const near = (p.rec.pts || [[r.x, r.y, r.z]]).filter(([x, y, z]) => Math.hypot(x + 0.5 - eye.x, y + 0.5 - eye.y, z + 0.5 - eye.z) <= 40);
+      if (!near.length) continue;
+      let ok = false;
+      for (const [x, y, z] of near) {
+        if (checks++ > 60) return;
+        if (sees(b, eye, x, y, z, SEE_THROUGH)) { ok = true; break; }
+      }
+      if (!ok) continue;
+      delete P[key];
+      const now = Date.now(), rec = { ...p.rec, seen: now };
+      delete rec.pts;
+      const isNew = !(this.known || (this.known = new Set())).has(dim + p.key);
+      this.known.add(dim + p.key);
+      m.poi[p.key] = rec;
+      this.dirty = true;
+      const dup = Object.entries(m.poi).some(([k2, o]) => k2 !== p.key && o.kind === rec.kind && Math.hypot(o.x - rec.x, o.z - rec.z) < 64);
+      if (isNew && !dup && this.onFound && /деревня|спавнер|крепость|испытания|древний город|бастион|храм/.test(rec.kind)) this.onFound(rec, tb.dimName());
+    }
+  }
+
   async scan(tb, onFound) { if (onFound) this.onFound = onFound; while (this.relief(tb, 50)) { /* пока есть чанки */ } this.save(tb.bot.game.dimension); }
 
   /** Рельеф до limit новых чанков: 4 точки на чанк. Возвращает, сколько обработал. */
@@ -155,9 +217,13 @@ class WorldMap {
       for (const [kind, v] of Object.entries(found.poi)) {
         if (kind === 'ферма' && v.n < 6) continue;   // пара блоков пашни - не ферма
         const key = `${kind}@${cx},${cz}`;
+        // честно, без иксрея (22.11: «видит спавнеры сквозь структуры»): блоки чанка тело знает, но точкой на
+        // карте и в памяти место становится, только когда бот его увидел глазами (seenTick, луч из глаз)
+        const old = was.find(([k]) => k === key);
+        if (!(old && old[1].seen)) { this.pend(dim, key, { kind, x: v.x, y: v.y, z: v.z, n: v.n, t: now, pts: v.pts || [[v.x, v.y, v.z]] }); continue; }
         const isNew = !(this.known || (this.known = new Set())).has(dim + key);
         this.known.add(dim + key);
-        m.poi[key] = { kind, x: v.x, y: v.y, z: v.z, n: v.n, t: now };
+        m.poi[key] = { kind, x: v.x, y: v.y, z: v.z, n: v.n, t: now, seen: old ? old[1].seen : now };
         // в память - один раз на сооружение (оно тянется через несколько чанков): рядом такого же ещё не было
         const dup = Object.entries(m.poi).some(([k2, o]) => k2 !== key && o.kind === kind && Math.hypot(o.x - v.x, o.z - v.z) < 64);
         if (isNew && !dup && this.onFound && /деревня|спавнер|крепость|испытания|древний город|бастион|храм/.test(kind)) this.onFound(m.poi[key], tb.dimName());
@@ -200,7 +266,7 @@ class WorldMap {
       all.add(v.name);
       if (v.c === 'built' || v.c === 'mark') return;
       const p = out.poi[v.c];
-      if (p) p.n += n; else out.poi[v.c] = { x, y, z, n };
+      if (p) { p.n += n; if (p.pts.length < 8) p.pts.push([x, y, z]); } else out.poi[v.c] = { x, y, z, n, pts: [[x, y, z]] };
     };
     const minY = col.minY || 0;
     col.sections.forEach((sec, i) => {
@@ -231,7 +297,11 @@ class WorldMap {
       natural.push(re);
       let at = null;
       for (const names of secs.values()) for (const [nm, st] of names) if (!at && (MARK.test(nm) || re.test(nm))) at = st;
-      if (at && !out.poi[kind]) out.poi[kind] = { x: at.x, y: at.y, z: at.z, n: 1 };
+      if (at && !out.poi[kind]) {
+        const pts = [];
+        for (const names of secs.values()) for (const [nm, st] of names) if (pts.length < 8 && (MARK.test(nm) || re.test(nm))) pts.push([st.x, st.y, st.z]);
+        out.poi[kind] = { x: at.x, y: at.y, z: at.z, n: 1, pts };
+      }
     }
     // счёт секции (или двух соседних вместе - постройка на стыке)
     const score = (list) => {
@@ -242,7 +312,7 @@ class WorldMap {
         const bn = [...names].filter(([nm, st]) => st.built && !natural.some((re) => re.test(nm)));
         // шахта без паутины в этом чанке: в секции только доски, заборы, рельсы, факелы - это шахта, не дом
         if (bn.length && bn.every(([nm]) => MINESHAFT.test(nm)) && bn.some(([nm]) => /_fence$/.test(nm))) {
-          if (!out.poi['шахта']) out.poi['шахта'] = { x: bn[0][1].x, y: bn[0][1].y, z: bn[0][1].z, n: 1 };
+          if (!out.poi['шахта']) out.poi['шахта'] = { x: bn[0][1].x, y: bn[0][1].y, z: bn[0][1].z, n: 1, pts: bn.slice(0, 8).map(([, st]) => [st.x, st.y, st.z]) };
           continue;
         }
         for (const [nm, st] of bn) { n += st.n; ys += st.ys; xs += st.xs; zs += st.zs; if (!seen.has(nm)) { seen.add(nm); kinds++; } if (STRONG.test(nm)) strong += st.n; }

@@ -48,6 +48,17 @@ const ok = (name, cond, info) => res.push([name, !!cond, info]);
   ok('за стеной угроза меньше', hid.threat().score < open.threat().score, open.threat().score + ' / ' + hid.threat().score);
   ok('сводка: за стеной', /за стеной/.test(hid.motion().join(' ')), hid.motion().join(' ')); }
 
+// 9. Карта честно: спавнер за стеной не становится точкой, пока его не увидели
+{ const { WorldMap } = require('../app/worldmap');
+  const os = require('os'), fs = require('fs');
+  const mkw = (wall) => { const t = mk((set) => { set(8, 65, 0, 'spawner'); if (wall) for (let z = -6; z <= 6; z++) for (let y = 65; y <= 68; y++) set(5, y, z, 'stone'); }); t.bot.game.dimension = 'overworld'; t.dimName = () => 'обычный мир'; return t; };
+  const w = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'wm')));
+  w.load('overworld').verified = 1;
+  w.pend('overworld', 'спавнер@0,0', { kind: 'спавнер', x: 8, y: 65, z: 0, n: 1, t: 1, pts: [[8, 65, 0]] });
+  w.seenTick(mkw(true)); const hidden = !w.load('overworld').poi['спавнер@0,0'];
+  w.seenTick(mkw(false)); const shown = !!w.load('overworld').poi['спавнер@0,0'];
+  ok('спавнер за стеной не на карте', hidden); ok('увидела - на карте', shown); }
+
 const bad = res.filter((r) => !r[1]);
 for (const r of bad) console.log('  НЕ ТАК: ' + r[0] + ' ' + (r[2] || ''));
 console.log(`ближнее чутьё: ${res.length - bad.length} из ${res.length}${bad.length ? ' - НЕТ' : ''}`);
