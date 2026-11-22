@@ -481,6 +481,15 @@
     <!-- НАСТРОЙКИ -->
     <section id="sec-settings">
       <div class="card">
+        <h2><i data-i="database"></i>Данные ботов</h2>
+        <p class="lead">Очистка с копией в local/backup-... Сервер, хозяева, ники и пароли не трогаются.</p>
+        <div class="row" style="flex-wrap:wrap;gap:var(--s2)">
+          <button class="ghost" data-reset="chats" title="Новые чаты с нейросетью; память и карта остаются">Начать чаты заново</button>
+          <button class="ghost" data-reset="memory" title="Места, люди, дневник, зоны, чаты; карта мира остаётся">Очистить память</button>
+          <button class="danger" data-reset="all" title="Память, карта, чаты, журналы">Сбросить всё</button>
+        </div>
+      </div>
+      <div class="card">
         <h2><i data-i="server"></i>Сервер</h2>
         <div class="seg" id="srvSeg"><button data-h="play.totemcraft.net" data-p="20098">TotemCraft</button><button data-h="ru.totemcraft.net" data-p="20098">Российский вход</button><button data-h="127.0.0.1" data-p="25566">Тестовый</button></div>
         <div class="row" style="margin-top:2px;align-items:flex-end"><div class="grow"><label>Адрес</label><input id="host"></div><div style="width:110px"><label>Порт</label><input id="port"></div></div>

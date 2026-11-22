@@ -439,7 +439,15 @@ ipcMain.handle('brain-pin', (_e, { id, only, model }) => {
 // после системного окна (confirm/alert) Electron в Windows теряет фокус ввода: поля не печатаются (22.11: «удалил бота,
 // нажал добавить - и не вписать ник»). Вернуть фокус окну и странице
 ipcMain.handle('refocus', () => { try { win.blur(); win.focus(); win.webContents.focus(); } catch {} return true; });
-ipcMain.handle('full-reset', () => { fs.writeFileSync(path.join(LOCAL, 'reset.flag'), new Date().toISOString()); app.relaunch(); app.exit(0); return true; });
+// Данные ботов (Настройки): chats - только новые чаты с нейросетью (сразу, без перезапуска); memory - память без карты;
+// all - всё (память, карта, чаты, журналы). memory и all - через метку и перезапуск, с копией в local/backup-...
+ipcMain.handle('reset-chats', () => {
+  for (const b of cfg.bots || []) for (const k of ['chatId', 'chats', 'warmHash', 'chatTurns', 'eyesChat', 'voiceChat']) delete b[k];
+  delete cfg.routerChats; delete cfg.serviceChat; saveCfg();
+  try { if (router) router.chats.clear(); } catch {}
+  return true;
+});
+ipcMain.handle('full-reset', (_e, scope) => { fs.writeFileSync(path.join(LOCAL, 'reset.flag'), new Date().toISOString() + ' scope:' + (scope === 'memory' ? 'memory' : 'all')); app.relaunch(); app.exit(0); return true; });
 ipcMain.handle('open-transcript', (_e, name) => { const f = path.join(LOCAL, 'logs', String(name || '').replace(/[^\w.-]/g, '') + '.qwen.log'); if (fs.existsSync(f)) require('electron').shell.openPath(f); return fs.existsSync(f); });
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });
 ipcMain.handle('brains-save', (_e, v) => {
@@ -763,14 +771,15 @@ function resetIfAsked() {
   try {
     fs.mkdirSync(bk, { recursive: true });
     // всё, что она помнит: память, карта, проект Qwen, кэш проходимости, снимки глаз - переносом в копию (не удаление)
-    for (const d of ['memory', 'map', 'project', 'passcache', 'travel']) { const src = path.join(ud, d); if (fs.existsSync(src)) { fs.renameSync(src, path.join(bk, d)); fs.mkdirSync(src, { recursive: true }); } }
-    { const v = path.join(LOCAL, 'vision'); if (fs.existsSync(v)) { fs.renameSync(v, path.join(bk, 'vision')); fs.mkdirSync(v, { recursive: true }); } }
+    const scope = (fs.readFileSync(flag, 'utf8').match(/scope:(\w+)/) || [])[1] || 'all';   // memory - только память, all - всё
+    for (const d of scope === 'memory' ? ['memory', 'project'] : ['memory', 'map', 'project', 'passcache', 'travel']) { const src = path.join(ud, d); if (fs.existsSync(src)) { fs.renameSync(src, path.join(bk, d)); fs.mkdirSync(src, { recursive: true }); } }
+    if (scope === 'all') { const v = path.join(LOCAL, 'vision'); if (fs.existsSync(v)) { fs.renameSync(v, path.join(bk, 'vision')); fs.mkdirSync(v, { recursive: true }); } }
     try { fs.copyFileSync(cfgPath(), path.join(bk, 'config.json')); } catch {}
     for (const b of cfg.bots || []) for (const k of ['chatId', 'chats', 'warmHash', 'chatTurns', 'eyesChat', 'voiceChat']) delete b[k];
     delete cfg.routerChats; delete cfg.serviceChat;
     saveCfg();
     const logs = path.join(LOCAL, 'logs'), old = path.join(logs, 'old-' + stamp);
-    if (fs.existsSync(logs)) { fs.mkdirSync(old, { recursive: true }); for (const f of fs.readdirSync(logs)) if (/\.(log|jsonl)$/.test(f)) fs.renameSync(path.join(logs, f), path.join(old, f)); }
+    if (scope === 'all' && fs.existsSync(logs)) { fs.mkdirSync(old, { recursive: true }); for (const f of fs.readdirSync(logs)) if (/\.(log|jsonl)$/.test(f)) fs.renameSync(path.join(logs, f), path.join(old, f)); }
     fs.rmSync(flag, { force: true });
     fs.writeFileSync(path.join(bk, 'ЧТО ЭТО.txt'), 'Копия памяти и настроек перед сбросом ' + stamp + '. Вернуть: закрыть программу, скопировать memory обратно в ' + path.join(ud, 'memory') + ' и config.json в ' + cfgPath());
   } catch (e) { try { fs.writeFileSync(path.join(LOCAL, 'reset-error.txt'), String(e && e.stack || e)); } catch {} }

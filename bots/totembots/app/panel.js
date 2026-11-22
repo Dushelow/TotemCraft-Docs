@@ -291,7 +291,7 @@ function botCard(b) {
   if (tab === 'log') {
     const n = errCount(b), f = logFilter.get(b.name) || 'all';
     body = `
-    <div class="logbar"><div class="seg">${LOGF.map(([k, t, ic]) => `<button data-a="logf" data-v="${k}" class="${f === k ? 'on' : ''}" title="${t}">${icon(ic, 13)}${t}${k === 'err' && n ? ` <span class="pill bad" style="height:16px;padding:0 5px">${n}</span>` : ''}</button>`).join('')}</div><button class="ghost sm" data-a="transcript" title="Что ушло нейросети и что она ответила - дословно, в блокноте">${icon('scroll-text', 13)}Переписка с нейросетью</button><button class="ghost sm" data-a="fullreset" title="Стереть память, карту, чаты с нейросетью и журналы (копия сохранится в local/backup-...) и перезапустить программу">${icon('rotate-ccw', 13)}Сбросить данные</button></div>
+    <div class="logbar"><div class="seg">${LOGF.map(([k, t, ic]) => `<button data-a="logf" data-v="${k}" class="${f === k ? 'on' : ''}" title="${t}">${icon(ic, 13)}${t}${k === 'err' && n ? ` <span class="pill bad" style="height:16px;padding:0 5px">${n}</span>` : ''}</button>`).join('')}</div><button class="ghost sm" data-a="transcript" title="Что ушло нейросети и что она ответила - дословно, в блокноте">${icon('scroll-text', 13)}Переписка с нейросетью</button></div>
     <div class="log" data-f="log">${logLines(b).map(logLine).join('') || '<div class="hint">здесь пока пусто</div>'}</div>
     <div class="compose"><input class="grow" data-f="order" placeholder="Приказ, как в игре: иди за мной, отнеси шерсть…"><button data-a="order" class="pri icon" title="Отправить (Enter)" aria-label="Отправить">${icon('send')}</button></div>
     ${inv ? `<div class="muted" style="margin-top:var(--s2)">${icon('folder-open', 13)} ${esc(inv)}</div>` : ''}`;
@@ -954,3 +954,12 @@ async function refresh() {
 setInterval(refresh, 1000);
 refresh();
 
+
+// Данные ботов (Настройки): три уровня очистки, каждый с подтверждением
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-reset]'); if (!b) return;
+  const k = b.dataset.reset;
+  if (k === 'chats' && ask('Начать все чаты с нейросетью заново? Память и карта останутся.')) act(() => T.resetChats(), b, 'чаты начнутся заново со следующего сообщения');
+  if (k === 'memory' && ask('Очистить память всех ботов (места, люди, дневник, зоны, чаты)? Карта мира останется. Копия - в local/backup-..., программа перезапустится.')) T.fullReset('memory');
+  if (k === 'all' && ask('Сбросить всё у всех ботов: память, карту, чаты, журналы? Остаются сервер, хозяева, ники и пароли. Копия - в local/backup-..., программа перезапустится.')) T.fullReset('all');
+});
