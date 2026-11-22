@@ -399,6 +399,8 @@ ipcMain.handle('brain-pin', (_e, { id, only, model }) => {
   return true;
 });
 // мозги: ключи (только на этом компьютере, local/config.json), модели, порядок
+// переписка бота с нейросетью дословно (logs/<имя>.qwen.log) - открыть в блокноте для разбора
+ipcMain.handle('open-transcript', (_e, name) => { const f = path.join(LOCAL, 'logs', String(name || '').replace(/[^\w.-]/g, '') + '.qwen.log'); if (fs.existsSync(f)) require('electron').shell.openPath(f); return fs.existsSync(f); });
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });
 ipcMain.handle('brains-save', (_e, v) => {
   const b = cfg.brains = cfg.brains || {};

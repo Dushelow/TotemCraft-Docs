@@ -541,11 +541,30 @@ class WorldMap {
   }
 
   /** Под землёй (крыша над головой, ниже поверхности чанка на 6+) или в Незере - показывать срез на высоте бота. */
+  /**
+   * Под землёй по-настоящему: неба не видно и над головой природная толща (камень, земля), а не крыша дома.
+   * Высота чанка считается по самому высокому блоку - у мельницы или башни бот «под землёй» стоял на поле (22.11).
+   */
+  underRock(tb) {
+    const b = tb.bot, p = b.entity.position.floored();
+    try {
+      const head = b.blockAt(p.offset(0, 1, 0));
+      if (head && (head.skyLight || 0) > 3) return false;
+      let rock = 0, built = 0;
+      for (let dy = 2; dy <= 24; dy++) {
+        const k = b.blockAt(p.offset(0, dy, 0));
+        if (!k || k.boundingBox !== 'block') continue;
+        if (/stone|deepslate|dirt|gravel|andesite|diorite|granite|tuff|ore|sand|clay|netherrack|basalt|blackstone|calcite|grass_block|mud|terracotta/.test(k.name) && !/brick|polished|smooth|chiseled|cut_|_slab|_stairs|_wall/.test(k.name)) rock++; else built++;
+      }
+      return rock >= 3 && rock > built;
+    } catch { return false; }
+  }
+
   layerMode(tb) {
     const b = tb.bot, p = b.entity.position, d = String(b.game.dimension);
     if (/nether/.test(d)) return `ярус Незера на высоте ${Math.floor(p.y)}`;
     const c = this.load(d).chunks[`${Math.floor(p.x / 16)},${Math.floor(p.z / 16)}`];
-    if (c && c.h !== null && p.y < c.h - 6) return `подземный слой на высоте ${Math.floor(p.y)} (поверхность около ${c.h})`;
+    if (c && c.h !== null && p.y < c.h - 6 && this.underRock(tb)) return `подземный слой на высоте ${Math.floor(p.y)} (поверхность около ${c.h})`;
     return '';
   }
 
@@ -612,7 +631,7 @@ class WorldMap {
       else {
         const c = m.chunks[`${Math.floor(p.x / 16)},${Math.floor(p.z / 16)}`], h = c && c.h !== null && c.h !== undefined ? c.h : null;
         const was = tb._mapUnder;
-        tb._mapUnder = h !== null && (was ? p.y < h - 3 : p.y < h - 6);
+        tb._mapUnder = h !== null && (was ? p.y < h - 3 : p.y < h - 6) && this.underRock(tb);
         if (tb._mapUnder) layer = `подземный слой на высоте ${Math.floor(p.y)} (поверхность около ${h})`;
       }
     }

@@ -59,6 +59,28 @@ class Obtain {
     return got;
   }
 
+  /** Шерсть с диких овец: ножницы (сделать из 2 железа, если есть), стадо по меткам или поиск, стричь; без ножниц - охота. */
+  async woolFromSheep(want, need, tok) {
+    const b = this.bot, me = () => b.entity.position, dim = this.dimName();
+    let shears = b.inventory.items().some((i) => i.name === 'shears');
+    if (!shears && this.invHave('iron_ingot') >= 2 && this.skills && this.skills.craft) { try { await this.skills.craft({ item: 'shears', count: 1 }, tok); shears = b.inventory.items().some((i) => i.name === 'shears'); } catch (e) { if (this.isCancel(e)) throw e; } }
+    const wildNear = () => Object.values(b.entities).some((e) => e.name === 'sheep' && e.position.distanceTo(me()) < 32 && this.skills.wild(e));
+    if (!wildNear()) {
+      // стада из меток (овцы, 2 дня), дальше всего от построек; нет меток - идти в наименее застроенную сторону
+      const herds = Object.values((this.memory && this.memory.data.places) || {}).filter((pl) => pl.dim === dim && (/^стадо sheep$/.test(pl.kind || '') || pl.name === 'овцы') && Math.hypot(pl.x - me().x, pl.z - me().z) < 1500)
+        .filter((pl) => { try { return !this.skills.builtNear(new (require('vec3').Vec3)(Math.floor(pl.x), Math.floor(pl.y), Math.floor(pl.z)), 8); } catch { return true; } })
+        .sort((p1, p2) => Math.hypot(p1.x - me().x, p1.z - me().z) - Math.hypot(p2.x - me().x, p2.z - me().z));
+      if (herds[0]) { this.log(`за шерстью: к стаду у ${Math.round(herds[0].x)} ${Math.round(herds[0].z)}`); await this.walkTo({ x: herds[0].x, y: herds[0].y, z: herds[0].z }, tok, 240000); }
+      else if (this.wander) { this.log('за шерстью: ищу диких овец подальше от построек'); try { await this.wander({ radius: 96 }, tok); } catch (e) { if (this.isCancel(e)) throw e; } }
+    }
+    if (!wildNear()) throw new Error('диких овец не нашла (в городе все чужие) - нужна метка стада или подальше от построек');
+    const before = this.invHave(want);
+    if (shears) { for (let i = 0; i < 6 && this.invHave(want) - before < need; i++) { try { await this.skills.shear({ count: 6 }, tok); } catch (e) { if (this.isCancel(e)) throw e; break; } } }
+    else { try { await this.skills.hunt({ animal: 'sheep', count: Math.min(8, need) }, tok); } catch (e) { if (this.isCancel(e)) throw e; } }
+    const got = this.invHave(want) - before;
+    return `овцы: ${shears ? 'постригла' : 'добыла охотой (ножниц нет)'}, +${got} ${want}`;
+  }
+
   /**
    * !obtain(предмет, сколько): своё в инвентаре -> свои сундуки (дома, где клала) -> купить у жителей.
    * Не вышло - ошибка со списком, где смотрела и что дальше (мозг просит хозяина или добывает сам).
@@ -110,6 +132,10 @@ class Obtain {
           looked.push('жители: ' + r);
         } catch (e) { if (this.isCancel(e)) throw e; looked.push(`житель у ${v.x} ${v.z} (${o.give} -> ${o.get}): ${e.message}`); }
       }
+    }
+    // 3. шерсть: дикие овцы - по своим меткам стад (вдали от построек) или там, где меньше застроено; ножницы - из железа
+    if (left() > 0 && /wool/.test(want)) {
+      try { looked.push(await this.woolFromSheep(want, left(), tok)); } catch (e) { if (this.isCancel(e)) throw e; looked.push('овцы: ' + e.message); }
     }
     const have = this.invHave(want);
     if (have >= count) return `достала ${want}: теперь ${have} (${looked.join('; ')})`;

@@ -95,7 +95,7 @@ class TotemBot extends EventEmitter {
     }
 
     bot.once('spawn', () => {
-      this.status = 'online';
+      this.status = 'online'; this.onlineAt = Date.now();
       // Сервер 26.3 тихо откатывает игрока, если тело касается стенки вплотную (физика mineflayer подводит его на
       // волосок ближе, чем считает сервер): у ступенек - десятки откатов, «на земле» сбрасывается, прыжок срывается -
       // бот «застревает на ровном месте» (стенд-копия мира 15.11: 76 откатов на одну ступеньку). Тело чуть шире -
@@ -1622,7 +1622,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

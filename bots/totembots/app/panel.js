@@ -288,7 +288,7 @@ function botCard(b) {
   if (tab === 'log') {
     const n = errCount(b), f = logFilter.get(b.name) || 'all';
     body = `
-    <div class="logbar"><div class="seg">${LOGF.map(([k, t, ic]) => `<button data-a="logf" data-v="${k}" class="${f === k ? 'on' : ''}" title="${t}">${icon(ic, 13)}${t}${k === 'err' && n ? ` <span class="pill bad" style="height:16px;padding:0 5px">${n}</span>` : ''}</button>`).join('')}</div></div>
+    <div class="logbar"><div class="seg">${LOGF.map(([k, t, ic]) => `<button data-a="logf" data-v="${k}" class="${f === k ? 'on' : ''}" title="${t}">${icon(ic, 13)}${t}${k === 'err' && n ? ` <span class="pill bad" style="height:16px;padding:0 5px">${n}</span>` : ''}</button>`).join('')}</div><button class="ghost sm" data-a="transcript" title="Что ушло нейросети и что она ответила - дословно, в блокноте">${icon('scroll-text', 13)}Переписка с нейросетью</button></div>
     <div class="log" data-f="log">${logLines(b).map(logLine).join('') || '<div class="hint">здесь пока пусто</div>'}</div>
     <div class="compose"><input class="grow" data-f="order" placeholder="Приказ, как в игре: иди за мной, отнеси шерсть…"><button data-a="order" class="pri icon" title="Отправить (Enter)" aria-label="Отправить">${icon('send')}</button></div>
     ${inv ? `<div class="muted" style="margin-top:var(--s2)">${icon('folder-open', 13)} ${esc(inv)}</div>` : ''}`;
@@ -360,6 +360,7 @@ $('bots').addEventListener('click', (e) => {
   const re = () => { lastHtml = ''; };
   if (a === 'tab') { botTab.set(name, t.dataset.v); re(); renderBots(); return; }
   if (a === 'lifeOpen') { lifeOpen(); return; }
+  if (a === 'transcript') { T.openTranscript(name).then((ok) => { if (!ok) alert('Переписки пока нет: она появится после первого ответа нейросети'); }); return; }
   if (a === 'logf') { logFilter.set(name, t.dataset.v); re(); renderBots(); const lg = $('bots').querySelector('[data-f="log"]'); if (lg) lg.scrollTop = lg.scrollHeight; return; }
   if (a === 'start') act(() => T.botStart(name), t);
   if (a === 'stop') act(() => T.botStop(name), t, name + ' вышел с сервера', { fn: () => T.botStart(name), done: name + ' заходит обратно' });
@@ -738,13 +739,15 @@ setInterval(() => { if ((botTab.get(selected) || 'life') === 'map') mapFetch(); 
 // фигурка из её скина, предметы-значки. Части живут сами (как карта): ничего не пересоздаётся без нужды.
 const LIFE = { wrap: null, sig: {}, skins: {}, open: false, lastNote: 0, art: {} };
 // нарисованное оформление (app/art/*.png, сгенерировано по списку в LIFE_ART.md): есть файл - он и рисуется, нет - рисунок CSS
-const ART = ['frame', 'wood', 'parchment', 'slot', 'portrait', 'banner', 'icons', 'scene_day', 'scene_dusk', 'scene_night', 'scene_dawn', 'scene_cave', 'scene_nether', 'scene_snow'];
+// имя в коде -> файл в app/assets (имена и папки - как принято в геймдеве, см. LIFE_ART.md)
+const ART = { frame: 'ui/frames/ui_frame_panel_9s', wood: 'textures/tex_wood_tile', parchment: 'textures/tex_parchment_tile', slot: 'ui/frames/ui_slot', portrait: 'ui/frames/ui_frame_portrait', banner: 'ui/frames/ui_banner_title', icons: 'ui/icons/ui_icons_atlas',
+  scene_day: 'scenes/bg_scene_overworld_day', scene_dusk: 'scenes/bg_scene_overworld_dusk', scene_night: 'scenes/bg_scene_overworld_night', scene_dawn: 'scenes/bg_scene_overworld_dawn', scene_cave: 'scenes/bg_scene_cave', scene_nether: 'scenes/bg_scene_nether', scene_snow: 'scenes/bg_scene_snow' };
 const ART_ICON = { heart: 0, drumstick: 1, shield: 2, eye: 3, clock: 4, swords: 5, map: 6, scroll: 7, quill: 8, book: 9, backpack: 10, chest: 11, gem: 12, coin: 13, moon: 14, sun: 15 };
 function artLoad(w) {
-  for (const n of ART) {
-    const im = new Image();
-    im.onload = () => { LIFE.art[n] = true; w.style.setProperty('--art-' + n, `url("art/${n}.png")`); w.classList.add('art-' + n); LIFE.sig = {}; };
-    im.src = `art/${n}.png`;
+  for (const [n, f] of Object.entries(ART)) {
+    const im = new Image(), src = `assets/${f}.png`;
+    im.onload = () => { LIFE.art[n] = true; w.style.setProperty('--art-' + n, `url("${src}")`); w.classList.add('art-' + n); LIFE.sig = {}; };
+    im.src = src;
   }
 }
 /** Значок из нарисованного листа icons.png (8x2 по 64), если он есть; иначе обычный значок. */

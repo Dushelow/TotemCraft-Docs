@@ -74,7 +74,9 @@ class Companion {
         if (this.propOn) this.propOn(sb).catch(() => {});
         if (this.opportunityAct) this.opportunityAct(sb).catch(() => {});
         // смотреть на дело, иногда на хозяина; рукой - у верстака и наковальни
-        this.lookTarget = owner && Math.random() < 0.2 ? owner.position.offset(0, 1.6, 0) : sb.look;
+        // осматривается: по очереди на точки интереса, по 2-3 с; иногда на хозяина
+        if (sb.looks) { if (!sb.lookAt || now - sb.lookAt > 2000 + Math.random() * 1500) { sb.li = (sb.li || 0) + 1; sb.cur = sb.looks[sb.li % sb.looks.length]; sb.lookAt = now; } }
+        this.lookTarget = owner && Math.random() < 0.15 ? owner.position.offset(0, 1.6, 0) : (sb.looks ? sb.cur : sb.look);
         if (sb.hand && Math.random() < 0.35) { try { b.swingArm('right'); } catch {} }
       }
       return;
@@ -138,6 +140,8 @@ class Companion {
     if (f && /pressure_plate|tripwire|string|rail|redstone|repeater|comparator|lever|button|_crop|wheat|carrots|potatoes|beetroots|sweet_berry|sapling|turtle_egg|sniffer_egg|frogspawn|flower_pot|potted_|candle|sea_pickle/.test(f.name)) return false;
     if (u && /farmland|note_block|observer|piston|target|hopper|dropper|dispenser|sculk_sensor|daylight_detector|tnt|composter|scaffolding/.test(u.name)) return false;
     try { if (b.findBlock({ point: new Vec3(x, y, z), matching: (bl) => /sculk_sensor|calibrated_sculk_sensor/.test(bl.name), maxDistance: 8 })) return false; } catch {}
+    // рядом жжётся (костёр, огонь, магма, лава) - не вставать вплотную (22.11: «греюсь у печи» - и горела)
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const dy of [-1, 0]) { const k = b.blockAt(new Vec3(x + dx, y + dy, z + dz)); if (k && /fire|campfire|magma_block|lava/.test(k.name) && !(k.getProperties && k.getProperties().lit === false && /campfire/.test(k.name) && (dx || dz))) return false; }
     return true;
   }
 
@@ -146,7 +150,7 @@ class Companion {
     const spot = o.spot || (o.ent ? o.ent.position.clone() : null);
     if (!spot) return;
     C.spots.push(o.key); if (C.spots.length > 5) C.spots.shift();
-    this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + rnd(15000, 40000), ent: o.ent || null, water: o.water || null, chest: o.chest || null, lay: !!o.lay };
+    this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + rnd(15000, 40000), ent: o.ent || null, water: o.water || null, chest: o.chest || null, lay: !!o.lay, looks: o.looks || null };
     try { b.pathfinder.setGoal(o.ent ? new goals.GoalFollow(o.ent, 1.5) : new goals.GoalNear(spot.x, spot.y, spot.z, 0.6), !!o.ent); } catch { this.sandbox = null; }
   }
 

@@ -112,6 +112,8 @@ give CaptianRage white_wool 128; confirm CaptianRage; home"). Координат
 Ответь на это сообщение одним словом: ок.`;
 }
 
+// «Сделаю что-то» словами: пойду, возьму, выберусь... (но не «жду»)
+const INTENT = /(^|[\s,.!])(иду|пойду|пошла|пойдём|сделаю|возьму|беру|поищу|ищу|найду|построю|копаю|выкопаю|поем|лягу|выберусь|выйду|выхожу|открою|закрою|сяду|положу|отдам|принесу|скрафчу|переплавлю|поставлю|сломаю|отойду|займусь|схожу|подойду|вернусь|куплю|продам|(?:надо|нужно|пора|сейчас) [а-яё]+(?:ть|ти|чь))([\s,.!]|$)/;
 // Ответ нейросети: реплика + команды (!goTo(...)), канал по началу реплики («общий:», «рядом:», «лс Ник:»).
 function parseAnswer(text) {
   const { say: said, acts, unknown } = require('./commands').parseCommands(text);
@@ -179,7 +181,7 @@ class Brain {
     this.idleSkips = 0;        // сколько раз подряд на свободное время ничего не выбрал
     this.inProgress = 0;       // сколько раз подряд Qwen ответил CHAT_IN_PROGRESS
     this.selfChain = 0;        // сколько своих дел подряд (после 3 - отдых до следующего свободного времени)
-    this.idleTimer = setInterval(() => this.idle(), 30000);
+    this.idleTimer = setInterval(() => this.idle(), 5000);   // проверка частая и дешёвая; решения - по своим срокам
     body.on('end', () => {});
 
     this.attn = new Attention(botCfg.name, { mode: botCfg.chatMode || 'normal', aliases: botCfg.aliases || [] });
@@ -294,9 +296,12 @@ class Brain {
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
     if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.body._errandBusy || this.body.sandbox || this.busy || this.pending.length || this.bridge.resting) return;   // занята сама (песочница) - не дёргать нейросеть
+    // только что зашла в игру - сразу (через пару секунд), а не через минуту молчания (22.11: «долго инициируется»)
+    const fresh = !this.startedAt && this.body.bot.entity && Date.now() - (this.body.onlineAt || 0) > 2500;
+    if (fresh) this.startedAt = Date.now();
     // если пару раз подряд ничего не выбрал - спрашивать реже (до 4x)
-    if (Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
-    const mins = Math.round((Date.now() - this.lastEvent) / 60000);
+    if (!fresh && Date.now() - this.lastEvent < (ini.minutes || 2) * 60000 * (1 + Math.min(3, this.idleSkips))) return;
+    const mins = fresh ? 999 : Math.round((Date.now() - this.lastEvent) / 60000);
     const following = this.body.mode === 'follow' ? ` Ты идёшь за ${this.body.followName}, далеко от него не уходи.` : '';
     const ok = (this.done || []).filter((d) => d.ok).slice(-5).map((d) => d.text), bad = (this.done || []).filter((d) => !d.ok).slice(-3).map((d) => d.text);
     const progress = (ok.length ? ` Недавно вышло: ${ok.join('; ')}.` : '') + (bad.length ? ` Не вышло: ${bad.join('; ')}.` : '');
@@ -390,6 +395,8 @@ class Brain {
     const said = batch.map((x) => x.line.replace(/^\[[^\]]*\]\s*/, '')).join(' ').toLowerCase();
     const goal = this.memory && this.memory.bot(this.botCfg.name).goal;
     let s = `\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text : ''}\n[вижу] ${P.sees}`;
+    // тихий режим: мозг знает, что вслух ничего не уйдёт - не обращается к людям, а действует (22.11: «говорила, не понимая, что режим тихий»)
+    if (this.body.opts && this.body.opts.quiet) s += '\n[тихий режим] хозяин попросил не писать в чат: никому не пиши и не обращайся к людям (реплики не уйдут). Только дела командами; мысли для себя - коротко или без них. Личка хозяину можно, если он сам написал в личку.';
     const inv = hash(P.inv);
     if (inv !== this.sent.inv || want.has('inventory') || /инвентар|что у тебя|есть ли у тебя|сколько у тебя|принеси|отнеси|отдай|дай|положи|возьми|забери/.test(said)) {
       s += `\n[инвентарь] ${P.inv}`; this.sent.inv = inv;
@@ -621,6 +628,12 @@ class Brain {
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => ['look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'toss', 'wait', 'findSpot'].includes(a.act));
         // своё «стоп» без хозяина - почти всегда «моб рядом, остановлюсь»: дорогу не прерывать, тело отходит само
         // (22.11: шла домой, крипер за стеной - мозг сказал stop, бот встал посреди улицы)
+        // написала, что сделает, а команды нет - тело от слов не двигается: сказать ей сразу (не чаще раза в 2 мин)
+        // (22.11: «застряла в пекарне, выйду через дверь» текстом - и стояла)
+        if (!r.actions.length && r.say && INTENT.test(r.say.toLowerCase()) && Date.now() - (this.intentWarnAt || 0) > 120000) {
+          this.intentWarnAt = Date.now();
+          this.pending.push({ line: `[итог] ты написала «${r.say.slice(0, 80)}», но без команды - тело от слов ничего не делает. Нужна команда (!goTo, !use, !collect, !obtain, !goFree...); если хочешь ждать - пиши только «ок»`, from: '@self', fix: true });
+        }
         if (self && !master && r.actions.some((a) => a && a.act === 'stop')) { r.actions = r.actions.filter((a) => !(a && a.act === 'stop')); this.log('своё «стоп» пропущено: от мобов тело отходит само'); }
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
         const notFromMaster = !master;

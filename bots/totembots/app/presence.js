@@ -294,6 +294,22 @@ class Presence {
         if (c) { const spot = this.standNear(c); if (spot) out.push({ w: 1, what: 'заглядываю в свой сундук', hand: false, look: c.offset(0.5, 0.5, 0.5), spot, key: c, chest: c }); }
       } catch {}
     }
+    // осмотреться (как человек на новом месте): отойти на пару шагов и посмотреть по очереди на интересное вокруг -
+    // таблички, двери, верстаки, жителей, животных, даль; без предметов в руке (22.11: «ходила, осматривалась, как будто понимает»)
+    if (this.interestPoints) {
+      const pts = this.interestPoints(center, 12);
+      if (pts.length >= 3) {
+        const looks = [];
+        for (let i = 0; i < 5 && pts.length; i++) { let t = Math.random() * pts.reduce((s, q) => s + q.w, 0), j = 0; for (; j < pts.length - 1; j++) { t -= pts[j].w; if (t <= 0) break; } looks.push(pts.splice(j, 1)[0]); }
+        let spot = null;
+        for (let k = 0; k < 12 && !spot; k++) {
+          const a = Math.random() * Math.PI * 2, d = 2 + Math.random() * 3, x = Math.floor(center.x + Math.cos(a) * d), z = Math.floor(center.z + Math.sin(a) * d);
+          for (const dy of [0, 1, -1]) { const y = Math.floor(center.y) + dy; if (this.standOk && this.standOk(x, y, z) && (!this.harmlessSpot || this.harmlessSpot(x, y, z))) { spot = new Vec3(x + 0.5, y, z + 0.5); break; } }
+        }
+        const named = looks.filter((q) => q.what !== 'вдаль').slice(0, 2).map((q) => String(q.what).replace(/_/g, ' '));
+        if (spot && !recent(spot.floored())) out.push({ w: 2.5, what: 'осматриваюсь' + (named.length ? ': ' + named.join(', ') : ''), hand: false, look: looks[0].at, looks: looks.map((q) => q.at), spot, key: spot.floored() });
+      }
+    }
     // ночью дома без хозяина - иногда присесть (/sit)
     const h = require('./life').home(this), t = b.time && b.time.timeOfDay;
     if (!withOwner && h && h.dim === this.dimName() && Math.hypot(h.x - center.x, h.z - center.z) < 12 && t > 13000 && t < 23000) out.push({ w: 0.6, what: 'присела отдохнуть', hand: false, look: null, spot: b.entity.position.clone(), key: b.entity.position.floored(), lay: true });

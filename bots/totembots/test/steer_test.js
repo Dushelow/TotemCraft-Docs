@@ -59,6 +59,18 @@ const ok = (name, cond, info) => res.push([name, !!cond, info]);
   w.seenTick(mkw(false)); const shown = !!w.load('overworld').poi['спавнер@0,0'];
   ok('спавнер за стеной не на карте', hidden); ok('увидела - на карте', shown); }
 
+// 10. Мёд: с медового блока не прыгать на блок вверх, а сойти и потом прыгнуть
+{ const { find } = require('./navlib'); const { goals } = require(R + '/mineflayer-pathfinder');
+  const w = world((set) => { set(0, 64, 0, 'honey_block'); set(1, 65, 0, 'stone'); });
+  const r = find(w, [0, 65, 0], new goals.GoalBlock(1, 66, 0));
+  ok('с мёда не прыгает вверх', r.status === 'success' && r.path[0] && !(r.path[0].x === 1 && r.path[0].y === 66), r.path.map((m) => m.x + ',' + m.y + ',' + m.z).join(' ')); }
+// 11. Понимание места: кровати и печи - жильё и мастерская; тропа - дорога
+{ const { PlaceSense } = require('../app/placesense');
+  const t = mk((set) => { set(2, 65, 0, 'red_bed'); set(3, 65, 0, 'red_bed'); set(2, 65, 2, 'furnace'); set(3, 65, 2, 'crafting_table'); for (let z = -6; z <= 6; z++) set(0, 64, z, 'dirt_path'); });
+  Object.assign(t, PlaceSense.prototype); for (const k of Object.getOwnPropertyNames(PlaceSense.prototype)) if (k !== 'constructor') t[k] = PlaceSense.prototype[k];
+  t.bot.findBlocks = ({ matching, maxDistance }) => { const out = []; for (let x = -8; x <= 8; x++) for (let y = 60; y <= 70; y++) for (let z = -8; z <= 8; z++) { const v = new Vec3(x, y, z); const k = t.bot.blockAt(v); if (k && k.name !== 'air' && matching(k) && Math.hypot(x, z) <= maxDistance) out.push(v); } return out; };
+  const txt = t.placeText(); ok('место: жильё, мастерская, дорога', /жильё/.test(txt) && /мастерская/.test(txt) && /на дороге/.test(txt), txt); }
+
 const bad = res.filter((r) => !r[1]);
 for (const r of bad) console.log('  НЕ ТАК: ' + r[0] + ' ' + (r[2] || ''));
 console.log(`ближнее чутьё: ${res.length - bad.length} из ${res.length}${bad.length ? ' - НЕТ' : ''}`);

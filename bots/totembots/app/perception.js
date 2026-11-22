@@ -176,11 +176,12 @@ class Perception {
     const ml = rd.text || Object.entries(mobs).sort((a2, b2) => b2[1] - a2[1]).slice(0, 5).map(([k, v]) => v > 1 ? `${k} x${v}` : k).join(', ');
     const held = b.heldItem ? b.heldItem.name : 'пусто';
     const room = this.houseText() || this.roomText();
+    let place = ''; try { place = this.placeText ? this.placeText() : ''; } catch {}
     let objs = ''; try { objs = require('./objects').describe(this); } catch {}
     let dk = ''; try { dk = this.darkness(); } catch {}
     try { const hs = this.heardText && this.heardText(); if (hs) dk = dk ? dk + '; ' + hs : hs; } catch {}
     try { const sn = this.senseText && this.senseText(); if (sn) dk = dk ? dk + '; ' + sn : sn; } catch {}
-    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; ${rd.text ? '' : 'мобы: '}${ml}` : '') + (dk ? `; ${dk}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
+    return `под ногами ${nm(p.offset(0, -0.5, 0))}, впереди ${nm(fwd)}/${nm(fwd.offset(0, 1, 0))}, в руке ${held}` + (ml ? `; ${rd.text ? '' : 'мобы: '}${ml}` : '') + (dk ? `; ${dk}` : '') + (drops ? `; вещей на земле ${drops}` : '') + (room ? `\n[комната] ${room}` : '') + (place ? `\n[место] ${place}` : '') + (objs ? `\n[предметы] ${objs} (пользоваться: !use(x, y, z))` : '');
   }
 
   /**

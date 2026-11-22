@@ -49,10 +49,18 @@ class Guard {
     // кто рядом и враждебен или нейтрален - считаем обидчиком
     const b = this.bot;
     // обидчик - ближайший моб (раньше - все в 6 блоках: доставалось и мирным, бот бил их, а не шёл за хозяином, 16.11)
-    const me = b.entity.position;
-    const near = Object.values(b.entities).filter((e) => e !== b.entity && e.type !== 'player' && e.name !== 'item' && e.position.distanceTo(me) < 5)
+    const me = b.entity.position, now = Date.now();
+    // ударил игрок (рядом махнул рукой только что) - мобы ни при чём (22.11: хозяин ткнул бота, а бот избил жителя)
+    const G = this.tb.gx;
+    if (G) for (const pl of Object.values(b.players)) {
+      const p = pl.entity, g = G.get(pl.username);
+      if (p && p !== b.entity && g && p.position.distanceTo(me) < 4.8 && g.swing.some((t) => now - t < 700)) return;
+    }
+    // обидчиком может быть только тот, кто вообще нападает: враждебные и нейтральные, но не жители, животные, големы-друзья
+    const PEACE = /^(villager|wandering_trader|cow|sheep|pig|chicken|horse|donkey|mule|llama|trader_llama|cat|parrot|rabbit|fox|turtle|axolotl|frog|camel|sniffer|armadillo|allay|strider|squid|glow_squid|cod|salmon|tropical_fish|bat|mooshroom|ocelot|snow_golem|item_frame|glow_item_frame|armor_stand|painting|.*boat|.*minecart|experience_orb|arrow|item)$/;
+    const near = Object.values(b.entities).filter((e) => e !== b.entity && e.type !== 'player' && e.position && !PEACE.test(this.name(e)) && e.position.distanceTo(me) < 5)
       .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
-    if (near) this.hurtBy.set(near.id, Date.now());
+    if (near) this.hurtBy.set(near.id, now);
   }
 
   /** Враг стоит на пути (впереди по ходу, ближе 3 бл., не крипер): в дороге его выгоднее ударить, чем стоять. */

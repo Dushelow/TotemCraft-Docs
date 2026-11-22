@@ -108,6 +108,8 @@ function install(mv, bot) {
   /** Высота ног, стоящих в точке (px, pz) не выше top: самая высокая опора. */
   const support = (px, pz, top, bottom, flip) => { const t = tops(px, pz, top, bottom, flip); return t.length ? t[0] : null; };
 
+  /** Пол под ногами не даёт прыгнуть: мёд. */
+  const noJumpFloor = (px, feet, pz) => { const k = mv.bot.blockAt(new Vec3(Math.floor(px), Math.floor(feet - 0.01), Math.floor(pz)), false); return !!(k && k.name === 'honey_block'); };
   /** «Прогулка» телом от (sx, sz) с высоты ног fy к центру (tx, tz). Итог: высота ног в конце, помехи, прыжок. */
   function walk(sx, fy, sz, tx, tz, flip) {
     // шаг 0,25: тело шириной 0,6 перекрывает соседние точки, тонкая стенка (люк 0,19) между ними не проскочит
@@ -123,6 +125,9 @@ function install(mv, bot) {
       for (const t of tops(nx, nz, feet + JUMP, feet - mv.maxDropDown - 0.01, flip, feet + STEP)) {
         if (t <= feet + STEP + EPS) { s = t; break; }
         if (jumped) continue;
+        // с медового блока толком не прыгнуть (прыжок вдвое ниже) - только шаг (22.11: стояла на мёде и прыгала на блок вверх
+        // без конца - «застряла в пекарне»)
+        if (noJumpFloor(px, feet, pz)) continue;
         // прыгать - только на опору шириной от 0,25 в обе стороны (не на ребро открытого люка или двери 0,19:
         // физика так не прыгает - 22.11 случайные миры)
         const wd = tops.wide.get(Math.round(t * 1e4)) || [0, 0];

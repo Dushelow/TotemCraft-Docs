@@ -23,7 +23,7 @@ const read = (g, p = P(), t = mk()) => { const k = t.readGesture('V', g, p, T0) 
 { const g = g0(); trace(g, 25, () => ({})); g.crouch = [T0 - 900, T0 - 400]; g.hitAt = T0 - 8000; const t = mk({ pvpAt: T0 - 8000 }); ok('после стычки - без обид', read(g, P(), t) === 'без обид', read(g, P(), t)); }
 { const g = g0(); trace(g, 25, () => ({})); g.crouch = [T0 - 1500, T0 - 900, T0 - 400]; const t = mk({ deadAt: { t: T0 - 3000, pos: new Vec3(0, 64, -5), player: true } }); ok('над убитым игроком - насмешка', read(g, P(), t) === 'насмешка'); }
 { const g = g0(); trace(g, 30, (i) => ({ y: i % 6 === 1 ? 64.4 : 64, ground: i % 6 === 0 })); ok('прыжки на месте - радость', read(g) === 'радость', read(g)); }
-{ const g = g0(); trace(g, 40, (i) => (i < 30 ? { z: -2 - i * 0.15, yaw: 0 } : { z: -6.35 })); const k = read(g, P(0, -6.35)); ok('отошёл, встал и ждёт - за мной', k === 'за мной', k); }
+{ const g = g0(); trace(g, 46, (i) => (i < 30 ? { z: -2 - i * 0.15, yaw: 0 } : { z: -6.35 })); const k = read(g, P(0, -6.35)); ok('отошёл, встал и ждёт - за мной', k === 'за мной', k); }
 
 // обычная игра - не жест
 { const g = g0(); trace(g, 25, () => ({ x: 20.5 })); g.crouch = [T0 - 900, T0 - 400]; const p = P(20.5, -5); ok('присед у края (стройка мостом) - не жест', !read(g, p), read(g, p)); }
@@ -37,6 +37,9 @@ const read = (g, p = P(), t = mk()) => { const k = t.readGesture('V', g, p, T0) 
 { const g = g0(); trace(g, 25, (i) => ({ pitch: i % 4 < 2 ? 0.6 : -0.1 })); const t = mk({ seesEntity: () => false }); ok('за стеной - не жест', !read(g, P(), t)); }
 { const g = g0(); trace(g, 25, (i) => ({ pitch: i % 4 < 2 ? 0.6 : -0.1 })); const t = mk(); read(g, P(), t); ok('повтор не чаще 4 с', !read(g, P(), t)); }
 
+{ const g = g0(); trace(g, 25, (i) => ({ yaw: Math.PI + (i < 12 ? i * 0.15 : 1.8 - (i - 12) * 0.12), pitch: (i % 7) * 0.05 })); ok('осматривается по сторонам - не жест', !read(g), read(g)); }
+{ const g = g0(); trace(g, 25, (i) => ({ yaw: Math.PI + 1.2, pitch: i % 4 < 2 ? 0.6 : -0.1 })); ok('кивает, глядя в сторону - не да', !read(g), read(g)); }
+{ const g = g0(); trace(g, 46, (i) => (i < 30 ? { z: -2 - i * 0.15, yaw: 0 } : { z: -6.35 })); const t = mk({ mode: 'follow' }); const k = read(g, P(0, -6.35), t); ok('идёт следом - «за мной» не нужно', k !== 'за мной', k); }
 // ответы
 { const said = []; const t = mk({ log() {}, emit() {}, attend() {}, gesture: async (k) => said.push(k), mode: 'idle', affinity: () => 0, isMasterName: (n) => n === 'Boss' });
   t.onGesture('Stranger', { kind: 'привет', text: '' }, P(), T0); t.onGesture('Stranger', { kind: 'радость', text: '' }, P(), T0 + 6000);

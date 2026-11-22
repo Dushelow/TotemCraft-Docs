@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld('totem', {
   botQuiet: call('bot-quiet'),
   botSkin: call('bot-skin'),
   panelFull: call('panel-full'),
+  openTranscript: call('open-transcript'),
   botFollowDist: call('bot-follow-dist'),
   botStop: call('bot-stop'),
   botOrder: call('bot-order'),

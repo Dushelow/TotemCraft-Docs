@@ -114,6 +114,7 @@ class Gestures {
     const seen = this.seesEntity ? this.seesEntity(p) : true;
     const edge = (() => { try { let air = 0; for (const [ox, oz] of [[0.35, 0.35], [-0.35, 0.35], [0.35, -0.35], [-0.35, -0.35]]) { const k = b.blockAt(p.position.offset(ox, -0.5, oz)); if (!k || k.boundingBox === 'empty') air++; } return air > 0; } catch { return false; } })();
     const climbing = (() => { try { const k = b.blockAt(p.position); return k && /ladder|vine|scaffolding|water|lava/.test(k.name); } catch { return false; } })();
+    if (g.sitting && g.satAt && now - g.satAt > 1200 && now - g.satAt < 4000) return once('сел', 'сел отдохнуть');
     const calm = still && seen && !busyHands && !fight && !climbing && !p.vehicle && !p.elytraFlying;
     // спор после стычки и насмешка - смысл по обстановке
     const crouches = recent(g.crouch, 2500);
@@ -135,13 +136,17 @@ class Gestures {
         const nd = Math.sign(dv); if (dir && nd !== dir) flips++; dir = nd;
         lo = Math.min(lo, s[i][key]); hi = Math.max(hi, s[i][key]);
       }
-      return flips >= 2 && hi - lo > amp && hi - lo < 2.2;
+      return flips >= 3 && hi - lo > amp && hi - lo < 1.3;
     };
-    if (s.length > 4 && look > 0.6 && noSwing && swings('pitch', 0.5)) return once('да', 'кивнул: «да»');
+    // всё время смотрит в сторону бота (осматривается - взгляд уходит в сторону и не возвращается)
+    const faceAll = s.length > 4 && s.every((x) => this.facing({ position: p.position, yaw: x.yaw }, me) > 0.55);
+    const yawSpan = (() => { let lo = Infinity, hi = -Infinity; for (const x of s) { let dv = x.yaw - s[0].yaw; while (dv > Math.PI) dv -= 2 * Math.PI; while (dv < -Math.PI) dv += 2 * Math.PI; lo = Math.min(lo, dv); hi = Math.max(hi, dv); } return hi - lo; })();
+    const pitchSpan = s.length ? Math.max(...s.map((x) => x.pitch)) - Math.min(...s.map((x) => x.pitch)) : 0;
+    if (s.length > 4 && look > 0.75 && faceAll && noSwing && yawSpan < 0.35 && swings('pitch', 0.45)) return once('да', 'кивнул: «да»');
     let tot = 0; for (let i = 1; i < s.length; i++) { let dv = s[i].yaw - s[i - 1].yaw; while (dv > Math.PI) dv -= 2 * Math.PI; while (dv < -Math.PI) dv += 2 * Math.PI; tot += dv; }
     if (Math.abs(tot) > 5.5 && d < 10) return once('кружится', 'кружится на месте (радуется или дурачится)');
     const faceStart = s.length ? this.facing({ position: p.position, yaw: s[0].yaw }, me) : 0;
-    if (s.length > 4 && look > 0.4 && faceStart > 0.4 && noSwing && swings('yaw', 0.6)) return once('нет', 'мотает головой: «нет»');
+    if (s.length > 4 && look > 0.6 && faceStart > 0.6 && faceAll && noSwing && pitchSpan < 0.35 && swings('yaw', 0.5)) return once('нет', 'мотает головой: «нет»');
     // прыжки на месте и на одной высоте (не бег, не столб из блоков)
     let jumps = 0; for (let i = 1; i < w.length; i++) if (w[i].y - w[i - 1].y > 0.25 && w[i - 1].ground) jumps++;
     const gy = w.filter((x) => x.ground).map((x) => x.y);
@@ -177,9 +182,11 @@ class Gestures {
   readFollowMe(name, g, p, now) {
     const me = this.bot.entity.position, d = p.position.distanceTo(me);
     const w = g.s.filter((x) => now - x.t < 4000);
-    if (w.length < 10 || d < 4 || d > 24) return null;
-    const last = w.filter((x) => now - x.t < 800), first = w[0];
-    const stoodStill = last.length >= 3 && Math.hypot(last[last.length - 1].x - last[0].x, last[last.length - 1].z - last[0].z) < 0.3;
+    if (w.length < 10 || d < 4 || d > 24 || this.mode === 'follow' || this.mode === 'task' || this._errandBusy) return null;
+    // ждёт дольше секунды неподвижно, а до этого был рядом с ботом (до 4 бл.) - позвал, а не просто ушёл по делам
+    if (!w.some((x) => Math.hypot(x.x - me.x, x.z - me.z) < 4.5)) return null;
+    const last = w.filter((x) => now - x.t < 1200), first = w[0];
+    const stoodStill = last.length >= 5 && Math.hypot(last[last.length - 1].x - last[0].x, last[last.length - 1].z - last[0].z) < 0.3;
     const walkedAway = d - Math.hypot(first.x - me.x, first.z - me.z) > 3;
     const waits = last.every((x) => this.facing({ position: p.position, yaw: x.yaw }, me) > 0.8);
     if (stoodStill && walkedAway && waits && now - (g.said['за мной'] || 0) > 8000) { g.said['за мной'] = now; return { kind: 'за мной', text: 'отошёл, остановился и ждёт, глядя на тебя: «иди за мной»' }; }
@@ -299,7 +306,9 @@ class Gestures {
         if (/_stairs$/.test(bl.name) && pr.half !== 'bottom') continue;
         const up = b.blockAt(v.offset(0, 1, 0)), up2 = b.blockAt(v.offset(0, 2, 0));
         if (!up || up.boundingBox !== 'empty' || (up2 && up2.boundingBox !== 'empty')) continue;
-        if (Object.values(b.players).some((p) => p.entity && p.entity.position.distanceTo(v.offset(0.5, 0.5, 0.5)) < 0.9)) continue;   // занято
+        // занято или вплотную к кому-то: не на место хозяина и не впритык (22.11: села прямо в хозяина)
+        if (Object.values(b.players).some((p) => p.entity && p.entity !== b.entity && Math.hypot(p.entity.position.x - v.x - 0.5, p.entity.position.z - v.z - 0.5) < 1.4 && Math.abs(p.entity.position.y - v.y) < 2.5)) continue;
+        if (Object.values(b.entities).some((e) => e !== b.entity && e.type !== 'player' && e.position && Math.hypot(e.position.x - v.x - 0.5, e.position.z - v.z - 0.5) < 0.7 && Math.abs(e.position.y - v.y) < 1.5 && !/item/.test(e.name || ''))) continue;   // место GSit занято сиденьем
         target = bl; break;
       }
     }

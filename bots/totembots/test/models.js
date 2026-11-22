@@ -108,10 +108,15 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const wm = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'cv')));
   wm.airIds = new Set(); for (const n of ['air', 'cave_air', 'void_air']) { const b = registry.blocksByName[n]; for (let i = b.minStateId; i <= b.maxStateId; i++) wm.airIds.add(i); }
   wm.load('overworld').chunks['0,0'] = { t: Date.now(), k: 'g', h: 70, b: 0 };
-  const tb = { bot: { registry, entity: { position: new Vec3(0.5, 40, 0.5) }, game: { dimension: 'overworld' }, world: { getColumn: (x, z) => cols.get(`${x},${z}`) } } };
+  const blockAt = (v) => { const col = cols.get(`${Math.floor(v.x / 16)},${Math.floor(v.z / 16)}`); if (!col) return null; const st = col.getBlockStateId(new Vec3(((Math.floor(v.x) % 16) + 16) % 16, Math.floor(v.y), ((Math.floor(v.z) % 16) + 16) % 16)); const bl = registry.blocksByStateId[st]; return { name: bl.name, boundingBox: bl.boundingBox, skyLight: 0 }; };
+  const tb = { bot: { registry, blockAt, entity: { position: new Vec3(0.5, 40, 0.5) }, game: { dimension: 'overworld' }, world: { getColumn: (x, z) => cols.get(`${x},${z}`) } } };
   const t = wm.tunnels(tb);
   const ok = /восток 4\d бл/.test(t) && /север 1\d бл/.test(t) && /запад 10 бл/.test(t) && /подземный слой/.test(wm.layerMode(tb));
   console.log('--- подземный слой: ' + (ok ? 'ходы пещеры видны (' + t + ')' : 'НЕТ: ' + t));
+  // мельница посреди поля: высоко над чанком постройка, а над ботом - доски и небо, не камень - это не пещера
+  const mill = { bot: { registry, entity: { position: new Vec3(0.5, 71, 0.5) }, game: { dimension: 'overworld' }, blockAt: (v) => (Math.floor(v.y) >= 80 && Math.floor(v.y) <= 82 ? { name: 'oak_planks', boundingBox: 'block', skyLight: 0 } : { name: 'air', boundingBox: 'empty', skyLight: 0 }), world: { getColumn: () => null } } };
+  wm.load('overworld').chunks['0,0'].h = 90;
+  console.log('--- мельница не пещера: ' + (!wm.layerMode(mill) ? 'под крышей постройки - поверхность' : 'НЕТ: ' + wm.layerMode(mill)));
 }
 
 // метки из чата: название + координаты от хозяина - место; приказы и количества - нет

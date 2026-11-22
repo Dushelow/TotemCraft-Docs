@@ -19,6 +19,12 @@ class Marks {
     if (!b || !b.entity || !this.memory) return;
     this._mk = (this._mk || 0) + 1;
     if (this._mk % 5) return;
+    // один раз: убрать «входы в пещеру», поставленные до 22.11 по ошибке (высокая постройка в чанке = «под землёй»)
+    if (!(this.memory.data.migr || {}).cave22) {
+      this.memory.data.migr = { ...(this.memory.data.migr || {}), cave22: 1 };
+      for (const [k, pl] of Object.entries(this.memory.data.places || {})) if (pl.kind === 'вход в пещеру' || pl.name === 'вход в пещеру') delete this.memory.data.places[k];
+      this.memory.save();
+    }
     const me = b.entity.position;
     // стадо: 3+ одинаковых животных в 24 бл. - «овцы» (на 2 дня): знать, куда идти за шерстью и едой
     const cnt = {};
@@ -27,7 +33,7 @@ class Marks {
     // вход в пещеру: был на поверхности - стал под землёй (неделя): выход наверх
     let under = '';
     try { under = this.worldMap ? this.worldMap.layerMode(this) : ''; } catch {}
-    if (under && /подземный/.test(under) && this._surfacePos) this.autoMark('вход в пещеру', this._surfacePos, { kind: 'вход в пещеру', radius: 24, ttl: 7 * DAY });
+    if (under && /подземный/.test(under) && this._surfacePos && this._surfacePos.y - me.y >= 4 && me.distanceTo(this._surfacePos) < 40) this.autoMark('вход в пещеру', this._surfacePos, { kind: 'вход в пещеру', radius: 24, ttl: 7 * DAY });
     if (!under && b.entity.onGround) this._surfacePos = me.clone();
   }
 
