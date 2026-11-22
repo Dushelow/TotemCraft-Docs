@@ -281,6 +281,14 @@ class Zones {
       this._placeChkAt = now;
       try {
         const P = this.memory.data.places || {}, V = me.constructor;
+        // метки из чата с мусорным именем - почистить или убрать (раз в минуту, все)
+        const { cleanName } = require('./chatpoints');
+        for (const [k, pl] of Object.entries(P)) {
+          if (!/из чата/.test(pl.by || '')) continue;
+          const n = cleanName(pl.name);
+          if (!n) { delete P[k]; this.memory.save(); this.log(`метка «${pl.name}» - не название места, убрала`); }
+          else if (n !== pl.name && !P[n.toLowerCase()]) { delete P[k]; P[n.toLowerCase()] = { ...pl, name: n }; this.memory.save(); this.log(`метка «${pl.name}» -> «${n}»`); }
+        }
         for (const [k, pl] of Object.entries(P)) {
           if (pl.dim !== this.dimName() || Math.hypot(pl.x - me.x, pl.z - me.z) > 64) continue;
           const a = b.blockAt(new V(pl.x, pl.y, pl.z)), c = b.blockAt(new V(pl.x, pl.y + 1, pl.z));
