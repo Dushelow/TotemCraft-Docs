@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
 <title>TotemBots</title>
 <style>
   /* ---------- токены: все цвета, отступы, радиусы, шрифты - только отсюда (правила в UI.md) */
@@ -206,6 +206,96 @@
   .mapc { width: 100%; height: 460px; display: block; border-radius: var(--r2); background: var(--bg); border: 1px solid var(--line); cursor: grab; touch-action: none; }
   .mapc:active { cursor: grabbing; }
   .maplegend summary { cursor: pointer; }
+  /* ---------- «Жизнь» на всё окно */
+  .lifeteaser { display: flex; gap: var(--s4); align-items: center; justify-content: space-between; padding: var(--s4); border-radius: var(--r2); background: linear-gradient(135deg, var(--acc-soft), transparent 70%), var(--surface); border: 1px solid var(--line); flex-wrap: wrap; }
+  .lifeov { position: fixed; inset: 0; z-index: 1000; overflow: auto; color: var(--text); opacity: 0; transform: scale(.985); transition: opacity .2s ease, transform .2s ease;
+    background: radial-gradient(1200px 600px at 10% -10%, rgba(90,95,224,.22), transparent 60%), radial-gradient(900px 500px at 110% 10%, rgba(63,191,111,.12), transparent 60%), #0d0e11; }
+  .lifeov.on { opacity: 1; transform: none; }
+  .lifetop { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: var(--s4); padding: 12px 20px; background: rgba(13,14,17,.82); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .lifetitle { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 700; min-width: 0; }
+  .lifelvl { font-size: 12px; font-weight: 600; color: #ffd76a; background: rgba(255,215,106,.12); border: 1px solid rgba(255,215,106,.35); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+  .lifemood { font-size: 12px; font-weight: 600; color: var(--mc); border: 1px solid var(--mc); border-radius: 999px; padding: 2px 10px; background: color-mix(in srgb, var(--mc) 14%, transparent); }
+  .lifeclock { flex: 1; display: flex; gap: 6px; align-items: center; justify-content: center; color: var(--text-2); font-size: 13px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lifeclose { display: inline-flex; gap: 6px; align-items: center; }
+  .lifebody { display: grid; gap: 16px; padding: 20px; max-width: 1500px; margin: 0 auto;
+    grid-template-columns: 320px minmax(0, 1fr) minmax(0, 1.25fr); grid-template-areas: "hero now map" "hero diary map" "side diary map"; }
+  .lifecard { background: rgba(30,31,35,.82); border: 1px solid var(--line); border-radius: 16px; padding: 16px; min-width: 0; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .lifehero { grid-area: hero; display: flex; flex-direction: column; gap: 12px; } .lifenowc { grid-area: now; } .lifemapc { grid-area: map; display: flex; flex-direction: column; min-height: 520px; }
+  .lifediaryc { grid-area: diary; } .lifesidec { grid-area: side; }
+  .lifeh { font-weight: 700; font-size: 13px; color: var(--text-2); margin: 14px 0 8px; display: flex; gap: 7px; align-items: center; }
+  .lifecard > .lifeh:first-child { margin-top: 0; }
+  .lifestage { position: relative; height: 300px; border-radius: 12px; overflow: hidden; border: 1px solid rgba(255,255,255,.06); }
+  .lifesky { position: absolute; inset: 0; transition: background 2s linear; }
+  .lifestars { position: absolute; inset: 0 0 25% 0; opacity: 0; transition: opacity 2s; background-image: radial-gradient(1.5px 1.5px at 12% 18%, #fff, transparent), radial-gradient(1px 1px at 28% 40%, #fff, transparent), radial-gradient(1.5px 1.5px at 46% 12%, #fff, transparent), radial-gradient(1px 1px at 63% 30%, #fff, transparent), radial-gradient(1.5px 1.5px at 78% 16%, #fff, transparent), radial-gradient(1px 1px at 88% 44%, #fff, transparent), radial-gradient(1px 1px at 36% 22%, #cfe, transparent), radial-gradient(1px 1px at 55% 48%, #fff, transparent); animation: lifetwinkle 4s ease-in-out infinite; }
+  @keyframes lifetwinkle { 50% { filter: brightness(.6); } }
+  .lifeorb { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; transition: left 2s linear, top 2s linear; }
+  .lifeorb.sun { background: #ffe066; box-shadow: 0 0 0 4px rgba(255,224,102,.35), 0 0 40px 12px rgba(255,200,80,.45); }
+  .lifeorb.moon { background: #e8ecf5; box-shadow: inset -8px -6px 0 #c3c9d6, 0 0 30px 6px rgba(200,210,255,.25); border-radius: 2px; }
+  .lifeground { position: absolute; left: 0; right: 0; bottom: 0; height: 25%; transition: background-color 2s; box-shadow: inset 0 6px 0 rgba(255,255,255,.12); }
+  .lifeground::after { content: ""; position: absolute; inset: 6px 0 0 0; background: repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 8px, transparent 8px 16px), linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.35)); }
+  .lifefigwrap { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); z-index: 2; filter: drop-shadow(0 6px 0 rgba(0,0,0,.25)); transition: bottom .4s; }
+  .lifefig { position: relative; animation: lifebob 3.2s ease-in-out infinite; transform-origin: bottom center; }
+  .lifeghost { position: absolute; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.18); border-radius: 3px; }
+  @keyframes lifebob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .lifearm { transform-origin: 50% 8%; }
+  .lifestage[data-pose="walk"] .lifefig { animation: lifebob .5s ease-in-out infinite; }
+  .lifestage[data-pose="walk"] .lifearm.l { animation: lifeswing .5s ease-in-out infinite; } .lifestage[data-pose="walk"] .lifearm.r { animation: lifeswing .5s ease-in-out infinite reverse; }
+  @keyframes lifeswing { 0%, 100% { transform: rotate(18deg); } 50% { transform: rotate(-18deg); } }
+  .lifestage[data-pose="fight"] .lifearm.r { animation: lifehit .45s ease-in-out infinite; }
+  @keyframes lifehit { 0%, 100% { transform: rotate(0); } 40% { transform: rotate(-80deg); } }
+  .lifestage[data-pose="sit"] .lifefigwrap { bottom: 10%; }
+  .lifestage[data-pose="sit"] .lifefig { animation-duration: 4.5s; }
+  .lifehead { animation: lifelook 9s ease-in-out infinite; }
+  @keyframes lifelook { 0%, 60%, 100% { transform: none; } 70% { transform: translateX(-2px); } 85% { transform: translateX(2px); } }
+  .lifestage[data-rain="1"]::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: repeating-linear-gradient(105deg, transparent 0 14px, rgba(200,220,255,.28) 14px 15px); animation: liferain .6s linear infinite; }
+  @keyframes liferain { to { background-position: -30px 120px; } }
+  .lifeact { position: absolute; left: 10px; right: 10px; top: 10px; z-index: 4; display: flex; justify-content: center; }
+  .lifeact span { max-width: 100%; background: rgba(13,14,17,.72); border: 1px solid rgba(255,255,255,.12); border-radius: 10px 10px 10px 2px; padding: 5px 10px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lifebars { display: flex; flex-direction: column; gap: 8px; }
+  .lifebar { display: grid; grid-template-columns: 18px 1fr 26px; gap: 8px; align-items: center; font-size: 12px; color: var(--text-2); }
+  .lifebar > div, .liferel > div { height: 9px; border-radius: 6px; background: rgba(255,255,255,.07); position: relative; overflow: hidden; }
+  .lifebar i { display: block; height: 100%; border-radius: 6px; transition: width .8s ease; }
+  .lifeheld { font-size: 12px; color: var(--text-2); } .lifequiet { font-size: 13px; }
+  .lifenow { font-size: 20px; font-weight: 700; line-height: 1.3; }
+  .lifewhere { color: var(--text-3); font-size: 12px; margin-top: 6px; }
+  .lifebub { background: rgba(255,255,255,.04); border: 1px dashed rgba(255,255,255,.14); border-radius: 14px 14px 14px 4px; padding: 8px 12px; margin: 0 0 8px; font-size: 13px; font-style: italic; color: var(--text-2); }
+  .lifebub.said { font-style: normal; border-style: solid; border-color: rgba(143,148,255,.35); background: rgba(90,95,224,.12); color: var(--text); }
+  .lifebubk { display: block; font-size: 10px; letter-spacing: .4px; text-transform: uppercase; color: var(--text-3); font-style: normal; margin-bottom: 2px; }
+  .lifemapslot { flex: 1; display: flex; } .lifemapslot .mapw { flex: 1; } .lifemapslot .mapc { height: auto; flex: 1; min-height: 360px; }
+  .lifediary { max-height: 560px; overflow: auto; padding-right: 6px; }
+  .lifeday { position: sticky; top: 0; background: rgba(30,31,35,.96); font-size: 12px; font-weight: 700; color: #ffd76a; margin: 4px 0; padding: 4px 0; }
+  .lifeent { display: grid; grid-template-columns: 40px 22px 1fr; gap: 8px; font-size: 13px; padding: 5px 0; align-items: start; }
+  .lifet { color: var(--text-3); font-variant-numeric: tabular-nums; }
+  .lifedot { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: rgba(143,148,255,.14); color: #b9bcff; }
+  .liferel { display: grid; grid-template-columns: minmax(0, 1fr) 100px 34px; gap: 8px; align-items: center; font-size: 13px; margin: 5px 0; }
+  .liferel > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .liferel i { position: absolute; top: 0; bottom: 0; }
+  .lifestats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+  .lifestat { background: rgba(255,255,255,.04); border-radius: 10px; padding: 10px; display: flex; flex-direction: column; gap: 2px; }
+  .lifestat b { font-size: 18px; } .lifestat span { font-size: 11px; color: var(--text-3); }
+  .lifeitems { display: flex; flex-wrap: wrap; gap: 6px; }
+  .lifeitem { display: inline-flex; gap: 6px; align-items: center; font-size: 12px; background: rgba(255,255,255,.05); border: 1px solid var(--line); border-radius: 8px; padding: 3px 8px; }
+  .lifeitem b { color: #ffd76a; font-size: 11px; }
+  .lifeprop { position: absolute; left: calc(50% + 62px); bottom: 18%; z-index: 2; }
+  .lp { position: relative; width: 48px; height: 48px; image-rendering: pixelated; }
+  .lp.fire i:nth-child(1) { position: absolute; left: 4px; right: 4px; bottom: 0; height: 10px; background: repeating-linear-gradient(90deg, #6b4423 0 8px, #8a5a2b 8px 16px); }
+  .lp.fire i:nth-child(2) { position: absolute; left: 14px; width: 20px; bottom: 10px; height: 26px; background: #ff9a1f; clip-path: polygon(50% 0, 100% 70%, 75% 100%, 25% 100%, 0 70%); animation: lifeflame .35s steps(2) infinite; }
+  .lp.fire i:nth-child(3) { position: absolute; left: 19px; width: 10px; bottom: 10px; height: 14px; background: #ffe36b; clip-path: polygon(50% 0, 100% 70%, 75% 100%, 25% 100%, 0 70%); animation: lifeflame .3s steps(2) infinite reverse; }
+  .lp.fire::after { content: ""; position: absolute; left: -30px; right: -30px; bottom: -10px; height: 60px; background: radial-gradient(closest-side, rgba(255,160,60,.35), transparent); pointer-events: none; }
+  @keyframes lifeflame { 50% { transform: scaleY(.85) translateY(2px); } }
+  .lp.books { height: 56px; background: #6b4423; border: 3px solid #4a2f17; } .lp.books i { position: absolute; left: 4px; right: 4px; height: 12px; background: repeating-linear-gradient(90deg, #b03a2e 0 5px, #2e6fb0 5px 10px, #3f8f3a 10px 14px, #c9a227 14px 18px); }
+  .lp.books i:nth-child(1) { top: 6px; } .lp.books i:nth-child(2) { top: 22px; } .lp.books i:nth-child(3) { top: 38px; }
+  .lp.table { height: 40px; background: #9c6b3c; border-top: 8px solid #b8834c; } .lp.table i:nth-child(1) { position: absolute; inset: 6px 8px auto 8px; height: 6px; background: repeating-linear-gradient(90deg, #5a3a1c 0 4px, transparent 4px 8px); }
+  .lp.furnace { background: #7d7d7d; border: 3px solid #5a5a5a; } .lp.furnace i:nth-child(1) { position: absolute; left: 12px; right: 12px; bottom: 6px; height: 14px; background: #ffb13d; animation: lifeflame .5s steps(2) infinite; }
+  .lp.water { width: 110px; height: 14px; margin-left: -20px; background: #3f76e4; box-shadow: inset 0 3px 0 rgba(255,255,255,.35); animation: lifewave 2s ease-in-out infinite; }
+  @keyframes lifewave { 50% { box-shadow: inset 0 5px 0 rgba(255,255,255,.2); } }
+  @media (max-width: 760px) { .lifeprop { left: calc(50% + 48px); } }
+  @media (max-width: 1180px) { .lifebody { grid-template-columns: 300px minmax(0, 1fr); grid-template-areas: "hero map" "now map" "diary side"; } }
+  @media (max-width: 760px) {
+    .lifebody { grid-template-columns: minmax(0, 1fr); grid-template-areas: "hero" "now" "map" "diary" "side"; padding: 12px; gap: 12px; }
+    .lifetop { padding: 10px 12px; gap: 8px; } .lifetitle { font-size: 17px; } .lifeclock { display: none; } .lifeclose span { display: none; }
+    .lifestage { height: 250px; } .lifemapc { min-height: 0; } .lifemapslot .mapc { min-height: 300px; } .lifediary { max-height: none; }
+  }
 </style>
 </head>
 <body>

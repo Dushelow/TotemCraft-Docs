@@ -254,7 +254,7 @@ const logFilter = new Map();   // ник -> что показывать в жу�
 const LOGF = [['all', 'Всё', 'list-checks'], ['chat', 'Чат', 'message-square'], ['brain', 'Мозг', 'brain'], ['body', 'Тело', 'footprints'], ['err', 'Ошибки', 'triangle-alert']];
 function logLines(b) { const f = logFilter.get(b.name) || 'all'; return b.log.filter((l) => f === 'all' || logKind(l) === f); }
 function errCount(b) { return b.log.filter((l) => logKind(l) === 'err').length; }
-const TABS = [['log', 'Журнал', 'scroll-text'], ['behave', 'Поведение', 'smile'], ['chats', 'Чаты', 'message-circle'], ['persona', 'Характер', 'sparkles'], ['map', 'Карта', 'map'], ['server', 'Доступ', 'key-round']];
+const TABS = [['life', 'Жизнь', 'heart'], ['log', 'Журнал', 'scroll-text'], ['behave', 'Поведение', 'smile'], ['chats', 'Чаты', 'message-circle'], ['persona', 'Характер', 'sparkles'], ['map', 'Карта', 'map'], ['server', 'Доступ', 'key-round']];
 function meter(ic, val, label) {
   const v = Math.max(0, Math.min(20, +val || 0)), cls = v <= 6 ? 'bad' : v <= 12 ? 'warn' : '';
   return `<div class="meter ${cls}" title="${label} ${v} из 20">${icon(ic, 14)}<div class="bar"><i style="width:${v * 5}%"></i></div><span>${v}</span></div>`;
@@ -279,10 +279,10 @@ function botCard(b) {
     <div class="eh">${icon(E.state === 'run' ? 'loader-circle' : E.state === 'stuck' ? 'triangle-alert' : 'circle-pause', 14, E.state === 'run' ? 'spin' : '')}<b>${E.state === 'run' ? 'Поручение' : E.state === 'stuck' ? 'Поручение застряло' : 'Поручение на паузе'}</b>
       <span class="grow"></span>${E.state !== 'run' ? `<button data-a="errandGo" class="go sm">${icon('play', 14)}Продолжить</button>` : ''}<button data-a="errandStop" class="quiet sm" title="Отменить поручение">${icon('x', 14)}Отменить</button></div>
     <ol>${E.steps.map((x, i) => `<li class="${x.st} ${i === E.cur ? 'cur' : ''}">${icon(x.st === 'done' ? 'check' : x.st === 'fail' ? 'circle-alert' : i === E.cur ? 'activity' : 'hourglass', 13)}<span>${esc(x.title)}${x.note && (x.st === 'fail' || i === E.cur) ? `<em>${esc(x.note)}</em>` : ''}</span></li>`).join('')}</ol></div>` : '';
-  const faults = (s.health || []).filter((h) => h.n);
+  const faults = (Array.isArray(s.parts) ? s.parts : []).filter((h) => h.n);
   const health = faults.length ? `<div class="muted" style="margin-top:var(--s2);color:#ffa3a6" title="${esc(faults.map((h) => h.part + ': ' + h.last).join('\n'))}">${icon('triangle-alert', 13)} сбои: ${faults.map((h) => `${esc(h.part)} ×${h.n}`).join(', ')} - подробно в журнале; часть можно выключить в «Настройках»</div>` : '';
   if (b.name !== selected) return `<div class="card bot" data-name="${esc(b.name)}" title="Открыть">${head}${stats}${health}${errand}</div>`;
-  const tab = botTab.get(b.name) || 'log';
+  const tab = botTab.get(b.name) || 'life';
   const inv = s.items ? Object.entries(s.items).map(([k, v]) => `${k} ×${v}`).join(', ') : '';
   let body = '';
   if (tab === 'log') {
@@ -317,6 +317,7 @@ function botCard(b) {
     <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="8">${esc(b.persona || '')}</textarea>
     <div class="row" style="margin-top:var(--s3)"><button data-a="savePersona" class="pri">${icon('check', 14)}Сохранить характер</button></div>`;
   if (tab === 'map') body = `<div data-f="mapslot"></div>`;
+  if (tab === 'life') body = lifeTab(b);
   if (tab === 'server') body = `
     <div class="muted">Один раз выполнить на сервере (консоль или в игре от админа, с «/» в начале):</div>
     ${[['Аккаунт AuthMe', `authme register ${b.name} ${b.password}`], ['Если аккаунт уже есть - новый пароль', `authme changepassword ${b.name} ${b.password}`],
@@ -347,7 +348,7 @@ function renderBots() {
   box.innerHTML = html; lastHtml = html;
   const log2 = box.querySelector('[data-f="log"]');
   if (log2) log2.scrollTop = atEnd ? log2.scrollHeight : top;
-  if ((botTab.get(selected) || 'log') === 'map') drawMap();
+  if ((botTab.get(selected) || 'life') === 'map') drawMap();
 }
 
 $('bots').addEventListener('click', (e) => {
@@ -358,6 +359,7 @@ $('bots').addEventListener('click', (e) => {
   const f = (n) => card.querySelector(`[data-f="${n}"]`);
   const re = () => { lastHtml = ''; };
   if (a === 'tab') { botTab.set(name, t.dataset.v); re(); renderBots(); return; }
+  if (a === 'lifeOpen') { lifeOpen(); return; }
   if (a === 'logf') { logFilter.set(name, t.dataset.v); re(); renderBots(); const lg = $('bots').querySelector('[data-f="log"]'); if (lg) lg.scrollTop = lg.scrollHeight; return; }
   if (a === 'start') act(() => T.botStart(name), t);
   if (a === 'stop') act(() => T.botStop(name), t, name + ' вышел с сервера', { fn: () => T.botStart(name), done: name + ' заходит обратно' });
@@ -660,6 +662,9 @@ function mapFrame() {
   }
   // точки мест: одна на клетку 10x10 пикселей одного вида (в городе сотни сундуков - иначе каша)
   const seenPoi = new Set();
+  // свет по времени суток (как у миникарт): день - как есть, сумерки - тёплые, ночь - тёмно-синяя; под землёй и в Незере - без
+  const lt = mapLight(v);
+  if (lt) { g.fillStyle = lt; g.fillRect(0, 0, Wc, Hc); }
   for (const [x, z, kind] of v.poi) {
     const X = sx(x + 0.5), Y = sz(z + 0.5);
     if (X < -8 || Y < -8 || X > Wc + 8 || Y > Hc + 8) continue;
@@ -704,15 +709,152 @@ function mapFrame() {
   if (info.textContent !== it) info.textContent = it;
   try { localStorage.setItem('mapZoom', String(MAP.zoom)); } catch {}
 }
+/** Цвет «света» поверх карты по времени суток (0 - полдень). null - не затемнять. */
+function mapLight(v) {
+  if (v.layer || !/overworld/.test(v.dim || '')) return null;
+  const t = ((v.time || 0) % 24000 + 24000) % 24000;
+  // доля ночи 0..1: 12000-13800 темнеет, 22200-24000 светает
+  const night = t < 12000 ? 0 : t < 13800 ? (t - 12000) / 1800 : t < 22200 ? 1 : (24000 - t) / 1800;
+  const dusk = (t > 11000 && t < 13800) || (t > 22000 || t < 800) ? 0.12 : 0;
+  const rain = v.rain ? 0.12 : 0;
+  if (night > 0.02) return `rgba(8, 14, 42, ${Math.min(0.62, night * 0.58 + rain)})`;
+  if (dusk) return `rgba(255, 140, 60, ${dusk})`;
+  return rain ? `rgba(30, 40, 60, ${rain})` : null;
+}
 function drawMap() {
   const slot = document.querySelector('.bot.sel [data-f="mapslot"]');
-  if (!slot) return;
+  if (!slot || LIFE.open) return;
   const w = mapEnsure();
   if (w.parentNode !== slot) slot.appendChild(w);
   MAP.dirty = true;
   mapFetch();
 }
-setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') mapFetch(); }, 2000);
+setInterval(() => { if ((botTab.get(selected) || 'life') === 'map') mapFetch(); }, 2000);
+
+// ---------- «Жизнь» (22.11: «как за тамагочи наблюдать, РПГ, которая сама в себя играет», на всё окно, красиво,
+// с картой и светом по времени суток, выйти обратно, любые размеры окна вплоть до телефона).
+// Во вкладке карточки - кнопка «Смотреть её жизнь»; открывается слой на всё окно. Выход - кнопка или Esc.
+// Части живут сами по себе (как карта): фигурка со скином и небо не пересоздаются, меняются только данные.
+const LIFE = { wrap: null, sig: {}, skins: {}, open: false };
+const MOOD_COL = { ok: '#3fbf6f', warn: '#e9a23b', bad: '#f0575c', muted: '#959aa2', accent: '#8f94ff' };
+// фигурка спереди из текстуры скина 64x64 (голова, шапка, тело, куртка, руки, ноги), без 3D и без библиотек
+function skinFigure(url, s = 7) {
+  const part = (x, y, w, h, l, t, z = 1, cls = '') => `<div class="${cls}" style="position:absolute;left:${l * s}px;top:${t * s}px;width:${w * s}px;height:${h * s}px;background:url('${url}') -${x * s}px -${y * s}px / ${64 * s}px ${64 * s}px;image-rendering:pixelated;z-index:${z}"></div>`;
+  if (!url) return `<div class="lifefig" style="width:${16 * s}px;height:${32 * s}px"><div class="lifeghost" style="left:${4 * s}px;top:0;width:${8 * s}px;height:${8 * s}px"></div><div class="lifeghost" style="left:${4 * s}px;top:${8 * s}px;width:${8 * s}px;height:${12 * s}px"></div><div class="lifeghost" style="left:0;top:${8 * s}px;width:${4 * s}px;height:${12 * s}px"></div><div class="lifeghost" style="left:${12 * s}px;top:${8 * s}px;width:${4 * s}px;height:${12 * s}px"></div><div class="lifeghost" style="left:${4 * s}px;top:${20 * s}px;width:${8 * s}px;height:${12 * s}px"></div></div>`;
+  return `<div class="lifefig" style="width:${16 * s}px;height:${32 * s}px">`
+    + part(8, 8, 8, 8, 4, 0, 3, 'lifehead') + part(40, 8, 8, 8, 4, 0, 4, 'lifehead')
+    + part(20, 20, 8, 12, 4, 8) + part(20, 36, 8, 12, 4, 8, 2)
+    + part(44, 20, 4, 12, 0, 8, 1, 'lifearm l') + part(36, 52, 4, 12, 12, 8, 1, 'lifearm r')
+    + part(4, 20, 4, 12, 4, 20) + part(20, 52, 4, 12, 8, 20)
+    + `</div>`;
+}
+const ago = (t) => { const s = Math.round((Date.now() - t) / 1000); return s < 60 ? 'только что' : s < 3600 ? Math.round(s / 60) + ' мин назад' : s < 86400 ? Math.round(s / 3600) + ' ч назад' : Math.round(s / 86400) + ' дн назад'; };
+// небо сцены по времени суток (тики): цвета сверху и снизу, солнце/луна по дуге, звёзды ночью
+function skyOf(t, dim, rain) {
+  if (/nether/.test(dim)) return { top: '#3a0d0d', bot: '#7a2412', body: null, stars: false, ground: '#4a1a1a' };
+  if (/end/.test(dim)) return { top: '#0c0a16', bot: '#2a2440', body: null, stars: true, ground: '#d9d6a6' };
+  t = ((t || 0) % 24000 + 24000) % 24000;
+  const k = [[0, '#6fb3ff', '#cfe7ff'], [5000, '#5aa4ff', '#bfe0ff'], [11000, '#ff9a5a', '#ffd49a'], [12800, '#3b2a6b', '#d0607a'], [14000, '#0b1030', '#1c2350'], [22000, '#0b1030', '#1c2350'], [23200, '#ff8a6a', '#ffcf9a'], [24000, '#6fb3ff', '#cfe7ff']];
+  let i = 0; while (i < k.length - 2 && t >= k[i + 1][0]) i++;
+  const [t0, a0, b0] = k[i], [t1, a1, b1] = k[i + 1], f = (t - t0) / (t1 - t0 || 1);
+  const mix = (x, y) => { const p = (h) => [1, 3, 5].map((j) => parseInt(h.slice(j, j + 2), 16)); const A = p(x), B = p(y); return `rgb(${A.map((v, j) => Math.round(v + (B[j] - v) * f)).join(',')})`; };
+  const day = t < 12500 || t > 23300, ang = ((t + 6000) % 24000) / 24000 * Math.PI * 2;   // 6000 - полдень наверху
+  let top = mix(a0, a1), bot = mix(b0, b1);
+  if (rain) { top = '#5d6672'; bot = '#9aa3ad'; }
+  return { top, bot, body: { x: 50 - Math.sin(ang) * 40, y: 62 - Math.cos(ang) * 50, sun: day }, stars: !day && !rain, ground: '#5b8f3a' };
+}
+function lifeEnsure() {
+  if (LIFE.wrap) return LIFE.wrap;
+  const w = document.createElement('div');
+  w.className = 'lifeov';
+  w.innerHTML = `<div class="lifetop"><div class="lifetitle"><span data-l="name"></span><span data-l="mood"></span></div>
+      <div class="lifeclock" data-l="clock"></div>
+      <button class="ghost sm lifeclose" data-l="close" title="Вернуться (Esc)">${icon('x', 16)}<span>Выйти</span></button></div>
+    <div class="lifebody">
+      <div class="lifecard lifehero"><div class="lifestage" data-l="stage"><div class="lifesky" data-l="sky"></div><div class="lifestars"></div><div class="lifeorb" data-l="orb"></div><div class="lifeground" data-l="ground"></div><div class="lifeprop" data-l="prop"></div><div class="lifefigwrap" data-l="fig"></div><div class="lifeact" data-l="act"></div></div>
+        <div class="lifebars" data-l="bars"></div>
+        <label class="chk lifequiet" title="Не пишет в общий и ближний чат: можно молча наблюдать. Личка хозяину остаётся. В игре словами: «тихо» / «можешь говорить»"><input type="checkbox" data-l="quiet"> Тихий режим: в чат не пишет</label></div>
+      <div class="lifecard lifenowc"><div class="lifeh">${icon('sparkles', 15)} Сейчас</div><div class="lifenow" data-l="now"></div><div class="lifewhere" data-l="where"></div>
+        <div class="lifeh">${icon('message-circle', 15)} Мысли и слова</div><div data-l="thoughts"></div></div>
+      <div class="lifecard lifemapc"><div class="lifeh">${icon('map', 15)} Где она</div><div data-l="mapslot" class="lifemapslot"></div></div>
+      <div class="lifecard lifediaryc"><div class="lifeh">${icon('scroll-text', 15)} Дневник <span class="muted" style="font-weight:400">пишется сам</span></div><div class="lifediary" data-l="diary"></div></div>
+      <div class="lifecard lifesidec"><div class="lifeh">${icon('heart', 15)} Отношения</div><div data-l="rel"></div>
+        <div class="lifeh">${icon('activity', 15)} Жизнь в цифрах</div><div class="lifestats" data-l="stats"></div>
+        <div class="lifeh">${icon('list-checks', 15)} С собой</div><div data-l="items"></div></div>
+    </div>`;
+  w.querySelector('[data-l="quiet"]').addEventListener('change', (e) => { T.botQuiet({ name: selected, on: e.target.checked }); });
+  w.querySelector('[data-l="close"]').addEventListener('click', () => lifeClose());
+  LIFE.wrap = w;
+  return w;
+}
+function lifeOpen() {
+  const w = lifeEnsure();
+  if (!w.isConnected) document.body.appendChild(w);
+  LIFE.open = true; LIFE.sig = {};
+  setTimeout(() => w.classList.add('on'), 16);   // не через кадр отрисовки: в свёрнутом окне кадров нет
+  // карта - та же, что во вкладке «Карта», переезжает сюда
+  const slot = w.querySelector('[data-l="mapslot"]'), m = mapEnsure();
+  if (m.parentNode !== slot) slot.appendChild(m);
+  MAP.dirty = true; mapFetch();
+  lifeDraw();
+}
+function lifeClose() {
+  if (!LIFE.wrap) return;
+  LIFE.open = false;
+  LIFE.wrap.classList.remove('on');
+  setTimeout(() => { if (!LIFE.open && LIFE.wrap.isConnected) LIFE.wrap.remove(); lastHtml = ''; renderBots(); }, 220);
+}
+window.addEventListener('keydown', (e) => { if (e.key === 'Escape' && LIFE.open) lifeClose(); });
+setInterval(() => { if (LIFE.open) mapFetch(); }, 2000);
+function lifeSet(key, html) { if (LIFE.sig[key] === html) return; LIFE.sig[key] = html; const el = LIFE.wrap.querySelector(`[data-l="${key}"]`); if (el) el.innerHTML = html; }
+function lifeStyle(key, prop, val) { const el = LIFE.wrap.querySelector(`[data-l="${key}"]`); if (el && el.style[prop] !== val) el.style[prop] = val; }
+// во вкладке карточки - превью и кнопка
+function lifeTab(b) {
+  const v = b.state && b.state.life;
+  return `<div class="lifeteaser"><div><b>${v ? esc(v.doing) : 'бот не в игре'}</b><div class="muted">${v ? esc(v.mood.w) + ' · ' + esc(v.time) + ' · ' + esc(v.weather) : 'запустите его, и здесь появится её жизнь'}</div></div>
+    <button class="pri" data-a="lifeOpen">${icon('eye', 15)}Смотреть её жизнь</button></div>`;
+}
+function lifeDraw() {
+  if (!LIFE.open || !LIFE.wrap) return;
+  const b = st.bots.find((x) => x.name === selected), v = b && b.state && b.state.life;
+  if (!v) { lifeSet('now', 'бот не в игре - запустите его, и здесь появится её жизнь'); return; }
+  if (v.skin && LIFE.skins[v.skin] === undefined) { LIFE.skins[v.skin] = ''; T.botSkin(v.skin).then((d) => { LIFE.skins[v.skin] = d || ''; LIFE.sig.fig = null; }).catch(() => {}); }
+  lifeSet('fig', skinFigure(LIFE.skins[v.skin] || '', window.innerWidth < 600 ? 5 : 6));
+  // сцена: небо, солнце или луна, звёзды, земля; поза по делу
+  const tod = MAP.data && MAP.data.time !== undefined ? MAP.data.time : ({ рассвет: 23500, утро: 2000, день: 6000, вечер: 12000, ночь: 18000 })[v.time] || 6000;
+  const sky = skyOf(tod, MAP.data ? MAP.data.dim : '', v.weather !== 'ясно');
+  lifeStyle('sky', 'background', `linear-gradient(${sky.top}, ${sky.bot})`);
+  lifeStyle('ground', 'backgroundColor', sky.ground);
+  LIFE.wrap.querySelector('.lifestars').style.opacity = sky.stars ? '1' : '0';
+  const orb = LIFE.wrap.querySelector('[data-l="orb"]');
+  if (sky.body) { orb.style.display = ''; orb.style.left = sky.body.x + '%'; orb.style.top = sky.body.y + '%'; orb.className = 'lifeorb ' + (sky.body.sun ? 'sun' : 'moon'); } else orb.style.display = 'none';
+  const stage = LIFE.wrap.querySelector('[data-l="stage"]');
+  stage.dataset.pose = /сид|присел/.test(v.doing) ? 'sit' : /идёт|бежит|в путь|убегает/.test(v.doing) ? 'walk' : /дерётся|защищ/.test(v.doing) ? 'fight' : 'idle';
+  stage.dataset.rain = v.weather !== 'ясно' ? '1' : '';
+  lifeSet('act', `<span>${esc(v.doing)}</span>`);
+  // предмет занятия на сцене (пиксельный, из CSS): костёр, полки, верстак, вода, печь
+  const pk = /костр/.test(v.doing) ? 'fire' : /книг|кафедр/.test(v.doing) ? 'books' : /верстак|наковальн/.test(v.doing) ? 'table' : /рыбач|вод/.test(v.doing) ? 'water' : /печ/.test(v.doing) ? 'furnace' : '';
+  lifeSet('prop', pk ? `<div class="lp ${pk}"><i></i><i></i><i></i></div>` : '');
+  lifeSet('name', `${esc(v.name)} <span class="lifelvl">ур. ${v.xp}</span>`);
+  lifeSet('mood', `<span class="lifemood" style="--mc:${MOOD_COL[v.mood.c] || '#959aa2'}">${esc(v.mood.w)}</span>`);
+  lifeSet('clock', `${icon(v.time === 'ночь' ? 'circle-pause' : 'sparkles', 14)} ${esc(v.time)} · ${esc(v.weather)}${v.near.length ? ` · ${icon('user', 13)} ${esc(v.near.join(', '))}` : ''}`);
+  lifeSet('now', esc(v.doing));
+  lifeSet('where', esc([v.where, `${v.dim} ${v.pos.join(' ')}`, v.biome].filter(Boolean).join(' · ')));
+  const bar = (ic, val, max, col, t) => `<div class="lifebar" title="${t}: ${val} из ${max}">${icon(ic, 14)}<div><i style="width:${Math.max(0, Math.min(100, val / max * 100))}%;background:${col}"></i></div><span>${val}</span></div>`;
+  lifeSet('bars', bar('heart', v.hp, 20, '#f0575c', 'здоровье') + bar('drumstick', v.food, 20, '#e9a23b', 'сытость') + bar('shield', v.armor, 4, '#8fa3b8', 'броня') + (v.held ? `<div class="lifeheld">в руке: <b>${esc(v.held.replace(/_/g, ' '))}</b></div>` : ''));
+  const q = LIFE.wrap.querySelector('[data-l="quiet"]'); if (document.activeElement !== q) q.checked = !!v.quiet;
+  lifeSet('thoughts', v.thoughts.length ? v.thoughts.slice(0, 6).map((x) => `<div class="lifebub ${x.said ? 'said' : ''}"><span class="lifebubk">${x.said ? 'сказала' : 'думает'} · ${ago(x.t)}</span>${esc(x.x)}</div>`).join('') : '<div class="muted">пока молчит</div>');
+  lifeSet('rel', v.rel.length ? v.rel.map((r) => `<div class="liferel" title="${esc(r.last || '')}"><span>${esc(r.n)}</span><div><i style="${r.v >= 0 ? 'left:50%;width:' + r.v / 2 + '%;background:#3fbf6f' : 'right:50%;width:' + -r.v / 2 + '%;background:#f0575c'}"></i></div><span class="muted">${r.v > 0 ? '+' : ''}${Math.round(r.v)}</span></div>`).join('') : '<div class="muted">пока ни к кому особого отношения</div>');
+  lifeSet('stats', Object.entries(v.stats).map(([k, n]) => `<div class="lifestat"><b>${Number(n).toLocaleString('ru-RU')}</b><span>${esc(k)}</span></div>`).join(''));
+  lifeSet('items', v.items.length ? `<div class="lifeitems">${v.items.map(([n, c]) => `<span class="lifeitem">${esc(n.replace(/_/g, ' '))}<b>${c}</b></span>`).join('')}</div>` : '<div class="muted">пусто</div>');
+  let day = '', dh = '';
+  for (const e of v.diary) {
+    const d = new Date(e.t).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+    if (d !== day) { day = d; dh += `<div class="lifeday">${d}</div>`; }
+    dh += `<div class="lifeent"><span class="lifet">${new Date(e.t).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span><span class="lifedot">${icon(e.i, 13)}</span><span>${esc(e.x)}</span></div>`;
+  }
+  lifeSet('diary', dh || '<div class="muted">дневник пока пуст - он пишется сам, по её делам</div>');
+}
 
 // ---------- общий цикл
 async function refresh() {
@@ -728,6 +870,7 @@ async function refresh() {
     $('pStatus').textContent = (st.project.id ? `«${st.project.name}»` : 'создастся сам после входа в Qwen') + (st.project.status ? ': ' + st.project.status : '');
   }
   renderBots();
+  if (LIFE.open) lifeDraw();
 }
 setInterval(refresh, 1000);
 refresh();

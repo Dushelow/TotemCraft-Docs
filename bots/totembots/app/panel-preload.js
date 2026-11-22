@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('totem', {
   onVoicePcm: (cb) => ipcRenderer.on('voice-pcm', (_e, d) => cb(d)),
   onVoiceSystem: (cb) => ipcRenderer.on('voice-system', (_e, d) => cb(d)),
   botCombat: call('bot-combat'),
+  botQuiet: call('bot-quiet'),
+  botSkin: call('bot-skin'),
   botFollowDist: call('bot-follow-dist'),
   botStop: call('bot-stop'),
   botOrder: call('bot-order'),

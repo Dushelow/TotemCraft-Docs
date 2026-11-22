@@ -96,13 +96,15 @@ function startBot(name) {
   let l = live.get(name);
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
-  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {} });
+  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet });
+  body.onQuiet = (v) => { bc.quiet = !!v; saveCfg(); };
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
   body.onCombat = (m) => { bc.combat = m; saveCfg(); };
   body.on('log', (t) => logTo(name, t));
   body.on('chat', (t) => logTo(name, t));   // канал уже в тексте: [общий], [рядом], [личка], [клан], [сервер]
   body.on('end', () => logTo(name, 'бот выключен'));
-  const brain = new Brain({ body, bridge: router, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
+  // мысли (не сказано вслух) - и во вкладку «Жизнь»
+  const brain = new Brain({ body, bridge: router, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => { logTo(name, t); const m = /^\((?:подумала, вслух не сказала|вслух не сказал: рядом никого)\) (.+)/.exec(t); if (m && body.thought) body.thought(m[1], false); } });
   // полная переписка с нейросетью (что ушло и что пришло, дословно) - для разбора: logs/<имя>.qwen.log, до 5 МБ
   brain.transcript = (q, a) => {
     try {
@@ -466,6 +468,19 @@ ipcMain.handle('bot-follow-dist', (_e, { name, dist }) => {
   const l = live.get(name);
   b.followDist = l && l.body ? l.body.setFollowDist(dist) : Math.max(1.5, Math.min(12, +dist || 3));
   saveCfg(); return b.followDist;
+});
+// скин бота для вкладки «Жизнь»: панель не ходит в интернет сама (политика безопасности) - качает программа, только с textures.minecraft.net
+const skinCache = new Map();
+ipcMain.handle('bot-skin', async (_e, url) => {
+  if (!/^https?:\/\/textures\.minecraft\.net\/texture\/[0-9a-f]+$/i.test(String(url || ''))) return '';
+  if (skinCache.has(url)) return skinCache.get(url);
+  try { const r = await fetch(url); if (!r.ok) return ''; const d = 'data:image/png;base64,' + Buffer.from(await r.arrayBuffer()).toString('base64'); skinCache.set(url, d); return d; } catch { return ''; }
+});
+ipcMain.handle('bot-quiet', (_e, { name, on }) => {
+  const b = cfg.bots.find((x) => x.name === name); if (!b) return false;
+  b.quiet = !!on; saveCfg();
+  const l = live.get(name); if (l && l.body) l.body.opts.quiet = !!on;
+  return b.quiet;
 });
 ipcMain.handle('bot-combat', (_e, { name, combat }) => {
   const b = cfg.bots.find((x) => x.name === name);

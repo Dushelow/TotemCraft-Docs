@@ -44,7 +44,7 @@ class TotemBot extends EventEmitter {
     this.lookTarget = null;
   }
 
-  log(text) { this.emit('log', text); }
+  log(text) { this.emit('log', text); if (this.diaryFrom) try { this.diaryFrom(String(text)); } catch {} }
   event(text, important = false) { this.emit('event', { text, important }); }
 
   start() {
@@ -400,6 +400,9 @@ class TotemBot extends EventEmitter {
     if (!this.bot || this.status !== 'online') return;
     let t = String(text).replace(/^[/!]+/, '').slice(0, 240);   // своя реплика не должна стать командой
     if (!t) return;
+    // тихий режим (lifeview.js): только личка; общий и ближний чат - молча (в журнал)
+    if (this.opts.quiet && !(channel === 'whisper' && to)) { this.log('(тихо, не сказала) ' + t); if (this.thought) this.thought(t, false); return; }
+    if (this.thought) this.thought(t, true);
     if (channel === 'whisper' && to) t = `/msg ${to} ${t}`;
     else if (channel === 'local') t = '!' + t;
     else if (channel === 'global') t = '/g ' + t;
@@ -424,7 +427,8 @@ class TotemBot extends EventEmitter {
     return {
       status: this.status, dim: this.dimName(), pos: [Math.floor(p.x), Math.floor(p.y), Math.floor(p.z)],
       health: Math.round(b.health), food: b.food, items, near, mode: this.mode, follow: this.followName, task: this.task,
-      health: this.healthState ? this.healthState() : [],
+      parts: this.healthState ? this.healthState() : [],   // сбои частей тела (раньше затирали здоровье)
+      life: this.lifeView ? this.lifeView() : null,
       errand: (() => { const e = this.errand && this.errand(); return e && e.state !== 'done' && e.state !== 'cancel' ? { state: e.state, cur: e.cur, text: e.text, steps: e.steps.map((s) => ({ title: s.title, st: s.st, note: s.note || '' })) } : null; })(),
     };
   }
@@ -481,7 +485,8 @@ class TotemBot extends EventEmitter {
     this.tick('hands', () => this.handsTick());
     this.tick('reflexes', () => this.reflexTick());
     this.tick('water', () => this.shoreTick());
-    this.tick('companion', () => this.companionTick());   // песочница, жесты, реплики (companion.js)
+    this.tick('companion', () => this.companionTick());
+    this.tick('lifeview', () => this.lifeTick());   // песочница, жесты, реплики (companion.js)
     // взгляд: на того, за кем идём, иногда по сторонам
     const owner = this.followName ? this.player(this.followName) : null;
     const nearest = Object.values(b.players).filter((p) => p.entity && p.username !== b.username)
@@ -1481,6 +1486,7 @@ class TotemBot extends EventEmitter {
     if (plain.length === 1 && plain[0].act === 'follow') return this.follow(plain[0].who);
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
     // жест и «встать» - не дело: текущее не прерывают
+    if (plain.length === 1 && plain[0].act === 'quiet') { this.opts.quiet = plain[0].on !== false; if (this.onQuiet) this.onQuiet(this.opts.quiet); return this.opts.quiet ? 'тихий режим: в чат не пишу' : 'снова могу говорить в чат'; }
     if (plain.length && plain.every((a) => a.act === 'gesture' || a.act === 'stand')) { for (const a of plain) { if (a.act === 'gesture') await this.gesture(String(a.kind || 'привет').toLowerCase()); else await this.standUp(); } return plain.map((a) => a.act === 'gesture' ? 'показала жест «' + (a.kind || 'привет') + '»' : 'встала').join('; '); }
     // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
     // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
@@ -1571,6 +1577,7 @@ class TotemBot extends EventEmitter {
           case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
           case 'mount': r = await this.mount(a, tok); break;
           case 'dismount': r = await this.dismount(); break;
+          case 'quiet': this.opts.quiet = a.on !== false; if (this.onQuiet) this.onQuiet(this.opts.quiet); r = this.opts.quiet ? 'тихий режим: в чат не пишу' : 'снова могу говорить в чат'; break;
           case 'sit': { let ok = this.sitNear ? await this.sitNear(b0()) : false; if (!ok && !this.bot.vehicle) { this.bot.chat('/sit'); await new Promise((res) => setTimeout(res, 800)); ok = !!this.bot.vehicle; if (ok) this.seat = { since: Date.now(), at: b0().clone() }; } if (!ok) throw new Error('сесть негде: рядом нет свободной нижней ступеньки, полублока или подушки, /sit не сработал'); r = 'села'; break; }
           case 'drive': r = await this.drive(a, tok); break;
           case 'discardAll': r = await this.discardAll(a); break;
@@ -1615,7 +1622,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 
