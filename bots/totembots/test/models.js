@@ -368,3 +368,16 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const r = [g.blocking(e('zombie', 2, 0.3), 2), g.blocking(e('zombie', 0, 2.5), 2.5), g.blocking(e('zombie', -2, 0), 2), g.blocking(e('creeper', 2, 0), 2), g.blocking(e('magma_cube', 2.5, -1), 2.7)];
   console.log('--- мобы на пути: ' + (r.join() === 'true,false,false,false,true' ? 'впереди - ударить, сбоку и сзади - идти дальше, крипер - не трогать' : 'НЕТ: ' + r.join()));
 }
+
+// сооружения на карте: настоящий подводный храм - да; дом игрока из призмарина со стеклом и досками - нет
+{
+  const R = path.resolve(__dirname, '../node_modules');
+  const registry = require(R + '/prismarine-registry')('1.21.4'); const Chunk = require(R + '/prismarine-chunk')(registry); const { Vec3 } = require(R + '/vec3');
+  const { WorldMap } = require('../app/worldmap');
+  const id = (n) => registry.blocksByName[n].defaultState;
+  const scan = (build) => { const col = new Chunk({ minY: -64, worldHeight: 384 }); build((x, y, z, n) => col.setBlockStateId(new Vec3(x, y, z), id(n))); const wm = new WorldMap(fs.mkdtempSync(path.join(os.tmpdir(), 'st'))); return wm.chunkScan({ registry, game: { dimension: 'overworld' }, world: { getColumn: () => col } }, 0, 0).poi; };
+  const temple = scan((set) => { for (let x = 0; x < 16; x++) for (let z = 0; z < 16; z++) { set(x, 50, z, 'prismarine_bricks'); set(x, 51, z, (x + z) % 3 ? 'prismarine_bricks' : 'dark_prismarine'); } set(5, 52, 5, 'sea_lantern'); });
+  const house = scan((set) => { for (let x = 0; x < 8; x++) for (let z = 0; z < 8; z++) { set(x, 64, z, 'prismarine_bricks'); set(x, 65, z, x % 2 ? 'dark_prismarine' : 'glass'); set(x, 66, z, 'oak_planks'); } set(1, 67, 1, 'sea_lantern'); set(2, 67, 2, 'oak_door'); set(3, 67, 3, 'chest'); set(4, 67, 4, 'red_bed'); });
+  const ok = !!temple['подводный храм'] && !house['подводный храм'];
+  console.log('--- сооружения на карте: ' + (ok ? 'настоящий храм узнан, дом из призмарина - не храм' : `НЕТ: храм ${!!temple['подводный храм']}, дом ${!!house['подводный храм']}`));
+}

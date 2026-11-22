@@ -288,7 +288,12 @@ class Skills {
     let land = a.x !== undefined ? b.blockAt(new Vec3(Math.floor(+a.x), Math.floor(+a.y), Math.floor(+a.z))) : null;
     if (!land) land = b.findBlocks({ matching: b.registry.blocksByName.farmland.id, maxDistance: 8, count: 40 }).map((p) => b.blockAt(p))
       .filter((k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.name === 'air'; }).sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me))[0];
-    if (!land || land.name !== 'farmland') throw new Error('нет вспаханной грядки - сначала !till');
+    if (!land || land.name !== 'farmland') {
+      // грядки есть, но все засажены (растёт урожай) - сказать как есть, а не «вспаши» (22.11: стояла на поле
+      // со спелой пшеницей, мозг дважды пытался сажать и решил, что застряла)
+      const busy = b.findBlocks({ matching: b.registry.blocksByName.farmland.id, maxDistance: 8, count: 5 }).length;
+      throw new Error(busy ? 'свободных грядок нет: всё засажено, урожай растёт (спелое - !harvest, потом сажать)' : 'нет вспаханной грядки - сначала !till');
+    }
     await tb.goto(new goals.GoalNear(land.position.x, land.position.y + 1, land.position.z, 2), tok, 30000);
     await b.equip(seed, 'hand');
     tb.busyLook = true;

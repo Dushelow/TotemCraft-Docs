@@ -111,6 +111,8 @@ function startBot(name) {
   body.passCacheShared = passCache;   // кэш проходимости, общий для всех ботов
   body.travel = travel;
   // деревни, спавнеры, сооружения с карты - сразу в память мест; рядом - «момент» (может, захочет сказать)
+  // находка не подтвердилась (чанк перечитан строже) - забыть и место в памяти
+  worldMap.onLost = (v, dim) => { for (const [k, p] of Object.entries(memory.data.places || {})) if (p.name === `${v.kind} у ${v.x} ${v.z}` && /нашёл по карте/.test(p.note || '')) { delete memory.data.places[k]; memory.save(); logTo(bc.name, `карта: «${p.name}» не подтвердилось - забыла`); } };
   worldMap.attach(body, (v, dim) => {
     memory.place({ name: `${v.kind} у ${v.x} ${v.z}`, x: v.x, y: v.y, z: v.z, dim, note: 'нашёл по карте' }, bc.name);
     body.emit('moment', { kind: 'место', text: `рядом ${v.kind} (${v.x} ${v.y} ${v.z})`, pos: v });

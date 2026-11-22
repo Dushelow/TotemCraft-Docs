@@ -1086,7 +1086,13 @@ class TotemBot extends EventEmitter {
       let timer, watch;
       try {
         await Promise.race([
-          b.pathfinder.goto(goal),
+          (() => {
+            // радиус поиска - не всё виденное (кэш мира), а 2,5 расстояния до цели + 48, не больше 640: недостижимое
+            // - честное «пути нет» быстро, а не «Took too long» через 15 с (22.11)
+            const gd = gx === null || gx === undefined ? 64 : Math.hypot(b.entity.position.x - gx, b.entity.position.z - gz);
+            b.pathfinder.searchRadius = Math.min(640, Math.max(64, gd * 2.5 + 48));
+            return b.pathfinder.goto(goal);
+          })(),
           new Promise((_, rej) => { watch = setInterval(() => {
             const d = far(); if (!d) return;
             // Сторож по пути, а не по прямой: в метро и в обход идёшь и в сторону от цели. Прогресс - ближе к цели,
@@ -1104,7 +1110,10 @@ class TotemBot extends EventEmitter {
         ]);
         // модуль пути считает «дошёл», если не смог построить ни одного шага (пустой путь) - проверить самим:
         // 21.11 «пришёл к месту «мой дом»» за 0,06 с, стоя за 150 бл., и бот радовался, что дома
-        if (goal.isEnd && goal.x !== undefined && !goal.entity && !goal.isEnd(b.entity.position.floored())) {
+        // клетку бота на грядке, плите, кровати модуль пути считает на одну выше (ноги у верха блока) - проверять
+        // обе, как он сам (22.11 на поле: «до цели 1 бл., путь пустой», хотя бот уже у цели)
+        const fl = b.entity.position.floored();
+        if (goal.isEnd && goal.x !== undefined && !goal.entity && !goal.isEnd(fl) && !goal.isEnd(fl.offset(0, 1, 0))) {
           const left = Math.round(Math.hypot((goal.x ?? b.entity.position.x) - b.entity.position.x, (goal.z ?? b.entity.position.z) - b.entity.position.z));
           if (Date.now() - (this._emptyDiagAt || 0) > 30000 && this.movements && this.movements._nav) {
             this._emptyDiagAt = Date.now();

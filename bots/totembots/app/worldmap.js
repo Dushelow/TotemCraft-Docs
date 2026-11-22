@@ -20,12 +20,14 @@ const MARK = /^(cobweb|mossy_cobblestone|end_portal_frame|mossy_stone_bricks|cra
 const STRUCT = [
   ['шахта', (n) => n.has('cobweb') && (n.has('rail') || n.has('oak_fence') || n.has('dark_oak_fence')), /^(oak_planks|oak_fence|dark_oak_planks|dark_oak_fence|rail|cobweb|torch|wall_torch|chest)$/],
   ['подземелье', (n) => n.has('spawner') && n.has('mossy_cobblestone'), /^(cobblestone|mossy_cobblestone|chest)$/],
-  ['крепость Края', (n) => n.has('end_portal_frame') || (n.has('mossy_stone_bricks') && n.has('cracked_stone_bricks') && n.has('iron_bars')), /(stone_brick|iron_bars|oak_door|bookshelf|oak_planks|oak_fence|torch|cobweb|ladder|chest|end_portal_frame|stone_button|oak_slab|cobblestone|chiseled_stone_bricks|stone_slab|stone_stairs)$/],
+  // признаки - то, чего игрок не добудет или не поставит (рамка Края, усиленный глубинный сланец, позолоченный чернокамень),
+  // или целый набор блоков сооружения сразу; на сервере структуры перемешаны, а строители берут эти блоки для декора
+  ['крепость Края', (n) => n.has('end_portal_frame'), /(stone_brick|iron_bars|oak_door|bookshelf|oak_planks|oak_fence|torch|cobweb|ladder|chest|end_portal_frame|stone_button|oak_slab|cobblestone|chiseled_stone_bricks|stone_slab|stone_stairs)$/],
   ['испытания', (n) => n.has('trial_spawner') || n.has('vault'), /(tuff|copper|chest|barrel|candle|decorated_pot|glass|ladder|lantern|chain|_slab|_stairs|_wall|polished_|chiseled_|bricks|_door|_trapdoor|_bulb|_grate|hopper|dispenser|dropper|_button|lever|_pressure_plate|scaffolding|torch)$/],
-  ['древний город', (n) => n.has('reinforced_deepslate') || n.has('sculk_shrieker'), /(deepslate|basalt|soul_|candle|_wool|_carpet|chest|ladder|dark_oak|spruce|lantern|_slab|_stairs|_wall|polished_|chiseled_|bricks|cut_|torch|_fence|_trapdoor|_door|skull|head)$/],
-  ['крепость Незера', (n) => n.has('nether_bricks') && n.has('nether_brick_fence'), /(nether_brick|chest)/],
-  ['бастион', (n) => n.has('gilded_blackstone') || n.has('polished_blackstone_bricks'), /(blackstone|basalt|chest|chain|lantern|_slab|_stairs|_wall|bricks)/],
-  ['подводный храм', (n) => n.has('prismarine_bricks') || n.has('dark_prismarine'), /(prismarine|sea_lantern)/],
+  ['древний город', (n) => n.has('reinforced_deepslate'), /(deepslate|basalt|soul_|candle|_wool|_carpet|chest|ladder|dark_oak|spruce|lantern|_slab|_stairs|_wall|polished_|chiseled_|bricks|cut_|torch|_fence|_trapdoor|_door|skull|head)$/],
+  ['крепость Незера', (n, nether) => nether && n.has('nether_bricks') && n.has('nether_brick_fence') && n.has('nether_brick_stairs'), /(nether_brick|chest)/],
+  ['бастион', (n) => n.has('gilded_blackstone') && n.has('polished_blackstone_bricks'), /(blackstone|basalt|chest|chain|lantern|_slab|_stairs|_wall|bricks)/],
+  ['подводный храм', (n, nether) => !nether && n.has('prismarine_bricks') && n.has('dark_prismarine') && n.has('sea_lantern'), /(prismarine|sea_lantern)/],
 ];
 // точки интереса: тип -> как назвать
 const POI = [
@@ -147,7 +149,9 @@ class WorldMap {
       try { const by = h !== null ? h : 64; const bid = col.getBiome({ x: 8, y: by, z: 8 }); const bn = b.registry.biomes && b.registry.biomes[bid]; if (bn) grid.bi = bn.name; } catch {}
       m.chunks[`${cx},${cz}`] = { t: now, k: water >= 3 ? 'w' : lava >= 2 ? 'l' : 'g', h, b: found.built, ...(found.built && gy !== null && found.by < gy - 6 ? { u: 1 } : {}), ...grid };
       // точки этого чанка - заново
-      for (const k of Object.keys(m.poi)) if (k.endsWith(`@${cx},${cz}`)) delete m.poi[k];
+      const was = Object.entries(m.poi).filter(([k]) => k.endsWith(`@${cx},${cz}`));
+      for (const [k] of was) delete m.poi[k];
+      for (const [, v] of was) if (!found.poi[v.kind] && STRUCT.some(([n]) => n === v.kind) && this.onLost) this.onLost(v, tb.dimName());
       for (const [kind, v] of Object.entries(found.poi)) {
         if (kind === 'ферма' && v.n < 6) continue;   // пара блоков пашни - не ферма
         const key = `${kind}@${cx},${cz}`;
@@ -220,7 +224,10 @@ class WorldMap {
     // природные сооружения по признакам во всём чанке: в poi, их блоки не в счёт
     const natural = [];
     for (const [kind, test, re] of STRUCT) {
-      if (!test(all)) continue;
+      if (!test(all, /nether/.test(String(b.game.dimension)))) continue;
+      let other = 0, otherKinds = 0;
+      for (const names of secs.values()) for (const [nm, st] of names) if (st.built && !re.test(nm) && !MARK.test(nm)) { other += st.n; otherKinds++; }
+      if (other >= 24 && otherKinds >= 4) continue;   // вокруг постройка игроков (стекло, доски, двери...) - не природное
       natural.push(re);
       let at = null;
       for (const names of secs.values()) for (const [nm, st] of names) if (!at && (MARK.test(nm) || re.test(nm))) at = st;
