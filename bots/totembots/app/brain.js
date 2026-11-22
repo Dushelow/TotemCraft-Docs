@@ -37,6 +37,8 @@ function warmText(cfg, bot) {
 Команды выполняются по порядку. Когда закончатся, я пришлю [итог] - что вышло, и ты сразу решаешь следующий шаг.
 Если говорить нечего - пиши только команды. Если и делать нечего - ответь одним словом: ок.
 Канал реплики выбирается сам (откуда спросили - туда ответ). Сменить: начни с «общий:», «рядом:» или «лс Ник:».
+Реплика без приставки на свои дела и события - мысль, её никто не слышит. Хочешь сказать людям рядом (хозяину:
+опасность, находка, вопрос, привет) - начни с «рядом:». Не болтай о каждом шаге.
 
 КОМАНДЫ (других нет; неверную я поправлю и пришлю список):
 ${require('./commands').manual()}
@@ -297,7 +299,12 @@ class Brain {
       this.selfChain = 0;
       return;
     }
-    this.push(`[свободное время] ${mins} мин тебя ни о чём не просят. Чем займёшься? Придумай сам дело в мире и сделай его - шаг вперёд от того, что уже есть (лучше инструменты, еда, дом, исследование).${progress}${following}`, true, '@self', '', { want: ['map', 'inventory'] });
+    const b = this.body.bot, tod = b.time && b.time.timeOfDay;
+    const night = /overworld/.test(b.game.dimension || '') && tod > 12500 && tod < 23300;
+    const own = this.cfg().masters.map((n) => b.players[n] && b.players[n].entity).find((e) => e && b.entity && e.position.distanceTo(b.entity.position) <= 24);
+    const when = (night ? ' Сейчас НОЧЬ: снаружи мобы, далеко от дома не уходи - дело дома или рядом (сундуки, крафт, печь, грядки, кровать).' : '')
+      + (own ? ` Хозяин ${own.username} рядом (${Math.round(own.position.distanceTo(b.entity.position))} бл.): можно побыть с ним, спросить, чем помочь, - а не уходить по своим делам.` : '');
+    this.push(`[свободное время] ${mins} мин тебя ни о чём не просят. Чем займёшься? Придумай сам дело в мире и сделай его - шаг вперёд от того, что уже есть (лучше инструменты, еда, дом, исследование).${when}${progress}${following}`, true, '@self', '', { want: ['map', 'inventory'] });
     this.selfChain = 0;
   }
 
@@ -477,6 +484,7 @@ class Brain {
       this.inProgress = 0;
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
+      if (this.transcript) try { this.transcript(msg, answer); } catch {}
       this.log('← ' + JSON.stringify(r));
       this.lastDecision = { at: Date.now(), say: r.say, acts: r.actions.map((a) => a && (a._cmd || a.act)).filter(Boolean), model: this.bridge.lastPick ? this.bridge.lastPick.model : '' };
       // кто просил: последний автор с правами в пачке; '@self' - бот сам (инициатива)
@@ -532,9 +540,13 @@ class Brain {
       // не вышло). Мысли на свои итоги и события («прогулялась», «жители не продают, надо искать овец») - только в
       // журнал (22.11: бот писал в чат на каждое своё действие, дважды подряд про шерсть).
       if (r.say) {
-        const spoken = batch.some((x) => /^\[(чат|голос|приказ)/.test(x.line || ''));
+        const spoken = batch.some((x) => /^\[(чат|голос|приказ|встреча)/.test(x.line || ''));
         const report = batch.some((x) => /^\[итог\]/.test(x.line || '') && x.from && x.from !== '@self' && /задание выполнено|не получилось|отменено/.test(x.line || ''));
-        if (!spoken && !report) { this.log('(подумала, вслух не сказала) ' + r.say); r.say = ''; }
+        // сама решила сказать (приставка «рядом:», «лс Ник:», «общий:») - это речь, а не мысль; своё - не чаще раза в 30 с
+        // (22.11: хозяин в 7 бл., она «говорила» про криперов, а в игру не ушло ни слова - всё считалось мыслями)
+        const meant = !!r.channel && (Date.now() - (this.selfSaidAt || 0) > 30000);
+        if (!spoken && !report && !meant) { this.log('(подумала, вслух не сказала) ' + r.say); r.say = ''; }
+        else if (!spoken && !report) this.selfSaidAt = Date.now();
       }
       // почти та же мысль, что недавно, - не повторять (слова совпадают больше чем наполовину, 5 мин)
       if (r.say) {

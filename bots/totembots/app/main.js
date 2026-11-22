@@ -103,6 +103,19 @@ function startBot(name) {
   body.on('chat', (t) => logTo(name, t));   // канал уже в тексте: [общий], [рядом], [личка], [клан], [сервер]
   body.on('end', () => logTo(name, 'бот выключен'));
   const brain = new Brain({ body, bridge: router, cfg: () => cfg, botCfg: bc, save: saveCfg, log: (t) => logTo(name, t) });
+  // полная переписка с нейросетью (что ушло и что пришло, дословно) - для разбора: logs/<имя>.qwen.log, до 5 МБ
+  brain.transcript = (q, a) => {
+    try {
+      const f = path.join(LOCAL, 'logs', name + '.qwen.log');
+      try { if (fs.statSync(f).size > 5e6) fs.renameSync(f, f + '.old'); } catch {}
+      fs.appendFileSync(f, `
+===== ${new Date().toISOString()} ОТПРАВЛЕНО
+${q}
+----- ОТВЕТ
+${a}
+`);
+    } catch {}
+  };
   brain.voice = voice;
   brain.memory = memory;
   brain.onBackground = onBackground;
