@@ -157,11 +157,14 @@ class Vehicles {
       const p = v.position, V = p.constructor;
       const under = b.blockAt(new V(Math.floor(p.x), Math.floor(p.y - 0.1), Math.floor(p.z)));
       const inv = under && /blue_ice/.test(under.name) ? 0.989 : under && /ice/.test(under.name) ? 0.98 : under && /water/.test(under.name) ? 0.9 : 0.5;
-      // берег, борт, стена впереди - стоп (лодка - 1,375 в ширину: проверка на 0,7 впереди)
-      const nx = p.x + R.vx, nz = p.z + R.vz, d = Math.hypot(R.vx, R.vz) || 1;
-      const ahead = b.blockAt(new V(Math.floor(nx + R.vx / d * 0.7), Math.floor(p.y + 0.2), Math.floor(nz + R.vz / d * 0.7)));
-      if (ahead && ahead.boundingBox === 'block') { R.vx = 0; R.vz = 0; }
-      else { p.x = nx; p.z = nz; }
+      // столкновение как у лодки в игре: коробка 1,375 x 0,5625 и сидящие над ней (до 2,4 бл. вверх) - в блок не
+      // въезжать (22.11: упёрлись в борт корабля, лодка продолжала «плыть» в стену, обоих задавило в блоках)
+      const hits = (x, z) => { const h = 0.6875; for (let yy = Math.floor(p.y); yy <= Math.floor(p.y + 2.4); yy++) for (const ox of [-h, 0, h]) for (const oz of [-h, 0, h]) { const k = b.blockAt(new V(Math.floor(x + ox), yy, Math.floor(z + oz))); if (k && k.boundingBox === 'block' && !/water/.test(k.name)) return true; } return false; };
+      const nx = p.x + R.vx, nz = p.z + R.vz;
+      if (!hits(nx, nz)) { p.x = nx; p.z = nz; R.blockedAt = 0; }
+      else if (Math.abs(R.vx) > 0.02 && !hits(nx, p.z)) { p.x = nx; R.vz = 0; R.blockedAt = R.blockedAt || Date.now(); }   // скользить вдоль стены
+      else if (Math.abs(R.vz) > 0.02 && !hits(p.x, nz)) { p.z = nz; R.vx = 0; R.blockedAt = R.blockedAt || Date.now(); }
+      else { R.vx = 0; R.vz = 0; R.blockedAt = R.blockedAt || Date.now(); }
       R.vx *= inv; R.vz *= inv; R.dRot *= inv;
       v.yaw = (180 - R.yawDeg) * Math.PI / 180;
       b._client.write('vehicle_move', { x: p.x, y: p.y, z: p.z, yaw: R.yawDeg, pitch: 0, onGround: false });
@@ -188,13 +191,16 @@ class Vehicles {
         if (!b.vehicle) throw new Error('меня выкинуло из ' + (boat ? 'лодки' : 'седла'));
         const v = b.vehicle.position, d = Math.hypot(x - v.x, z - v.z);
         if (d < 3) break;
+        // упёрлись (берег, борт) и стоим 1,5 с - дальше не жать: выйти, сказать, где
+        if (this._ride && this._ride.blockedAt && Date.now() - this._ride.blockedAt > 1500) { const left = Math.round(d); b.clearControlStates(); return `упёрлась в берег или стену в ${left} бл. от цели - дальше по воде не проплыть`; }
         const want = Math.atan2(-(x - v.x), -(z - v.z));
         await b.look(want, 0, true);
         let err = want - (b.vehicle.yaw || 0); while (err > Math.PI) err -= 2 * Math.PI; while (err < -Math.PI) err += 2 * Math.PI;
         // курс лодки считаем сами (rideTick): ошибка за 2 с выросла - поворачиваем в другую сторону (страховка знака)
-        if (boat && Date.now() - errAt > 2000) { if (lastErr !== null && Math.abs(err) > Math.abs(lastErr) + 0.2) flip = -flip; lastErr = err; errAt = Date.now(); }
+        // курс лодки считаем сами (rideTick), знак поворота известен - без «переворотов», от них лодка петляла и тормозила
+        if (!boat && Date.now() - errAt > 2000) { if (lastErr !== null && Math.abs(err) > Math.abs(lastErr) + 0.2) flip = -flip; lastErr = err; errAt = Date.now(); }
         const turn = boat && Math.abs(err) > 0.25 ? Math.sign(err) * flip : 0;
-        const go = !boat || Math.abs(err) < 1.2;
+        const go = !boat || Math.abs(err) < 1.6;   // вперёд и на повороте, как игрок, - без остановок
         b.setControlState('forward', go);
         b.setControlState('left', turn > 0);
         b.setControlState('right', turn < 0);

@@ -284,7 +284,9 @@ function createWindow() {
     if (!projectEnabled()) return;
     try { if (!project.id || !(await project.exists())) await project._ensure(); } catch (e) { logAll('проект Qwen: ' + e.message + ' (чат будет вне проекта)'); }
   };
-  startProjectSync();
+  // память уходит мозгу в сообщениях ([память]), отдельная синхронизация файла в проект Qwen через окно сайта - лишние
+  // переходы и зависания (владелец: «зачем опять проект открылся»): выключена
+  // startProjectSync();
   voice = new Voice({ cfg: () => cfg, bridge, dir: app.getPath('userData'), toPanel: (ch, d) => win.webContents.send(ch, d),
     log: (name, t) => logTo(name, t) });
   voice.qwenChat = (id) => router.qwenIdOf(id);
@@ -452,7 +454,9 @@ ipcMain.handle('reset-chats', () => {
   try { if (router) router.chats.clear(); } catch {}
   return true;
 });
-ipcMain.handle('full-reset', (_e, scope) => { fs.writeFileSync(path.join(LOCAL, 'reset.flag'), new Date().toISOString() + ' scope:' + (scope === 'memory' ? 'memory' : 'all')); app.relaunch(); app.exit(0); return true; });
+ipcMain.handle('full-reset', (_e, scope) => {
+  // перезапуск: сначала отпустить блокировку одной копии, иначе новая копия сразу закроется
+  try { app.releaseSingleInstanceLock(); } catch {} fs.writeFileSync(path.join(LOCAL, 'reset.flag'), new Date().toISOString() + ' scope:' + (scope === 'memory' ? 'memory' : 'all')); app.relaunch(); app.exit(0); return true; });
 ipcMain.handle('open-transcript', (_e, name) => { const f = path.join(LOCAL, 'logs', String(name || '').replace(/[^\w.-]/g, '') + '.qwen.log'); if (fs.existsSync(f)) require('electron').shell.openPath(f); return fs.existsSync(f); });
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });
 ipcMain.handle('brains-save', (_e, v) => {
@@ -790,6 +794,10 @@ function resetIfAsked() {
   } catch (e) { try { fs.writeFileSync(path.join(LOCAL, 'reset-error.txt'), String(e && e.stack || e)); } catch {} }
 }
 
+// Одна программа на компьютер (22.11: после сброса с перезапуском работали две копии - два Loki выбивали друг друга
+// с сервера каждые 20-30 с, «Connection throttled», и вторая копия открывала проект в своём окне Qwen)
+if (!app.requestSingleInstanceLock()) { app.quit(); process.exit(0); }
+app.on('second-instance', () => { try { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } } catch {} });
 app.whenReady().then(() => { loadCfg(); resetIfAsked();
   try { fs.writeFileSync(path.join(require('os').tmpdir(), 'totembots-start.log'), JSON.stringify({ at: new Date().toISOString(), cfg: cfgPath(), userData: app.getPath('userData'), host: cfg.host, port: cfg.port, argv: process.argv, cwd: process.cwd(), env: process.env.TOTEMBOTS_CONFIG || '' }, null, 1)); } catch {} worldMap = new WorldMap(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel = new Travel(process.env.TOTEMBOTS_MEMORY || app.getPath('userData'), worldMap); travel.memory = memory; passCache = new (require('./passcache').PassCache)(process.env.TOTEMBOTS_MEMORY || app.getPath('userData')); travel.passCache = passCache; Menu.setApplicationMenu(null); createWindow();
   // боты заходят по кнопке «Старт»; сами - только если на стартовом экране отмечено «запускать сразу»
