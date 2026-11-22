@@ -558,7 +558,7 @@ class Brain {
         else this.saidRecent.push({ w: w1, at: Date.now() });
       }
       // голос - только если реплика действительно звучит (в ближнем и личке его слышат рядом)
-      if (r.say && this.voice && rc.channel !== 'whisper') this.voice.speak(r.say, this.botCfg).catch((e) => this.log('голос: ' + e.message));
+      if (r.say && this.voice && rc.channel !== 'whisper') this.voice.speak(r.say, this.botCfg, { raw: answer }).catch((e) => this.log('голос: ' + e.message));
       if (r.say) {
         this.attn.answered(batch.filter((x) => x.channel).map((x) => x.from));
         this.typeAndSay(r.say, rc).catch(() => {});

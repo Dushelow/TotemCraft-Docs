@@ -138,7 +138,7 @@ class Voice {
   }
 
   // --- озвучить реплику бота
-  async speak(text, botCfg) {
+  async speak(text, botCfg, o = {}) {
     const s = this.settings();
     if (!s.enabled || !text) return;
     // голос Windows - только если выбран сам; запасным не включается (звучит плохо - владелец 15.11)
@@ -151,7 +151,12 @@ class Voice {
       try {
         if (how === 'qwen') {
           // номер чата у бота - логический (router.js); читать вслух нужно в настоящем чате Qwen, и только ответ Qwen
-          let qid = this.qwenChat ? this.qwenChat(botCfg.chatId) : botCfg.chatId;
+          // «Прочитать вслух» у Qwen читает весь его ответ: с приставкой «рядом:», лишними словами. Ответ дословно
+          // не та фраза, что ушла в игру, - озвучить через «дикторский» чат ровно её (22.11: «рядом» в начале фраз)
+          const plain = (t) => String(t || '').replace(/```[\s\S]*?```/g, ' ').replace(/^\s*!\w+\(.*\)\s*$/gm, ' ').replace(/[^\p{L}\p{N}]+/gu, ' ').trim().toLowerCase();
+          const same = !o.raw || plain(o.raw) === plain(text);
+          let qid = !same ? null : this.qwenChat ? this.qwenChat(botCfg.chatId) : botCfg.chatId;
+          if (!qid && !same && this.bridge.ask && !this.bridge.resting && !this.bridge.captcha) qid = await this.echo(text, botCfg);
           // ответ дала другая нейросеть (DeepSeek...): голосом Qwen через «голосовой» чат - Qwen повторяет фразу слово
           // в слово, её и озвучиваем. Тратит один короткий запрос Qwen на фразу, задержка несколько секунд (галочка)
           if (!qid && s.echo && this.bridge.ask && !this.bridge.resting && !this.bridge.captcha) qid = await this.echo(text, botCfg);
