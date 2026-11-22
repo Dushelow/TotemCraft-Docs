@@ -93,6 +93,17 @@ ${genderLine(bot)}
   Своё мнение и юмор - да; повторять одно и то же и рассказывать о каждом шаге - нет.
 </правила>
 
+<перемещение>
+Ходить к точке рядом - !goTo(x, y, z). Портал - !enterPortal (тело само подойдёт к ближайшему и зайдёт; с координатами -
+в этот): !goTo в портал не заводит, а координаты «по ту сторону» ничего не дают. Далеко или в другое измерение -
+!travel(x, z[, измерение]): тело само выберет путь пешком или через Незер. Лодка, лошадь - !mount, править - !drive(x, z),
+слезть - !dismount. Где ближайший портал, сундук, кровать - !where(nether_portal).
+Метро сервера - дороги в Незере между порталами: бывают из льда (на лодке), из рельсов, просто тоннели и тропы из любых
+блоков, часто разного цвета по веткам. Ветку ищи по самой дороге и табличкам у развилок; единственный проход от
+портала и есть путь - иди по нему до конца, а не назад.
+Пример: [хозяин: выйди в обычный мир через порталы на нулях] -> «иду» и !goTo(0, 32, 0), затем !enterPortal.
+</перемещение>
+
 <мелочи_игры>
 Сытым (еда 20/20) есть нельзя. Сырую ламинарию не едят - только жареную. Булыжник - это добытый камень: !collect(stone, 8).
 Доски годятся любые. Спать - ночью или в грозу. Семена: вспахать (!till), посадить (!plant) или сразу !farm(семена, n).
@@ -438,7 +449,8 @@ class Brain {
     const T = this.ownerTask, tAge = T ? Date.now() - T.at : Infinity;
     const task = T && tAge < 30 * 60000 && !(T.done && Date.now() - T.done > 5 * 60000)
       ? `\n[задача] ${T.from} ${Math.round(tAge / 60000)} мин назад: «${T.text}» - ${T.done ? 'сделано' : 'сейчас: ' + (this.body.task || ({ follow: 'иду следом', hold: 'жду', idle: 'ничего не делаю' })[this.body.mode] || this.body.mode)}` : '';
-    let s = `${task}\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text + (gAge > 6 * 3600000 ? ` (поставлена ${Math.round(gAge / 3600000)} ч назад; не выходит - отложи и займись другим, не спрашивай об одном и том же)` : '') : ''}\n[вижу] ${P.sees}`;
+    const uns = (this.unsaidList || []).splice(0);
+    let s = `${task}${uns.length ? '\n[не ушло в чат] ' + uns.join('; ') + ' (люди этого не видели)' : ''}\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text + (gAge > 6 * 3600000 ? ` (поставлена ${Math.round(gAge / 3600000)} ч назад; не выходит - отложи и займись другим, не спрашивай об одном и том же)` : '') : ''}\n[вижу] ${P.sees}`;
     try { const zt = this.body.zonesText && this.body.zonesText(); if (zt) s += `\n[зоны] ${zt}`; } catch {}   // как с ними быть - во вводной
     try { if (this.body.moodWord) s += `\n[настроение] ${this.body.moodWord()}`; } catch {}
     // тихий режим: мозг знает, что вслух ничего не уйдёт - не обращается к людям, а действует (22.11: «говорила, не понимая, что режим тихий»)
@@ -459,6 +471,10 @@ class Brain {
     if (far || want.has('map') || /где|карт|постройк|деревн|портал|сундук|ферм|куда|база|шахт|дом/.test(said)) { s += `\n[карта] ${P.map()}`; this.sent.mapAt = P.pos; }
     return s;
   }
+
+  /** Реплика не ушла в игру - мозг узнаёт это в следующем сообщении (без отдельного запроса), чтобы его «я сказал»
+   *  не расходилось с тем, что видят люди. */
+  unsaid(text, why) { (this.unsaidList = this.unsaidList || []).push(`«${String(text).slice(0, 60)}» - ${why}`); if (this.unsaidList.length > 3) this.unsaidList.shift(); }
 
   stop() { clearInterval(this.idleTimer); }
 
@@ -617,7 +633,7 @@ class Brain {
         const ownerNear = me && this.cfg().masters.some((n) => { const e = this.body.bot.players[n] && this.body.bot.players[n].entity; return e && e.position.distanceTo(me.position) <= 16; });
         const toOwner = ownerNear && (/\?\s*$/.test(r.say) || this.cfg().masters.some((n) => r.say.toLowerCase().includes(n.toLowerCase().slice(0, 4))) || /^(эй|слушай|смотри|хозяин|отец|мам|пап|брат|друг)[\s,!]/i.test(r.say));
         const meant = (!!r.channel || toOwner) && (Date.now() - (this.selfSaidAt || 0) > 30000);
-        if (!spoken && !report && !meant) { this.log('(подумала, вслух не сказала) ' + r.say); r.say = ''; }
+        if (!spoken && !report && !meant) { this.log('(подумала, вслух не сказала) ' + r.say); this.unsaid(r.say, 'это была мысль: без вопроса человека и без «рядом:» в чат не уходит'); r.say = ''; }
         else if (!spoken && !report) this.selfSaidAt = Date.now();
       }
       // почти та же мысль, что недавно, - не повторять (слова совпадают больше чем наполовину, 5 мин)
@@ -625,9 +641,13 @@ class Brain {
         const words = (t) => new Set(String(t).toLowerCase().replace(/[^а-яёa-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 3));
         const w1 = words(r.say);
         this.saidRecent = (this.saidRecent || []).filter((x) => Date.now() - x.at < 300000);
-        const dup = w1.size >= 2 && this.saidRecent.find((x) => { let n = 0; for (const w of w1) if (x.w.has(w)) n++; return n / Math.min(w1.size, x.w.size) > 0.6; });
-        if (dup) { this.log('(почти то же уже говорила - молчу) ' + r.say); r.say = ''; }
-        else this.saidRecent.push({ w: w1, at: Date.now() });
+        // ответ человеку, который только что написал, доходит всегда (кроме точного повтора за минуту): иначе он слышит
+        // тишину, а мозг думает, что ответил (22.11: «записал» - а в игре ничего)
+        const spokenNow = batch.some((x) => /^\[(чат|голос|приказ)/.test(x.line || ''));
+        const dup = spokenNow ? this.saidRecent.find((x) => x.t === r.say && Date.now() - x.at < 60000)
+          : w1.size >= 2 && this.saidRecent.find((x) => { let n = 0; for (const w of w1) if (x.w.has(w)) n++; return n / Math.min(w1.size, x.w.size) > 0.6; });
+        if (dup) { this.log('(почти то же уже говорила - молчу) ' + r.say); this.unsaid(r.say, 'почти то же уже было сказано недавно'); r.say = ''; }
+        else this.saidRecent.push({ w: w1, t: r.say, at: Date.now() });
       }
       // голос - только если реплика действительно звучит (в ближнем и личке его слышат рядом)
       if (r.say && this.voice && rc.channel !== 'whisper') this.voice.speak(r.say, this.botCfg, { raw: answer }).catch((e) => this.log('голос: ' + e.message));
@@ -780,7 +800,7 @@ class Brain {
       said.push({ n, at: now, to, greet: GREET.test(n) });
       return true;
     });
-    if (!parts.length) { this.log('(не сказал: уже говорил это) ' + text); return; }
+    if (!parts.length) { this.log('(не сказал: уже говорил это) ' + text); this.unsaid(text, 'повтор: это уже говорилось недавно'); return; }
     for (const p of parts) {
       await sleep(Math.min(1800, 250 + p.length * 22 * (0.7 + Math.random() * 0.6)));   // будто печатает
       this.body.say(p.replace(/\.$/, ''), rc.channel, rc.to);

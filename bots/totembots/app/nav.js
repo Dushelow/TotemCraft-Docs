@@ -189,8 +189,11 @@ function install(mv, bot) {
       // первая клетка - яма (опоры на уровне ног нет), иначе это обычный шаг
       // (спуск на блок - обычный шаг: яма - это где пола нет и на 1,2 ниже)
       const s1 = support(node.x + dx + 0.5, node.z + dz + 0.5, fy + 0.6, fy - 1.2);
-      if (s1 !== null) continue;
-      for (let k = 2; k <= 4; k++) {
+      // промежуток с полом на блок ниже, а за ним выше или вровень (с листвы на бревно через щель, 22.11): игрок прыгает
+      // сразу, а шаг вниз и потом вверх на 2 - невозможно; такой прыжок - только на 2 клетки и не ниже исходной высоты
+      const shallow = s1 !== null && s1 < fy - 0.9;
+      if (s1 !== null && !shallow) continue;
+      for (let k = 2; k <= (shallow ? 2 : 4); k++) {
         const nx = node.x + dx * k, nz = node.z + dz * k;
         // клетки ямы: что под ними (лава - нельзя, дна в пределах maxDropDown нет - пропасть, нельзя)
         let bad = false;
@@ -204,7 +207,11 @@ function install(mv, bot) {
         if (bad) break;
         const f = support(nx + 0.5, nz + 0.5, fy + 1.0, fy - 1.0);
         if (f === null) continue;
-        const ny = Math.floor(f + EPS), key = `${node.x},${node.y},${node.z}>${nx},${ny},${nz}`;
+        if (shallow && f < fy - 0.1) continue;
+        const ny = Math.floor(f + EPS);
+        // на месте приземления стоит игрок или моб - не прыгать в него (22.11: прыгал туда, где стоял хозяин)
+        try { if (mv.getNumEntitiesAt && mv.getNumEntitiesAt(new Vec3(nx, ny, nz), 0, 0, 0) > 0) continue; } catch {}
+        const key = `${node.x},${node.y},${node.z}>${nx},${ny},${nz}`;
         if (seen.has(`${nx},${ny},${nz}`)) break;
         let lp = leapCache.get(key);
         if (lp === undefined) {

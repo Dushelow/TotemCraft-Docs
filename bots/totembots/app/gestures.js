@@ -254,6 +254,12 @@ class Gestures {
   async gesture(kind) {
     const b = this.bot;
     if (!b || !b.entity || this.gesturing) return;
+    // на ходу поворот головы = поворот всего тела: «вперёд» становится «назад», и бот шёл задом (22.11). На ходу -
+    // только жесты без поворота: кивок, прыжок; остальные - когда стоит
+    if (b.pathfinder.isMoving()) {
+      if (/^(нет|кружится|указать|поклон|грусть)$/.test(kind)) return;
+      if (/^(привет|спасибо)$/.test(kind)) kind = 'кивок';
+    }
     this.gesturing = true; this.busyLook = true;
     const yaw0 = b.entity.yaw, pitch0 = b.entity.pitch;
     const look = (y, p) => b.look(y, p, true).catch(() => {});
