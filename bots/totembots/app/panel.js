@@ -127,7 +127,7 @@ function paintTop() {
 }
 $('srvChip').onclick = () => goSection('settings');
 $('pauseBtn').onclick = () => act(() => T.pause(!pausedNow), $('pauseBtn'));
-$('startBtn').onclick = () => act(() => T.botsStart(st.bots.map((b) => b.name)), $('startBtn'), 'боты заходят на сервер');
+$('startBtn').onclick = () => act(() => T.botsStart(st.bots.filter((b) => b.pick).map((b) => b.name)), $('startBtn'), 'боты заходят на сервер');
 $('stopBtn').onclick = () => {
   const was = st.bots.filter((b) => (b.state || {}).status && b.state.status !== 'off').map((b) => b.name);
   act(() => T.botsStop(), $('stopBtn'), 'боты вышли с сервера', { fn: () => T.botsStart(was), done: 'боты заходят обратно' });
@@ -148,7 +148,7 @@ function renderStart() {
   const sites = st.siteList || [];
   const ready = sites.filter((s) => s.inOrder && s.logged);
   const cap = sites.filter((s) => s.captcha);
-  const picked = st.bots;   // запуск - всех сразу; дальше у каждого бота свой выключатель в карточке
+  const picked = st.bots.filter((b) => b.pick);   // запуск - только отмеченные тумблером «в запуске»
   const B = st.brains || {};
   const pinName = B.pin ? ((B.choices || []).find((c) => c.id === B.pin) || {}).name || B.pin : '';
   const out = [
@@ -156,7 +156,7 @@ function renderStart() {
     cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="pri sm" data-go="brains">Войти</button>'),
-    st.bots.length ? check('ok', (st.bots.length > 1 ? 'Боты: ' : 'Бот: ') + st.bots.map((b) => b.name).join(', '), '')
+    st.bots.length ? check(picked.length ? 'ok' : 'warn', 'Кто заходит', picked.length ? '' : 'никто не отмечен', `<div class="picks">${st.bots.map((b) => `<span class="pickrow">${esc(b.name)} <label class="sw" title="${b.pick ? 'Заходит по кнопке «Запустить»' : 'Не заходит по кнопке «Запустить» (включить можно вручную)'}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span><span class="sl">в запуске</span></label></span>`).join('')}</div>`)
       : check('warn', 'Ботов нет', 'добавьте первого внизу: «Добавить бота»'),
   ];
   const html = out.join('');
@@ -168,7 +168,7 @@ function renderStart() {
 function goSection(sec) { const b = document.querySelector(`#nav button[data-sec="${sec}"]`); if (b) b.click(); }
 $('startChecks').addEventListener('click', (e) => { const g = e.target.closest('[data-go]'); if (g) goSection(g.dataset.go); });
 $('startChecks').addEventListener('change', (e) => { const n = e.target.dataset.pick; if (n) act(() => T.botPick({ name: n, pick: e.target.checked })); });
-$('startGo').onclick = () => act(() => T.botsStart(st.bots.map((b) => b.name)), $('startGo'), 'боты заходят на сервер');
+$('startGo').onclick = () => act(() => T.botsStart(st.bots.filter((b) => b.pick).map((b) => b.name)), $('startGo'), 'боты заходят на сервер');
 $('startAuto').onchange = () => act(() => T.startOnLaunch($('startAuto').checked), null, $('startAuto').checked ? 'при включении программы боты зайдут сами' : 'запуск только кнопкой');
 
 // ---------- ручной выбор мозга
@@ -273,7 +273,7 @@ function botCard(b) {
   const power = off && !st.running ? '' : off ? `<button data-a="start" class="go sm" title="Зайти на сервер">${icon('play', 14)}Включить</button>`
     : `<button data-a="stop" class="ghost sm" title="Бот выйдет с сервера">${icon('power', 14)}Выключить</button>`;
   const head = `<div class="bothead"><div class="ava">${esc(b.name[0] || '?').toUpperCase()}<span class="dot ${on ? 'ok' : conn ? 'warn pulse' : ''}"></span></div>
-    <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}</div>`;
+    <div class="grow"><div class="nm">${esc(b.name)}</div><div class="sub">${esc(where)}</div></div>${power}<label class="sw" title="${b.pick ? 'Заходит по кнопке «Запустить»' : 'Не заходит по кнопке «Запустить» (включить можно вручную)'}"><input type="checkbox" data-pick="${esc(b.name)}" ${b.pick ? 'checked' : ''}><span class="tr"><span class="th"></span></span><span class="sl">в запуске</span></label></div>`;
   const stats = on ? `<div class="meters">${meter('heart', s.health, 'здоровье')}${meter('drumstick', s.food, 'еда')}
     <div class="doing">${icon(s.mode === 'paused' ? 'circle-pause' : s.mode === 'hold' ? 'hand' : s.mode === 'follow' ? 'footprints' : 'activity', 14)}<b>${esc(doingText(s, on))}</b></div></div>` : '';
   // поручение: шаги с отметками - видно, где бот и что не вышло; продолжить и отменить - тут же
@@ -399,6 +399,8 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'savePersona') act(async () => { await T.botPersona({ name, persona: f('persona').value }); f('persona').blur(); re(); }, t, 'характер сохранён');
   if (a === 'remove' && ask(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
 });
+// тумблер «в запуске» в карточке бота
+$('bots').addEventListener('change', (e) => { const n = e.target.dataset && e.target.dataset.pick; if (n) { e.stopPropagation(); act(async () => { await T.botPick({ name: n, pick: e.target.checked }); lastHtml = ''; }, null, e.target.checked ? `${n} заходит по «Запустить»` : `${n} не заходит по «Запустить»`); } });
 $('bots').addEventListener('input', (e) => { if (e.target.dataset.f === 'fd') { const c = e.target.closest('.bot'); c.querySelector('[data-f="fdv"]').textContent = e.target.value; } });
 $('bots').addEventListener('change', (e) => {
   if (e.target.dataset.f === 'aliases') { const name = e.target.closest('.bot').dataset.name; act(async () => { await T.botChatMode({ name, aliases: e.target.value }); lastHtml = ''; }, null, 'прозвища сохранены'); return; } if (e.target.dataset.f === 'fd') { const name = e.target.closest('.bot').dataset.name; e.target.blur(); act(async () => { await T.botFollowDist({ name, dist: +e.target.value }); lastHtml = ''; }); } });
