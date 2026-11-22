@@ -240,7 +240,8 @@ class TotemBot extends EventEmitter {
     });
     bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
     if (this.partOn('hearing')) this.listen(bot);   // слух (hearing.js)
-    if (this.partOn('balance')) this.balanceAttach(bot);   // равновесие после толчка (steer.js)
+    if (this.partOn('balance')) this.balanceAttach(bot);
+    if (this.partOn('gestures')) this.gesturesAttach(bot);   // язык тела: узнать жесты игроков и ответить (gestures.js)   // равновесие после толчка (steer.js)
     // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
     bot.on('blockUpdate', (o, n) => {
       try {
@@ -1478,6 +1479,8 @@ class TotemBot extends EventEmitter {
     // одиночные мгновенные: идти за кем-то, стоп
     if (plain.length === 1 && plain[0].act === 'follow') return this.follow(plain[0].who);
     if (plain.length === 1 && plain[0].act === 'stop') { this.cancel(); return 'остановился'; }
+    // жест и «встать» - не дело: текущее не прерывают
+    if (plain.length && plain.every((a) => a.act === 'gesture' || a.act === 'stand')) { for (const a of plain) { if (a.act === 'gesture') await this.gesture(String(a.kind || 'привет').toLowerCase()); else await this.standUp(); } return plain.map((a) => a.act === 'gesture' ? 'показала жест «' + (a.kind || 'привет') + '»' : 'встала').join('; '); }
     // Идёт за кем-то, а дело лёгкое (посмотреть, поесть, надеть, план, подождать...) - после него снова идти следом.
     // Раньше любое такое действие обрывало слежку навсегда: бот отвечал в чат и вставал (16.11).
     const LIGHT = new Set(['combat', 'signs', 'followDist', 'look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'cmd', 'wait', 'toss', 'discardAll', 'findSpot', 'craft', 'pickup', 'sleep', 'mount', 'dismount', 'give']);
@@ -1567,6 +1570,7 @@ class TotemBot extends EventEmitter {
           case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
           case 'mount': r = await this.mount(a, tok); break;
           case 'dismount': r = await this.dismount(); break;
+          case 'sit': { let ok = await this.sitNear(b0()); if (!ok) { this.bot.chat('/sit'); await new Promise((res) => setTimeout(res, 800)); ok = !!this.bot.vehicle; if (ok) this.seat = { since: Date.now(), at: b0().clone() }; } if (!ok) throw new Error('сесть негде: рядом нет свободной нижней ступеньки, полублока или подушки, /sit не сработал'); r = 'села'; break; }
           case 'drive': r = await this.drive(a, tok); break;
           case 'discardAll': r = await this.discardAll(a); break;
           case 'duel': r = await this.duel(a, tok); break;
@@ -1610,7 +1614,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

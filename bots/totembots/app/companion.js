@@ -50,6 +50,16 @@ class Companion {
     } else C.stop = null;
     this.gestureTick(owner, now);
     this.barkTick(owner, now);
+    // сидит рядом с хозяином (gestures.js): хозяин встал и пошёл - встать и следом
+    if (this.seat) {
+      const up = !owner || now - C.stillSince < 1500 || owner.position.distanceTo(b.entity.position) > 8 || this.mode !== 'follow';
+      if (up || !b.vehicle) { this.standUp().then(() => { if (this.mode === 'follow' && owner) try { b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} }).catch(() => {}); }
+      return;
+    }
+    // хозяин стоит давно (20+ с) - иногда присесть рядом на ступеньку или подушку, как по РП
+    if (owner && this.mode === 'follow' && this.sitNear && !this.sandbox && now - C.stillSince > 20000 && now - (C.sitTry || 0) > 60000 && Math.random() < 0.1) {
+      C.sitTry = now; this.sitNear(owner.position).catch(() => {});
+    }
     const busy = this.mode === 'task' || this.mode === 'life' || this.mode === 'hold' || this._errandBusy || this.travelling || this.eating || b.isSleeping || b.vehicle
       || (this.guard && (this.guard.fighting || this.guard.fleeing)) || (this.threat && this.threat().level !== 'спокойно') || b.entity.isInWater;
     const sb = this.sandbox;

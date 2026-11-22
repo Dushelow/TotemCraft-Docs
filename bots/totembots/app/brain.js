@@ -37,6 +37,8 @@ function warmText(cfg, bot) {
 Команды выполняются по порядку. Когда закончатся, я пришлю [итог] - что вышло, и ты сразу решаешь следующий шаг.
 Если говорить нечего - пиши только команды. Если и делать нечего - ответь одним словом: ок.
 Канал реплики выбирается сам (откуда спросили - туда ответ). Сменить: начни с «общий:», «рядом:» или «лс Ник:».
+[жест] - игрок сказал движением (кивнул, показал на блок, позвал за собой, бросил предмет). Ответить можно словами
+или жестом: !gesture(привет|кивок|нет|радость|кружится|спасибо|поклон|грусть|эй); сесть рядом по РП - !sit, встать - !stand.
 Реплика без приставки на свои дела и события - мысль, её никто не слышит. Хочешь сказать людям рядом (хозяину:
 опасность, находка, вопрос, привет) - начни с «рядом:». Не болтай о каждом шаге.
 
@@ -197,6 +199,9 @@ class Brain {
       }).catch((e) => this.log('распознавание: ' + e.message));
     });
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
+    body.isMasterName = (n) => this.isMaster(n);
+    // жест игрока (gestures.js): тело уже ответило своим жестом; мозгу - смысл, если есть что решать
+    body.on('gesture', ({ name, text, master }) => { this.push(`[жест] ${name}${master ? ' (хозяин)' : ''} без слов: ${text}`, true, name, 'local'); });
     // встреча после разлуки (senses.js): хозяина и знакомых - поздороваться, как живой; недавно виделись - молча
     body.on('reunion', ({ name, gap }) => {
       try {
@@ -606,7 +611,7 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['obtain', 'portalFix', 'portalBuild', 'where', 'trades', 'trade', 'use', 'stash', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
+        const FREE = new Set(['gesture', 'sit', 'stand', 'obtain', 'portalFix', 'portalBuild', 'where', 'trades', 'trade', 'use', 'stash', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         // идёт за кем-то и сам решил чем-то заняться - не уходить: своё только то, что делается на ходу или рядом
         // (16.11: шла за хозяином и сама ушла копать камень)
