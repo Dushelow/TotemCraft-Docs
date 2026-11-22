@@ -412,6 +412,9 @@ ipcMain.handle('brain-pin', (_e, { id, only, model }) => {
 // мозги: ключи (только на этом компьютере, local/config.json), модели, порядок
 // переписка бота с нейросетью дословно (logs/<имя>.qwen.log) - открыть в блокноте для разбора
 // кнопка «Начать с нуля» (22.11, владелец: «чтобы каждый раз не просил»): метка сброса и перезапуск программы
+// после системного окна (confirm/alert) Electron в Windows теряет фокус ввода: поля не печатаются (22.11: «удалил бота,
+// нажал добавить - и не вписать ник»). Вернуть фокус окну и странице
+ipcMain.handle('refocus', () => { try { win.blur(); win.focus(); win.webContents.focus(); } catch {} return true; });
 ipcMain.handle('full-reset', () => { fs.writeFileSync(path.join(LOCAL, 'reset.flag'), new Date().toISOString()); app.relaunch(); app.exit(0); return true; });
 ipcMain.handle('open-transcript', (_e, name) => { const f = path.join(LOCAL, 'logs', String(name || '').replace(/[^\w.-]/g, '') + '.qwen.log'); if (fs.existsSync(f)) require('electron').shell.openPath(f); return fs.existsSync(f); });
 ipcMain.handle('open-external', (_e, url) => { if (/^https:\/\/[a-z0-9.-]+\//i.test(String(url))) require('electron').shell.openExternal(String(url)); return true; });

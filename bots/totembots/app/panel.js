@@ -47,6 +47,9 @@ function toast(text, kind = '', undo) {
   setTimeout(() => t.remove(), undo ? 10000 : kind === 'bad' ? 9000 : 5000);
 }
 // кнопка во время действия: крутилка и недоступна (видно, что нажатие принято)
+// системные окна с возвратом фокуса (иначе поля ввода «мертвеют» после confirm в Electron)
+function ask(t) { const r = window.confirm(t); try { T.refocus(); } catch {} return r; }
+function tell(t) { window.alert(t); try { T.refocus(); } catch {} }
 async function act(fn, btn, okText, undo) {
   if (btn) { btn.classList.add('loading'); btn.disabled = true; }
   try { const r = await fn(); if (okText) toast(okText, 'ok', undo); await refresh(); return r; }
@@ -360,8 +363,8 @@ $('bots').addEventListener('click', (e) => {
   const re = () => { lastHtml = ''; };
   if (a === 'tab') { botTab.set(name, t.dataset.v); re(); renderBots(); return; }
   if (a === 'lifeOpen') { lifeOpen(); return; }
-  if (a === 'fullreset' && confirm('Сбросить данные бота? Он забудет всё: память, карту, людей, чаты с нейросетью, журналы. Остаются сервер, ник хозяина и вход. Копия сохранится в папке local/backup-..., программа перезапустится.')) { T.fullReset(); return; }
-  if (a === 'transcript') { T.openTranscript(name).then((ok) => { if (!ok) alert('Переписки пока нет: она появится после первого ответа нейросети'); }); return; }
+  if (a === 'fullreset' && ask('Сбросить данные бота? Он забудет всё: память, карту, людей, чаты с нейросетью, журналы. Остаются сервер, ник хозяина и вход. Копия сохранится в папке local/backup-..., программа перезапустится.')) { T.fullReset(); return; }
+  if (a === 'transcript') { T.openTranscript(name).then((ok) => { if (!ok) tell('Переписки пока нет: она появится после первого ответа нейросети'); }); return; }
   if (a === 'logf') { logFilter.set(name, t.dataset.v); re(); renderBots(); const lg = $('bots').querySelector('[data-f="log"]'); if (lg) lg.scrollTop = lg.scrollHeight; return; }
   if (a === 'start') act(() => T.botStart(name), t);
   if (a === 'stop') act(() => T.botStop(name), t, name + ' вышел с сервера', { fn: () => T.botStart(name), done: name + ' заходит обратно' });
@@ -371,7 +374,7 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'errandStop') act(() => T.botOrder({ name, text: 'отбой' }), t, 'поручение отменено');
   if (a === 'pass') { showPass.has(name) ? showPass.delete(name) : showPass.add(name); re(); renderBots(); }
   if (a === 'copy') { navigator.clipboard.writeText(t.dataset.cmd); toast('скопировано', 'ok'); }
-  if (a === 'newpass' && confirm('Сделать новый пароль? Потом выполните на сервере «authme changepassword», иначе бот не войдёт.')) act(() => T.botNewPass(name), t, 'новый пароль создан');
+  if (a === 'newpass' && ask('Сделать новый пароль? Потом выполните на сервере «authme changepassword», иначе бот не войдёт.')) act(() => T.botNewPass(name), t, 'новый пароль создан');
   if (a === 'probe') act(() => T.botProbe(name), t);
   if (a === 'rewarm') act(() => T.chatRewarm(name), t, 'вводная отправлена заново');
   if (a === 'chatUse') act(async () => { await T.chatUse({ name, link: f('chatLink').value }); f('chatLink').value = ''; f('chatLink').blur(); re(); }, t);
@@ -394,7 +397,7 @@ $('bots').addEventListener('click', (e) => {
   if (a === 'combat') act(async () => { await T.botCombat({ name, combat: t.dataset.v }); re(); });
   if (a === 'newchat') act(() => T.botNewChat(name), t, 'начнётся новый чат');
   if (a === 'savePersona') act(async () => { await T.botPersona({ name, persona: f('persona').value }); f('persona').blur(); re(); }, t, 'характер сохранён');
-  if (a === 'remove' && confirm(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
+  if (a === 'remove' && ask(`Удалить бота ${name}? Пароль его аккаунта на сервере забудется.`)) act(() => T.botRemove(name), t);
 });
 $('bots').addEventListener('input', (e) => { if (e.target.dataset.f === 'fd') { const c = e.target.closest('.bot'); c.querySelector('[data-f="fdv"]').textContent = e.target.value; } });
 $('bots').addEventListener('change', (e) => {
