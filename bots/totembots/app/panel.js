@@ -736,7 +736,22 @@ setInterval(() => { if ((botTab.get(selected) || 'life') === 'map') mapFetch(); 
 // Открывается на всё окно кнопкой «Смотреть её жизнь», выход - «Выйти» или Esc; раскладка под любое окно.
 // Наружные картинки и шрифты панели нельзя (политика безопасности), поэтому всё нарисовано CSS: небо, холмы, лес,
 // фигурка из её скина, предметы-значки. Части живут сами (как карта): ничего не пересоздаётся без нужды.
-const LIFE = { wrap: null, sig: {}, skins: {}, open: false, lastNote: 0 };
+const LIFE = { wrap: null, sig: {}, skins: {}, open: false, lastNote: 0, art: {} };
+// нарисованное оформление (app/art/*.png, сгенерировано по списку в LIFE_ART.md): есть файл - он и рисуется, нет - рисунок CSS
+const ART = ['frame', 'wood', 'parchment', 'slot', 'portrait', 'banner', 'icons', 'scene_day', 'scene_dusk', 'scene_night', 'scene_dawn', 'scene_cave', 'scene_nether', 'scene_snow'];
+const ART_ICON = { heart: 0, drumstick: 1, shield: 2, eye: 3, clock: 4, swords: 5, map: 6, scroll: 7, quill: 8, book: 9, backpack: 10, chest: 11, gem: 12, coin: 13, moon: 14, sun: 15 };
+function artLoad(w) {
+  for (const n of ART) {
+    const im = new Image();
+    im.onload = () => { LIFE.art[n] = true; w.style.setProperty('--art-' + n, `url("art/${n}.png")`); w.classList.add('art-' + n); LIFE.sig = {}; };
+    im.src = `art/${n}.png`;
+  }
+}
+/** Значок из нарисованного листа icons.png (8x2 по 64), если он есть; иначе обычный значок. */
+function artIcon(name, fallback, size = 16) {
+  if (LIFE.art.icons && ART_ICON[name] !== undefined) { const i = ART_ICON[name]; return `<span class="aic" style="width:${size}px;height:${size}px;background-position:${-(i % 8) * size}px ${-Math.floor(i / 8) * size}px;background-size:${8 * size}px ${2 * size}px"></span>`; }
+  return icon(fallback || name, size);
+}
 const MOOD_COL = { ok: '#7fbf4d', warn: '#e9a23b', bad: '#e0533d', muted: '#b7a68a', accent: '#d9b25f' };
 function skinFigure(url, s = 6) {
   const part = (x, y, w, h, l, t, z = 1, cls = '') => `<div class="${cls}" style="position:absolute;left:${l * s}px;top:${t * s}px;width:${w * s}px;height:${h * s}px;background:url('${url}') -${x * s}px -${y * s}px / ${64 * s}px ${64 * s}px;image-rendering:pixelated;z-index:${z}"></div>`;
@@ -808,6 +823,7 @@ function lifeEnsure() {
     </div>`;
   w.querySelector('[data-l="quiet"]').addEventListener('change', (e) => { T.botQuiet({ name: selected, on: e.target.checked }); });
   w.querySelector('[data-l="close"]').addEventListener('click', () => lifeClose());
+  artLoad(w);
   LIFE.wrap = w;
   return w;
 }
@@ -815,6 +831,7 @@ function lifeOpen() {
   const w = lifeEnsure();
   if (!w.isConnected) document.body.appendChild(w);
   LIFE.open = true; LIFE.sig = {};
+  try { T.panelFull(true); } catch {}
   setTimeout(() => w.classList.add('on'), 16);   // не через кадр отрисовки: в свёрнутом окне кадров нет
   const slot = w.querySelector('[data-l="mapslot"]'), m = mapEnsure();
   if (m.parentNode !== slot) slot.appendChild(m);
@@ -824,6 +841,7 @@ function lifeOpen() {
 function lifeClose() {
   if (!LIFE.wrap) return;
   LIFE.open = false;
+  try { T.panelFull(false); } catch {}
   LIFE.wrap.classList.remove('on');
   setTimeout(() => { if (!LIFE.open && LIFE.wrap.isConnected) LIFE.wrap.remove(); lastHtml = ''; renderBots(); }, 220);
 }
@@ -856,6 +874,14 @@ function lifeDraw() {
   const orb = LIFE.wrap.querySelector('[data-l="orb"]');
   if (sky.body) { orb.style.display = ''; orb.style.left = sky.body.x + '%'; orb.style.top = sky.body.y + '%'; orb.className = 'lorb ' + (sky.body.sun ? 'sun' : 'moon'); } else orb.style.display = 'none';
   const stage = LIFE.wrap.querySelector('[data-l="stage"]');
+  {
+    const dim = MAP.data ? MAP.data.dim : '', t = ((tod % 24000) + 24000) % 24000;
+    const want = /nether/.test(dim) ? 'scene_nether' : MAP.data && MAP.data.layer ? 'scene_cave' : /snow|frozen|ice/.test(v.biome || '') ? 'scene_snow'
+      : t >= 22500 || t < 1000 ? 'scene_dawn' : t < 11000 ? 'scene_day' : t < 13200 ? 'scene_dusk' : 'scene_night';
+    const pick = LIFE.art[want] ? want : LIFE.art.scene_day && !/nether|cave/.test(want) ? (t >= 13200 && t < 22500 && LIFE.art.scene_night ? 'scene_night' : 'scene_day') : '';
+    stage.classList.toggle('painted', !!pick);
+    lifeStyle('sky', 'backgroundImage', pick ? `var(--art-${pick})` : '');
+  }
   stage.dataset.pose = /сид|присел/.test(v.doing) ? 'sit' : /идёт|бежит|в путь|убегает|иду/.test(v.doing) ? 'walk' : /дерётся|защищ/.test(v.doing) ? 'fight' : 'idle';
   stage.dataset.rain = v.weather !== 'ясно' ? '1' : '';
   lifeSet('act', `<span>${esc(v.doing)}</span>`);
@@ -868,15 +894,15 @@ function lifeDraw() {
     LIFE.lastNote = top.t;
   }
   // шапка
-  lifeSet('clock', `${icon(v.time === 'ночь' ? 'circle-pause' : 'sparkles', 15)} День ${v.day} · ${esc(v.clock)} · ${esc(v.time)}${v.weather !== 'ясно' ? ' · ' + esc(v.weather) : ''}`);
-  lifeSet('doinghud', `${icon('swords', 15)} ${esc(v.doing)}`);
+  lifeSet('clock', `${artIcon(v.time === 'ночь' ? 'moon' : 'sun', v.time === 'ночь' ? 'circle-pause' : 'sparkles', 18)} День ${v.day} · ${esc(v.clock)} · ${esc(v.time)}${v.weather !== 'ясно' ? ' · ' + esc(v.weather) : ''}`);
+  lifeSet('doinghud', `${artIcon('swords', 'swords', 18)} ${esc(v.doing)}`);
   lifeSet('wealth', `<span class="lgem e"></span>${v.emeralds} <span class="lgem d"></span>${v.diamonds}`);
   const q = LIFE.wrap.querySelector('[data-l="quiet"]'); if (document.activeElement !== q) q.checked = !!v.quiet;
   // персонаж
   lifeSet('name', `${esc(v.name)}`);
   lifeSet('mood', `<span class="lmood" style="--mc:${MOOD_COL[v.mood.c] || '#b7a68a'}">${esc(v.mood.w)}</span>`);
   lifeSet('xp', `<span>Ур. ${v.xp}</span><div><i style="width:${v.xpp}%"></i></div><span>${v.xpp}%</span>`);
-  const bar = (ic, val, max, cls, t) => `<div class="lbar ${cls}" title="${t}">${icon(ic, 14)}<div><i style="width:${Math.max(0, Math.min(100, val / max * 100))}%"></i><span>${val} / ${max}</span></div></div>`;
+  const bar = (ic, val, max, cls, t) => `<div class="lbar ${cls}" title="${t}">${artIcon(ic, ic, 16)}<div><i style="width:${Math.max(0, Math.min(100, val / max * 100))}%"></i><span>${val} / ${max}</span></div></div>`;
   lifeSet('bars', bar('heart', v.hp, 20, 'hp', 'здоровье') + bar('drumstick', v.food, 20, 'food', 'сытость') + bar('shield', v.armor, 4, 'arm', 'броня, частей'));
   lifeSet('gear', ['hand', 'head', 'off', 'chest', 'legs', 'feet'].map((k) => `<div class="lslot ${v.gear[k] ? '' : 'empty'}" title="${RU_SLOT[k]}: ${esc((v.gear[k] || 'пусто').replace(/_/g, ' '))}">${v.gear[k] ? itemIcon(v.gear[k]) : `<em>${RU_SLOT[k]}</em>`}</div>`).join(''));
   lifeSet('stats', [['footprints', 'пройдено', Math.round(v.stats['пройдено блоков'] || 0).toLocaleString('ru-RU') + ' бл.'], ['scroll-text', 'событий', v.stats['событий в дневнике'] || 0], ['user', 'знает людей', v.stats['людей знает'] || 0], ['map', 'мест в памяти', v.places || 0]]

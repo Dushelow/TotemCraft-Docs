@@ -167,9 +167,11 @@ function stateForPanel() {
   };
 }
 
+// панель на всё окно («Жизнь»): окна сайтов уезжают за правый край - не видны, но работают (размер тот же)
+let panelFull = false;
 function layout() {
   const [w, h] = win.getContentSize();
-  const r = { x: PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
+  const r = { x: panelFull ? w + 10 : PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
   qwen.setBounds(r);
   for (const v of Object.values(webViews)) v.setBounds(r);
   for (const v of Object.values(myViews)) v.setBounds(r);
@@ -363,6 +365,7 @@ function startProjectSync() {
 // --- панель
 ipcMain.handle('qwen-reload', () => qwen.webContents.loadURL(QWEN_URL));
 ipcMain.handle('qwen-tab', (_e, name) => showTab(name));
+ipcMain.handle('panel-full', (_e, on) => { panelFull = !!on; layout(); return panelFull; });
 ipcMain.handle('view-show', (_e, { mode, site }) => showView(mode, site));
 ipcMain.handle('view-nav', (_e, what) => {
   const wc = viewOf(view.mode, view.site).webContents;
