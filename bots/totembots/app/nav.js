@@ -341,7 +341,24 @@ function install(mv, bot) {
       for (const k of ['forward', 'back', 'sprint', 'jump']) bot.setControlState(k, c[k]);
     }));
     // двери, калитки, люки на ближайших шагах: открыть (закрыть), только если сейчас не в нужном положении
-    const tog = new Map();
+    const tog = new Map(), opened = new Map();
+    // прошла дверь - вернуть, как было (закрыть за собой), когда отошла на 2+ бл. и она больше не на пути
+    bot.on('physicsTick', safe('nav-двери-закрыть', () => {
+      if (!opened.size || !bot.entity) return;
+      const me = bot.entity.position, ahead = new Set();
+      for (const m of (bot._navPath || []).slice(0, 3)) for (const o of m.opens || []) ahead.add(`${o.x},${o.y},${o.z}`);
+      for (const [k, d] of opened) {
+        if (ahead.has(k)) continue;
+        const dist = Math.hypot(d.x + 0.5 - me.x, d.z + 0.5 - me.z);
+        if (dist > 12) { opened.delete(k); continue; }   // ушла далеко - не возвращаться
+        if (dist < 2 || dist > 4) continue;
+        const b = bot.blockAt(new Vec3(d.x, d.y, d.z));
+        opened.delete(k);
+        if (!b || !OPENABLE.test(b.name)) continue;
+        const pr = b.getProperties(), now = pr.open === true || pr.open === 'true';
+        if (now !== d.was) { tog.set(k, Date.now()); bot.activateBlock(b).catch(() => {}); }
+      }
+    }));
     bot.on('physicsTick', safe('nav-двери', () => {
       const path = bot._navPath, me = bot.entity && bot.entity.position;
       if (!path || !me) return;
@@ -352,6 +369,7 @@ function install(mv, bot) {
         const pr = b.getProperties(), open = pr.open === true || pr.open === 'true';
         if (open === o.want || Date.now() - (tog.get(k) || 0) < 1500) continue;
         tog.set(k, Date.now());
+        if (!opened.has(k)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: open });   // какой была до бота - закрыть потом
         bot.activateBlock(b).catch(() => {});
       }
     }));

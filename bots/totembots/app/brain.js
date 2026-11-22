@@ -129,7 +129,7 @@ function unsafeSay(t) { return UNSAFE.test(String(t || '')); }   // не исп�
 
 // Простые приказы хозяина рядом: телу сразу, без нейросети. Только короткие однозначные фразы.
 function quickOrder(text, from) {
-  const t = String(text || '').toLowerCase().replace(/^(alex|алекс|алекса|бот)[,!:\s]+/i, '').replace(/[.!?)]+$/g, '').trim();
+  const t = String(text || '').toLowerCase().replace(/^(alex|алекс|алекса|бот)[,!:\s]+/i, '').replace(/[.!?)]+$/g, '').replace(/[,\s]+(alex|алекс|алекса|бот)$/i, '').trim();   // и «стой алекс» - имя в конце
   if (t.length > 40) return null;
   if (/^(за мной|иди за мной|пошли за мной|пошли|следуй за мной|следуй|го за мной|идём|идем)$/.test(t)) return [{ act: 'follow', who: from }];
   if (/^(стой|стоп|подожди|жди|стой тут|стой здесь|замри|жди тут|жди здесь|стой на месте|жди меня|стой и жди|не иди за мной|не ходи за мной)$/.test(t)) return [{ act: 'hold' }];

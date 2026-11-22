@@ -7,7 +7,7 @@ for (const t of ['house_test.js', 'fuzz_nav.js', 'errand_test.js', 'swim_test.js
   process.stdout.write(execFileSync(process.execPath, [path.join(__dirname, t)]).toString());
 }
 const B = require('../app/brain');
-const cases = [['за мной', 'follow'], ['стой', 'hold'], ['жди тут', 'hold'], ['ближе', 'followDist'], ['не дерись', 'combat'], ['заходи в портал', 'portal'], ['садись в лодку', 'mount'], ['слезай', 'dismount'], ['выкинь всё', 'discardAll'], ['выложи лишнее', 'stash'], ['верни обратно', 'undoPut'], ['отбой', 'errandStop'], ['продолжай', 'errandGo']];
+const cases = [['за мной', 'follow'], ['стой', 'hold'], ['жди тут', 'hold'], ['ближе', 'followDist'], ['не дерись', 'combat'], ['заходи в портал', 'portal'], ['садись в лодку', 'mount'], ['слезай', 'dismount'], ['выкинь всё', 'discardAll'], ['выложи лишнее', 'stash'], ['верни обратно', 'undoPut'], ['отбой', 'errandStop'], ['продолжай', 'errandGo'], ['стой алекс', 'hold']];
 const bad = cases.filter(([t, a]) => { const r = B.quickOrder(t, 'V'); return !r || r[0].act !== a; });
 console.log(`--- приказы хозяина: ${cases.length - bad.length} из ${cases.length}${bad.length ? ' НЕ ВЫШЛО: ' + bad.map((x) => x[0]).join(', ') : ''}`);
 const os = require('os'), fs = require('fs');
@@ -380,4 +380,29 @@ console.log('--- тропы: ' + (r ? `маршрут ${Math.round(r.len)} бл.
   const house = scan((set) => { for (let x = 0; x < 8; x++) for (let z = 0; z < 8; z++) { set(x, 64, z, 'prismarine_bricks'); set(x, 65, z, x % 2 ? 'dark_prismarine' : 'glass'); set(x, 66, z, 'oak_planks'); } set(1, 67, 1, 'sea_lantern'); set(2, 67, 2, 'oak_door'); set(3, 67, 3, 'chest'); set(4, 67, 4, 'red_bed'); });
   const ok = !!temple['подводный храм'] && !house['подводный храм'];
   console.log('--- сооружения на карте: ' + (ok ? 'настоящий храм узнан, дом из призмарина - не храм' : `НЕТ: храм ${!!temple['подводный храм']}, дом ${!!house['подводный храм']}`));
+}
+
+// модули тела (подмешиваются в бота) не затирают методы бота и EventEmitter (22.11: health.on() затёр on() -
+// тело перестало передавать мозгу чат, бот игнорировал хозяина)
+{
+  const EE = require('events');
+  const src = fs.readFileSync(path.join(__dirname, '../app/bot.js'), 'utf8');
+  const own = new Set([...src.matchAll(/^  (?:async )?([a-zA-Z_]\w*)\(/gm)].map((m) => m[1]));
+  const bad = [], seen = {};
+  for (const m of ['vehicles', 'house', 'perception', 'water', 'containers', 'errand', 'atlas', 'trade', 'hearing', 'senses', 'marks', 'health', 'portals']) {
+    for (const C of Object.values(require('../app/' + m))) {
+      if (typeof C !== 'function' || !C.prototype) continue;
+      for (const k of Object.getOwnPropertyNames(C.prototype)) {
+        if (k === 'constructor') continue;
+        if (k in EE.prototype) bad.push(`${m}.${k} затирает EventEmitter`);
+        if (own.has(k)) bad.push(`${m}.${k} затирает метод тела`);
+        if (seen[k]) bad.push(`${k} есть в ${seen[k]} и ${m}`);
+        seen[k] = m;
+      }
+    }
+  }
+  const { TotemBot } = require('../app/bot.js');
+  const tb = new TotemBot({ name: 'T', features: {} });
+  let heard = 0; tb.on('player-chat', () => heard++); tb.emit('player-chat', {});
+  console.log('--- модули тела: ' + (!bad.length && heard === 1 ? 'имена не пересекаются, события доходят' : 'НЕТ: ' + bad.join('; ') + (heard === 1 ? '' : '; события не доходят')));
 }

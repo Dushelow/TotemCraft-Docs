@@ -39,7 +39,11 @@ class Trade {
     if (!list.length) return 'жителей рядом нет';
     const V = (this.memory && this.memory.data.villagers) || {};
     const out = [];
-    for (const e of list.slice(0, 6)) {
+    // порядок обхода: каждый следующий - ближайший к предыдущему (без беготни туда-сюда); известные недавно - из памяти
+    const order = [], rest = list.slice(0, 6);
+    let at = this.bot.entity.position;
+    while (rest.length) { rest.sort((a, c) => a.position.distanceTo(at) - c.position.distanceTo(at)); const e = rest.shift(); order.push(e); at = e.position; }
+    for (const e of order) {
       this.check(tok);
       const k = this.villagerKey(e), known = V[k];
       let offers = known && Date.now() - known.at < 1800000 ? known.offers : null;

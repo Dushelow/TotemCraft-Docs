@@ -9,7 +9,8 @@ const BUDGET_MS = 40;
 
 class Health {
   /** Включена ли часть (по умолчанию - да). */
-  on(name) { return !(this.opts && this.opts.features && this.opts.features[name] === false); }
+  // не «on»: тело - EventEmitter, on() - подписка на события (22.11: затёр её - тело перестало слышать чат)
+  partOn(name) { return !(this.opts && this.opts.features && this.opts.features[name] === false); }
 
   /** Записать сбой части: счёт, последняя ошибка, в журнал - первая и потом не чаще раза в 5 мин. */
   fault(name, err) {
@@ -22,7 +23,7 @@ class Health {
 
   /** Выполнить часть тела: выключатель, изоляция сбоя, бюджет времени. fn может быть асинхронной. */
   tick(name, fn) {
-    if (!this.on(name)) return undefined;
+    if (!this.partOn(name)) return undefined;
     const t0 = Date.now();
     const done = () => {
       const ms = Date.now() - t0;

@@ -31,7 +31,18 @@ class Perception {
       // крыша - постройка (доски, кирпич...) или рядом стены постройки: это дом, а не «под землёй» (19.11 в доме - «под землёй»)
       const built = roof && (BUILT.test(roof.name) || !!this.skills.builtNear(b.entity.position.floored(), 2));
       if (!/overworld/.test(b.game.dimension || '')) under = '';   // в Незере и Энде неба нет всегда - не «под землёй»
-      else if (roof && built && roof.position.y - b.entity.position.y < 8) under = ', в помещении (постройка)';
+      else if (roof && built && roof.position.y - b.entity.position.y < 8) {
+        // какие стороны открыты (на уровне головы до 5 бл. нет стены): навес или амбар с открытыми сторонами - не
+        // «помещение, откуда надо выбираться» (22.11: под крышей амбара мозг решил, что заперта, и лез на крышу)
+        const NAMES = { '1,0': 'восток', '-1,0': 'запад', '0,1': 'юг', '0,-1': 'север' }, open = [];
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          let wall = false;
+          for (let i = 1; i <= 5 && !wall; i++) { const k = b.blockAt(b.entity.position.offset(dx * i, 1, dz * i)); if (k && k.boundingBox === 'block') wall = true; }
+          if (!wall) open.push(NAMES[`${dx},${dz}`]);
+        }
+        under = open.length >= 2 ? `, под навесом (крыша, открыто: ${open.join(', ')}) - выйти можно в любую открытую сторону`
+          : open.length === 1 ? `, в помещении (постройка), выход на ${open[0]}` : ', в помещении (постройка), выход - через дверь (!use или просто иди: двери тело откроет)';
+      }
       else if (roof && (sky === null ? (ch && ch.h !== null && s.pos[1] < ch.h - 6) : sky < 8)) under = ', под землёй' + (ch && ch.h !== null && ch.h - s.pos[1] > 6 ? ` (поверхность около y ${ch.h}, ты на ${ch.h - s.pos[1]} ниже)` : '');
       // высоко над землёй (гора, башня, мост, небо) - тоже сказать: иначе «рядом» постройки и точки внизу путаются
       if (under && this.worldMap && this.worldMap.tunnels) { try { const t = this.worldMap.tunnels(this); if (t) under += '; ' + t; } catch {} }

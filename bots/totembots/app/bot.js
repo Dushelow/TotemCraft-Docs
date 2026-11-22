@@ -137,10 +137,10 @@ class TotemBot extends EventEmitter {
       // Ходьба по настоящей форме блоков (nav.js): ступеньки, плиты, кровати, ковры, люки, двери, заборы, углы по
       // диагонали - геометрией, как в игре. Заменила заплатки 15-21.11 (ковёр выше ног, диагонали, house-moves).
       bot._tb = this;   // для nav.js: сбои навигации - в здоровье тела
-      if (this.on('nav')) require('./nav').install(mv, bot);
+      if (this.partOn('nav')) require('./nav').install(mv, bot);
       // кэш проходимости (passcache.js): путь и через выгруженные чанки, которые бот видел раньше
-      if (this.on('passcache') && this.passCacheShared && !bot._passAttached) { bot._passAttached = true; this.passCacheShared.attach(this); }
-      mv.passCache = this.on('passcache') ? this.passCacheShared || null : null;
+      if (this.partOn('passcache') && this.passCacheShared && !bot._passAttached) { bot._passAttached = true; this.passCacheShared.attach(this); }
+      mv.passCache = this.partOn('passcache') ? this.passCacheShared || null : null;
       mv.passDim = () => String(bot.game && bot.game.dimension || 'overworld').replace(/^minecraft:/, '');
       // Как человек: по дорогам и натоптанным местам, а не по газонам у чужих домов. Дорога - выложенное (не природное)
       // под открытым небом, или клетка, где часто ходят. Рядом с постройками остальное дороже в 1,6 раза; в диком
@@ -237,7 +237,7 @@ class TotemBot extends EventEmitter {
       if (who && Date.now() - (this.hitReported || 0) > 10000) { this.hitReported = Date.now(); this.event(`игрок ${who[0]} ударил тебя`, true); }
     });
     bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
-    if (this.on('hearing')) this.listen(bot);   // слух (hearing.js)
+    if (this.partOn('hearing')) this.listen(bot);   // слух (hearing.js)
     // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
     bot.on('blockUpdate', (o, n) => {
       try {
