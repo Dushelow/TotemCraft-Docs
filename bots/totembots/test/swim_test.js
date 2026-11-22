@@ -43,3 +43,11 @@ nodes.length = 0; for (let x = 1; x <= 12; x++) nodes.push({ x, y: 59, z: 0 }); 
 { const { bot, control } = makeBot(); const tb = { bot, lastPath: { path: nodes } };
   for (let t = 0; t < 160; t++) { swimTick(tb); physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot); swimPhysics(tb); }
   const p = bot.entity.position; console.log(`поворот: дошёл до ${p.x.toFixed(1)} ${p.z.toFixed(1)} (цель 12.5 4.5)`); }
+
+// с поверхности (голова над водой), путь по поверхности: как человек - уйти чуть под воду и плыть в позе плавания у
+// поверхности, а не прыгать поплавком всю дорогу (22.11)
+nodes.length = 0; for (let x = 1; x <= 35; x++) nodes.push({ x, y: 61, z: 0 });
+{ const { bot, control } = makeBot(); bot.entity.position = new Vec3(0.5, 61.3, 0.5); const tb = { bot, lastPath: { path: nodes } };
+  let minY = 99, maxY = 0, jumps = 0, last = false;
+  for (let t = 0; t < 160; t++) { swimTick(tb); if (control.jump && !last) jumps++; last = control.jump; physics.simulatePlayer(new PlayerState(bot, control), world).apply(bot); swimPhysics(tb); if (t > 40) { minY = Math.min(minY, bot.entity.position.y); maxY = Math.max(maxY, bot.entity.position.y); } }
+  const p = bot.entity.position; console.log(`с поверхности: за 8 с ${(p.x - 0.5).toFixed(1)} бл., высота ${minY.toFixed(2)}-${maxY.toFixed(2)} (вода до 61.9), поза ${control.sprint}, нажатий прыжка ${jumps}`); }

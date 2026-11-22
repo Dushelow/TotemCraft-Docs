@@ -563,12 +563,18 @@ class TotemBot extends EventEmitter {
       else if (!full) this.fullSaid = false;
     }
     // компаньон: потерял из виду - сказать один раз
+    // Хозяин нырнул или ушёл за угол - сервер перестаёт присылать игрока, и бот терял его («пропал из виду», 22.11:
+    // хозяин на дно - бот за ним не поплыл). Как человек: идти туда, где видел последний раз (и под воду), минуту;
+    // появился снова - опять следом (новый объект игрока - новая цель).
     if (this.mode === 'follow') {
-      if (!owner) {
-        if (!this.lostReported) { this.lostReported = true; this.event(`${this.followName} пропал из виду (далеко или в другом измерении)`, true); }
-      } else if (this.lostReported) {
-        this.lostReported = false;
-        b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true);
+      if (owner) {
+        this.lastSeen = { name: this.followName, pos: owner.position.clone(), at: Date.now() };
+        if (this.lostReported || this._followEnt !== owner) { this.lostReported = false; this._seekLast = false; this._followEnt = owner; b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); }
+      } else {
+        const L = this.lastSeen;
+        if (L && L.name === this.followName && Date.now() - L.at < 60000) {
+          if (!this._seekLast) { this._seekLast = true; this.log(`${this.followName} не видно - иду, где видела последний раз: ${Math.floor(L.pos.x)} ${Math.floor(L.pos.y)} ${Math.floor(L.pos.z)}`); b.pathfinder.setGoal(new goals.GoalNear(L.pos.x, L.pos.y, L.pos.z, 1.5)); }
+        } else if (!this.lostReported) { this.lostReported = true; this._seekLast = false; this.event(`${this.followName} пропал из виду (далеко или в другом измерении)`, true); }
       }
     }
   }
@@ -1174,11 +1180,14 @@ class TotemBot extends EventEmitter {
   follow(name) {
     const e = this.player(name);
     this.cancel();
-    if (!e) return `не вижу ${name} рядом`;
+    const L = this.lastSeen;
+    if (!e && !(L && L.name === name && Date.now() - L.at < 60000)) return `не вижу ${name} рядом`;
     this.mode = 'follow';
     this.followName = name;
     this.lostReported = false;
-    this.bot.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true);
+    this._followEnt = e; this._seekLast = !e;
+    if (e) this.bot.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true);
+    else { this.bot.pathfinder.setGoal(new goals.GoalNear(L.pos.x, L.pos.y, L.pos.z, 1.5)); return `${name} не видно - иду, где был последний раз`; }
     return `иду за ${name}`;
   }
 

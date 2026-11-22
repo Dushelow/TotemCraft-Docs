@@ -74,17 +74,36 @@ function swimTick(tb) {
  * Вниз без бега - не держать прыжок (тонет медленно); вверх - прыжок. Воздуха мало для глубины - всплывать.
  */
 function steer(tb, dx, dy, dz, head) {
-  const b = tb.bot, e = b.entity, hd = Math.hypot(dx, dz);
-  const swimPose = head && b.food > 6 && (hd > 1.2 || Math.abs(dy) > 1.2);
-  // запас воздуха на всплытие: глубина / скорость подъёма (~3 бл./с) + 3 с запаса
-  let surf = 0; { const f = e.position.floored(); for (let k = 1; k < 30 && isWater(b, f.offset(0, k, 0)); k++) surf = k; }
+  // Как плавает человек (22.11, владелец): в пути - с бегом чуть под поверхностью, в позе плавания; на месте и вблизи -
+  // поплавком (полтела в воде, прыжок только когда осел); за кем-то на дно - нырнуть. Не дёргать прыжок каждый тик.
+  const b = tb.bot, e = b.entity, p = e.position, f = p.floored(), hd = Math.hypot(dx, dz);
+  let surf = 0; for (let k = 1; k < 30 && isWater(b, f.offset(0, k, 0)); k++) surf = k;
+  const topY = f.y + surf + 0.89;   // уровень воды над нами
   const airSec = airLeft(tb) * 0.75;
-  if (head && airSec < surf / 3 + 3) dy = Math.max(dy, surf + 1);   // не хватит воздуха - сначала наверх
-  b.setControlState('forward', hd > 0.3 || swimPose);
-  b.setControlState('sprint', swimPose);
+  const low = head && airSec < surf / 3 + 3;   // не хватит воздуха подняться с этой глубины - сначала наверх
+  const deep = !low && dy < -1.5;              // цель ниже - нырять
+  const travel = !low && (hd > 2.5 || deep);
+  // поза плавания: держать, пока в пути (гистерезис - без дёрганья туда-сюда)
+  if (!travel || b.food <= 6) tb._pose = false; else if (travel && head) tb._pose = true;
   b.setControlState('sneak', false);
-  b.setControlState('jump', !swimPose && (dy > -0.6 || !head));   // у поверхности держаться; вниз - отпустить
-  face(tb, dx, swimPose ? dy : 0, dz, swimPose ? 1 : 0);
+  if (tb._pose) {
+    // в пути у поверхности - на 1 бл. под водой (тело чуть под поверхностью); глубже - к цели
+    const want = deep ? dy : Math.min(dy, topY - 1.0 - p.y);
+    b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('jump', false);
+    face(tb, dx, want, dz, 1);
+    return;
+  }
+  b.setControlState('sprint', false);
+  if (travel && !head) {
+    // в путь, а голова над водой: без прыжка тело оседает, глаза уходят под воду - дальше поза плавания
+    b.setControlState('forward', true); b.setControlState('jump', false);
+    face(tb, dx, 0, dz, 0);
+    return;
+  }
+  // поплавок: прыжок только когда осел ниже середины тела под водой; вверх (воздух) - держать прыжок
+  b.setControlState('forward', hd > 0.4);
+  b.setControlState('jump', low || dy > 0.6 || p.y < topY - 1.0);
+  face(tb, dx, 0, dz, 0);
 }
 
 /** Повернуть голову к направлению плавно (до 0,3 рад за тик), со своим углом: pathfinder переписывает e.yaw каждый тик. */
