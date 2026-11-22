@@ -51,7 +51,7 @@ class Perception {
     const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : 'стоишь';
     return {
       pos: s.pos,
-      core: `${(() => { try { const d = this.district(); return d ? d + '; ' : ''; } catch { return ''; } })()}${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}${this.errandText && this.errandText() ? '; ' + this.errandText() : ''}`,
+      core: `${(() => { try { const d = this.district(); return d ? d + '; ' : ''; } catch { return ''; } })()}${(() => { try { const h = this.homeText(); return h ? h + '; ' : ''; } catch { return ''; } })()}${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}${this.errandText && this.errandText() ? '; ' + this.errandText() : ''}`,
       near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
       inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
       online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),
@@ -131,6 +131,18 @@ class Perception {
    * Где я по названиям (как подписи районов на веб-картах): ближайшее место, которое назвал хозяин или запомнила
    * сама (48 бл.), и таблички рядом (24 бл.) - «спавн», «торговый зал», «ферма слизней».
    */
+  /** Где дом относительно бота: «ты дома» только у самого дома (22.11: стояла среди чужих домов и говорила «вернулась домой»). */
+  homeText() {
+    const h = require('./life').home(this), b = this.bot;
+    if (!h || !b || !b.entity) return '';
+    if (h.dim !== this.dimName()) return `дом «${h.name}» в другом измерении (${h.dim})`;
+    const p = b.entity.position, dx = h.x - p.x, dz = h.z - p.z, d = Math.hypot(dx, dz);
+    if (d <= 12 && Math.abs(h.y - p.y) <= 8) return `ты дома («${h.name}»)`;
+    const ns = dz < -0.4 * d ? 'север' : dz > 0.4 * d ? 'юг' : '', ew = dx > 0.4 * d ? 'восток' : dx < -0.4 * d ? 'запад' : '';
+    const dir = ns && ew ? (ns === 'север' ? 'северо-' : 'юго-') + ew : ns || ew;
+    return `ты НЕ дома: дом «${h.name}» ${Math.round(d)} бл. на ${dir}`;
+  }
+
   district() {
     const m = this.memory, b = this.bot;
     if (!m || !b || !b.entity) return '';

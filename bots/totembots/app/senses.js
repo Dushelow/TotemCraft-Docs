@@ -25,16 +25,36 @@ class Senses {
       const seen = kind === 'enemy' && this.seesEntity ? this.seesEntity(e) : true;
       this.tracks.set(e.id, { id: e.id, name: e.username || e.name, kind, pos: e.position.clone(), d, at: now, prev: t && t.pos, prevD: t ? t.d : d, prevAt: t ? t.at : now, vx, vz, seen });
       if (kind) this.memoryLive.set(e.id, { name: e.username || e.name, kind, pos: e.position.clone(), at: now, gone: false, vx, vz });
+      if (kind === 'player' && e.username) this.metTick(e.username, d, now);
     }
     for (const [id, t] of this.tracks) if (!alive.has(id)) { this.tracks.delete(id); const m = this.memoryLive.get(id); if (m) m.gone = true; }
     for (const [id, m] of this.memoryLive) if (now - m.at > SEEN_MS) this.memoryLive.delete(id);
     // стало опасно - мозгу сразу (не чаще раза в минуту), чтобы решил: уйти, позвать хозяина, драться
     const th = this.threat();
-    if (th.level === 'опасно' && this.lastThreat !== 'опасно' && now - (this.threatSaidAt || 0) > 60000 && this.event) {
+    // мобы только за стенами (не видно) - не тревога: тело слышит, мозгу не о чем решать
+    const seenFoe = [...this.tracks.values()].some((t) => t.kind === 'enemy' && t.d < 16 && t.seen !== false);
+    if (th.level === 'опасно' && seenFoe && this.lastThreat !== 'опасно' && now - (this.threatSaidAt || 0) > 60000 && this.event) {
       this.threatSaidAt = now;
-      this.event('обстановка: опасно - ' + (this.motion().join('; ') || 'много врагов рядом'), true);
+      this.event('обстановка: опасно - ' + (this.motion().join('; ') || 'много врагов рядом') + '. Тело само отходит от крипера и бьёт мешающих; своё дело не бросай', true);
     }
     this.lastThreat = th.level;
+  }
+
+  /**
+   * Встречи: кто рядом (до 12 бл.) после долгой разлуки (40+ мин, по памяти и между запусками) - событие 'reunion'
+   * (мозг здоровается с хозяином и знакомыми). Пока рядом (до 24 бл.) - «виделись только что».
+   */
+  metTick(name, d, now) {
+    if (name === (this.bot && this.bot.username)) return;
+    const m = this.memory, M = m ? (m.data.met = m.data.met || {}) : (this.metMem = this.metMem || {});
+    const last = M[name];
+    if (d <= 12 && (!last || now - last > 40 * 60000)) {
+      const gap = last ? Math.round((now - last) / 60000) : null;
+      M[name] = now;
+      this.emit('reunion', { name, gap });
+    }
+    else if (d <= 24 && M[name] && now - M[name] <= 40 * 60000) M[name] = now;   // ещё рядом после встречи
+    if (m && now - (this.metSavedAt || 0) > 60000) { this.metSavedAt = now; const ks = Object.keys(M); if (ks.length > 200) for (const k of ks.sort((a, c) => M[a] - M[c]).slice(0, ks.length - 200)) delete M[k]; m.save(); }
   }
 
   isEnemy(e) {

@@ -66,6 +66,7 @@ class Containers {
         left -= n; got += n;
         await sleep(rnd(150, 400));
       }
+      if (this.noteChest && this.ownChest && this.ownChest({ x: +a.x, y: +a.y, z: +a.z })) this.noteChest(+a.x, +a.y, +a.z, c.containerItems());
     } finally { c.close(); }
     if (!got) throw new Error(`в сундуке ${a.x} ${a.y} ${a.z} нет ${a.item}`);
     return `взял ${got} ${a.item} из ${a.x} ${a.y} ${a.z}`;
@@ -84,6 +85,7 @@ class Containers {
         left -= n; put += n;
         await sleep(rnd(150, 400));
       }
+      if (put && this.noteChest) this.noteChest(+a.x, +a.y, +a.z, c.containerItems());   // что теперь лежит в своём сундуке (obtain.js)
     } finally { c.close(); }
     if (!put) throw new Error(`нет у меня ${a.item}`);
     try { const h = require('./life').home(this); if (!h || Math.hypot(h.x - a.x, h.z - a.z) > 24) this.autoMark('мои вещи в сундуке', { x: +a.x, y: +a.y, z: +a.z }, { kind: 'мои вещи', radius: 8, ttl: 7 * 86400000, note: `${put} ${a.item}` }); } catch {}

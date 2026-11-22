@@ -89,6 +89,10 @@ ${require('./commands').manual()}
 как любой игрок. Не обязательно всё добывать руками: торгуй с жителями (!trades - кто чем торгует, !trade - поменяться;
 например нафармить пшеницы и продать фермеру за изумруды), договаривайся с игроками об обмене и сделках. Ставь себе цели (!setGoal) и доводи до конца, разбивая на шаги. Будь живым: своё мнение, юмор,
 привычки, планы. Не стой столбом и не повторяйся. Если команда не вышла - подумай почему и попробуй иначе.
+НУЖНА ВЕЩЬ - не с нуля: сначала !obtain(предмет, сколько) (тело посмотрит свои сундуки дома, купит у жителей); не вышло -
+попроси хозяина или игроков рядом (say); и только потом добывай руками. В новом городе сначала осмотрись (!trades,
+таблички, где что), а не руби дерево. От мобов тело отходит и отбивается само: из-за них не останавливайся (!stop не нужен).
+«Ты дома» - только если так написано в [состояние]; дошла не до конца - так и говори.
 
 ДЛИННАЯ ЗАДАЧА ХОЗЯИНА (несколько шагов, далеко, «принеси/отнеси/сходи и вернись») - одной командой
 !errand("шаг; шаг; ..."), дальше тело делает само по шагам и проверяет каждый; ты только следишь и разговариваешь.
@@ -191,6 +195,15 @@ class Brain {
       }).catch((e) => this.log('распознавание: ' + e.message));
     });
     body.on('event', (e) => { if (e.important) this.push(`[событие] ${e.text}`, true); });
+    // встреча после разлуки (senses.js): хозяина и знакомых - поздороваться, как живой; недавно виделись - молча
+    body.on('reunion', ({ name, gap }) => {
+      try {
+        const known = this.isMaster(name) || !!(this.body.memory && Object.values(this.body.memory.data.people || {}).some((p) => p.name.toLowerCase() === name.toLowerCase()));
+        if (!known || (gap === null && !this.isMaster(name))) return;
+        const h = gap === null ? 'давно не виделись (ты только зашла в игру)' : `не виделись ${gap >= 60 ? Math.floor(gap / 60) + ' ч ' : ''}${gap % 60} мин`;
+        this.push(`[встреча] к тебе подошёл ${name}${this.isMaster(name) ? ' (хозяин)' : ''}, ${h}. Поздоровайся коротко, по-живому (можно сказать, чем занималась, или спросить, как дела). Дело, которым занята, не бросай.`, true, name, 'local');
+      } catch {}
+    });
     body.on('moment', (m) => { try { this.moment(m); } catch {} });
   }
 
@@ -580,11 +593,14 @@ class Brain {
       }
       if (r.actions.length) {
         // без хозяина можно только безопасное: ходить, запоминать, урожай (посадить обратно), подбирать с земли
-        const FREE = new Set(['portalFix', 'portalBuild', 'where', 'trades', 'trade', 'use', 'stash', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
+        const FREE = new Set(['obtain', 'portalFix', 'portalBuild', 'where', 'trades', 'trade', 'use', 'stash', 'hold', 'signs', 'mount', 'dismount', 'drive', 'stop', 'follow', 'come', 'goto', 'goto_place', 'pickup', 'harvest', 'wait', 'remember', 'recover', 'wander', 'travel', 'gather', 'craft', 'place', 'break', 'mine', 'surface', 'fish', 'smelt', 'hunt', 'shear', 'toss', 'equip', 'eat', 'cmd', 'attack', 'sleep', 'portal', 'forget', 'plan', 'craftable', 'lesson', 'findSpot', 'goFree', 'till', 'plant', 'farm']);
         // идёт за кем-то и сам решил погулять - не бросать того, за кем идёт
         // идёт за кем-то и сам решил чем-то заняться - не уходить: своё только то, что делается на ходу или рядом
         // (16.11: шла за хозяином и сама ушла копать камень)
         if (self && !master && this.body.mode === 'follow') r.actions = r.actions.filter((a) => ['look', 'plan', 'craftable', 'lesson', 'remember', 'forget', 'equip', 'eat', 'toss', 'wait', 'findSpot'].includes(a.act));
+        // своё «стоп» без хозяина - почти всегда «моб рядом, остановлюсь»: дорогу не прерывать, тело отходит само
+        // (22.11: шла домой, крипер за стеной - мозг сказал stop, бот встал посреди улицы)
+        if (self && !master && r.actions.some((a) => a && a.act === 'stop')) { r.actions = r.actions.filter((a) => !(a && a.act === 'stop')); this.log('своё «стоп» пропущено: от мобов тело отходит само'); }
         const NEED_MASTER = r.actions.filter((a) => a && a.act && !FREE.has(a.act));
         const notFromMaster = !master;
         // чужие просьбы не двигают бота дальше «подойти» и не перезаписывают места

@@ -1517,6 +1517,7 @@ class TotemBot extends EventEmitter {
           case 'portalBreak': r = await this.portalBreak({ ...a, master: source === 'master' }, tok); break;
           case 'where': { const pc = this.passCacheShared; if (!pc) { r = 'кэша мира нет'; break; } const list = pc.nearest(String(this.bot.game.dimension).replace(/^minecraft:/, ''), a.what || 'chest', this.bot.entity.position, 5); r = list.length ? `ближайшие ${a.what}: ` + list.map((x) => `${x.name} ${x.x} ${x.y} ${x.z} (${Math.round(x.d)} бл.)`).join('; ') : `не видела ${a.what} поблизости (смотрю только там, где была)`; break; }
           case 'trade': r = await this.doTrade(a, tok); break;
+          case 'obtain': r = await this.obtain(a, tok); break;
           case 'errandGo': r = this.resumeErrand(); return done.concat(r).join('; ');
           case 'give': r = await this.give(a, tok); break;
           case 'portal': r = await this.portal(a, tok); break;
@@ -1605,7 +1606,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 
