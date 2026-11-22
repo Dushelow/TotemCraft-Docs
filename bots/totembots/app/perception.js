@@ -87,7 +87,7 @@ class Perception {
         const ORD = ['none', 'armorer', 'butcher', 'cartographer', 'cleric', 'farmer', 'fisherman', 'fletcher', 'leatherworker', 'librarian', 'mason', 'nitwit', 'shepherd', 'toolsmith', 'weaponsmith'];
         const k = typeof p === 'number' ? ORD[p] || '' : String(p.name || p).replace(/^minecraft:/, ''); prof = PROF[k] || (isNaN(+k) ? k : ''); } }
       groups[g].push({ e, d, prof });
-      list.push([Math.floor(e.position.x), Math.floor(e.position.z), g]);
+      list.push([Math.floor(e.position.x), Math.floor(e.position.z), g, e.name]);
     }
     const parts = [];
     if (groups.enemy.length) {

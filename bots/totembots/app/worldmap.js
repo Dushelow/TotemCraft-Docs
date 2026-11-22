@@ -516,6 +516,55 @@ class WorldMap {
   }
 
   /** Данные для картинки в панели: чанки и точки вокруг (cx,cz бота в центре). */
+  /**
+   * Карта для панели (22.11: «дёргается и неудобная»): всё в координатах мира, а не «бот в центре чанка»; чанки,
+   * которые панель уже знает (known: ключ -> время записи), без рисунка - перерисовывается только новое.
+   * layer: 'auto' (под землёй - срез с запасом, без мигания у входа в пещеру) или 'surface'.
+   */
+  mapView(tb, o = {}) {
+    const b = tb.bot;
+    if (!b || !b.entity) return null;
+    const dim = String(b.game.dimension), m = this.load(dim), p = b.entity.position, mg = require('./mapgrid');
+    const r = Math.max(4, Math.min(28, +o.r || 16)), known = o.known || {};
+    const ccx = Math.floor((o.cx ?? p.x) / 16), ccz = Math.floor((o.cz ?? p.z) / 16);
+    const chunks = [];
+    for (let dx = -r; dx <= r; dx++) for (let dz = -r; dz <= r; dz++) {
+      const k = `${ccx + dx},${ccz + dz}`, c = m.chunks[k];
+      if (!c) continue;
+      const okv = c.gv === mg.GRID_V;
+      if (known[k] === c.t) { chunks.push([ccx + dx, ccz + dz, c.t]); continue; }
+      chunks.push([ccx + dx, ccz + dz, c.t, c.k, c.b || 0, okv ? c.px || '' : '', okv ? c.hy || '' : '', okv ? c.wd || '' : '', c.my || 0]);
+    }
+    // срез под землёй: вход - на 6 ниже поверхности, выход - выше на 3 (запас, чтобы не мигало у входа в пещеру)
+    let layer = '';
+    if (o.layer !== 'surface') {
+      if (/nether/.test(dim)) layer = `ярус Незера на высоте ${Math.floor(p.y)}`;
+      else {
+        const c = m.chunks[`${Math.floor(p.x / 16)},${Math.floor(p.z / 16)}`], h = c && c.h !== null && c.h !== undefined ? c.h : null;
+        const was = tb._mapUnder;
+        tb._mapUnder = h !== null && (was ? p.y < h - 3 : p.y < h - 6);
+        if (tb._mapUnder) layer = `подземный слой на высоте ${Math.floor(p.y)} (поверхность около ${h})`;
+      }
+    }
+    const slice = [];
+    if (layer && this.airIds) {
+      const pcx = Math.floor(p.x / 16), pcz = Math.floor(p.z / 16);
+      for (let dx = -5; dx <= 5; dx++) for (let dz = -5; dz <= 5; dz++) {
+        const col = b.world.getColumn(pcx + dx, pcz + dz);
+        if (!col) continue;
+        try { const s = mg.slice(b, col, this.airIds, Math.floor(p.y)); slice.push([pcx + dx, pcz + dz, s.px, s.hy, s.my]); } catch {}
+      }
+    }
+    const inR = (x, z) => Math.abs(Math.floor(x / 16) - ccx) <= r && Math.abs(Math.floor(z / 16) - ccz) <= r;
+    const poi = Object.values(m.poi).filter((v) => inR(v.x, v.z)).map((v) => [v.x, v.z, v.kind]);
+    const ents = [];
+    try { for (const [x, z, g, name] of tb.radar(64).list) ents.push([x, z, g, name || '']); } catch {}
+    for (const pl of Object.values(b.players)) if (pl.entity && pl.username !== b.username) ents.push([pl.entity.position.x, pl.entity.position.z, 'player', pl.username]);
+    const labels = [];
+    if (tb.memory) for (const pl of Object.values(tb.memory.data.places || {})) if (pl.dim === tb.dimName() && !/^табличка/.test(pl.name) && inR(pl.x, pl.z)) labels.push([pl.x, pl.z, pl.name]);
+    return { dim, me: [p.x, p.y, p.z, b.entity.yaw], chunks, slice, poi, ents, labels, layer, total: Object.keys(m.chunks).length, colors: mg.COLORS };
+  }
+
   view(tb, radiusChunks = 16) {
     const b = tb.bot;
     if (!b || !b.entity) return null;

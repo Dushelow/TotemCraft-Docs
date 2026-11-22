@@ -316,8 +316,7 @@ function botCard(b) {
   if (tab === 'persona') body = `
     <label>Характер (после сохранения начнётся новый чат)</label><textarea data-f="persona" rows="8">${esc(b.persona || '')}</textarea>
     <div class="row" style="margin-top:var(--s3)"><button data-a="savePersona" class="pri">${icon('check', 14)}Сохранить характер</button></div>`;
-  if (tab === 'map') body = `<canvas data-f="map" width="528" height="528" style="width:100%;image-rendering:pixelated;border-radius:var(--r2);background:var(--bg);border:1px solid var(--line)"></canvas>
-    <div class="muted" data-f="mapinfo">серое - суша, синее - вода, красное - лава, оранжевое - постройки; точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер. Бот в центре, север сверху.</div>`;
+  if (tab === 'map') body = `<div data-f="mapslot"></div>`;
   if (tab === 'server') body = `
     <div class="muted">Один раз выполнить на сервере (консоль или в игре от админа, с «/» в начале):</div>
     ${[['Аккаунт AuthMe', `authme register ${b.name} ${b.password}`], ['Если аккаунт уже есть - новый пароль', `authme changepassword ${b.name} ${b.password}`],
@@ -541,55 +540,179 @@ function renderFeatures() {
 $('features').addEventListener('change', (e) => { const k = e.target.dataset.part; if (k) act(() => T.feature({ part: k, on: e.target.checked }), null, (e.target.checked ? 'включено: ' : 'выключено: ') + PARTS.find((p) => p[0] === k)[1]); });
 
 // ---------- карта бота: чанки вокруг (бот в центре, север сверху)
+// ---------- карта бота (22.11: «дёргается и неудобная»). Холст живёт сам по себе и не пересоздаётся с карточкой;
+// чанки рисуются один раз в маленькие картинки и только переставляются; вид в координатах мира: тянуть мышью,
+// колесо - ближе/дальше, двойной щелчок или «К боту» - снова следить за ботом (плавно, без скачков по чанкам).
 const A64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-// Карта бота по блокам, как у Xaero: цвет верхнего блока, тень от разницы высот с соседом с севера, вода темнее с
-// глубиной. Чанки, которые бот видел до карты по блокам, - одним цветом (как раньше), пока он не пройдёт там снова.
-async function drawMap() {
-  const card = document.querySelector('.bot.sel'), cv = card && card.querySelector('[data-f="map"]');
-  if (!cv) return;
-  const v = await T.botMap(selected);
-  if (!v) return;
-  const n = v.r * 2 + 1, W = n * 16;
-  if (cv.width !== W) { cv.width = W; cv.height = W; }
-  const g = cv.getContext('2d'), img = g.createImageData(W, W), D = img.data;
-  for (let i = 3; i < D.length; i += 4) { D[i] = 255; D[i - 1] = 17; D[i - 2] = 18; D[i - 3] = 20; }
+const ZOOMS = [1, 2, 3, 4, 6, 8, 12];
+const POI_COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
+const ENT_COL = { enemy: '#ff4d4d', animal: '#f2f2f2', villager: '#58d68d', vehicle: '#a0703c', player: '#5fa8ff' };
+const MAP = { wrap: null, cv: null, tiles: new Map(), slices: new Map(), data: null, bot: '', dim: '', x: 0, z: 0, zoom: 3, follow: true, layer: 'auto', hover: null, drag: null, dirty: true, busy: false };
+function mapTile(colors, c) {
+  const [, , , k, built, px, hy, wd, my] = c;
+  const t = document.createElement('canvas'); t.width = t.height = 16;
+  const g = t.getContext('2d'), img = g.createImageData(16, 16), D = img.data;
   const OLD = { w: [47, 95, 158], l: [168, 56, 44], g: [74, 77, 82] };
-  for (const [x, z, k, built, px, hy, wd, my] of v.chunks) {
-    const ox = (x + v.r) * 16, oz = (z + v.r) * 16;
-    const hAt = (i) => { const hv = A64.indexOf(hy[i * 2]) * 64 + A64.indexOf(hy[i * 2 + 1]); return hv ? hv - 1 + my : null; };
-    for (let bz = 0; bz < 16; bz++) for (let bx = 0; bx < 16; bx++) {
-      const i = bz * 16 + bx, o = ((oz + bz) * W + ox + bx) * 4;
-      let c;
-      if (px) {
-        c = v.colors[A64.indexOf(px[i])] || [0, 0, 0];
-        let f = 1;
-        const h0 = hAt(i), hn = bz > 0 ? hAt(i - 16) : null;
-        if (h0 !== null && hn !== null) f = h0 > hn ? 1.15 : h0 < hn ? 0.82 : 1;
-        if (wd) { const d = A64.indexOf(wd[i]); if (d) f = 1.1 - Math.min(0.55, d * 0.05); }
-        c = [c[0] * f, c[1] * f, c[2] * f];
-      } else c = built >= 12 ? [200, 129, 58] : OLD[k] || OLD.g;
-      D[o] = c[0]; D[o + 1] = c[1]; D[o + 2] = c[2];
-    }
+  const hAt = (i) => { const hv = A64.indexOf(hy[i * 2]) * 64 + A64.indexOf(hy[i * 2 + 1]); return hv ? hv - 1 + my : null; };
+  for (let i = 0; i < 256; i++) {
+    let col;
+    if (px) {
+      col = colors[A64.indexOf(px[i])] || [0, 0, 0];
+      let f = 1;
+      const h0 = hy ? hAt(i) : null, hn = hy && i >= 16 ? hAt(i - 16) : null;
+      if (h0 !== null && hn !== null) f = h0 > hn ? 1.15 : h0 < hn ? 0.82 : 1;
+      if (wd) { const d = A64.indexOf(wd[i]); if (d) f = 1.1 - Math.min(0.55, d * 0.05); }
+      col = [col[0] * f, col[1] * f, col[2] * f];
+    } else col = built >= 12 ? [200, 129, 58] : OLD[k] || OLD.g;
+    D[i * 4] = col[0]; D[i * 4 + 1] = col[1]; D[i * 4 + 2] = col[2]; D[i * 4 + 3] = 255;
   }
   g.putImageData(img, 0, 0);
-  const COL = { 'сундуки': '#ffd23f', 'портал': '#b05cff', 'ферма': '#3ba55d', 'деревня': '#5fd3ff', 'кровать': '#ffffff', 'спавнер': '#ff4d4d', 'мастерская': '#ff9ff3' };
-  for (const [x, z, kind] of v.poi) { g.fillStyle = COL[kind] || '#bbb'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc((x + v.r) * 16 + 8, (z + v.r) * 16 + 8, 3.5, 0, 7); g.fill(); g.stroke(); }
-  // подписи мест (что назвал хозяин или запомнила сама)
-  g.font = '600 13px Segoe UI, sans-serif'; g.textAlign = 'center';
-  for (const [x, z, name] of v.labels || []) {
-    g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(x, z - 6); g.lineTo(x + 5, z); g.lineTo(x, z + 6); g.lineTo(x - 5, z); g.closePath(); g.fill();
-    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(name, x, z - 10); g.fillStyle = '#fff'; g.fillText(name, x, z - 10);
-  }
-  // радар: враги - красные, животные - белые, жители - зелёные, транспорт - коричневые, игроки - синие
-  const EC = { enemy: '#ff4d4d', animal: '#f2f2f2', villager: '#58d68d', vehicle: '#a0703c', player: '#5fa8ff' };
-  for (const [x, z, k] of v.ents || []) { g.fillStyle = EC[k] || '#ccc'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.rect(x - 2, z - 2, 5, 5); g.fill(); g.stroke(); }
-  // бот - белая точка с обводкой в своей клетке
-  const mx = v.r * 16 + (v.me ? v.me[0] : 8), mz = v.r * 16 + (v.me ? v.me[1] : 8);
-  g.fillStyle = '#fff'; g.strokeStyle = '#e5484d'; g.lineWidth = 2; g.beginPath(); g.arc(mx + 0.5, mz + 0.5, 5, 0, 7); g.fill(); g.stroke();
-  const info = card.querySelector('[data-f="mapinfo"]');
-  if (info) info.textContent = `${v.layer ? 'Показан ' + v.layer + ' (тёмное - стены, чёрное - обрыв). ' : ''}исследовано чанков: ${v.total}. Север сверху, бот - белая точка. Точки: жёлтая - сундуки, фиолетовая - портал, зелёная - ферма, голубая - деревня, белая - кровать, красная - спавнер. Квадратики: красные - враги, белые - животные, зелёные - жители, синие - игроки.`;
+  return t;
 }
-setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') drawMap(); }, 5000);
+function mapEnsure() {
+  if (MAP.wrap) return MAP.wrap;
+  const w = document.createElement('div');
+  w.className = 'mapw';
+  w.innerHTML = `<div class="mapbar"><button class="ghost sm" data-m="follow" title="Следить за ботом (двойной щелчок по карте)">${icon('bot', 13)}К боту</button>
+    <button class="ghost sm" data-m="in" title="Ближе (колесо мыши)">${icon('plus', 13)}</button><button class="ghost sm" data-m="out" title="Дальше (колесо мыши)">−</button>
+    <div class="seg"><button data-m="auto" title="Под землёй и в Незере - срез на высоте бота">Авто</button><button data-m="surface" title="Всегда поверхность сверху">Поверхность</button></div>
+    <span class="grow"></span><span class="muted" data-m="pos"></span></div>
+    <canvas class="mapc"></canvas>
+    <details class="maplegend"><summary class="muted">Что на карте</summary><div class="muted">Север сверху, бот - белая стрелка (куда смотрит). Круги: жёлтый - сундуки, фиолетовый - портал, зелёный - ферма, голубой - деревня, белый - кровать, красный - спавнер. Квадратики: красные - враги, белые - животные, зелёные - жители, синие - игроки. Ромбы с подписью - места из памяти. Тянуть мышью - двигать карту, колесо - ближе или дальше.</div></details>
+    <div class="muted" data-m="info"></div>`;
+  MAP.wrap = w; MAP.cv = w.querySelector('canvas');
+  const cv = MAP.cv;
+  const toWorld = (e) => { const r = cv.getBoundingClientRect(); return { x: MAP.x + (e.clientX - r.left - r.width / 2) / MAP.zoom, z: MAP.z + (e.clientY - r.top - r.height / 2) / MAP.zoom }; };
+  cv.addEventListener('mousedown', (e) => { MAP.drag = { x: e.clientX, y: e.clientY, mx: MAP.x, mz: MAP.z }; });
+  window.addEventListener('mouseup', () => { if (MAP.drag && !MAP.follow) mapFetch(); MAP.drag = null; });
+  cv.addEventListener('mousemove', (e) => {
+    if (MAP.drag) { const dx = e.clientX - MAP.drag.x, dy = e.clientY - MAP.drag.y; if (Math.abs(dx) + Math.abs(dy) > 3) MAP.follow = false; if (!MAP.follow) { MAP.x = MAP.drag.mx - dx / MAP.zoom; MAP.z = MAP.drag.mz - dy / MAP.zoom; } }
+    MAP.hover = toWorld(e); MAP.dirty = true;
+  });
+  cv.addEventListener('mouseleave', () => { MAP.hover = null; MAP.dirty = true; });
+  cv.addEventListener('dblclick', () => { MAP.follow = true; MAP.dirty = true; mapFetch(); });
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const before = toWorld(e), i = ZOOMS.indexOf(MAP.zoom), ni = Math.max(0, Math.min(ZOOMS.length - 1, i + (e.deltaY < 0 ? 1 : -1)));
+    if (ni === i) return;
+    MAP.zoom = ZOOMS[ni];
+    if (!MAP.follow) { const after = toWorld(e); MAP.x += before.x - after.x; MAP.z += before.z - after.z; }
+    MAP.dirty = true; mapFetch();
+  }, { passive: false });
+  w.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-m]'); if (!b) return;
+    const m = b.dataset.m, i = ZOOMS.indexOf(MAP.zoom);
+    if (m === 'follow') MAP.follow = true;
+    if (m === 'in') MAP.zoom = ZOOMS[Math.min(ZOOMS.length - 1, i + 1)];
+    if (m === 'out') MAP.zoom = ZOOMS[Math.max(0, i - 1)];
+    if (m === 'auto' || m === 'surface') { MAP.layer = m; try { localStorage.setItem('mapLayer', m); } catch {} }
+    MAP.dirty = true; mapFetch();
+  });
+  try { MAP.layer = localStorage.getItem('mapLayer') || 'auto'; MAP.zoom = +localStorage.getItem('mapZoom') || 3; } catch {}
+  if (!ZOOMS.includes(MAP.zoom)) MAP.zoom = 3;
+  new ResizeObserver(() => { MAP.dirty = true; }).observe(cv);
+  requestAnimationFrame(mapFrame);
+  return w;
+}
+async function mapFetch() {
+  if (MAP.busy || !MAP.wrap || !MAP.wrap.isConnected || !selected) return;
+  MAP.busy = true;
+  try {
+    if (MAP.bot !== selected) { MAP.bot = selected; MAP.tiles.clear(); MAP.follow = true; MAP.data = null; }
+    const cv = MAP.cv, r = Math.min(28, Math.ceil(Math.max(cv.clientWidth, cv.clientHeight) / MAP.zoom / 32) + 2);
+    const known = {};
+    for (const [k, t] of MAP.tiles) known[k] = t.t;
+    const v = await T.botMap({ name: selected, known, layer: MAP.layer, r, ...(MAP.follow ? {} : { cx: MAP.x, cz: MAP.z }) });
+    if (!v) return;
+    if (v.dim !== MAP.dim) { MAP.dim = v.dim; MAP.tiles.clear(); MAP.follow = true; MAP.data = null; return mapLater(); }
+    for (const c of v.chunks) { const k = c[0] + ',' + c[1]; if (c.length > 3) MAP.tiles.set(k, { t: c[2], img: mapTile(v.colors, c) }); }
+    MAP.slices = new Map(v.slice.map((s) => [s[0] + ',' + s[1], mapTile(v.colors, [s[0], s[1], 0, 'g', 0, s[2], s[3], '', s[4]])]));
+    if (!MAP.data) { MAP.x = v.me[0]; MAP.z = v.me[2]; }
+    MAP.data = v; MAP.dirty = true;
+  } catch {} finally { MAP.busy = false; }
+}
+function mapLater() { setTimeout(() => { MAP.busy = false; mapFetch(); }, 50); }
+function mapFrame() {
+  requestAnimationFrame(mapFrame);
+  const cv = MAP.cv, v = MAP.data;
+  if (!cv || !cv.isConnected || !v) return;
+  // плавно за ботом: центр подтягивается к нему, без скачков
+  if (MAP.follow) { const dx = v.me[0] - MAP.x, dz = v.me[2] - MAP.z; if (Math.abs(dx) + Math.abs(dz) > 0.05) { MAP.x += dx * 0.2; MAP.z += dz * 0.2; MAP.dirty = true; } }
+  if (!MAP.dirty) return;
+  MAP.dirty = false;
+  const dpr = window.devicePixelRatio || 1, Wc = cv.clientWidth, Hc = cv.clientHeight;
+  if (!Wc || !Hc) return;
+  if (cv.width !== Math.round(Wc * dpr) || cv.height !== Math.round(Hc * dpr)) { cv.width = Math.round(Wc * dpr); cv.height = Math.round(Hc * dpr); }
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0); g.imageSmoothingEnabled = false;
+  g.fillStyle = '#111214'; g.fillRect(0, 0, Wc, Hc);
+  const Z = MAP.zoom, sx = (x) => Wc / 2 + (x - MAP.x) * Z, sz = (z) => Hc / 2 + (z - MAP.z) * Z;
+  const c0x = Math.floor((MAP.x - Wc / 2 / Z) / 16), c1x = Math.floor((MAP.x + Wc / 2 / Z) / 16), c0z = Math.floor((MAP.z - Hc / 2 / Z) / 16), c1z = Math.floor((MAP.z + Hc / 2 / Z) / 16);
+  const under = !!v.layer;
+  for (let cx = c0x; cx <= c1x; cx++) for (let cz = c0z; cz <= c1z; cz++) {
+    const k = cx + ',' + cz, s = under && MAP.slices.get(k), t = MAP.tiles.get(k);
+    const img = s || (t && t.img);
+    if (!img) continue;
+    if (under && !s) g.globalAlpha = 0.35;   // под землёй: дальние чанки - поверхность бледно
+    const X = Math.round(sx(cx * 16)), Y = Math.round(sz(cz * 16));
+    g.drawImage(img, X, Y, Math.round(sx(cx * 16 + 16)) - X, Math.round(sz(cz * 16 + 16)) - Y);
+    g.globalAlpha = 1;
+  }
+  // точки мест: одна на клетку 10x10 пикселей одного вида (в городе сотни сундуков - иначе каша)
+  const seenPoi = new Set();
+  for (const [x, z, kind] of v.poi) {
+    const X = sx(x + 0.5), Y = sz(z + 0.5);
+    if (X < -8 || Y < -8 || X > Wc + 8 || Y > Hc + 8) continue;
+    const key = kind + ':' + Math.floor(X / 10) + ',' + Math.floor(Y / 10);
+    if (seenPoi.has(key)) continue; seenPoi.add(key);
+    g.fillStyle = POI_COL[kind] || '#bbb'; g.strokeStyle = '#000'; g.lineWidth = 1; g.beginPath(); g.arc(X, Y, Math.max(2.5, Z * 0.6), 0, 7); g.fill(); g.stroke();
+  }
+  for (const [x, z, k] of v.ents) { const s = Math.max(4, Z); g.fillStyle = ENT_COL[k] || '#ccc'; g.strokeStyle = '#000'; g.lineWidth = 1; g.fillRect(sx(x + 0.5) - s / 2, sz(z + 0.5) - s / 2, s, s); g.strokeRect(sx(x + 0.5) - s / 2, sz(z + 0.5) - s / 2, s, s); }
+  // подписи мест: без наложения (ближние к боту - первыми), мелким шрифтом
+  g.font = '600 12px Segoe UI, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom';
+  const boxes = [], me = v.me;
+  for (const [x, z, name] of [...v.labels].sort((a, c) => Math.hypot(a[0] - me[0], a[1] - me[2]) - Math.hypot(c[0] - me[0], c[1] - me[2]))) {
+    const X = sx(x + 0.5), Y = sz(z + 0.5);
+    if (X < -40 || Y < -20 || X > Wc + 40 || Y > Hc + 20) continue;
+    g.fillStyle = '#ffd23f'; g.beginPath(); g.moveTo(X, Y - 5); g.lineTo(X + 4, Y); g.lineTo(X, Y + 5); g.lineTo(X - 4, Y); g.closePath(); g.fill();
+    const tw = g.measureText(name).width, bx = { l: X - tw / 2 - 2, r: X + tw / 2 + 2, t: Y - 22, b: Y - 6 };
+    if (boxes.some((o) => o.l < bx.r && bx.l < o.r && o.t < bx.b && bx.t < o.b)) continue;
+    boxes.push(bx);
+    g.lineWidth = 3; g.strokeStyle = 'rgba(0,0,0,.85)'; g.strokeText(name, X, Y - 7); g.fillStyle = '#fff'; g.fillText(name, X, Y - 7);
+  }
+  // бот: стрелка по взгляду (в Minecraft вперёд = (-sin yaw, -cos yaw))
+  const bx = sx(me[0]), bz = sz(me[2]), yaw = me[3], fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+  g.save(); g.translate(bx, bz); g.rotate(Math.atan2(fz, fx) + Math.PI / 2);
+  g.fillStyle = '#fff'; g.strokeStyle = '#e5484d'; g.lineWidth = 2; g.beginPath(); g.moveTo(0, -8); g.lineTo(6, 6); g.lineTo(0, 3); g.lineTo(-6, 6); g.closePath(); g.fill(); g.stroke(); g.restore();
+  // масштаб и север
+  const len = [8, 16, 32, 64, 128].find((n) => n * Z >= 60) || 128;
+  g.fillStyle = 'rgba(0,0,0,.6)'; g.fillRect(8, Hc - 26, len * Z + 16, 20); g.fillStyle = '#fff'; g.fillRect(16, Hc - 14, len * Z, 2);
+  g.textAlign = 'left'; g.textBaseline = 'alphabetic'; g.font = '11px Segoe UI, sans-serif'; g.fillText(len + ' бл.', 18, Hc - 17);
+  g.textAlign = 'center'; g.font = '700 12px Segoe UI, sans-serif'; g.lineWidth = 3; g.strokeStyle = '#000'; g.strokeText('С', Wc - 14, 18); g.fillStyle = '#fff'; g.fillText('С', Wc - 14, 18);
+  // под курсором: координаты и что там
+  const pos = MAP.wrap.querySelector('[data-m="pos"]');
+  if (MAP.hover) {
+    const hx = Math.floor(MAP.hover.x), hz = Math.floor(MAP.hover.z), rr = Math.max(1, 6 / Z);
+    const near = (list) => list.find((q) => Math.abs(q[0] - hx) <= rr && Math.abs(q[1] - hz) <= rr && q[2]);
+    const what = near(v.ents.map((e) => [Math.floor(e[0]), Math.floor(e[1]), e[3] || e[2]])) || near(v.labels) || near(v.poi);
+    pos.textContent = `${hx} ${hz}${what ? ' - ' + what[2] : ''} (${Math.round(Math.hypot(hx - me[0], hz - me[2]))} бл. от бота)`;
+  } else pos.textContent = `бот: ${Math.floor(me[0])} ${Math.floor(me[1])} ${Math.floor(me[2])}`;
+  MAP.wrap.querySelectorAll('[data-m="auto"],[data-m="surface"]').forEach((b) => b.classList.toggle('on', b.dataset.m === MAP.layer));
+  MAP.wrap.querySelector('[data-m="follow"]').classList.toggle('on', MAP.follow);
+  const info = MAP.wrap.querySelector('[data-m="info"]');
+  const it = `${v.layer ? 'Сейчас: ' + v.layer + ' (тёмное - стены, чёрное - обрыв). ' : ''}Исследовано чанков: ${v.total}.`;
+  if (info.textContent !== it) info.textContent = it;
+  try { localStorage.setItem('mapZoom', String(MAP.zoom)); } catch {}
+}
+function drawMap() {
+  const slot = document.querySelector('.bot.sel [data-f="mapslot"]');
+  if (!slot) return;
+  const w = mapEnsure();
+  if (w.parentNode !== slot) slot.appendChild(w);
+  MAP.dirty = true;
+  mapFetch();
+}
+setInterval(() => { if ((botTab.get(selected) || 'log') === 'map') mapFetch(); }, 2000);
 
 // ---------- общий цикл
 async function refresh() {

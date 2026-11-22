@@ -515,7 +515,7 @@ ipcMain.handle('bot-pick', (_e, { name, pick }) => { const b = cfg.bots.find((x)
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон
 ipcMain.handle('debug-hear', (_e, { name, from, wav }) => { const l = live.get(name); if (!l || !l.body) return false; l.body.emit('speech', { from, pcm: fs.readFileSync(wav).subarray(44) }); return true; });
-ipcMain.handle('bot-map', (_e, name) => { const l = live.get(name); return l && l.body && worldMap ? worldMap.view(l.body) : null; });
+ipcMain.handle('bot-map', (_e, a) => { const name = typeof a === 'string' ? a : a && a.name; const l = live.get(name); return l && l.body && worldMap ? (typeof a === 'string' ? worldMap.view(l.body) : worldMap.mapView(l.body, a)) : null; });
 ipcMain.handle('bot-chatmode', (_e, { name, mode, aliases }) => {
   const b = cfg.bots.find((x) => x.name === name);
   if (!b) return false;
