@@ -2,6 +2,7 @@
 // код свой: удар только при полном откате оружия, только враждебные мобы, нейтральных, именованных и игроков не трогаем,
 // от крипера отходим, при малом здоровье уходим к хозяину. Блоки не ломаем.
 const { goals } = require('mineflayer-pathfinder');
+const { Vec3 } = require('vec3');
 
 // Нейтральные: бьём, только если сами напали на бота (злые пиглины и т.п. сюда попадают через hurtBy)
 const NEUTRAL = new Set(['zombified_piglin', 'piglin', 'enderman', 'wolf', 'iron_golem', 'snow_golem', 'llama', 'trader_llama',
@@ -85,6 +86,8 @@ class Guard {
       if (e.customName && !angry) continue;
       // защищаем: себя (до 8 блоков) и хозяина (моб в 6 блоках от него)
       const nearOwner = own && e.position.distanceTo(own.position) < 6;
+      // не видно (за стеной, под землёй) и не бьёт, не у хозяина - не гнаться: человек бы о нём не знал, а путь к нему - копать
+      if (!angry && !nearOwner && d > 3 && this.tb.seesEntity && !this.tb.seesEntity(e)) continue;
       if (d > 8 && !nearOwner) continue;
       // идём за хозяином и он отошёл - драться только с тем, кто бьёт сейчас (5 с) или рядом с хозяином
       if (this.tb.mode === 'follow' && own && own.position.distanceTo(me) > 6 && !nearOwner && !((this.hurtBy.get(e.id) || 0) > Date.now() - 5000) && this.prey !== e.id) continue;
@@ -124,10 +127,17 @@ class Guard {
       && (this.name(e) === 'warden' || swelling(e) || b.health <= 6 || (heard && this.name(e) === 'creeper' && e.position.distanceTo(heard) < 2)))
       || (heard ? { position: heard, name: 'creeper' } : null);
     if (scary) {
-      const away = me.minus(scary.position).normalize().scaled(10).plus(me);
-      if (!this.fleeing) { this.fleeing = true; tb.log('отбегаю от ' + this.name(scary)); }
-      b.setControlState('sprint', true);
-      b.pathfinder.setGoal(new goals.GoalNear(away.x, away.y, away.z, 2), false);
+      // куда: веер лучей по земле прочь от всех врагов рядом, мимо стен, обрывов и лавы (steer.js); раз в секунду,
+      // а не каждый тик. Уйти некуда - по-старому, прочь по прямой.
+      if (!this.fleeing || Date.now() - (this.fleeAt || 0) > 1000) {
+        this.fleeAt = Date.now();
+        const foes = Object.values(b.entities).filter((e) => e !== b.entity && e.position && e.position.distanceTo(me) < 10 && (FLEE.has(this.name(e)) || this.isHostile(e)));
+        const s = tb.steerAway ? tb.steerAway(foes.length ? foes : [scary], 10) : null;
+        const away = s ? new Vec3(s.x + 0.5, s.y, s.z + 0.5) : me.minus(scary.position).normalize().scaled(10).plus(me);
+        if (!this.fleeing) { this.fleeing = true; tb.log('отбегаю от ' + this.name(scary) + (s ? ` к ${s.x} ${s.z}` : '')); }
+        b.setControlState('sprint', true);
+        b.pathfinder.setGoal(new goals.GoalNear(away.x, away.y, away.z, s ? 1 : 2), false);
+      }
       return;
     }
     if (this.fleeing) { this.fleeing = false; b.setControlState('sprint', false); this.resume(); }
@@ -137,6 +147,11 @@ class Guard {
     if (t && (this.mode === 'flee' || b.health <= 6)) {
       const own = this.owner();
       if (own) b.pathfinder.setGoal(new goals.GoalFollow(own, 1), true);
+      else if (tb.steerAway && Date.now() - (this.fleeAt || 0) > 1000) {   // хозяина нет рядом - отойти от врагов с умом
+        this.fleeAt = Date.now();
+        const s = tb.steerAway([t], 12);
+        if (s) b.pathfinder.setGoal(new goals.GoalNear(s.x + 0.5, s.y, s.z + 0.5, 1), false);
+      }
       if (!this.fighting) { this.fighting = true; tb.log(b.health <= 6 ? 'мало здоровья, отступаю' : 'убегаю от ' + this.name(t)); }
       return;
     }

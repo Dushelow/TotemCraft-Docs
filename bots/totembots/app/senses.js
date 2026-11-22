@@ -19,9 +19,12 @@ class Senses {
       alive.add(e.id);
       const t = this.tracks.get(e.id);
       const kind = e.type === 'player' ? 'player' : this.isEnemy(e) ? 'enemy' : null;
-      if (t) { t.prevD = t.d; t.prev = t.pos; t.prevAt = t.at; }
-      this.tracks.set(e.id, { id: e.id, name: e.username || e.name, kind, pos: e.position.clone(), d, at: now, prev: t && t.pos, prevD: t ? t.d : d, prevAt: t ? t.at : now });
-      if (kind) this.memoryLive.set(e.id, { name: e.username || e.name, kind, pos: e.position.clone(), at: now, gone: false });
+      // скорость (бл./с) по прошлому положению; видно ли глазами (steer.js) - за стеной моб «слышен», а не «виден»
+      const dt = t ? Math.max(0.2, (now - t.at) / 1000) : 1;
+      const vx = t ? (e.position.x - t.pos.x) / dt : 0, vz = t ? (e.position.z - t.pos.z) / dt : 0;
+      const seen = kind === 'enemy' && this.seesEntity ? this.seesEntity(e) : true;
+      this.tracks.set(e.id, { id: e.id, name: e.username || e.name, kind, pos: e.position.clone(), d, at: now, prev: t && t.pos, prevD: t ? t.d : d, prevAt: t ? t.at : now, vx, vz, seen });
+      if (kind) this.memoryLive.set(e.id, { name: e.username || e.name, kind, pos: e.position.clone(), at: now, gone: false, vx, vz });
     }
     for (const [id, t] of this.tracks) if (!alive.has(id)) { this.tracks.delete(id); const m = this.memoryLive.get(id); if (m) m.gone = true; }
     for (const [id, m] of this.memoryLive) if (now - m.at > SEEN_MS) this.memoryLive.delete(id);
@@ -46,7 +49,7 @@ class Senses {
       if (!t.kind || t.prevD === undefined || t.at === t.prevAt) continue;
       const dd = t.d - t.prevD, secs = Math.max(0.5, (t.at - t.prevAt) / 1000), v = dd / secs;
       const side = this.sideOf ? this.sideOf(t.pos) : '';
-      if (t.kind === 'enemy' && v < -0.6 && t.d < 20) out.push({ w: 3 - t.d / 10, text: `${t.name} приближается ${side}, ${Math.round(t.d)} бл.` });
+      if (t.kind === 'enemy' && v < -0.6 && t.d < 20) out.push({ w: 3 - t.d / 10 - (t.seen === false ? 1 : 0), text: `${t.name} приближается ${side}${t.seen === false ? ' (за стеной, не вижу)' : ''}, ${Math.round(t.d)} бл.` });
       else if (t.kind === 'player' && Math.abs(v) > 1.5 && t.d < 32) out.push({ w: 1, text: `${t.name} ${v < 0 ? 'идёт к тебе' : 'уходит'} ${side}, ${Math.round(t.d)} бл.` });
     }
     return out.sort((a, c) => c.w - a.w).slice(0, 3).map((x) => x.text);
@@ -63,7 +66,7 @@ class Senses {
     let score = 0;
     for (const t of (this.tracks || new Map()).values()) {
       if (t.kind !== 'enemy' || t.d > 24) continue;
-      score += (W[t.name] || 1.5) * (t.d < 6 ? 2 : t.d < 12 ? 1 : 0.4) * (t.prevD !== undefined && t.d < t.prevD - 0.5 ? 1.3 : 1);
+      score += (W[t.name] || 1.5) * (t.d < 6 ? 2 : t.d < 12 ? 1 : 0.4) * (t.prevD !== undefined && t.d < t.prevD - 0.5 ? 1.3 : 1) * (t.seen === false && t.d > 6 ? 0.35 : 1);
     }
     const tod = b.time && b.time.timeOfDay, night = tod !== undefined && tod > 13000 && tod < 23000;
     if (night && /overworld/.test(b.game.dimension || '')) score += 1;
@@ -77,7 +80,8 @@ class Senses {
     for (const m of (this.memoryLive || new Map()).values()) {
       if (!m.gone) continue;
       const mins = Math.round((now - m.at) / 60000);
-      out.push(`${m.name} ${m.kind === 'enemy' ? '(враг) ' : ''}был у ${Math.floor(m.pos.x)} ${Math.floor(m.pos.y)} ${Math.floor(m.pos.z)} ${mins ? mins + ' мин назад' : 'только что'}`);
+      const go = Math.hypot(m.vx || 0, m.vz || 0) > 0.8 ? ', шёл на ' + (Math.abs(m.vx) > Math.abs(m.vz) ? (m.vx > 0 ? 'восток' : 'запад') : (m.vz > 0 ? 'юг' : 'север')) : '';
+      out.push(`${m.name} ${m.kind === 'enemy' ? '(враг) ' : ''}был у ${Math.floor(m.pos.x)} ${Math.floor(m.pos.y)} ${Math.floor(m.pos.z)}${go} ${mins ? mins + ' мин назад' : 'только что'}`);
     }
     return out.slice(-4);
   }

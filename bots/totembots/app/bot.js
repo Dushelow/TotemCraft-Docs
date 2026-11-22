@@ -156,7 +156,9 @@ class TotemBot extends EventEmitter {
         let foe = 1;
         for (const t of (this.tracks || new Map()).values()) {
           if (t.kind !== 'enemy' || t.d > 24) continue;
-          const dd = Math.hypot(t.pos.x - x - 0.5, t.pos.z - z - 0.5);
+          // где сейчас и где будет через секунду (как сети занятости у автопилота: не что это, а куда движется)
+          const ahead = t.vx !== undefined ? Math.hypot(t.pos.x + t.vx - x - 0.5, t.pos.z + t.vz - z - 0.5) : Infinity;
+          const dd = Math.min(Math.hypot(t.pos.x - x - 0.5, t.pos.z - z - 0.5), ahead);
           if (dd < 2 && Math.abs(t.pos.y - y) < 3) foe = Math.max(foe, t.name === 'creeper' ? 6 : 2.5); else if (dd < 4 && Math.abs(t.pos.y - y) < 3) foe = Math.max(foe, t.name === 'creeper' ? 3 : 1.4);
         }
         if (foe > 1) return foe;
@@ -238,6 +240,7 @@ class TotemBot extends EventEmitter {
     });
     bot.on('kicked', (r) => { this.kickReason = this.reason(r); this.log('кикнули: ' + this.kickReason); });
     if (this.partOn('hearing')) this.listen(bot);   // слух (hearing.js)
+    if (this.partOn('balance')) this.balanceAttach(bot);   // равновесие после толчка (steer.js)
     // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
     bot.on('blockUpdate', (o, n) => {
       try {
@@ -1602,7 +1605,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 
