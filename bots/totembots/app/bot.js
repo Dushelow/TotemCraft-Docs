@@ -1408,6 +1408,24 @@ class TotemBot extends EventEmitter {
           // вверх не лезется (люк, потолок) - выход сбоку, как игрок: с последней ступеньки прыгнуть на блок рядом
           // (23.11: поднялся до 68 и дёргался под люком, а выход был сбоку)
           this._sideTried = true;
+          // приём игрока (23.11, владелец): верхняя ступенька срублена - идти вперёд в стену с лестницей, встать на верх
+          // лестницы, затем прыжком вперёд на блок выше. Сторона стены - обратная направлению лестницы
+          {
+            let top = null;
+            for (let yy = fy + 1; yy >= fy - 3; yy--) { const k = b.blockAt(new Vec3(x, yy, z)); if (k && k.name === 'ladder') { top = k; break; } }
+            const F = top && { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] }[top.getProperties().facing];
+            if (F) {
+              const [wx, wz] = F;
+              this.log(`наверх не лезется - встаю на лестницу и прыгаю вперёд (${wx},${wz})`);
+              await b.lookAt(new Vec3(x + 0.5 + wx * 2, fy + 2.5, z + 0.5 + wz * 2), true);
+              ctl('forward', true); ctl('jump', true);
+              const t1 = Date.now(), y0 = b.entity.position.y;
+              while (Date.now() - t1 < 3000) { await sleep(50); const q = b.entity.position; if (b.entity.onGround && (Math.floor(q.x) !== x || Math.floor(q.z) !== z) && q.y > y0 + 0.5) break; }
+              ctl('forward', false); ctl('jump', false);
+              const q = b.entity.position;
+              if (Math.floor(q.x) !== x || Math.floor(q.z) !== z) return `поднялся по лестнице и вышел на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
+            }
+          }
           for (const dy of [0, 1, -1]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const fl = b.blockAt(new Vec3(x + ax, fy + dy, z + az)), s1 = b.blockAt(new Vec3(x + ax, fy + dy + 1, z + az)), s2 = b.blockAt(new Vec3(x + ax, fy + dy + 2, z + az));
             if (!fl || fl.boundingBox !== 'block' || CL.test(fl.name) || !s1 || (s1.boundingBox !== 'empty' && !/_trapdoor$|_carpet$/.test(s1.name)) || !s2 || s2.boundingBox !== 'empty') continue;
