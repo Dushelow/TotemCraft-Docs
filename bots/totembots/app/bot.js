@@ -1507,7 +1507,15 @@ class TotemBot extends EventEmitter {
       }
       // кнопка, рычаг, плита у прохода
       if (!moved) {
-        try { const m = await this.useMechanism({ x: best.x, y: best.y, z: best.z }, tok); if (m) { done.push(m); moved = true; } } catch (e) { if (this.isCancel(e)) throw e; }
+        try {
+          const m = await this.useMechanism({ x: best.x, y: best.y, z: best.z }, tok);
+          if (m) {
+            done.push(m); moved = true;
+            // проход открылся на секунду (плита, кнопка) - сразу к лестнице за ним, без похода к дальнему выходу (23.11:
+            // встал на плиту у двери, пошёл в другую сторону - дверь закрылась)
+            try { const c = await this.climbLadder({ dir: 'up', toward: { x: best.x, z: best.z } }, tok); if (/поднялся/.test(c)) done.push(c); } catch (e) { if (this.isCancel(e)) throw e; }
+          }
+        } catch (e) { if (this.isCancel(e)) throw e; }
       }
       // ничего не сдвинулось - следующий выход
       if (!moved) { cand.shift(); while (cand.length && cand[0].distanceTo(best) < 8) cand.shift(); if (!cand.length) break; best = cand[0]; }
