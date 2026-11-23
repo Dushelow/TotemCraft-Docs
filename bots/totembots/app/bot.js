@@ -1468,14 +1468,28 @@ class TotemBot extends EventEmitter {
     const p0 = b.entity.position.floored();
     if (sky(p0.x, p0.y, p0.z)) return 'я и так под открытым небом';
     // ближайший выход: клетки под небом, куда можно встать, в 48 бл.; порядок - по расстоянию, до 6 попыток
-    const cand = b.findBlocks({ matching: (bl) => bl.boundingBox === 'block', maxDistance: 48, count: 3000 })
-      .map((q) => q.offset(0, 1, 0))
-      .filter((q) => { const s1 = b.blockAt(q), s2 = b.blockAt(q.offset(0, 1, 0)); return s1 && s2 && s1.boundingBox === 'empty' && s2.boundingBox === 'empty' && !/water|lava/.test(s1.name) && sky(q.x, q.y - 1, q.z); })
-      .sort((u, v) => u.distanceTo(p0) - v.distanceTo(p0));
+    // поверхность по столбам вокруг (как карта высот): сверху вниз до первого твёрдого - над ним небо. Под землёй
+    // «ближайшие твёрдые блоки» - вся толща камня, до поверхности поиск не доставал (23.11: «пробовал 0»)
+    const cand = [];
+    for (let r = 2; r <= 48; r += 2) for (let dx = -r; dx <= r; dx += 2) for (let dz = -r; dz <= r; dz += 2) {
+      if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+      const x = p0.x + dx, z = p0.z + dz;
+      for (let y = Math.min(p0.y + 70, 318); y > p0.y - 6; y--) {
+        const k = b.blockAt(new Vec3(x, y, z)); if (!k) break;
+        if (k.boundingBox === 'block' || /water|lava/.test(k.name)) {
+          const s1 = b.blockAt(new Vec3(x, y + 1, z)), s2 = b.blockAt(new Vec3(x, y + 2, z));
+          if (k.boundingBox === 'block' && s1 && s2 && s1.boundingBox === 'empty' && s2.boundingBox === 'empty' && !/lava|fire|magma|cactus/.test(k.name)) cand.push(new Vec3(x, y + 1, z));
+          break;
+        }
+      }
+      if (cand.length >= 400) break;
+    }
+    // ближе по горизонтали и по высоте - раньше
+    cand.sort((u, v) => (Math.hypot(u.x - p0.x, u.z - p0.z) + Math.abs(u.y - p0.y) * 0.5) - (Math.hypot(v.x - p0.x, v.z - p0.z) + Math.abs(v.y - p0.y) * 0.5));
     const tried = [];
     for (const q of cand) {
-      if (tried.length >= 6) break;
-      if (tried.some((t) => t.distanceTo(q) < 6)) continue;
+      if (tried.length >= 8) break;
+      if (tried.some((t) => t.distanceTo(q) < 8)) continue;
       tried.push(q);
       try {
         await this.goto(new goals.GoalNear(q.x, q.y, q.z, 1), tok, 45000);
