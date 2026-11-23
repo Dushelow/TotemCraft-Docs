@@ -307,6 +307,30 @@ function install(mv, bot) {
   // Плавание под водой (22.11: «только над водой плавает, а под водой не может»): модуль пути под воду не ходит совсем
   // («dont go underwater»). Здесь ходы сквозь толщу воды во все стороны и вверх-вниз; ведёт их swim.js (рывком, в позе
   // плавания), воздух кончается - всплывает. Глубже поверхности - дороже, чтобы без нужды не нырял.
+  // Вниз по лестнице на суше (23.11: второй этаж, лаз с лестницей в полу - ходил вокруг дыры). Столб лестницы под ногами
+  // или рядом - сойти в него и спуститься до пола. Ведёт обычная ходьба: в столбе лестницы тело само сползает вниз
+  function ladderDownMoves(node, have) {
+    const out = [];
+    const CL = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant|scaffolding)$/;
+      // вниз по лестнице (23.11: второй этаж, спуск лазом с лестницей - ходил вокруг дыры): столб лестницы под ногами или
+      // рядом в проёме - сойти в него и спуститься до пола, сколько бы этажей
+      for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = node.x + ax, z = node.z + az;
+        if ((ax || az) && (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
+        let y = node.y - 1;
+        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
+        let n = 0;
+        // лестница - тонкая рамка, тоже «boxes»: считать пустой. Пол - твёрдое и не лестница
+        const isCL = (yy) => CL.test((blk(x, yy, z) || {}).name || '');
+        const free = (yy) => isCL(yy) || !cell(x, yy, z).boxes.length;
+        while (n < 40 && free(y) && free(y - 1)) { y--; n++; }
+        if (n < 1 || !free(y) || cell(x, y - 1, z).bad || !cell(x, y - 1, z).boxes.length) continue;
+        const k = `${x},${y},${z}`; if (have.has(k)) continue;
+        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.6, [], []); out.push(m);
+      }
+    return out;
+  }
+
   function swimMoves(node, have) {
     const out = [];
     if (mv.navSwim === false || !waterAt(node.x, node.y, node.z)) return out;
@@ -336,22 +360,6 @@ function install(mv, bot) {
         if ((ax || az) && cell(x, node.y + 1, z).boxes.length && !CL.test((blk(x, node.y + 1, z) || {}).name || '')) continue;
         have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 1.5 + up * 0.5, [], []); m.swim = true; out.push(m); break;
       }
-      // вниз по лестнице (23.11: второй этаж, спуск лазом с лестницей - ходил вокруг дыры): столб лестницы под ногами или
-      // рядом в проёме - сойти в него и спуститься до пола, сколько бы этажей
-      for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
-        const x = node.x + ax, z = node.z + az;
-        if ((ax || az) && (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
-        let y = node.y - 1;
-        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
-        let n = 0;
-        // лестница - тонкая рамка, тоже «boxes»: считать пустой. Пол - твёрдое и не лестница
-        const isCL = (yy) => CL.test((blk(x, yy, z) || {}).name || '');
-        const free = (yy) => isCL(yy) || !cell(x, yy, z).boxes.length;
-        while (n < 40 && free(y) && free(y - 1)) { y--; n++; }
-        if (n < 1 || !free(y) || cell(x, y - 1, z).bad || !cell(x, y - 1, z).boxes.length) continue;
-        const k = `${x},${y},${z}`; if (have.has(k)) continue;
-        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.6, [], []); m.swim = true; out.push(m);
-      }
     }
     for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0], [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1], [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1], [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1]]) {
       const nx = node.x + dx, ny = node.y + dy, nz = node.z + dz, k = `${nx},${ny},${nz}`;
@@ -371,7 +379,7 @@ function install(mv, bot) {
     let r;
     try { r = navNeighbors(node); } catch (e) { if (bot && bot._tb && bot._tb.fault) bot._tb.fault('nav', e); r = base(node); }
     try {
-      const have = new Set(r.map((m) => `${m.x},${m.y},${m.z}`)), extra = swimMoves(node, have);
+      const have = new Set(r.map((m) => `${m.x},${m.y},${m.z}`)), extra = swimMoves(node, have).concat(ladderDownMoves(node, have));
       // под лианой или лестницей (начинается на уровне головы) - прыжок вверх в неё: лезть можно, только когда
       // ноги в лиане (так в игре), а модуль пути без этого считал, что вверх нельзя
       const CLB = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/;
