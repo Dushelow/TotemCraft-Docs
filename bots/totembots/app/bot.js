@@ -780,7 +780,23 @@ class TotemBot extends EventEmitter {
     const dir = swim ? 'forward' : 'back';
     // в воде у уступа - лицом к следующей точке пути, потом рывок вперёд с прыжком (23.11: у секретной двери плыл в
     // течении, жал «вперёд» не туда и 30 с не мог выйти на блок выше)
-    if (swim) { const nx = ((this.lastPath || {}).path || []).find((n) => Math.hypot(n.x + 0.5 - p.x, n.z + 0.5 - p.z) > 0.6); if (nx) { try { b.lookAt(new Vec3(nx.x + 0.5, nx.y + 1, nx.z + 0.5), true); } catch {} b.setControlState('sprint', true); setTimeout(() => { try { b.setControlState('sprint', false); } catch {} }, 900); } }
+    if (swim) {
+      // иду за хозяином и застрял в воде - его следом, под водой (23.11: всплывал в течении и не входил в проём)
+      if (this.mode === 'follow' && this.followName && !this._trailBusy) {
+        this._trailBusy = true; try { b.pathfinder.setGoal(null); } catch {}
+        this.walkTrail(this.followName).then((m) => { if (m) this.log(m); }).catch(() => {}).finally(() => { this._trailBusy = false; });
+        return;
+      }
+      const nx = ((this.lastPath || {}).path || []).find((n) => Math.hypot(n.x + 0.5 - p.x, n.z + 0.5 - p.z) > 0.6);
+      if (nx) {
+        // точка пути не выше ног - не прыгать (прыжок в воде = всплыть, течение сносит): вперёд, ниже - с приседом
+        const lower = nx.y <= p.y - 0.3;
+        try { b.lookAt(new Vec3(nx.x + 0.5, nx.y + 0.5, nx.z + 0.5), true); } catch {}
+        b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('sneak', lower); b.setControlState('jump', !lower && nx.y > p.y + 0.4);
+        setTimeout(() => { try { for (const k of ['sprint', 'forward', 'sneak', 'jump']) b.setControlState(k, false); if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 1200);
+        return;
+      }
+    }
     b.setControlState('jump', true);
     b.setControlState(dir, true);
     setTimeout(() => { try { b.setControlState('jump', false); b.setControlState(dir, false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
@@ -1286,7 +1302,7 @@ class TotemBot extends EventEmitter {
     const b = this.bot, T = (this._trail || []).filter((t) => t.who === who && Date.now() - t.at < 10 * 60000);
     if (T.length < 3) return '';
     const me = b.entity.position;
-    let i = -1, best = 4;   // ближайшая точка следа рядом (до 4 бл.), с неё и идти
+    let i = -1, best = 6;   // ближайшая точка следа рядом (до 6 бл.), с неё и идти
     T.forEach((t, k) => { const d = t.p.distanceTo(me); if (d < best) { best = d; i = k; } });
     if (i < 0) return '';
     this.log(`к ${who} пути нет - иду его следом (${T.length - i} точек)`);
