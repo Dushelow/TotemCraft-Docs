@@ -1850,6 +1850,9 @@ class TotemBot extends EventEmitter {
           case 'rail': r = await this.rail(a, tok); break;
           case 'brew': r = await this.brew(a, tok); break;
           case 'smith': r = await this.smith(a, tok); break;
+          case 'stonecut': r = await this.stonecut(a, tok); break;
+          case 'loom': r = await this.loom(a, tok); break;
+          case 'trim': r = await this.trim(a, tok); break;
           case 'link': r = this.link(a); break;
           case 'howTo': r = this.howTo(a); break;
           case 'prepare': r = await this.prepare(a, tok); break;

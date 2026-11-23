@@ -258,6 +258,72 @@ class Mechanics {
     return `улучшил ${base.name} -> ${base.name.replace('diamond', 'netherite')}`;
   }
 
+  // ---------------- камнерез, ткацкий станок, отделка брони (особые окна)
+  async _station(name, tok) {
+    const b = this.bot, { goals } = require('mineflayer-pathfinder');
+    const st = b.findBlock({ matching: (bl) => bl.name === name, maxDistance: 16 });
+    if (!st) throw new Error(`рядом нет ${name}`);
+    if (st.position.distanceTo(b.entity.position) > 3.5) await this.goto(new goals.GoalNear(st.position.x, st.position.y, st.position.z, 2), tok, 30000);
+    return b.openBlock(b.blockAt(st.position));
+  }
+  async _put(win, name, dest, all) {
+    const b = this.bot, i = win.slots.findIndex((s2, k) => k >= win.inventoryStart && s2 && s2.name === name);
+    if (i < 0) throw new Error('нет ' + name);
+    if (all) return b.moveSlotItem(i, dest);
+    await b.clickWindow(i, 0, 0); await b.clickWindow(dest, 1, 0); await b.clickWindow(i, 0, 0);
+  }
+  async _take(win, slot) {
+    const free = win.slots.findIndex((s2, k) => k >= win.inventoryStart && !s2);
+    await this.bot.moveSlotItem(slot, free >= 0 ? free : win.inventoryStart); await sleep(300);
+  }
+  /** Камнерез: из блока (stone, cobblestone...) нужное (stone_bricks, stone_slab...): перебор кнопок, пока не выйдет нужное. */
+  async stonecut(a, tok) {
+    const want = String(a.item || '').replace(/^minecraft:/, ''), from = String(a.from || '').replace(/^minecraft:/, '');
+    const b = this.bot, src = from || (b.inventory.items().find((i) => /stone|cobble|brick|deepslate|tuff|andesite|diorite|granite|sandstone|copper|quartz|prismarine|purpur|blackstone|basalt/.test(i.name)) || {}).name;
+    if (!src) throw new Error('нечего резать: нужен камень');
+    const win = await this._station('stonecutter', tok);
+    let made = 0;
+    try {
+      await this._put(win, src, 0, true);
+      for (let k = 0; k < 40 && !made; k++) {
+        b._client.write('enchant_item', { windowId: win.id, enchantment: k }); await sleep(150);
+        const r = win.slots[1]; if (r && r.name === want) { await this._take(win, 1); made = r.count; }
+      }
+      await this._take(win, 0).catch(() => {});
+    } finally { try { win.close(); } catch {} }
+    if (!made) throw new Error(`из ${src} камнерез не делает ${want}`);
+    return `камнерез: ${src} -> ${want}`;
+  }
+  /** Ткацкий станок: флаг + краситель (+ узор-предмет) -> узор номер n (0..). */
+  async loom(a, tok) {
+    const b = this.bot, banner = b.inventory.items().find((i) => /_banner$/.test(i.name)), dye = b.inventory.items().find((i) => /_dye$/.test(i.name) && (!a.dye || i.name.includes(a.dye)));
+    if (!banner || !dye) throw new Error('нужны флаг и краситель');
+    const win = await this._station('loom', tok);
+    try {
+      await this._put(win, banner.name, 0); await this._put(win, dye.name, 1);
+      const pat = b.inventory.items().find((i) => /_banner_pattern$/.test(i.name)); if (pat) await this._put(win, pat.name, 2);
+      b._client.write('enchant_item', { windowId: win.id, enchantment: Math.max(0, +a.pattern || 0) }); await sleep(400);
+      if (!win.slots[3]) throw new Error('станок не дал флаг');
+      await this._take(win, 3);
+    } finally { try { win.close(); } catch {} }
+    return `флаг с узором №${+a.pattern || 0} готов`;
+  }
+  /** Отделка брони: шаблон отделки + броня + материал (железо, золото, изумруд...). */
+  async trim(a, tok) {
+    const b = this.bot, inv = b.inventory.items();
+    const tpl = inv.find((i) => /_armor_trim_smithing_template$/.test(i.name)), arm = inv.find((i) => /_(helmet|chestplate|leggings|boots)$/.test(i.name) && (!a.item || i.name.includes(a.item)));
+    const mat = inv.find((i) => /^(iron_ingot|gold_ingot|copper_ingot|netherite_ingot|diamond|emerald|lapis_lazuli|redstone|quartz|amethyst_shard|resin_brick)$/.test(i.name) && (!a.material || i.name.includes(a.material)));
+    if (!tpl || !arm || !mat) throw new Error('нужны шаблон отделки, броня и материал (слиток, алмаз, изумруд...)');
+    const win = await this._station('smithing_table', tok);
+    try {
+      await this._put(win, tpl.name, 0); await this._put(win, arm.name, 1); await this._put(win, mat.name, 2);
+      for (let k = 0; k < 20 && !win.slots[3]; k++) await sleep(150);
+      if (!win.slots[3]) throw new Error('стол не дал результат');
+      await this._take(win, 3);
+    } finally { try { win.close(); } catch {} }
+    return `отделка: ${arm.name} (${tpl.name.replace('_armor_trim_smithing_template', '')}, ${mat.name})`;
+  }
+
   // ---------------- варка зелий
   async brew(a, tok) {
     const b = this.bot, n = Math.max(1, Math.min(3, +a.count || 3));
