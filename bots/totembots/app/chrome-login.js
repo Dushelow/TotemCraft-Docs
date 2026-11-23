@@ -111,7 +111,22 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
 // отладки, ждём вход, забираем куки и признак входа так же, как у Chrome.
 const FF = ['C:\Program Files\Mozilla Firefox\firefox.exe', 'C:\Program Files (x86)\Mozilla Firefox\firefox.exe',
   path.join(process.env.LOCALAPPDATA || '', 'Mozilla Firefox\firefox.exe')];
-function findFirefox() { return FF.find((p) => p && fs.existsSync(p)); }
+function findFirefox() {
+  const hit = FF.find((p) => p && fs.existsSync(p));
+  if (hit) return hit;
+  // стоит не в обычной папке (другой диск, своя папка, 23.11 у друга) - путь из реестра Windows
+  const { execSync } = require('child_process');
+  for (const k of ['HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe', 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe',
+    'HKLM\SOFTWARE\Clients\StartMenuInternet\FIREFOX.EXE\shell\open\command', 'HKLM\SOFTWARE\WOW6432Node\Clients\StartMenuInternet\FIREFOX.EXE\shell\open\command']) {
+    try {
+      const out = execSync(`reg query "${k}" /ve`, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
+      const m = out.match(/REG_SZ\s+"?([^"\r\n]+?firefox\.exe)/i);
+      if (m && fs.existsSync(m[1])) return m[1];
+    } catch {}
+  }
+  try { const w = require('child_process').execSync('where firefox', { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).split(/\r?\n/)[0].trim(); if (w && fs.existsSync(w)) return w; } catch {}
+  return null;
+}
 async function loginViaFirefox(profileDir, onStatus, S) {
   fs.mkdirSync(profileDir, { recursive: true });
   const proc = spawn(findFirefox(), ['-profile', profileDir, '-no-remote', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
