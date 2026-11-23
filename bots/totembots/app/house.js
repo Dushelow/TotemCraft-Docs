@@ -117,6 +117,12 @@ class House {
         if (temp < 0.15 || /snowy|frozen|ice_spikes|grove|jagged_peaks|frozen_peaks|snowy_slopes/.test(name)) return 'снег';
       }
     } catch {}
+    // биом не пришёл (26.x через Via - бывает пусто): снег лежит вокруг, трава заснежена - значит, идёт снег (23.11:
+    // назвал снег дождём)
+    try {
+      const n = b.findBlocks({ matching: (bl) => bl.name === 'snow' || bl.name === 'powder_snow' || (bl.name === 'grass_block' && bl.getProperties && (bl.getProperties().snowy === true || bl.getProperties().snowy === 'true')), maxDistance: 8, count: 6 }).length;
+      if (n >= 4) return 'снег';
+    } catch {}
     return 'дождь';
   }
 

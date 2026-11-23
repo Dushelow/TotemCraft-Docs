@@ -282,7 +282,7 @@ class Companion {
     // (22.11: зашла на сервер - «о, дождь пошёл», а дождя нет)
     const rain = !!(this.precip && this.precip());
     if (C.wasRain === undefined || now - (this.onlineAt || 0) < 20000) C.wasRain = rain;
-    else if (rain && !C.wasRain) { C.wasRain = true; if (say((b.thunderState || 0) > 0.3 ? 'гроза' : 'дождь')) return; }
+    else if (rain && !C.wasRain) { C.wasRain = true; if (say((b.thunderState || 0) > 0.3 ? 'гроза' : (this.precip && this.precip() === 'снег') ? 'снег' : 'дождь')) return; }
     else if (!rain) C.wasRain = false;
     if (b.health <= 8 && (C.prevHp || 20) > 8 && say('ранена')) { C.prevHp = b.health; return; }
     C.prevHp = b.health;

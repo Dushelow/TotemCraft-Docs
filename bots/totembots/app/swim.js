@@ -105,6 +105,18 @@ function steer(tb, dx, dy, dz, head, go) {
     face(tb, dx, want, dz, 1);
     return;
   }
+  // против течения (23.11, секретная дверь: проход отдаёт воду наружу) - жмёт «вперёд» и стоит: плыть быстро, рывком,
+  // нырнув на полблока, без прыжка (прыжок поднимал его, и поток сносил дальше)
+  {
+    const hv = Math.hypot(e.velocity.x, e.velocity.z), now = Date.now();
+    if (b.getControlState('forward') && hv < 0.03) tb._against = tb._against || now; else if (hv > 0.08) tb._against = 0;
+    if (tb._against && now - tb._against > 700) {
+      b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('jump', false); b.setControlState('sneak', true);
+      face(tb, dx, -0.4, dz, 1);
+      if (!tb._againstSaid || now - tb._againstSaid > 10000) { tb._againstSaid = now; tb.log('течение держит - плыву рывком под водой'); }
+      return;
+    }
+  }
   b.setControlState('sprint', false);
   if (travel && !head) {
     // в путь, а голова над водой: без прыжка тело оседает, глаза уходят под воду - дальше поза плавания
