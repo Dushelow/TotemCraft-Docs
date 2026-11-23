@@ -1358,7 +1358,7 @@ class TotemBot extends EventEmitter {
     const me = b.entity.position.floored();
     // до 24 бл.: лестница бывает за дверью, в соседней комнате (23.11: «лестницы рядом не вижу», а она в 10 бл.)
     const col = b.findBlocks({ matching: (bl) => CL.test(bl.name), maxDistance: 24, count: 400 })
-      .filter((p) => up ? Math.abs(p.y - me.y) <= 2 : p.y < me.y && p.y >= me.y - 3)
+      .filter((p) => up ? Math.abs(p.y - me.y) <= 2 && p.y >= me.y - 1 && CL.test((b.blockAt(p.offset(0, 1, 0)) || {}).name || '') && CL.test((b.blockAt(p.offset(0, 2, 0)) || {}).name || '') : p.y < me.y && p.y >= me.y - 3)
       // есть цель - лестница, чей столб ближе к ней (23.11: полез по ближайшей - в автофермы, а в город вела другая)
       .sort((u, v) => a.toward ? (Math.hypot(u.x - a.toward.x, u.z - a.toward.z) + u.distanceTo(me) * 0.5) - (Math.hypot(v.x - a.toward.x, v.z - a.toward.z) + v.distanceTo(me) * 0.5) : u.distanceTo(me) - v.distanceTo(me))[0];
     if (!col) return 'лестницы рядом не вижу (24 бл.)';
@@ -1399,7 +1399,7 @@ class TotemBot extends EventEmitter {
                 break;
               }
             }
-            return `поднялся по лестнице до ${Math.floor(b.entity.position.y)}${opened ? `, открыл люков: ${opened}` : ''}`;
+            return (await this.afterClimb(tok)) + `поднялся по лестнице до ${Math.floor(b.entity.position.y)}${opened ? `, открыл люков: ${opened}` : ''}`;
           }
           // наверху, но не на полу - шаг на соседнюю клетку повыше (из лаза на пол)
           if (!climbable(here) && !climbable(above)) {
@@ -1433,7 +1433,7 @@ class TotemBot extends EventEmitter {
               while (Date.now() - t1 < 3000) { await sleep(50); const q = b.entity.position; if (b.entity.onGround && (Math.floor(q.x) !== x || Math.floor(q.z) !== z) && q.y > y0 + 0.5) break; }
               ctl('forward', false); ctl('jump', false);
               const q = b.entity.position;
-              if (Math.floor(q.x) !== x || Math.floor(q.z) !== z) return `поднялся по лестнице и вышел на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
+              if (Math.floor(q.x) !== x || Math.floor(q.z) !== z) return (await this.afterClimb(tok)) + `поднялся по лестнице и вышел на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
             }
           }
           for (const dy of [0, 1, -1]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -1446,7 +1446,7 @@ class TotemBot extends EventEmitter {
             while (Date.now() - t1 < 2000) { await sleep(50); const q = b.entity.position; if (b.entity.onGround && Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) break; }
             ctl('forward', false); ctl('jump', false);
             const q = b.entity.position;
-            if (Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) return `поднялся по лестнице и вышел сбоку на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
+            if (Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) return (await this.afterClimb(tok)) + `поднялся по лестнице и вышел сбоку на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
           }
           // вбок некуда - тогда люк над головой: открыть и лезть дальше
           if (await hatchOpen(fy + 2) || await hatchOpen(fy + 1)) { opened++; this._sideTried = false; }
@@ -1485,6 +1485,13 @@ class TotemBot extends EventEmitter {
     try { const m = await this.climbLadder({ dir: 'up' }, tok); const f = b.entity.position.floored(); if (sky(f.x, f.y, f.z)) return m + ', я снаружи'; } catch (e) { if (this.isCancel(e)) throw e; }
     const f = b.entity.position.floored();
     return sky(f.x, f.y, f.z) ? `вышел наружу: ${f.x} ${f.y} ${f.z}` : `наружу не вышел: проходов к небу рядом не нашёл (пробовал ${tried.length})`;
+  }
+
+  /** Вылез по лестнице, а над головой крыша - кнопка, рычаг или плита у прохода (секретная дверь), бегом (23.11). */
+  async afterClimb(tok) {
+    const b = this.bot, f = b.entity.position.floored();
+    for (let yy = f.y + 2; yy < f.y + 40; yy++) { const k = b.blockAt(new Vec3(f.x, yy, f.z)); if (!k) return ''; if (k.boundingBox === 'block') break; if (yy === f.y + 39) return ''; }
+    try { const m = await this.useMechanism({ x: f.x, y: f.y, z: f.z }, tok); return m ? m + '; ' : ''; } catch (e) { if (this.isCancel(e)) throw e; return ''; }
   }
 
   dashAfterMech() {
