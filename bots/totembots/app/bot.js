@@ -1457,6 +1457,34 @@ class TotemBot extends EventEmitter {
     } finally { ctl('forward', false); ctl('jump', false); this.busyLook = false; }
   }
 
+  /** Выйти наружу, под открытое небо (23.11: «вылезти в город» - вылез из лаза в комнату и решил, что на улице). */
+  async goOutside(a, tok) {
+    const b = this.bot;
+    const sky = (x, y, z) => { for (let yy = y + 2; yy < y + 40; yy++) { const k = b.blockAt(new Vec3(x, yy, z)); if (!k) return true; if (k.boundingBox === 'block' || /water|lava/.test(k.name)) return false; } return true; };
+    const p0 = b.entity.position.floored();
+    if (sky(p0.x, p0.y, p0.z)) return 'я и так под открытым небом';
+    // ближайший выход: клетки под небом, куда можно встать, в 48 бл.; порядок - по расстоянию, до 6 попыток
+    const cand = b.findBlocks({ matching: (bl) => bl.boundingBox === 'block', maxDistance: 48, count: 3000 })
+      .map((q) => q.offset(0, 1, 0))
+      .filter((q) => { const s1 = b.blockAt(q), s2 = b.blockAt(q.offset(0, 1, 0)); return s1 && s2 && s1.boundingBox === 'empty' && s2.boundingBox === 'empty' && !/water|lava/.test(s1.name) && sky(q.x, q.y - 1, q.z); })
+      .sort((u, v) => u.distanceTo(p0) - v.distanceTo(p0));
+    const tried = [];
+    for (const q of cand) {
+      if (tried.length >= 6) break;
+      if (tried.some((t) => t.distanceTo(q) < 6)) continue;
+      tried.push(q);
+      try {
+        await this.goto(new goals.GoalNear(q.x, q.y, q.z, 1), tok, 45000);
+        const f = b.entity.position.floored();
+        if (sky(f.x, f.y, f.z)) return `вышел наружу: ${f.x} ${f.y} ${f.z}`;
+      } catch (e) { if (this.isCancel(e)) throw e; }
+    }
+    // запасное: вверх по лестнице рядом, потом ещё раз
+    try { const m = await this.climbLadder({ dir: 'up' }, tok); const f = b.entity.position.floored(); if (sky(f.x, f.y, f.z)) return m + ', я снаружи'; } catch (e) { if (this.isCancel(e)) throw e; }
+    const f = b.entity.position.floored();
+    return sky(f.x, f.y, f.z) ? `вышел наружу: ${f.x} ${f.y} ${f.z}` : `наружу не вышел: проходов к небу рядом не нашёл (пробовал ${tried.length})`;
+  }
+
   dashAfterMech() {
     this._mechAt = Date.now();
     const mv = this.bot.pathfinder.movements; if (!mv) return;
@@ -2203,7 +2231,13 @@ class TotemBot extends EventEmitter {
             try { if (Math.hypot(tgt.x - this.bot.entity.position.x, tgt.z - this.bot.entity.position.z) > 40) await this.walkTo({ x: tgt.x, y: a.y !== undefined ? tgt.y : null, z: tgt.z }, tok, 300000); else await this.goto(a.y !== undefined ? new goals.GoalNear(tgt.x, tgt.y, tgt.z, 1) : new goals.GoalNearXZ(tgt.x, tgt.z, 1), tok, 300000); r = `дошёл до ${a.x} ${a.y ?? ''} ${a.z}`; }
             catch (e) {
               if (e instanceof Cancelled) throw e;
-              const left = this.bot.entity.position.distanceTo(tgt);
+              let left = this.bot.entity.position.distanceTo(tgt);
+              if (left > 1.5) {
+                // в шаге от цели упёрся (поршни, железная дверь) - как игрок: кнопку рядом и снова (23.11: «почти дошёл» у
+                // поршня, кнопку не нажал)
+                const m = await this.useMechanism(tgt, tok).catch((er) => { if (er instanceof Cancelled) throw er; return ''; });
+                if (m) { this.log(m + ' - снова к цели'); try { await this.goto(new goals.GoalNear(tgt.x, tgt.y, tgt.z, 1), tok, 20000); r = `${m}; дошёл до ${a.x} ${a.y ?? ''} ${a.z}`; break; } catch (er2) { if (er2 instanceof Cancelled) throw er2; left = this.bot.entity.position.distanceTo(tgt); } }
+              }
               if (left > 6) throw e;
               r = `дошёл почти до ${a.x} ${a.y ?? ''} ${a.z} (осталось ${left.toFixed(0)} бл.: ближе пути нет)`;
             }
@@ -2233,6 +2267,7 @@ class TotemBot extends EventEmitter {
           case 'recover': r = await this.recover(tok); break;
           case 'harvest': r = await this.harvest(a, tok); break;
           case 'climb': r = await this.climbLadder(a, tok); break;
+          case 'outside': r = await this.goOutside(a, tok); break;
           case 'remember': r = this.remember(a, label); break;
           case 'forget': r = this.memory ? this.memory.forget(a) : 'памяти нет'; break;
           case 'travel': r = await this.travelTo(a, tok); break;
