@@ -55,6 +55,16 @@ const WHERE = { nether_wart: 'крепость Незера', blaze_powder: 'и�
   redstone: 'шахта', glowstone_dust: 'светокамень в Незере', gunpowder: 'криперы', dragon_breath: 'дракон в Энде (в бутылку)', breeze_rod: 'вихри в испытаниях',
   cobweb: 'шахты', slime_block: '9 слизи', stone: 'шахта', sugar: 'тростник' };
 
+// узоры ткацкого станка - по порядку кнопок в окне (без предмета-узора)
+const LOOM = [['полоса снизу', 'stripe_bottom'], ['полоса сверху', 'stripe_top'], ['полоса слева', 'stripe_left'], ['полоса справа', 'stripe_right'],
+  ['полоса по центру', 'stripe_center'], ['полоса посередине', 'stripe_middle'], ['диагональ вправо', 'stripe_downright'], ['диагональ влево', 'stripe_downleft'],
+  ['мелкие полосы', 'small_stripes'], ['косой крест', 'cross'], ['крест', 'straight_cross'], ['половина по диагонали слева', 'diagonal_left'],
+  ['половина по диагонали справа', 'diagonal_right'], ['половина по диагонали снизу слева', 'diagonal_up_left'], ['половина по диагонали снизу справа', 'diagonal_up_right'],
+  ['левая половина', 'half_vertical'], ['правая половина', 'half_vertical_right'], ['верхняя половина', 'half_horizontal'], ['нижняя половина', 'half_horizontal_bottom'],
+  ['угол снизу слева', 'square_bottom_left'], ['угол снизу справа', 'square_bottom_right'], ['угол сверху слева', 'square_top_left'], ['угол сверху справа', 'square_top_right'],
+  ['треугольник снизу', 'triangle_bottom'], ['треугольник сверху', 'triangle_top'], ['зубцы снизу', 'triangles_bottom'], ['зубцы сверху', 'triangles_top'],
+  ['круг', 'circle'], ['ромб', 'rhombus'], ['рамка', 'border'], ['волнистая рамка', 'curly_border'], ['градиент', 'gradient'], ['градиент снизу', 'gradient_up'], ['кирпичи', 'bricks']];
+
 class Mechanics {
   // ---------------- лошадь (и свинья, страйдер, верблюд - ездовые, которыми правит седок)
   /** Такт езды верхом: как LivingEntity.travel для ездового, по клавишам; место - серверу vehicle_move. */
@@ -291,8 +301,8 @@ class Mechanics {
       }
       await this._take(win, 0).catch(() => {});
     } finally { try { win.close(); } catch {} }
-    if (!made) throw new Error(`из ${src} камнерез не делает ${want}`);
-    return `камнерез: ${src} -> ${want}`;
+    if (!made) throw new Error(`из ${src} камнерез не делает ${want} (из камня он режет: ступени, плиты, стены, кирпичи, резной и шлифованный камень)`);
+    return `камнерез: из ${src} сделал ${made} ${want}`;
   }
   /** Ткацкий станок: флаг + краситель (+ узор-предмет) -> узор номер n (0..). */
   async loom(a, tok) {
@@ -302,11 +312,19 @@ class Mechanics {
     try {
       await this._put(win, banner.name, 0); await this._put(win, dye.name, 1);
       const pat = b.inventory.items().find((i) => /_banner_pattern$/.test(i.name)); if (pat) await this._put(win, pat.name, 2);
-      b._client.write('enchant_item', { windowId: win.id, enchantment: Math.max(0, +a.pattern || 0) }); await sleep(400);
+      // узор по названию («крест», «ромб») или номеру; с предметом-узором (череп, цветок...) - единственный вариант 0
+      const q = String(a.pattern ?? '').toLowerCase().trim();
+      let idx = /^\d+$/.test(q) ? +q : LOOM.findIndex(([ru, en]) => ru === q || en === q.replace(/ /g, '_'));
+      if (idx < 0) idx = LOOM.findIndex(([ru]) => q && ru.includes(q));
+      if (pat) idx = 0;
+      if (idx < 0) throw new Error(`не знаю узора «${q}»; умею: ${LOOM.map((x) => x[0]).join(', ')}`);
+      b._client.write('enchant_item', { windowId: win.id, enchantment: idx }); await sleep(400);
       if (!win.slots[3]) throw new Error('станок не дал флаг');
+      var got = (/"pattern":"?(?:minecraft:)?([a-z_]+)/.exec(JSON.stringify(win.slots[3].components || '')) || [])[1];
       await this._take(win, 3);
     } finally { try { win.close(); } catch {} }
-    return `флаг с узором №${+a.pattern || 0} готов`;
+    const name = (LOOM.find((x) => x[1] === got) || [])[0] || (pat ? 'узор с предмета' : (LOOM[+a.pattern] || LOOM.find(([ru]) => ru.includes(String(a.pattern || ''))) || ['?'])[0]);
+    return `флаг ${banner.name.replace('_banner', '')} с узором «${name}» цветом ${dye.name.replace('_dye', '')} готов`;
   }
   /** Отделка брони: шаблон отделки + броня + материал (железо, золото, изумруд...). */
   async trim(a, tok) {
