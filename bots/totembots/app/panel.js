@@ -971,3 +971,35 @@ document.addEventListener('click', (e) => {
   try { sel.value = await T.mcVersion(null); } catch {}
   sel.addEventListener('change', async () => { const v = await T.mcVersion(sel.value); sel.value = v; st.textContent = 'сохранено: ' + v + ' - перезапустите ботов'; });
 })();
+
+// Мастер первого запуска: сервер, ваш ник (хозяин бота), первый бот. Показывается, пока не заполнено.
+(async () => {
+  if (!T.setupState) return;
+  let st; try { st = await T.setupState(); } catch { return; }
+  if (st.done) return;
+  const box = document.createElement('div');
+  box.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:16px';
+  box.innerHTML = `<div class="card" style="max-width:460px;width:100%;max-height:92vh;overflow:auto">
+    <h2>Добро пожаловать в TotemBots</h2>
+    <p class="lead">Бот-компаньон заходит на сервер Minecraft как игрок. Заполните три вещи - остальное потом в Настройках.</p>
+    <label>Адрес сервера<br><input id="su-host" placeholder="play.example.net" style="width:100%"></label><br><br>
+    <label>Порт<br><input id="su-port" value="25565" style="width:100%"></label><br><br>
+    <label>Ваш ник в игре (бот будет слушаться вас)<br><input id="su-master" style="width:100%"></label><br><br>
+    <label>Ник бота (отдельный аккаунт; на сервере с «пиратским» входом можно любой)<br><input id="su-bot" style="width:100%"></label><br><br>
+    <label>Пароль бота для входа на сервере (AuthMe), если нужен<br><input id="su-pass" type="password" style="width:100%"></label><br><br>
+    <label>Характер бота (по желанию)<br><textarea id="su-persona" rows="3" style="width:100%" placeholder="весёлый парень, любит рыбалку"></textarea></label><br><br>
+    <label>Версия игры<br><select id="su-ver"><option value="26.1">26.1</option><option value="1.21.11">1.21.11</option></select></label>
+    <p class="lead">Сервер должен пускать такого бота: у некоторых серверов белый список или вход только с лицензией. Ботом пользуйтесь по правилам сервера.</p>
+    <p id="su-err" style="color:#e66"></p>
+    <button id="su-ok">Готово</button></div>`;
+  document.body.appendChild(box);
+  if (st.host) box.querySelector('#su-host').value = st.host;
+  if (st.port) box.querySelector('#su-port').value = st.port;
+  if (st.masters && st.masters[0]) box.querySelector('#su-master').value = st.masters[0];
+  box.querySelector('#su-ver').value = st.version || '26.1';
+  box.querySelector('#su-ok').onclick = async () => {
+    const v = (id) => box.querySelector(id).value;
+    const r = await T.setupSave({ host: v('#su-host'), port: v('#su-port'), master: v('#su-master'), bot: v('#su-bot'), password: v('#su-pass'), persona: v('#su-persona'), version: v('#su-ver') });
+    if (r && r.ok) { box.remove(); location.reload(); } else box.querySelector('#su-err').textContent = 'Проверьте: ' + ((r && r.error) || 'поля');
+  };
+})();

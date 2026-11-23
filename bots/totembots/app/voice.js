@@ -42,7 +42,7 @@ class Voice {
   }
 
   // --- Silero
-  sileroDir() { return path.join(__dirname, '..', 'local', 'silero'); }
+  sileroDir() { return path.join(process.env.TOTEMBOTS_LOCAL || path.join(__dirname, '..', 'local'), 'silero'); }
   sileroState() {
     const d = this.sileroDir();
     return { program: fs.existsSync(path.join(d, 'py', 'torch')), voice: fs.existsSync(path.join(d, 'v4_ru.pt')), voices: SILERO_VOICES };

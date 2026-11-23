@@ -1,15 +1,17 @@
 {
   "name": "totembots",
   "version": "0.1.0",
-  "description": "Боты-игроки TotemCraft с чатом через Qwen: программа для компьютера владельца",
+  "description": "TotemBots: боты-компаньоны для серверов Minecraft",
   "main": "app/main.js",
   "private": true,
   "scripts": {
     "start": "electron .",
-    "test": "node test/models.js"
+    "test": "node test/models.js",
+    "dist": "electron-builder --win nsis"
   },
   "devDependencies": {
-    "electron": "^39.8.10"
+    "electron": "^39.8.10",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.12.0",
@@ -18,5 +20,32 @@
     "mineflayer": "^4.39.0",
     "mineflayer-pathfinder": "^2.4.5",
     "vec3": "^0.2.0"
+  },
+  "build": {
+    "appId": "net.totemcraft.totembots",
+    "productName": "TotemBots",
+    "files": [
+      "app/**/*",
+      "package.json",
+      "!app/**/*.bak",
+      "!local/**",
+      "!test/**",
+      "!**/*.log"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "TotemBots",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

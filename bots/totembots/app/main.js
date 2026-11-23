@@ -28,7 +28,10 @@ app.userAgentFallback = CHROME_UA;
 // Всё своё (настройки, вход в Qwen, память, карта) - в папке программы local/, а не в %APPDATA%: так у владельца и
 // у Claude один и тот же файл (15.11: %APPDATA% у них оказался разным - ярлык открывал старые настройки и другой вход).
 // Первый запуск: перенести настройки из %APPDATA%/totembots, если там есть.
-const LOCAL = path.join(__dirname, '..', 'local');
+// Установленная программа (установщик): данные у каждого пользователя свои - %APPDATA%/TotemBots (настройки, вход в
+// нейросети, память, журналы). Ничего не лежит рядом с программой и не уходит в установщик. Из исходников - local/.
+const LOCAL = app.isPackaged ? path.join(app.getPath('appData'), 'TotemBots') : path.join(__dirname, '..', 'local');
+process.env.TOTEMBOTS_LOCAL = LOCAL;
 if (!process.env.TOTEMBOTS_CONFIG) {
   try {
     fs.mkdirSync(LOCAL, { recursive: true });
@@ -73,11 +76,11 @@ const siteOf = (id) => siteList().find((x) => x.id === id);
 // TOTEMBOTS_CONFIG / TOTEMBOTS_MEMORY - свои файлы для тестов, чтобы не трогать настройки владельца
 const cfgPath = () => process.env.TOTEMBOTS_CONFIG || path.join(LOCAL, 'config.json');
 // по умолчанию: настоящий сервер, хозяин - владелец, боты заходят по кнопке «Старт» (startOnLaunch - сами), голос Qwen
-let cfg = { host: 'play.totemcraft.net', port: 20098, masters: ['Valghard'], bots: [], startOnLaunch: false, birthYear: '2000',
+let cfg = { host: '', port: 25565, masters: [], bots: [], setupDone: false, startOnLaunch: false, birthYear: '2000',
   qwen: { chatMode: 'fast', planMode: 'auto', models: [] }, initiative: { enabled: true, minutes: 1 },
   voice: { enabled: true, provider: 'qwen', fallback: true, local: true, plasmo: true, volume: 0.8 } };
 function loadCfg() {
-  try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; } catch {}
+  try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; if (cfg.host && cfg.setupDone === false && cfg.bots.length) cfg.setupDone = true; } catch {}
   const b = cfg.brains = cfg.brains || {};
   if (!b.freeFirst) {
     const old = b.order || ['qwen', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek'];
@@ -490,8 +493,8 @@ ipcMain.handle('feature', (_e, { part, on }) => {
   return cfg.features;
 });
 ipcMain.handle('save-settings', (_e, s) => {
-  cfg.host = String(s.host || '').trim() || 'play.totemcraft.net';
-  cfg.port = +s.port || 20098;
+  cfg.host = String(s.host || '').trim() || cfg.host;
+  cfg.port = +s.port || cfg.port || 25565;
   cfg.masters = String(s.masters || '').split(/[\s,]+/).filter(Boolean);
   const MODES = ['fast', 'auto', 'think', ''];
   cfg.qwen = {
@@ -589,6 +592,18 @@ ipcMain.handle('bots-start', (_e, names) => {
 });
 ipcMain.handle('bots-stop', () => { for (const l of live.values()) if (l.body && l.body.status !== 'off') l.body.stop(); return true; });
 ipcMain.handle('bot-pick', (_e, { name, pick }) => { const b = cfg.bots.find((x) => x.name === name); if (b) { b.pick = !!pick; saveCfg(); } return true; });
+ipcMain.handle('setup-state', () => ({ done: !!cfg.setupDone && !!cfg.host, host: cfg.host, port: cfg.port, masters: cfg.masters, version: cfg.mcVersion || '26.1' }));
+ipcMain.handle('setup-save', (_e, s) => {
+  const host = String(s.host || '').trim(), master = String(s.master || '').trim(), name = String(s.bot || '').trim();
+  if (!host) return { error: 'адрес сервера' };
+  if (!/^[A-Za-z0-9_]{3,16}$/.test(master)) return { error: 'ваш ник (3-16 латинских букв, цифр, _)' };
+  if (name && !/^[A-Za-z0-9_]{3,16}$/.test(name)) return { error: 'ник бота (3-16 латинских букв, цифр, _)' };
+  cfg.host = host; cfg.port = +s.port || 25565; cfg.masters = [master];
+  if (s.version === '26.1' || s.version === '1.21.11') cfg.mcVersion = s.version;
+  if (name && !cfg.bots.some((x) => x.name === name)) cfg.bots.push({ name, password: String(s.password || ''), persona: String(s.persona || '').slice(0, 600) });
+  cfg.setupDone = true; saveCfg();
+  return { ok: true };
+});
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон
