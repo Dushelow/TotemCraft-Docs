@@ -116,7 +116,7 @@ function startBot(name) {
   if (l && l.body && l.body.bot) return;
   if (!l) { l = { log: [] }; live.set(name, l); }
   const memory = memFor(bc.name);   // своя память бота
-  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet,
+  const body = new TotemBot({ name: bc.name, password: bc.password, host: cfg.host, port: +cfg.port, version: bc.version || cfg.mcVersion || undefined, combat: bc.combat || 'defend', followDist: bc.followDist || 3, features: cfg.features || {}, quiet: !!bc.quiet,
     gender: require('./brain').personaGender(bc) });   // пол - из характера (если там написан), иначе без родовых форм
   body.onQuiet = (v) => { bc.quiet = !!v; saveCfg(); };
   body.onFollowDist = (d) => { bc.followDist = d; saveCfg(); };
@@ -589,6 +589,7 @@ ipcMain.handle('bots-start', (_e, names) => {
 });
 ipcMain.handle('bots-stop', () => { for (const l of live.values()) if (l.body && l.body.status !== 'off') l.body.stop(); return true; });
 ipcMain.handle('bot-pick', (_e, { name, pick }) => { const b = cfg.bots.find((x) => x.name === name); if (b) { b.pick = !!pick; saveCfg(); } return true; });
+ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон
 ipcMain.handle('debug-hear', (_e, { name, from, wav }) => { const l = live.get(name); if (!l || !l.body) return false; l.body.emit('speech', { from, pcm: fs.readFileSync(wav).subarray(44) }); return true; });
@@ -618,7 +619,7 @@ ipcMain.handle('bot-probe', async (_e, name) => {
   const l = live.get(name);
   if (l && l.body && l.body.bot) { b.probeText = 'бот уже на сервере - вход работает'; return true; }
   b.probeText = `проверяю вход на ${cfg.host}:${cfg.port}...`;
-  const probe = new TotemBot({ name: b.name, password: b.password, host: cfg.host, port: +cfg.port, combat: 'off' });
+  const probe = new TotemBot({ name: b.name, password: b.password, host: cfg.host, port: +cfg.port, combat: 'off', version: b.version || cfg.mcVersion || undefined });
   const chat = [];
   probe.on('chat', (t) => chat.push(t));
   const res = await new Promise((resolve) => {

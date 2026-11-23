@@ -68,7 +68,7 @@ class Stroll {
         for (let i = 0; i < 16 && !dest; i++) {
           const ang = Math.random() * 2 * Math.PI, d = rnd(6, 12);
           const x = Math.floor(me.x + Math.cos(ang) * d), z = Math.floor(me.z + Math.sin(ang) * d);
-          if (Math.hypot(x + 0.5 - center.x, z + 0.5 - center.z) > R - 1) continue;
+          if (Math.hypot(x + 0.5 - center.x, z + 0.5 - center.z) > R - 2) continue;   // запас: путь к точке может чуть заступать
           if (this.zoneAt) { const zn = this.zoneAt(x, z); if (zn && /запрет|опасно/.test(zn.kind || '')) continue; }
           const y = standY(b, x, z, me.y);
           if (y !== null) dest = new me.constructor(x + 0.5, y, z + 0.5);
@@ -76,7 +76,7 @@ class Stroll {
         if (!dest) { await sleep(1500); continue; }
         // изгиб: сначала в точку сбоку от прямой (1-3 бл.), потом в цель - не по линейке
         const dx = dest.x - me.x, dz = dest.z - me.z, L = Math.hypot(dx, dz) || 1, side = (Math.random() < 0.5 ? -1 : 1) * rnd(1, 3);
-        const mx = Math.floor(me.x + dx * 0.5 - dz / L * side), mz = Math.floor(me.z + dz * 0.5 + dx / L * side), my = Math.hypot(mx + 0.5 - center.x, mz + 0.5 - center.z) <= R - 1.5 ? standY(b, mx, mz, me.y) : null;
+        const mx = Math.floor(me.x + dx * 0.5 - dz / L * side), mz = Math.floor(me.z + dz * 0.5 + dx / L * side), my = Math.hypot(mx + 0.5 - center.x, mz + 0.5 - center.z) <= R - 2.5 ? standY(b, mx, mz, me.y) : null;
         try {
           if (my !== null && L > 5) await this.goto(new goals.GoalNear(mx + 0.5, my, mz + 0.5, 1.5), tok, 12000);
           await this.goto(new goals.GoalNear(dest.x, dest.y, dest.z, 1), tok, 15000);

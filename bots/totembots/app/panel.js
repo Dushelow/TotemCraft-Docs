@@ -963,3 +963,11 @@ document.addEventListener('click', (e) => {
   if (k === 'memory' && ask('Очистить память всех ботов (места, люди, дневник, зоны, чаты)? Карта мира останется. Копия - в local/backup-..., программа перезапустится.')) T.fullReset('memory');
   if (k === 'all' && ask('Сбросить всё у всех ботов: память, карту, чаты, журналы? Остаются сервер, хозяева, ники и пароли. Копия - в local/backup-..., программа перезапустится.')) T.fullReset('all');
 });
+
+// Версия игры (Настройки): каким клиентом заходят боты
+(async () => {
+  const sel = document.getElementById('mcver'), st = document.getElementById('mcver-st');
+  if (!sel || !T.mcVersion) return;
+  try { sel.value = await T.mcVersion(null); } catch {}
+  sel.addEventListener('change', async () => { const v = await T.mcVersion(sel.value); sel.value = v; st.textContent = 'сохранено: ' + v + ' - перезапустите ботов'; });
+})();

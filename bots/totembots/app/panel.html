@@ -481,6 +481,17 @@
     <!-- НАСТРОЙКИ -->
     <section id="sec-settings">
       <div class="card">
+        <h2><i data-i="database"></i>Версия игры</h2>
+        <p class="lead">Каким клиентом боты заходят на сервер. Меняется при следующем запуске бота.</p>
+        <div class="row" style="gap:var(--s2)">
+          <select id="mcver">
+            <option value="26.1">26.1 - основная (ближе к серверу 26.3)</option>
+            <option value="1.21.11">1.21.11 - прежняя стабильная</option>
+          </select>
+          <span id="mcver-st" class="lead"></span>
+        </div>
+      </div>
+      <div class="card">
         <h2><i data-i="database"></i>Данные ботов</h2>
         <p class="lead">Очистка с копией в local/backup-... Сервер, хозяева, ники и пароли не трогаются.</p>
         <div class="row" style="flex-wrap:wrap;gap:var(--s2)">

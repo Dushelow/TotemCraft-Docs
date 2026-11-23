@@ -94,7 +94,8 @@ class Mechanics {
     const b = this.bot, V = from.constructor, y = Math.floor(from.y);
     const water = (x, z) => { const k = b.blockAt(new V(x, y, z), false), u = b.blockAt(new V(x, y + 1, z), false); return k && /water|ice/.test(k.name) && u && u.boundingBox === 'empty'; };
     // лодке нужна ширина: клетка и соседи - вода (кроме самой цели у берега)
-    const wide = (x, z) => water(x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => water(x + dx, z + dz)).length >= 3;
+    // лодка шире блока (1,375): путь - где вода со всех 8 сторон, иначе цепляет берег на углах (стенд: «упёрлась в берег» у острова)
+    const wide = (x, z) => water(x, z) && [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].every(([dx, dz]) => water(x + dx, z + dz));
     const sx = Math.floor(from.x), sz = Math.floor(from.z), tx = Math.floor(to.x), tz = Math.floor(to.z);
     const key = (x, z) => x + ',' + z, prev = new Map([[key(sx, sz), null]]), q = [[sx, sz]];
     let end = null;
