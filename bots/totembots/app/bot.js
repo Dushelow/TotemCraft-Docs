@@ -1358,7 +1358,8 @@ class TotemBot extends EventEmitter {
     const me = b.entity.position.floored();
     const col = b.findBlocks({ matching: (bl) => CL.test(bl.name), maxDistance: 6, count: 60 })
       .filter((p) => up ? Math.abs(p.y - me.y) <= 2 : p.y < me.y && p.y >= me.y - 3)
-      .sort((u, v) => u.distanceTo(me) - v.distanceTo(me))[0];
+      // есть цель - лестница, чей столб ближе к ней (23.11: полез по ближайшей - в автофермы, а в город вела другая)
+      .sort((u, v) => a.toward ? (Math.hypot(u.x - a.toward.x, u.z - a.toward.z) + u.distanceTo(me) * 0.5) - (Math.hypot(v.x - a.toward.x, v.z - a.toward.z) + v.distanceTo(me) * 0.5) : u.distanceTo(me) - v.distanceTo(me))[0];
     if (!col) return 'лестницы рядом не вижу (6 бл.)';
     const x = col.x, z = col.z;
     // встать в столб: снизу - в клетку лестницы на уровне ног, сверху - над ней
@@ -1384,8 +1385,7 @@ class TotemBot extends EventEmitter {
         if (Math.hypot(dx, dz) > 0.25) { await b.lookAt(new Vec3(x + 0.5, p.y + 1.6, z + 0.5), true); ctl('forward', true); } else ctl('forward', false);
         const fy = Math.floor(p.y + 0.01);
         if (up) {
-          if (await hatchOpen(fy + 2) || await hatchOpen(fy + 1)) opened++;
-          ctl('jump', true);
+          ctl('jump', true);   // люки над головой не открывать заранее: открытый встаёт стенкой и закрывает выход вбок (23.11)
           const here = b.blockAt(new Vec3(x, fy, z)), above = b.blockAt(new Vec3(x, fy + 1, z));
           const climbable = (k) => k && (CL.test(k.name) || /_trapdoor$/.test(k.name));
           // наверху: лестницы под ногами и выше нет - шаг на соседний пол
@@ -1446,6 +1446,8 @@ class TotemBot extends EventEmitter {
             const q = b.entity.position;
             if (Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) return `поднялся по лестнице и вышел сбоку на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
           }
+          // вбок некуда - тогда люк над головой: открыть и лезть дальше
+          if (await hatchOpen(fy + 2) || await hatchOpen(fy + 1)) { opened++; this._sideTried = false; }
           still = Date.now();
         }
         else if (Date.now() - still > 4000) return `застрял на лестнице на ${fy} (дальше не лезется: ${(b.blockAt(new Vec3(x, fy + (up ? 2 : -1), z)) || {}).name})`;
@@ -1554,7 +1556,7 @@ class TotemBot extends EventEmitter {
               const lad = b.findBlocks({ matching: (bl) => /^(ladder|vine|scaffolding)$/.test(bl.name), maxDistance: 6, count: 20 }).filter((q) => gy > me2.y ? Math.abs(q.y - me2.y) <= 2 : q.y < me2.y && q.y >= me2.y - 3);
               if (lad.length) {
                 AC.n[gk] = (AC.n[gk] || 0) + 1; this._autoClimbAt = Date.now();
-                const m = await this.climbLadder({ dir: gy > me2.y ? 'up' : 'down' }, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
+                const m = await this.climbLadder({ dir: gy > me2.y ? 'up' : 'down', toward: { x: goal.x ?? me2.x, z: goal.z ?? me2.z } }, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
                 this.log('путь не строится, цель ' + (gy > me2.y ? 'выше' : 'ниже') + ' - по лестнице: ' + m);
                 if (m && !/не вижу|застрял/.test(m)) { attempt = 0; continue; }
               }
