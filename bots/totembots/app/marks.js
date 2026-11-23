@@ -4,6 +4,17 @@
 const HERDS = { sheep: 'овцы', cow: 'коровы', pig: 'свиньи', chicken: 'куры', horse: 'лошади', goat: 'козы', rabbit: 'кролики', bee: 'пчёлы' };
 const DAY = 86400000;
 
+/** Видно ли точку глазами: луч от глаз упирается не раньше неё (стены, перекрытия - не видно). target - блок, на который
+ *  смотрим (сам он луч останавливает - это не помеха). 23.11: отмечал коров в закрытых автофермах, говорил про склад за стеной. */
+function seesPoint(b, to, target) {
+  try {
+    const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0), dir = to.minus(eye), len = dir.norm();
+    if (len < 1.5) return true;
+    const hit = b.world.raycast(eye, dir.normalize(), len, (bl) => bl.boundingBox === 'block' && !/glass|_pane|leaves|fence|bars|slab|carpet|torch|lantern/.test(bl.name));
+    return !hit || (target && hit.position && hit.position.equals(target));
+  } catch { return true; }
+}
+
 class Marks {
   /** Отметить место (обёртка memory.mark с журналом). */
   autoMark(name, pos, opt = {}) {
@@ -28,7 +39,7 @@ class Marks {
     const me = b.entity.position;
     // стадо: 3+ одинаковых животных в 24 бл. - «овцы» (на 2 дня): знать, куда идти за шерстью и едой
     const cnt = {};
-    for (const e of Object.values(b.entities)) if (HERDS[e.name] && e.position && e.position.distanceTo(me) < 24) { const c = (cnt[e.name] = cnt[e.name] || { n: 0, x: 0, y: 0, z: 0 }); c.n++; c.x += e.position.x; c.y += e.position.y; c.z += e.position.z; }
+    for (const e of Object.values(b.entities)) if (HERDS[e.name] && e.position && e.position.distanceTo(me) < 24 && seesPoint(b, e.position.offset(0, (e.height || 1) * 0.6, 0))) { const c = (cnt[e.name] = cnt[e.name] || { n: 0, x: 0, y: 0, z: 0 }); c.n++; c.x += e.position.x; c.y += e.position.y; c.z += e.position.z; }
     for (const [k, c] of Object.entries(cnt)) if (c.n >= 3) this.autoMark(HERDS[k], { x: c.x / c.n, y: c.y / c.n, z: c.z / c.n }, { kind: 'стадо ' + k, radius: 64, ttl: 2 * DAY, note: `видела ${c.n}` });
     // вход в пещеру: был на поверхности - стал под землёй (неделя): выход наверх
     let under = '';

@@ -31,6 +31,17 @@ const PATHY = /^(dirt_path|gravel|packed_ice|blue_ice|.*_slab|.*bricks|polished_
 // на что интересно посмотреть, осматриваясь
 const INTEREST = /_sign$|_wall_sign$|_hanging_sign$|_door$|^(chest|barrel|bell|lectern|anvil|crafting_table|furnace|smoker|blast_furnace|brewing_stand|enchanting_table|bookshelf|jukebox|note_block|flower_pot|campfire|lantern|beacon|cartography_table|loom|composter|beehive|item_frame|armor_stand|decorated_pot)$|^potted_|_banner$|_bed$/;
 
+/** Видно ли точку глазами: луч от глаз упирается не раньше неё (стены, перекрытия - не видно). target - блок, на который
+ *  смотрим (сам он луч останавливает - это не помеха). 23.11: отмечал коров в закрытых автофермах, говорил про склад за стеной. */
+function seesPoint(b, to, target) {
+  try {
+    const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0), dir = to.minus(eye), len = dir.norm();
+    if (len < 1.5) return true;
+    const hit = b.world.raycast(eye, dir.normalize(), len, (bl) => bl.boundingBox === 'block' && !/glass|_pane|leaves|fence|bars|slab|carpet|torch|lantern/.test(bl.name));
+    return !hit || (target && hit.position && hit.position.equals(target));
+  } catch { return true; }
+}
+
 class PlaceSense {
   /** Что за постройка вокруг (до 8 бл.): одно-два назначения по найденному внутри. */
   buildingPurpose() {
@@ -39,6 +50,7 @@ class PlaceSense {
     try {
       for (const v of b.findBlocks({ matching: (bl) => PURPOSE.some(([, , re]) => re.test(bl.name)), maxDistance: 8, count: 120 })) {
         if (Math.abs(v.y - p.y) > 6) continue;
+        if (!seesPoint(b, v.offset(0.5, 0.5, 0.5), v)) continue;   // за стеной - не наша постройка
         const k = b.blockAt(v); const pp = PURPOSE.find(([, , re]) => re.test(k.name));
         if (!pp) continue;
         sc[pp[0]] = (sc[pp[0]] || 0) + pp[1];

@@ -767,6 +767,9 @@ class TotemBot extends EventEmitter {
       }
     }
     const dir = swim ? 'forward' : 'back';
+    // в воде у уступа - лицом к следующей точке пути, потом рывок вперёд с прыжком (23.11: у секретной двери плыл в
+    // течении, жал «вперёд» не туда и 30 с не мог выйти на блок выше)
+    if (swim) { const nx = ((this.lastPath || {}).path || []).find((n) => Math.hypot(n.x + 0.5 - p.x, n.z + 0.5 - p.z) > 0.6); if (nx) { try { b.lookAt(new Vec3(nx.x + 0.5, nx.y + 1, nx.z + 0.5), true); } catch {} b.setControlState('sprint', true); setTimeout(() => { try { b.setControlState('sprint', false); } catch {} }, 900); } }
     b.setControlState('jump', true);
     b.setControlState(dir, true);
     setTimeout(() => { try { b.setControlState('jump', false); b.setControlState(dir, false); /* новый путь к той же цели (setGoal оборвал бы текущий переход: «goal was changed») */ if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400);
