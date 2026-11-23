@@ -324,6 +324,12 @@ class Gestures {
         if (/_stairs$/.test(bl.name) && pr.half !== 'bottom') continue;
         const up = b.blockAt(v.offset(0, 1, 0)), up2 = b.blockAt(v.offset(0, 2, 0));
         if (!up || up.boundingBox !== 'empty' || (up2 && up2.boundingBox !== 'empty')) continue;
+        // узор пола, а не сиденье: вокруг на той же высоте сплошной пол (23.11: сел в полублок-узор посреди комнаты).
+        // Сиденье - у края: хотя бы с одной стороны на уровне ног пусто, а пол ниже
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dz]) => { const n = b.blockAt(v.offset(dx, 0, dz)); return n && n.boundingBox === 'block' && !SEAT.test(n.name) || (n && SEAT.test(n.name) && b.blockAt(v.offset(dx, -1, dz)) && b.blockAt(v.offset(dx, -1, dz)).boundingBox === 'block'); }) && b.blockAt(v.offset(0, -1, 0)) && b.blockAt(v.offset(0, -1, 0)).boundingBox === 'block') {
+          const lowNb = [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dz]) => { const n = b.blockAt(v.offset(dx, 0, dz)); return n && n.boundingBox === 'empty'; });
+          if (!lowNb) continue;
+        }
         // занято или вплотную к кому-то: не на место хозяина и не впритык (22.11: села прямо в хозяина)
         if (Object.values(b.players).some((p) => p.entity && p.entity !== b.entity && Math.hypot(p.entity.position.x - v.x - 0.5, p.entity.position.z - v.z - 0.5) < 1.4 && Math.abs(p.entity.position.y - v.y) < 2.5)) continue;
         if (Object.values(b.entities).some((e) => e !== b.entity && e.type !== 'player' && e.position && Math.hypot(e.position.x - v.x - 0.5, e.position.z - v.z - 0.5) < 0.7 && Math.abs(e.position.y - v.y) < 1.5 && !/item/.test(e.name || ''))) continue;   // место GSit занято сиденьем
