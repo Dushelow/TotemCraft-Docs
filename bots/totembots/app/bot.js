@@ -1364,7 +1364,21 @@ class TotemBot extends EventEmitter {
     if (!col) return 'лестницы рядом не вижу (24 бл.)';
     const x = col.x, z = col.z;
     // встать в столб: снизу - в клетку лестницы на уровне ног, сверху - над ней
-    try { await this.goto(new goals.GoalNear(x + 0.5, col.y, z + 0.5, 0.6), tok, 30000); } catch (e) { if (this.isCancel(e)) throw e; }
+    // лестница рядом (до 4 бл.) - сразу напрямую бегом, без поиска пути: проход за плитой открыт на секунду (23.11:
+    // постоял на плите полсекунды, пошёл искать путь - дверь закрылась перед носом)
+    if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) <= 4.2 && Math.abs(b.entity.position.y - col.y) <= 1.5) {
+      const ctl0 = (k, v) => { try { b.setControlState(k, v); } catch {} };
+      const t1 = Date.now();
+      try {
+        while (Date.now() - t1 < 2500 && Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 0.35) {
+          this.check(tok);
+          await b.lookAt(new Vec3(x + 0.5, b.entity.position.y + 1.6, z + 0.5), true);
+          ctl0('forward', true); ctl0('sprint', true); ctl0('jump', b.entity.isCollidedHorizontally && b.entity.onGround);
+          await sleep(50);
+        }
+      } finally { ctl0('forward', false); ctl0('sprint', false); ctl0('jump', false); }
+    }
+    if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 0.6) { try { await this.goto(new goals.GoalNear(x + 0.5, col.y, z + 0.5, 0.6), tok, 30000); } catch (e) { if (this.isCancel(e)) throw e; } }
     if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 1.5) return `до лестницы у ${x} ${col.y} ${z} не дошёл`;
     const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
     const hatchOpen = async (yy) => {
@@ -1497,7 +1511,9 @@ class TotemBot extends EventEmitter {
       if (sky(f0.x, f0.y, f0.z)) return `вышел наружу: ${f0.x} ${f0.y} ${f0.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
       // к выходу: и частичный путь годится - ближе к поверхности
       const y0 = b.entity.position.y;
+      const tg = Date.now(), pg = b.entity.position.clone();
       try { await this.goto(new goals.GoalNear(best.x, best.y, best.z, 1), tok, 25000); } catch (e) { if (this.isCancel(e)) throw e; }
+      if (Date.now() - tg < 1500 && b.entity.position.distanceTo(pg) < 1.5) { /* пути нет совсем - следующим шагом лестница или кнопка, не метаться */ }
       let f = b.entity.position.floored();
       if (sky(f.x, f.y, f.z)) return `вышел наружу: ${f.x} ${f.y} ${f.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
       let moved = b.entity.position.y > y0 + 1.5;
