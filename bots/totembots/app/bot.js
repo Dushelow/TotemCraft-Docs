@@ -1,6 +1,6 @@
 // Тело бота: mineflayer + pathfinder. Ходит компаньоном, берёт и кладёт вещи в сундуки, отдаёт вещи игрокам,
 // проходит порталы. Блоки не ломает и не ставит (на живом сервере это был бы гриф).
-// Заходит клиентом 1.21.11: его mineflayer поддерживает полностью, сервер 26.3 пускает через ViaVersion.
+// Заходит клиентом 26.1 (с 23.11; ViaVersion переводит 26.1 -> 26.3, разница малая). Прежняя 1.21.11 - настройка version у бота.
 const mineflayer = require('mineflayer');
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder');
 const { Skills, NATURAL, BUILT } = require('./skills');
@@ -8,7 +8,7 @@ const { Vec3 } = require('vec3');
 const { EventEmitter } = require('events');
 const { Guard } = require('./guard');
 
-const VERSION = process.env.TB_VERSION || '1.21.11';
+const VERSION = process.env.TB_VERSION || '26.1';   // основная с 23.11 (стенд: все проверки, кроме элитр); стабильная прежняя - version: '1.21.11' у бота
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const rnd = (a, b) => a + Math.random() * (b - a);
 
