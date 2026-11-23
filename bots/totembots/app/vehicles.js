@@ -120,16 +120,36 @@ class Vehicles {
     const it = b.inventory.items().find((i) => /_boat$|_raft$/.test(i.name) && !/chest/.test(i.name)) || b.inventory.items().find((i) => /_boat$|_raft$/.test(i.name));
     if (!it) return null;
     const me = b.entity.position;
-    const spot = b.findBlocks({ matching: (bl) => /^(water|ice|packed_ice|blue_ice)$/.test(bl.name), maxDistance: 4, count: 30 }).map((p) => b.blockAt(p))
-      .filter((k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.boundingBox === 'empty' && !/water/.test(up.name); })
-      .sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me))[0];
+    // Лодка шире блока (1,375): у самого берега она задевает берег, и сервер её не ставит (стенд 23.11: целился в воду
+    // вплотную к берегу - лодки нет). Место - где вокруг на 1 бл. тоже вода или лёд и сверху пусто; ближе 1,5 бл. - нет.
+    const flat = (k) => k && /^(water|ice|packed_ice|blue_ice|frosted_ice)$/.test(k.name);
+    const free = (k) => { const up = b.blockAt(k.position.offset(0, 1, 0)); return up && up.boundingBox === 'empty' && !/water/.test(up.name); };
+    const roomy = (k) => { for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) { const n = b.blockAt(k.position.offset(dx, 0, dz)); if (!flat(n) || !free(n)) return false; } return true; };
+    const eye = me.offset(0, 1.62, 0);
+    const cand = b.findBlocks({ matching: (bl) => flat(bl), maxDistance: 5, count: 80 }).map((p) => b.blockAt(p))
+      .filter((k) => free(k) && k.position.offset(0.5, 0.9, 0.5).distanceTo(eye) < 4.3)
+      .sort((p, q) => p.position.distanceTo(me) - q.position.distanceTo(me));
+    // куда плыть потом известно - ближе к той стороне (вода за спиной бывает другим водоёмом)
+    const T = this._boatToward;
+    if (T) cand.sort((p, q) => Math.hypot(p.position.x - T.x, p.position.z - T.z) - Math.hypot(q.position.x - T.x, q.position.z - T.z));
+    const spot = cand.find((k) => roomy(k) && k.position.offset(0.5, 0, 0.5).distanceTo(me) > 1.5) || cand.find((k) => k.position.offset(0.5, 0, 0.5).distanceTo(me) > 1.5) || cand[0];
     if (!spot) throw new Error('лодку ставить некуда: рядом нет воды или льда');
     this.check(tok);
     await b.equip(it, 'hand');
     this.busyLook = true;
-    try { await b.lookAt(spot.position.offset(0.5, 1, 0.5), true); await b.placeEntity(spot, new Vec3(0, 1, 0)); } finally { this.busyLook = false; }
-    await sleep(400);
-    const e = Object.values(b.entities).filter((x) => /boat|raft/.test(x.name || '') && x.position.distanceTo(spot.position) < 3).sort((x, y) => x.position.distanceTo(spot.position) - y.position.distanceTo(spot.position))[0];
+    // Как клиент: взгляд на воду и «использовать предмет» - сервер сам ищет лучом точку на воде или льду и ставит лодку.
+    // (mineflayer placeEntity ждёт существо «boat», а с 1.21.2 лодки - «oak_boat», «birch_boat»...: лодка вставала,
+    // а бот считал, что не вышло - «Failed to place entity», стенд 23.11)
+    const before = new Set(Object.keys(b.entities));
+    const isNew = (x) => !before.has(String(x.id)) && /boat|raft/.test(x.name || '') && x.position.distanceTo(spot.position) < 4;
+    try {
+      await b.lookAt(spot.position.offset(0.5, 0.9, 0.5), true);
+      await sleep(100);
+      b.activateItem();
+    } finally { this.busyLook = false; }
+    let e = null;
+    for (let i = 0; i < 20 && !e; i++) { await sleep(100); e = Object.values(b.entities).find(isNew) || null; }
+    if (!e) throw new Error('лодка не встала (сервер её не поставил)');
     if (e) this.log(`поставил лодку на ${spot.position.x} ${spot.position.y} ${spot.position.z}`);
     return e || null;
   }
@@ -138,9 +158,14 @@ class Vehicles {
     const b = this.bot;
     if (!b.vehicle) return 'я ни на чём не сижу';
     const was = b.vehicle;
-    try { b.dismount(); } catch {}
+    // как игрок: «присесть» во вводе (rideTick шлёт shift), пока сервер не высадит. mineflayer.dismount шлёт прыжок -
+    // на 1.21.2+ это не высаживает (стенд 23.11: «не смог слезть», потом бот считал, что всё ещё в лодке, и тонул подо льдом)
+    this._wantOff = true;
+    if (!this._rideTimer) { try { b._client.write('player_input', { inputs: { forward: false, backward: false, left: false, right: false, jump: false, shift: true, sprint: false } }); } catch {} }
     try { if (was && /boat|raft/.test(was.name || '')) this.autoMark('моя лодка', was.position, { kind: 'моя лодка', one: true, ttl: 3 * 86400000 }); } catch {}
     for (let w = 0; w < 20 && b.vehicle; w++) await sleep(100);
+    this._wantOff = false;
+    try { b._client.write('player_input', { inputs: { forward: false, backward: false, left: false, right: false, jump: false, shift: false, sprint: false } }); } catch {}
     if (this.mode === 'ride') this.mode = 'idle';
     return b.vehicle ? 'не смог слезть' : 'слез';
   }
@@ -156,6 +181,18 @@ class Vehicles {
   vehiclesAttach(bot) {
     bot.on('mount', () => this.rideStart());
     bot.on('dismount', () => this.rideStop());
+    // mineflayer снимает бота с лодки, только если лодка исчезла или пришло «-1»; а сервер при высадке (шифт, перенос,
+    // смерть лодки рядом) шлёт «у лодки пассажиров: [без тебя]» - и bot.vehicle оставался навсегда (стенд 23.11: после
+    // переноса бот «сидел в лодке» под водой, спасение от удушья молчало). Снять самим
+    bot._client.on('set_passengers', ({ entityId, passengers }) => {
+      try {
+        const v = bot.vehicle;
+        if (v && v.id === entityId && bot.entity && !passengers.includes(bot.entity.id)) {
+          const i = (v.passengers || []).indexOf(bot.entity); if (i >= 0) v.passengers.splice(i, 1);
+          bot.entity.vehicle = null; bot.vehicle = null; bot.emit('dismount', v);
+        }
+      } catch {}
+    });
   }
   rideStart() {
     this.rideStop();
@@ -171,7 +208,8 @@ class Vehicles {
     const c = (k) => !!b.getControlState(k);
     const ps = v.passengers || [];
     const driver = /boat|raft/.test(v.name || '') && (!ps.length || ps[0] === b.entity);
-    try { b._client.write('player_input', { inputs: { forward: c('forward'), backward: c('back'), left: c('left'), right: c('right'), jump: false, shift: false, sprint: false } }); } catch {}
+    // shift - слезть (с 1.21.2 сервер высаживает по «присесть» во вводе, а не по прыжку, как шлёт mineflayer.dismount)
+    try { b._client.write('player_input', { inputs: { forward: c('forward'), backward: c('back'), left: c('left'), right: c('right'), jump: false, shift: !!this._wantOff, sprint: false } }); } catch {}
     if (driver) {
       if (R.yawDeg === null) R.yawDeg = 180 - (v.yaw || 0) * 180 / Math.PI;   // mineflayer: yaw = рад(180 - градусы игры)
       if (c('left')) R.dRot -= 1;
@@ -230,7 +268,10 @@ class Vehicles {
         // курс лодки считаем сами (rideTick), знак поворота известен - без «переворотов», от них лодка петляла и тормозила
         if (!boat && Date.now() - errAt > 2000) { if (lastErr !== null && Math.abs(err) > Math.abs(lastErr) + 0.2) flip = -flip; lastErr = err; errAt = Date.now(); }
         const turn = boat && Math.abs(err) > 0.25 ? Math.sign(err) * flip : 0;
-        const go = !boat || Math.abs(err) < 1.6;   // вперёд и на повороте, как игрок, - без остановок
+        // у цели - отпустить «вперёд» заранее: лодка катится по инерции ~3-4 бл. (22.11: плыл, пока не упрётся в борт);
+        // упёрлись у цели - приплыли
+        if (boat && d < 10 && this._ride && this._ride.blockedAt) break;
+        const go = (!boat || Math.abs(err) < 1.6) && !(boat && d < 4);
         b.setControlState('forward', go);
         b.setControlState('left', turn > 0);
         b.setControlState('right', turn < 0);

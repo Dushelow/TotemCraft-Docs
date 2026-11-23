@@ -638,10 +638,11 @@ class Brain {
       }
       else if (r.channel === 'whisper' && r.to) rc = { channel: 'whisper', to: String(r.to) };
       if (r.thought) { this.log('(мысль) ' + r.thought); try { this.body.thought && this.body.thought(r.thought, false); } catch {} }
-      // рядом никого, а реплика к хозяину (вопрос, обращение) - ему в личку, а не в пустоту (22.11: «где ты?» никуда)
+      // рядом никого - реплика хозяину в личку, а не в пустоту (22.11: «где ты?» никуда; 23.11: любая речь, не только
+      // вопросы - иначе снова «пишет, что мысли»)
       if (r.say && rc.channel === 'none') {
         const m0 = (this.cfg().masters || []).find((n) => this.body.bot && this.body.bot.players[n]);
-        if (m0 && (r.reply || /\?\s*$/.test(r.say) || /^(эй|отец|хозяин|привет|здаров|здравствуй)/i.test(r.say) || r.say.toLowerCase().includes(m0.toLowerCase().slice(0, 4)))) { rc = { channel: 'whisper', to: m0 }; r.channel = 'whisper'; r.to = m0; this.log(`рядом никого - хозяину ${m0} в личку: ${r.say}`); }
+        if (m0) { rc = { channel: 'whisper', to: m0 }; r.channel = 'whisper'; r.to = m0; this.log(`рядом никого - хозяину ${m0} в личку: ${r.say}`); }
         else { this.log('(вслух не сказал: рядом никого) ' + r.say); this.unsaid(r.say, 'рядом никого - никто не услышал; хозяину далеко пиши «лс Ник:»'); r.say = ''; }
       }
       const said0 = r.say || '';   // исходный текст: ниже его могут убрать как мысль, а для «текст без команды» он нужен
@@ -659,7 +660,9 @@ class Brain {
         const ownerNear = me && this.cfg().masters.some((n) => { const e = this.body.bot.players[n] && this.body.bot.players[n].entity; return e && e.position.distanceTo(me.position) <= 16; });
         const toOwner = ownerNear && (/\?\s*$/.test(r.say) || this.cfg().masters.some((n) => r.say.toLowerCase().includes(n.toLowerCase().slice(0, 4))) || /^(эй|слушай|смотри|хозяин|отец|мам|пап|брат|друг|привет|здравствуй|здорово|хай|йо|салют|доброе|добрый)([\s,!.]|$)/i.test(r.say));   // и приветствие хозяину рядом
         const meant = r.reply || ((!!r.channel || toOwner) && (Date.now() - (this.selfSaidAt || 0) > 30000));   // «ответ:» - всегда речь
-        if (!spoken && !report && !meant) { this.log('(подумала, вслух не сказала) ' + r.say); this.unsaid(r.say, 'это была мысль: без вопроса человека и без «рядом:» в чат не уходит'); r.say = ''; }
+        // Мысль - только то, что помечено «мысль:» (22.11, владелец: «часто пишет, что якобы мысли - можно было и написать»).
+        // Реплика без метки - речь. Своя (никто не спрашивал) - не чаще раза в 20 с, чтобы не болтал
+        if (!spoken && !report && !r.reply && Date.now() - (this.selfSaidAt || 0) < 20000) { this.log('(не сказал: своё слишком часто) ' + r.say); this.unsaid(r.say, 'своё сказано меньше 20 с назад - не болтай'); r.say = ''; }
         else if (!spoken && !report) this.selfSaidAt = Date.now();
       }
       // почти та же мысль, что недавно, - не повторять (слова совпадают больше чем наполовину, 5 мин)

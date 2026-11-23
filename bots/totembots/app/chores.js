@@ -27,6 +27,49 @@ const PROJ = /^(arrow|spectral_arrow|small_fireball|fireball|trident|wither_skul
 const isBaby = (e) => { try { return (e.metadata || []).some((m, i) => i === 16 && m === true); } catch { return false; } };
 
 class Chores {
+  /**
+   * Закрывать за собой (22.11: открыл калитку у палатки торговца и не закрыл - житель сбежал). Двери, калитки и люки,
+   * которые бот сам открыл (путь, люк вниз), закрываются, как только он прошёл: отошёл на 2 бл. и в проёме никого
+   * нет. Так делают игроки у загонов и торговцев: калитку закрыть, чтобы животные и жители не вышли.
+   */
+  closeBehindAttach(bot) {
+    // activateBlock появляется у бота после загрузки модулей - обернуть при входе в мир (стенд 22.11: ронял запуск)
+    if (!bot.activateBlock) { bot.once('spawn', () => this.closeBehindAttach(bot)); return; }
+    if (bot._closeWrapped) return; bot._closeWrapped = true;
+    const orig = bot.activateBlock.bind(bot);
+    const OPEN = /(_door|_fence_gate|_trapdoor)$/;
+    this._opened = new Map();
+    bot.activateBlock = async (block, ...rest) => {
+      // двери на пути открывает и закрывает за собой nav.js - их не трогать (иначе щёлкнули бы дважды)
+      if (bot._navToggle) { bot._navToggle = false; return orig(block, ...rest); }
+      let was = null;
+      try { if (block && OPEN.test(block.name)) { const pr = block.getProperties(); was = pr.open === true || pr.open === 'true'; } } catch {}
+      const r = await orig(block, ...rest);
+      if (was === false && !this._closing) this._opened.set(`${block.position.x},${block.position.y},${block.position.z}`, { pos: block.position.clone(), at: Date.now() });
+      return r;
+    };
+  }
+  closeBehindTick() {
+    const b = this.bot, M = this._opened;
+    if (!b || !b.entity || !M || !M.size) return;
+    const me = b.entity.position;
+    for (const [k, o] of M) {
+      const bl = b.blockAt(o.pos);
+      if (!bl || !/(_door|_fence_gate|_trapdoor)$/.test(bl.name) || Date.now() - o.at > 60000) { M.delete(k); continue; }
+      const pr = bl.getProperties(), open = pr.open === true || pr.open === 'true';
+      if (!open) { M.delete(k); continue; }
+      const c = o.pos.offset(0.5, 0, 0.5);
+      const inCell = Math.abs(me.x - c.x) < 0.85 && Math.abs(me.z - c.z) < 0.85 && me.y < o.pos.y + 1 && me.y + 1.8 > o.pos.y;
+      if (inCell || me.distanceTo(c) > 5) continue;   // ещё в проёме или уже далеко - рука не достанет
+      const inWay = Object.values(b.entities).some((e) => e !== b.entity && e.position && Math.abs(e.position.x - c.x) < 0.9 && Math.abs(e.position.z - c.z) < 0.9 && Math.abs(e.position.y - o.pos.y) < 2);
+      if (inWay) continue;   // в проёме кто-то (хозяин идёт следом) - подождать
+      M.delete(k);
+      this._closing = true;
+      b.lookAt(c.offset(0, 0.5, 0), true).then(() => b.activateBlock(bl)).then(() => this.log(`закрыла за собой ${bl.name.replace(/_/g, ' ')}`)).catch(() => {}).finally(() => { this._closing = false; });
+      return;
+    }
+  }
+
   // ---------- 1. присед у края
   edgeTick() {
     const b = this.bot, e = b.entity;

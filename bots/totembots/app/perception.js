@@ -48,7 +48,15 @@ class Perception {
       if (under && this.worldMap && this.worldMap.tunnels) { try { const t = this.worldMap.tunnels(this); if (t) under += '; ' + t; } catch {} }
       if (/overworld/.test(b.game.dimension || '') && ch && ch.h !== null && s.pos[1] - ch.h > 12 && !under) under = `, высоко: земля здесь около y ${ch.h}, ты на ${s.pos[1] - ch.h} выше`;
     }
-    const doing = s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : 'стоишь';
+    // поза тела - первым делом (22.11: сидел на полублоке и «шёл»; в лодке за рулём думал, что пассажир, и наоборот)
+    const ride = (() => { try {
+      const v = b.vehicle; if (!v) return '';
+      if (!/boat|raft|horse|donkey|mule|camel|pig|strider|llama|minecart|ghast/.test(v.name || '')) return 'СИДИШЬ на ступеньке/полублоке (чтобы идти - встать: !stand; садиться в лодку - тело встанет само)';
+      const ps = v.passengers || [], drv = ps[0];
+      const role = !drv || drv === b.entity ? 'ЗА РУЛЁМ (!drive(x, z) - плыть/ехать)' : `ПАССАЖИР, рулит ${drv.username || drv.name} (править не можешь)`;
+      return `СИДИШЬ в ${v.name}: ${role}; ходить пешком нельзя, пока не слезешь (!dismount)`;
+    } catch { return ''; } })();
+    const doing = (ride ? ride + '; ' : '') + (s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : ride ? 'без дела' : 'стоишь');
     return {
       pos: s.pos,
       core: `${(() => { try { const d = this.district(); return d ? d + '; ' : ''; } catch { return ''; } })()}${(() => { try { const h = this.homeText(); return h ? h + '; ' : ''; } catch { return ''; } })()}${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}${this.errandText && this.errandText() ? '; ' + this.errandText() : ''}`,

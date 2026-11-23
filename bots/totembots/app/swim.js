@@ -54,7 +54,16 @@ function swimTick(tb) {
   for (let j = nx.i; j < Math.min(path.length, nx.i + 4); j++) {
     const n = path[j], v = new (p.constructor)(Math.floor(n.x), Math.floor(n.y), Math.floor(n.z));
     if (isWater(b, v) || n.y <= p.y + 0.3 || Math.hypot(v.x + 0.5 - p.x, v.z + 0.5 - p.z) > 2.6) continue;
-    face(tb, v.x + 0.5 - p.x, 0, v.z + 0.5 - p.z, 0);
+    // лиана или лестница: как игрок - встать в её клетку и упереться в стену, к которой она прицеплена; упор в стену из
+    // воды даёт толчок вверх, и ноги попадают в лиану (стенд 22.11: плыл в саму лиану и не поднимался)
+    let fx = v.x + 0.5 - p.x, fz = v.z + 0.5 - p.z;
+    const cl = b.blockAt(v);
+    if (cl && /vine|ladder/.test(cl.name) && Math.hypot(fx, fz) < 0.7) {
+      const pr = cl.getProperties ? cl.getProperties() : {};
+      if (/ladder/.test(cl.name)) { const F = { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] }[pr.facing]; if (F) { fx = F[0]; fz = F[1]; } }
+      else { const W = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]].find(([k]) => pr[k] === true || pr[k] === 'true'); if (W) { fx = W[1]; fz = W[2]; } }
+    }
+    face(tb, fx, 0, fz, 0);
     b.setControlState('sprint', false); b.setControlState('forward', true); b.setControlState('jump', true); b.setControlState('sneak', false);
     tb.shoreNode = n; tb.swimming2 = true;
     return true;
@@ -73,16 +82,17 @@ function swimTick(tb) {
  * тело идёт туда, куда смотрит (и вниз, и вверх), быстрее (инерция 0,9 вместо 0,8); на поверхности - вперёд и прыжок.
  * Вниз без бега - не держать прыжок (тонет медленно); вверх - прыжок. Воздуха мало для глубины - всплывать.
  */
-function steer(tb, dx, dy, dz, head) {
+function steer(tb, dx, dy, dz, head, go) {
   // Как плавает человек (22.11, владелец): в пути - с бегом чуть под поверхностью, в позе плавания; на месте и вблизи -
   // поплавком (полтела в воде, прыжок только когда осел); за кем-то на дно - нырнуть. Не дёргать прыжок каждый тик.
   const b = tb.bot, e = b.entity, p = e.position, f = p.floored(), hd = Math.hypot(dx, dz);
   let surf = 0; for (let k = 1; k < 30 && isWater(b, f.offset(0, k, 0)); k++) surf = k;
   const topY = f.y + surf + 0.89;   // уровень воды над нами
   const airSec = airLeft(tb) * 0.75;
-  const low = head && airSec < surf / 3 + 3;   // не хватит воздуха подняться с этой глубины - сначала наверх
+  // не хватит воздуха подняться с этой глубины - сначала наверх; go - плыть к цели в любом случае (выход из-подо льда)
+  const low = !go && head && airSec < surf / 3 + 3;
   const deep = !low && dy < -1.5;              // цель ниже - нырять
-  const travel = !low && (hd > 2.5 || deep);
+  const travel = go || (!low && (hd > 2.5 || deep));
   // поза плавания: держать, пока в пути (гистерезис - без дёрганья туда-сюда)
   if (!travel || b.food <= 6) tb._pose = false; else if (travel && head) tb._pose = true;
   b.setControlState('sneak', false);
@@ -165,10 +175,14 @@ function airTick(tb) {
   if (!e || b.vehicle) return false;
   const p = e.position, now = Date.now();
   const headIn = isWater(b, p.offset(0, 1.6, 0).floored());
-  if (!headIn) { tb._underSince = 0; tb._airEsc = null; return false; }
+  if (!headIn) { tb._underSince = 0; tb._airEsc = null; airResume(tb); return false; }
   tb._underSince = tb._underSince || now;
-  const air = airLeft(tb);
-  if (air > 8) return false;
+  const air = airLeft(tb), airSec = air * 0.75;
+  // Над водой потолок (лёд, днище, свод пещеры)? Тогда «вверх» не спасёт: выход ищем заранее и плывём к нему, пока
+  // воздуха хватает на дорогу (23.11 на стенде: подо льдом ждал до 6 с воздуха, выход в 21 бл. - не доплыл).
+  const f0 = p.floored(); let wk = 1; while (wk < 30 && isWater(b, f0.offset(0, wk, 0))) wk++;
+  const cap = b.blockAt(f0.offset(0, wk, 0)), capped = !!(cap && cap.boundingBox === 'block');
+  if (!capped && air > 8) { airResume(tb); return false; }
   // Жмём «вверх», а тело не поднимается 1,2 с - над головой что-то, чего нет в блоках: лодка, корабельная шлюпка,
   // другой игрок (22.11, журнал движения: 15 с на одной высоте 61,20 с зажатым прыжком под лодкой у борта, и утонул).
   // Эту клетку - в закрытые на 15 с, искать выход в другом месте
@@ -187,22 +201,55 @@ function airTick(tb) {
     let goal = null;
     while (q.length && !goal) {
       const [x, y, z, d] = q.shift();
-      if (open(x, y, z)) { goal = { x: x + 0.5, y: y + 0.2, z: z + 0.5 }; break; }
-      if (d >= 16) continue;
+      if (open(x, y, z)) { goal = { x: x + 0.5, y: y + 0.2, z: z + 0.5, d }; break; }
+      if (d >= 28) continue;   // шире: подо льдом выход бывает далеко
       for (const [dx, dy, dz] of [[0, 1, 0], [1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, -1, 0]]) {
         const k = `${x + dx},${y + dy},${z + dz}`;
-        if (seen.has(k) || seen.size > 4000) continue;
+        if (seen.has(k) || seen.size > 12000) continue;
         seen.add(k);
         if (isWater(b, new V(x + dx, y + dy, z + dz))) q.push([x + dx, y + dy, z + dz, d + 1]);
       }
     }
     tb._airEsc = { at: now, goal };
+    // под потолком, выход есть, а воздуха с запасом: дорога (бл.) / 3 бл. в с + 4 с - ещё не пора, плывём по своим делам
+    if (capped && air > 8 && goal && airSec > goal.d / 3 + 4) { tb._airEsc = null; tb._airWait = now; airResume(tb); return false; }
     if (goal && (!tb._airSaid || now - tb._airSaid > 20000)) { tb._airSaid = now; tb.log(`воздух кончается - всплываю к ${Math.floor(goal.x)} ${Math.floor(goal.y)} ${Math.floor(goal.z)}`); }
   }
+  airPause(tb);
   const g = tb._airEsc.goal;
-  if (!g) { b.setControlState('jump', true); return false; }
-  steer(tb, g.x - p.x, g.y - p.y + 1, g.z - p.z, true);
+  if (!g) {
+    // выхода к воздуху нет (подо льдом, под днищем, в затопленной пещере) - пробить потолок над головой, как игрок:
+    // лёд, снег, земля, камень рукой или инструментом (22.11: утонул подо льдом, упираясь в него 20 с)
+    const top = p.offset(0, 2, 0).floored(), k = b.blockAt(top);
+    if (k && k.boundingBox === 'block' && !tb._digUp && !/bedrock|obsidian|barrier|_planks|_log|glass|chest|barrel|door|trapdoor/.test(k.name)) {
+      tb._digUp = true; tb.log(`воздуха нет, выхода не видно - пробиваю ${k.name} над головой`);
+      b.setControlState('forward', false); b.setControlState('jump', false);
+      (async () => { try { const t = b.pathfinder.bestHarvestTool ? b.pathfinder.bestHarvestTool(k) : null; if (t) await b.equip(t, 'hand'); await b.lookAt(top.offset(0.5, 0.5, 0.5), true); await b.dig(k, true); } catch (e) { tb.log('пробить не вышло: ' + e.message); } finally { tb._digUp = false; tb._airEsc = null; } })();
+      return true;
+    }
+    if (tb._digUp) return true;
+    b.setControlState('jump', true); return true;
+  }
+  if (tb._digUp) { try { b.stopDigging(); } catch {} tb._digUp = false; }   // выход нашёлся, пока долбил лёд - плыть к нему
+  // к выходу - плыть, а не всплывать на месте: под льдом «вверх» упирается в лёд (рывком, в позе плавания)
+  steer(tb, g.x - p.x, g.y - p.y + 1, g.z - p.z, true, Math.hypot(g.x - p.x, g.z - p.z) > 1.5);
   return true;
+}
+
+/** Спасаясь от удушья, тело ведёт только airTick: цель модуля пути (за хозяином, к берегу) отложить - иначе он крутит
+ *  бота к своей цели каждый такт (23.11 стенд: подо льдом взгляд метался, бот 25 с на месте и утонул). Вернуть, когда
+ *  отдышался. */
+function airPause(tb) {
+  const b = tb.bot, g = b.pathfinder && b.pathfinder.goal;
+  if (!g) return;
+  tb._airGoal = { g, dyn: !!g.entity };
+  try { b.pathfinder.setGoal(null); } catch {}
+}
+function airResume(tb) {
+  const s = tb._airGoal; if (!s) return;
+  tb._airGoal = null;
+  const b = tb.bot;
+  try { if (!b.pathfinder.goal && (!s.g.entity || b.entities[s.g.entity.id])) b.pathfinder.setGoal(s.g, s.dyn); } catch {}
 }
 
 /** Сущность с телом (лодка, игрок, моб) в клетке x z от высоты y на h блоков вверх - туда не всплыть. */

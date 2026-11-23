@@ -111,6 +111,8 @@ class TotemBot extends EventEmitter {
       // карта (чанк застроен) + 3 блока вокруг (кэш на 30 с, pathfinder спрашивает одну клетку много раз).
       mv.canDig = true;
       for (const bl of Object.values(bot.registry.blocksByName)) if (!NATURAL.test(bl.name) || /_log$|_stem$/.test(bl.name)) mv.blocksCantBreak.add(bl.id);
+      // лианы, лестницы, светящийся лишайник - по ним лазают и их растят нарочно: не ломать по дороге (22.11: ломал «наши лианы»)
+      for (const n of ['vine', 'ladder', 'glow_lichen', 'cave_vines', 'cave_vines_plant', 'weeping_vines', 'weeping_vines_plant', 'twisting_vines', 'twisting_vines_plant', 'scaffolding', 'sugar_cane', 'bamboo', 'sweet_berry_bush', 'kelp', 'kelp_plant']) { const r = bot.registry.blocksByName[n]; if (r) mv.blocksCantBreak.add(r.id); }
       const nearBuilt = (pos) => {
         const k = pos.x + ',' + pos.y + ',' + pos.z, c = (this._builtCache = this._builtCache || new Map()), hit = c.get(k);
         if (hit && Date.now() - hit.at < 30000) return hit.v;
@@ -256,7 +258,8 @@ class TotemBot extends EventEmitter {
     if (this.partOn('hearing')) this.listen(bot);   // слух (hearing.js)
     if (this.partOn('balance')) this.balanceAttach(bot);
     if (this.partOn('gestures')) this.gesturesAttach(bot);
-    this.vehiclesAttach(bot);   // езда: конец такта и движение лодки, пока физика mineflayer выключена (vehicles.js)
+    this.vehiclesAttach(bot);
+    this.closeBehindAttach(bot);   // двери, калитки, люки - закрывать за собой (chores.js)   // езда: конец такта и движение лодки, пока физика mineflayer выключена (vehicles.js)
     if (this.partOn('companion')) this.musicAttach(bot);   // музыка рядом - пританцовывать (mood.js)   // язык тела: узнать жесты игроков и ответить (gestures.js)   // равновесие после толчка (steer.js)
     // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
     bot.on('blockUpdate', (o, n) => {
@@ -512,7 +515,8 @@ class TotemBot extends EventEmitter {
     this.tick('hands', () => this.handsTick());
     this.tick('reflexes', () => this.reflexTick());
     this.tick('zones', () => this.zonesTick());
-    this.tick('edge', () => this.edgeTick());   // присед у обрыва (chores.js)
+    this.tick('edge', () => this.edgeTick());
+    this.tick('closeBehind', () => this.closeBehindTick());   // присед у обрыва (chores.js)
     this.tick('kit', () => this.kitTick());     // быстрый доступ, починка опытом   // запретные и опасные зоны (zones.js)
     this.tick('water', () => this.shoreTick());
     this.tick('companion', () => this.companionTick());
@@ -534,7 +538,7 @@ class TotemBot extends EventEmitter {
     this.stuckTick();
     this.sleepTick().catch(() => {});
     // в воде без дела - всплывать (держать прыжок), как игрок; иначе бот тонет
-    if (!this.busyLook) {   // busyLook - бот сам ведёт движение (выход на берег, портал): не мешать прыжку
+    if (!this.busyLook && !this._waterBy) {   // busyLook - бот сам ведёт движение; в воде клавиши у swim.js
       const here = b.blockAt(b.entity.position.offset(0, 1, 0));
       const inWater = here && /water|kelp|seagrass|bubble_column/.test(here.name);
       if (inWater && !b.pathfinder.isMoving()) { b.setControlState('jump', true); this.swimming = true; }
@@ -626,7 +630,7 @@ class TotemBot extends EventEmitter {
   // прыжок и шаг назад, путь заново; три раза подряд - сообщить мозгу.
   stuckTick() {
     const b = this.bot;
-    if (!b.pathfinder.isMoving()) { this.stuck = null; return; }
+    if (!b.pathfinder.isMoving() || this._waterBy === 'воздух') { this.stuck = null; return; }
     const p = b.entity.position;
     if (!this.stuck || p.distanceTo(this.stuck.at) > 1) { this.stuck = { at: p.clone(), since: Date.now(), tries: this.stuck ? this.stuck.tries : 0 }; return; }
     if (Date.now() - this.stuck.since < 5000) return;
@@ -647,7 +651,8 @@ class TotemBot extends EventEmitter {
       const fl = p.floored(), weeds = [];
       for (let dy = 0; dy <= 1; dy++) for (const [dx, dz] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const k = b.blockAt(fl.offset(dx, dy, dz));
-        if (k && /^(kelp|kelp_plant|seagrass|tall_seagrass|short_grass|tall_grass|fern|large_fern|vine)$/.test(k.name)) weeds.push(k);
+        // лиан тут нет: их сажают игроки (23.11, владелец: «лианы зачем-то ломал» - срезал их здесь, застряв у борта)
+        if (k && /^(kelp|kelp_plant|seagrass|tall_seagrass|short_grass|tall_grass|fern|large_fern)$/.test(k.name)) weeds.push(k);
       }
       if (weeds.length) {
         this.log('срезаю водоросли и траву вокруг: ' + weeds.length);
@@ -1571,10 +1576,22 @@ class TotemBot extends EventEmitter {
     const b0 = () => this.bot.entity.position;
     let inv0 = this.invCounts();
     try {
-      for (const a of plain) {
+      for (let a of plain) {
         this.check(tok);
         if (tok === this.token) this.runAt = plain.indexOf(a);
         let r;
+        // идти пешком, сидя: на сиденье (полублок, ступенька) - встать; в лодке за рулём - плыть туда же (!drive),
+        // пассажиром - сказать, кто рулит (22.11: в лодке давал «шагать» вместо «плыть»)
+        if (this.bot.vehicle && /^(goto|come|goto_place|wander|gather|mine|harvest|take|put|use|trades|trade)$/.test(a.act)) {
+          const v = this.bot.vehicle, isRide = /boat|raft|horse|donkey|mule|camel|pig|strider|llama/.test(v.name || '');
+          if (!isRide) { await this.standUp(); await sleep(300); }
+          else if (/boat|raft/.test(v.name || '') && a.act === 'goto' && a.x !== undefined) {
+            const ps = v.passengers || [];
+            if (ps.length && ps[0] !== this.bot.entity) throw new Error(`я в лодке пассажиром, рулит ${ps[0].username || ps[0].name}`);
+            a = { act: 'drive', x: a.x, z: a.z };
+            this.log('в лодке за рулём: идти -> плыть');
+          } else if (a.act !== 'come') { try { await this.dismount(); } catch {} await sleep(400); }
+        }
         switch (a.act) {
           case 'goto': {
             const tgt = new Vec3(+a.x, a.y !== undefined ? +a.y : this.bot.entity.position.y, +a.z);
@@ -1647,7 +1664,14 @@ class TotemBot extends EventEmitter {
           case 'use': r = await require('./objects').use(this, a, tok); break;
           case 'stash': r = await this.stash(a, tok); break;
           case 'followDist': { const cur = +this.opts.followDist || 3; r = 'держусь в ' + this.setFollowDist(a.d === 'closer' ? cur - 1 : a.d === 'farther' ? cur + 2 : a.d) + ' бл.'; if (this.onFollowDist) this.onFollowDist(this.opts.followDist); break; }
-          case 'mount': r = await this.mount(a, tok); break;
+          case 'mount': {
+            // дальше в списке «плыть к x z» - свою лодку ставить на воду в ту сторону (стенд 23.11: поставил в море за
+            // спиной и упёрся в берег)
+            const nx = plain.slice(plain.indexOf(a) + 1).find((q) => q && (q.act === 'drive' || q.act === 'goto') && q.x !== undefined);
+            this._boatToward = nx ? { x: +nx.x, z: +nx.z } : null;
+            try { r = await this.mount(a, tok); } finally { this._boatToward = null; }
+            break;
+          }
           case 'dismount': r = await this.dismount(); break;
           case 'quiet': this.opts.quiet = a.on !== false; if (this.onQuiet) this.onQuiet(this.opts.quiet); r = this.opts.quiet ? 'тихий режим: в чат не пишу' : 'снова могу говорить в чат'; break;
           case 'sit': { let ok = this.sitNear ? await this.sitNear(b0()) : false; if (!ok && !this.bot.vehicle) { this.bot.chat('/sit'); await new Promise((res) => setTimeout(res, 800)); ok = !!this.bot.vehicle; if (ok) this.seat = { since: Date.now(), at: b0().clone() }; } if (!ok) throw new Error('сесть негде: рядом нет свободной нижней ступеньки, полублока или подушки, /sit не сработал'); r = 'села'; break; }

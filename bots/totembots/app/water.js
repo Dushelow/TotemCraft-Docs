@@ -115,6 +115,7 @@ class Water {
   // Воздух кончается под водой - всплыть, даже посреди пути
   airTick() {
     const b = this.bot;
+    if (this._waterBy) return;   // в воде клавишами управляет swim.js (иначе два хозяина: прыжок в лёд, 23.11 стенд)
     const head = b.blockAt(b.entity.position.offset(0, 1.6, 0));
     const under = head && /water|bubble_column/.test(head.name);
     if (under && b.oxygenLevel !== undefined && b.oxygenLevel < 12) {
@@ -132,6 +133,7 @@ class Water {
     const b = this.bot, me = b.entity.position;
     const feet = b.blockAt(me);
     const wet = feet && /water|bubble_column|kelp|seagrass/.test(feet.name);
+    if (this._waterBy === 'воздух') return;   // задыхается - спасается swim.js, к берегу не тянуть
     if (!wet || this.mode !== 'idle' || b.pathfinder.isMoving()) { this.wetSince = wet ? (this.wetSince || Date.now()) : 0; return; }
     if (!this.wetSince) this.wetSince = Date.now();
     if (Date.now() - this.wetSince < 15000 || Date.now() - (this.shoreTry || 0) < 10000) return;

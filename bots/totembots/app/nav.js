@@ -536,12 +536,44 @@ function install(mv, bot) {
         if (ahead.has(k)) continue;
         const dist = Math.hypot(d.x + 0.5 - me.x, d.z + 0.5 - me.z);
         if (dist > 12) { opened.delete(k); continue; }   // ушла далеко - не возвращаться
-        if (dist < 2 || dist > 4) continue;
+        // ещё в проёме (тело задевает клетку двери) - рано; прошёл - закрыть сразу, даже стоя рядом (23.11 стенд: встал в
+        // палатке в 1,5 бл. от калитки и не закрыл - правило было «отойти на 2 бл.»)
+        const inCell = Math.abs(me.x - d.x - 0.5) < 0.85 && Math.abs(me.z - d.z - 0.5) < 0.85 && me.y < d.y + 1 && me.y + 1.8 > d.y;
+        if (dist > 5) continue;   // сервер даёт щёлкнуть до ~5,5 бл. от глаз до блока - 5 по горизонтали с запасом
+        if (inCell) {
+          // встал в самом проёме (дошёл за хозяином и остановился) - дверь не закрыть, житель или скот выйдут мимо (стенд
+          // 23.11). Как игрок: шаг дальше, в ту сторону, куда шёл, потом закрыть
+          const bl = bot.blockAt(new Vec3(d.x, d.y, d.z));
+          if (d.from && !d.stepped && bl && !/trapdoor/.test(bl.name) && !bot.pathfinder.isMoving() && !bot.vehicle) {
+            d.idle = d.idle || Date.now();
+            if (Date.now() - d.idle > 600) {
+              let ux = d.x + 0.5 - d.from.x, uz = d.z + 0.5 - d.from.z;
+              if (Math.abs(ux) > Math.abs(uz)) { ux = Math.sign(ux); uz = 0; } else { uz = Math.sign(uz); ux = 0; }
+              const tx = d.x + ux, tz = d.z + uz, f1 = bot.blockAt(new Vec3(tx, d.y, tz)), f2 = bot.blockAt(new Vec3(tx, d.y + 1, tz));
+              d.stepped = true;
+              if (f1 && f2 && f1.boundingBox === 'empty' && f2.boundingBox === 'empty') {
+                bot.lookAt(new Vec3(tx + 0.5, me.y + 1.6, tz + 0.5), true).catch(() => {});
+                bot.setControlState('forward', true);
+                setTimeout(() => { try { bot.setControlState('forward', false); } catch {} }, 400);
+              }
+            }
+          } else if (bot.pathfinder.isMoving()) d.idle = 0;
+          continue;
+        }
+        // в проёме кто-то: игрок (хозяин идёт следом) - ждать до 10 с; житель или скот - не больше 1,5 с, потом закрыть:
+        // они стоят у калитки как раз чтобы выйти (23.11 стенд: житель встал в проёме, калитка так и осталась открытой)
+        const inWay = Object.values(bot.entities).find((e) => e !== bot.entity && e.position && e.name !== 'item' && e.name !== 'experience_orb' && Math.abs(e.position.x - d.x - 0.5) < 0.9 && Math.abs(e.position.z - d.z - 0.5) < 0.9 && Math.abs(e.position.y - d.y) < 2);
+        if (inWay) { d.wait = d.wait || Date.now(); if (Date.now() - d.wait < (inWay.type === 'player' ? 10000 : 1500)) continue; } else d.wait = 0;
         const b = bot.blockAt(new Vec3(d.x, d.y, d.z));
-        opened.delete(k);
-        if (!b || !OPENABLE.test(b.name)) continue;
+        if (!b || !OPENABLE.test(b.name)) { opened.delete(k); continue; }
         const pr = b.getProperties(), now = pr.open === true || pr.open === 'true';
-        if (now !== d.was) { tog.set(k, Date.now()); bot.activateBlock(b).catch(() => {}); }
+        if (now === d.was) { opened.delete(k); continue; }   // уже как было - готово
+        // щелчок не всегда доходит (взгляд не успел, сервер отверг) - проверить через 0,8 с и повторить, до 3 раз
+        if (d.clickAt && Date.now() - d.clickAt < 800) continue;
+        if ((d.tries = (d.tries || 0) + 1) > 3) { opened.delete(k); continue; }
+        d.clickAt = Date.now(); tog.set(k, Date.now());
+        bot._navToggle = true;
+        bot.lookAt(new Vec3(d.x + 0.5, d.y + 0.5, d.z + 0.5), true).then(() => { bot._navToggle = true; return bot.activateBlock(b); }).catch(() => {});
       }
     }));
     bot.on('physicsTick', safe('nav-двери', () => {
@@ -554,8 +586,8 @@ function install(mv, bot) {
         const pr = b.getProperties(), open = pr.open === true || pr.open === 'true';
         if (open === o.want || Date.now() - (tog.get(k) || 0) < 1500) continue;
         tog.set(k, Date.now());
-        if (!opened.has(k)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: open });   // какой была до бота - закрыть потом
-        bot.activateBlock(b).catch(() => {});
+        if (!opened.has(k)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: open, from: me.clone() });   // какой была до бота - закрыть потом
+        bot._navToggle = true; bot.activateBlock(b).catch(() => {});   // эти закрывает путь сам (выше), не chores
       }
     }));
   }
