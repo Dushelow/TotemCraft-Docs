@@ -1509,9 +1509,17 @@ class TotemBot extends EventEmitter {
         const o = this.player(boss);
         if (Date.now() > st.until || !b || !b.entity) { clearInterval(st.t); this._houseAsk = null; if (Date.now() > st.until) this.say('Не понял(а), какой дом. Скажите «это наш дом», стоя внутри него.', 'whisper', boss); return; }
         if (!o) return;
+        // пока хозяин показывает - быть рядом и смотреть туда же, куда он (23.11, владелец: «странно, если я объясняю, а он
+        // где-то шатается»). Своя жизнь и прогулки на это время замолкают (они ждут затишья после дел)
+        this.lastRunAt = Date.now();
+        if (this.sandbox && this.sandboxEnd) this.sandboxEnd('хозяин показывает дом');
+        const busyQuest = this._errandBusy || this.mode === 'task';
+        if (!busyQuest && o.position.distanceTo(b.entity.position) > 4 && !st.walk) { st.walk = true; try { b.pathfinder.setGoal(new goals.GoalFollow(o, 2), true); } catch {} }
+        if (st.walk && o.position.distanceTo(b.entity.position) <= 3) { st.walk = false; try { if (this.mode !== 'follow') b.pathfinder.setGoal(null); } catch {} }
         const eye = o.position.offset(0, 1.62, 0), dir = new Vec3(-Math.sin(o.yaw) * Math.cos(o.pitch), Math.sin(o.pitch), -Math.cos(o.yaw) * Math.cos(o.pitch));
         const hit = b.world.raycast(eye, dir, 48);
-        if (!hit || !hit.position) { st.key = ''; return; }
+        if (!hit || !hit.position) { st.key = ''; this.lookTarget = o.position.offset(0, 1.6, 0); return; }
+        this.lookTarget = hit.position.offset(0.5, 0.5, 0.5);   // смотрит туда же, куда хозяин
         const k = `${Math.floor(hit.position.x / 3)},${Math.floor(hit.position.z / 3)}`;
         if (k !== st.key) { st.key = k; st.since = Date.now(); return; }
         if (Date.now() - st.since < 1500) return;
