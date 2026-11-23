@@ -16,6 +16,11 @@
 // тело село отдохнуть, и всё. Теперь это один квест из 5 шагов, тело ведёт его само и проверяет каждый шаг)
 const { goals } = require('mineflayer-pathfinder');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// ошибки модуля пути и mineflayer - по-русски (23.11: хозяину в личку пришло «No path to the goal!»)
+function ruErr(t) {
+  return t.replace(/No path to the goal!?/i, 'не нашёл, как туда пройти').replace(/Took too long to decide path to goal!?/i, 'долго искал путь и не нашёл')
+    .replace(/goal was changed[^;]*/i, 'перебили другим делом').replace(/Path was stopped[^;]*/i, 'путь прервали').replace(/Timed out[^;]*/i, 'не успел вовремя');
+}
 const CMD_TITLE = {
   harvest: (a) => `собрать урожай${a.crop ? ' (' + a.crop + ')' : ''}`, craft: (a) => `сделать ${a.count || ''} ${a.item}`, smelt: (a) => `переплавить ${a.item}`,
   trade: (a) => `поторговать с жителями: получить ${a.want || a.item || ''}`, trades: () => 'посмотреть товары жителей', obtain: (a) => `достать ${a.count || ''} ${a.item}`,
@@ -129,7 +134,7 @@ class Errands {
         const s = e.steps[e.cur];
         if (!s) {
           e.state = 'done'; this.saveErrand(e);
-          this.log('поручение выполнено');
+          this.log('квест выполнен');
           this.ev('поручение_готово', {});
           if (this.brainHook) this.brainHook(`[поручение выполнено] ${e.text || e.steps.map((x) => x.title).join(', ')}. Коротко скажи хозяину, что всё сделано.`);
           return;
@@ -139,7 +144,7 @@ class Errands {
         try {
           note = await this.errandStep(s, e);
           ok = true;
-        } catch (err) { note = String(err.message || err).slice(0, 160); }
+        } catch (err) { note = ruErr(String(err.message || err)).slice(0, 160); }
         const e2 = this.errand();
         if (!e2 || e2.state !== 'run') return;   // отменили или прервали, пока шёл шаг
         if (/задание отменено|занята делом/.test(note)) {
@@ -153,7 +158,7 @@ class Errands {
         cur.tries = (cur.tries || 0) + 1; cur.note = note;
         if (cur.tries < 3) { cur.st = 'wait'; this.saveErrand(e2); this.log(`поручение, шаг «${cur.title}» не вышел (${note}) - ещё раз через 20 с`); await sleep(20000); continue; }
         cur.st = 'fail'; e2.state = 'stuck'; this.saveErrand(e2);
-        const msg = `Поручение застряло на шаге «${cur.title}»: ${note}. Скажите «продолжай» или «отбой».`;
+        const msg = `Квест застрял на шаге ${e2.cur + 1} «${cur.title}»: ${note}. Напишите «продолжай» (попробую ещё), «отбой» (брошу) или скажите, как по-другому.`;
         this.log(msg);
         const boss = e2.from || (this.masters && this.masters[0]);
         if (boss) this.say(msg, 'whisper', boss);
@@ -176,7 +181,7 @@ class Errands {
         if (this.player(s.who)) return run([{ act: 'come', who: s.who }]);
         const pl = b.players[s.who];
         if (!pl) throw new Error(`${s.who} не в игре`);
-        this.say('Не вижу вас - где вы? Напишите координаты.', 'whisper', s.who);
+        this.say('Не вижу вас. Где вы? Напишите координаты.', 'whisper', s.who);
         throw new Error(`не вижу ${s.who} рядом`);
       }
       case 'wait': {
@@ -212,7 +217,7 @@ class Errands {
               const reply = await this.waitReply(s.who, until - Date.now());
               if (!reply) break;
               const p = require('./chatpoints').parse('метка ' + reply);
-              if (p) at = p; else this.say('Не поняла - напишите просто числа: x z или x y z.', 'whisper', s.who);
+              if (p) at = p; else this.say('Не понял(а). Напишите просто числа: x z или x y z.', 'whisper', s.who);
             }
           }
           if (!at && s.x !== undefined) at = { x: s.x, z: s.z };
@@ -221,7 +226,7 @@ class Errands {
           await run([{ act: 'travel', x: at.x, y: at.y, z: at.z, dim: at.dim && at.dim !== 'обычный мир' ? at.dim : undefined, who: s.who }]);
         }
         for (let i = 0; i < 40 && !this.player(s.who); i++) {   // до 2 минут: подождать и спросить
-          if (i === 0) this.say(`Я у ${Math.floor(b.entity.position.x)} ${Math.floor(b.entity.position.z)}, принесла вам вещи от хозяина. Где вы?`, 'whisper', s.who);
+          if (i === 0) this.say(`Я у ${Math.floor(b.entity.position.x)} ${Math.floor(b.entity.position.z)}, тут вещи для вас от хозяина. Где вы?`, 'whisper', s.who);
           await sleep(3000);
         }
         if (!this.player(s.who)) throw new Error(`${s.who} не видно рядом`);

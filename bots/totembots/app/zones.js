@@ -75,7 +75,7 @@ class Zones {
     if (!m.data.zones) {
       // перенос старого: смерти (danger) и места со словами «нельзя/запрет» - в зоны
       m.data.zones = [];
-      for (const d of m.data.danger || []) m.data.zones.push({ kind: 'опасно', name: `погибла ${new Date(d.at).toLocaleDateString('ru-RU')}`, x: d.x, y: d.y, z: d.z, r: 8, dim: d.dim, by: 'смерть', at: d.at, until: d.at + 7 * 86400000, deaths: 1 });
+      for (const d of m.data.danger || []) m.data.zones.push({ kind: 'опасно', name: `смерть ${new Date(d.at).toLocaleDateString('ru-RU')}`, x: d.x, y: d.y, z: d.z, r: 8, dim: d.dim, by: 'смерть', at: d.at, until: d.at + 7 * 86400000, deaths: 1 });
       for (const p of Object.values(m.data.places || {})) if (/нельзя|чуж|не заход|запрет/i.test(p.name + ' ' + (p.note || ''))) m.data.zones.push({ kind: 'запрет', name: p.name, x: p.x, y: p.y, z: p.z, r: 16, dim: p.dim, by: p.by || 'место', at: p.at || Date.now() });
       m.save();
     }
@@ -262,7 +262,7 @@ class Zones {
       this.memory.save(); this.log(`зона: опасно «${old.name}» ${old.x} ${old.z}, радиус ${old.r}`);
       return;
     }
-    this.addZone({ kind: 'опасно', name: `погибла тут (${why})`.slice(0, 60), x: pt.x, y: pt.y, z: pt.z, r: 8, by: 'смерть', until: Date.now() + 86400000 });
+    this.addZone({ kind: 'опасно', name: `место смерти (${why})`.slice(0, 60), x: pt.x, y: pt.y, z: pt.z, r: 8, by: 'смерть', until: Date.now() + 86400000 });
   }
 
   /** Раз в 5 с: таблички «вход запрещён», блейзы в обычном мире, выход из зоны, если оказалась внутри. */

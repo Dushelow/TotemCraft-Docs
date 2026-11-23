@@ -7,6 +7,7 @@
 //   6) трейдхолл: житель в ячейке за компостером, торговать через щель;
 //   7) загон с жителем на прямом пути: обойти, калитки не открывать;
 //   8) прогулка: шагом, не по прямой, с остановками, не дальше радиуса;
+//   10) «это наш дом» с улицы - метка внутри дома;
 //   9) квест: пшеница -> хлеб -> хозяину -> поспать, если ночь; перед этим бот сидит на ступеньке;
 //   (всё внутри границы мира стенда ±1500: за ней сервер возвращает игрока на спавн)
 //   и отметки Vulcan за всё время. node test/live_world_test.js [номер проверки]
@@ -122,6 +123,24 @@ const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { con
     const e = tb.errand(), bread = owner.bot.inventory.items().filter((i) => i.name === 'bread').reduce((s2, i) => s2 + i.count, 0);
     ok('квест из 4 шагов: пшеница -> хлеб -> хозяину (сидел - встал сам)', sat && e && e.state === 'done' && bread >= 2, `сидел перед квестом: ${sat ? 'да' : 'нет'}; ${r.slice(0, 120)}; итог: ${e ? e.state : '?'} (${tb.errandText ? tb.errandText().slice(0, 200) : ''}); у хозяина хлеба ${bread}; ${((Date.now() - t0) / 1000).toFixed(0)} с`);
     if (e && e.state !== 'done') tb.cancelErrand();
+  }
+
+  // 10. «это наш дом», стоя на улице у дома: метка - внутри дома (у кровати или за дверью), а не на дороге
+  if (!only || only === 10) {
+    const X = 1360, Y = 64, Z = 1000; await area(X, Z);
+    rcon(`fill ${X - 14} ${Y - 5} ${Z - 14} ${X + 14} ${Y - 2} ${Z + 14} stone`); rcon(`fill ${X - 14} ${Y - 1} ${Z - 14} ${X + 14} ${Y - 1} ${Z + 14} grass_block`);
+    rcon(`fill ${X - 14} ${Y} ${Z - 14} ${X + 14} ${Y + 8} ${Z + 14} air`);
+    rcon(`fill ${X + 2} ${Y} ${Z - 3} ${X + 8} ${Y + 3} ${Z + 3} white_concrete`); rcon(`fill ${X + 3} ${Y} ${Z - 2} ${X + 7} ${Y + 2} ${Z + 2} air`);   // белый дом
+    rcon(`setblock ${X + 2} ${Y} ${Z} oak_door[facing=east,half=lower]`); rcon(`setblock ${X + 2} ${Y + 1} ${Z} oak_door[facing=east,half=upper]`);
+    rcon(`setblock ${X + 6} ${Y} ${Z + 2} red_bed[facing=north,part=foot]`); rcon(`setblock ${X + 6} ${Y} ${Z + 1} red_bed[facing=north,part=head]`);
+    await tpSure(owner, 'TbOwner', X - 2, Y, Z); rcon(`tp TbOwner ${X - 2} ${Y} ${Z} -90 0`);   // на улице, лицом к дому
+    await tpSure(tb, 'TbAlex', X - 3, Y, Z + 1); await sleep(1500);
+    tb.opts.masters = ['TbOwner'];
+    const r = await tb.run([{ act: 'remember', kind: 'place', name: 'наш дом' }], 'запомни', 'master').catch((e) => 'ошибка: ' + e.message);
+    tb.opts.masters = [];
+    const pl = tb.memory.findPlace('наш дом');
+    const inside = pl && pl.x > X + 2 && pl.x < X + 8 && Math.abs(pl.z - Z) < 3;
+    ok('«это наш дом» с улицы - метка внутри дома', inside, `${r}`);
   }
 
   // 2. висячие лианы над водой

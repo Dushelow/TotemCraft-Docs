@@ -1389,13 +1389,17 @@ class TotemBot extends EventEmitter {
     const limit = +a.count || 256;
     for (let i = 0; i < limit; i++) {
       this.check(tok);
+      const skip = (this._cropSkip = this._cropSkip || new Map());
       const pos = b.findBlocks({ matching: ids, maxDistance: r, count: 200 })
-        .map((p) => b.blockAt(p)).filter((bl) => bl && CROPS[bl.name] && ready(bl))
+        .map((p) => b.blockAt(p)).filter((bl) => bl && CROPS[bl.name] && ready(bl) && !(Date.now() - (skip.get(bl.position.toString()) || 0) < 10 * 60000))
         .sort((x, y) => x.position.distanceTo(b.entity.position) - y.position.distanceTo(b.entity.position))[0];
       if (!pos) break;
       const [, seed] = CROPS[pos.name];
       const p = pos.position;
-      await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 30000);
+      // не дойти (за забором, на крыше, чужой огород за стеной) - эту грядку пропустить на 10 мин, собирать другие
+      // (23.11: «No path to the goal!» на одной грядке валил весь квест, и хозяину в личку уходила английская ошибка)
+      try { await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 30000); }
+      catch (e) { if (e instanceof Cancelled) throw e; skip.set(p.toString(), Date.now()); continue; }
       const blk = b.blockAt(p);
       if (!blk || blk.name !== pos.name) continue;
       this.busyLook = true;
@@ -1460,6 +1464,36 @@ class TotemBot extends EventEmitter {
   }
 
   /** remember: place (без координат - где стою), person, fact. */
+  /** Под крышей ли клетка: твёрдое над головой в 6 бл. */
+  roofed(x, y, z) { for (let dy = 2; dy <= 7; dy++) { const k = this.bot.blockAt(new Vec3(x, y + dy, z)); if (k && k.boundingBox === 'block') return true; } return false; }
+
+  /**
+   * Дом рядом с точкой, если сама точка на улице (23.11: хозяин сказал «дом вот белый», стоя на дороге и глядя на дом, -
+   * метка встала на улице). Кровать под крышей, иначе дверь: клетка за ней под крышей; в сторону взгляда хозяина - вперёд.
+   */
+  houseSpot(p, yaw) {
+    const b = this.bot, R = 24;
+    const fac = (q) => { if (yaw === undefined) return 0; const ang = Math.atan2(-(q.x - p.x), -(q.z - p.z)); let d = Math.abs(ang - yaw) % (2 * Math.PI); if (d > Math.PI) d = 2 * Math.PI - d; return d < 1.2 ? -8 : 0; };
+    const score = (q) => Math.hypot(q.x - p.x, q.z - p.z) + fac(q);
+    const stand = (x, y, z) => this.standOk ? this.standOk(x, y, z) : true;
+    const cands = [];
+    try {
+      for (const v of b.findBlocks({ point: p, matching: (bl) => /_bed$/.test(bl.name), maxDistance: R, count: 10 })) {
+        if (!this.roofed(v.x, v.y, v.z)) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) if (stand(v.x + dx, v.y, v.z + dz)) { cands.push({ x: v.x + dx, y: v.y, z: v.z + dz, why: 'у кровати' }); break; }
+      }
+      for (const v of b.findBlocks({ point: p, matching: (bl) => /_door$/.test(bl.name) && !/trapdoor/.test(bl.name), maxDistance: R, count: 20 })) {
+        const d = b.blockAt(v); if (!d || String(d.getProperties().half) === 'upper') continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const k of [2, 3]) {
+          const x = v.x + dx * k, z = v.z + dz * k;
+          if (stand(x, v.y, z) && this.roofed(x, v.y, z) && !this.roofed(v.x - dx * 2, v.y, v.z - dz * 2)) { cands.push({ x, y: v.y, z, why: 'за дверью' }); break; }
+        }
+      }
+    } catch {}
+    cands.sort((u, w) => score(u) - score(w));
+    return cands[0] || null;
+  }
+
   remember(a, by) {
     const m = this.memory;
     if (!m) return 'памяти нет';
@@ -1483,6 +1517,12 @@ class TotemBot extends EventEmitter {
         }
       }
       const p = this.bot.entity.position;
+      // «это дом», а стоим на улице - метку в сам дом рядом (у кровати или за дверью), в сторону взгляда хозяина
+      if (a.x === undefined && /(дом|база|хата|жиль)/i.test(String(a.name || '')) && !this.roofed(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z))) {
+        const boss = (this.opts.masters || []).map((n) => this.player(n)).find((e) => e && e.position.distanceTo(p) < 12);
+        const h = this.houseSpot(boss ? boss.position : p, boss ? boss.yaw : undefined);
+        if (h) { const r0 = m.place({ name: a.name, x: h.x, y: h.y, z: h.z, dim: a.dim || this.dimName(), note: a.note }, who); return `${r0} - в доме ${h.why} (стояли на улице)`; }
+      }
       return m.place({ name: a.name, x: a.x ?? Math.floor(p.x), y: a.y ?? Math.floor(p.y), z: a.z ?? Math.floor(p.z), dim: a.dim || this.dimName(), note: a.note }, who);
     }
     if (kind === 'person') return m.person(a, who);
@@ -1645,6 +1685,11 @@ class TotemBot extends EventEmitter {
             if (Math.hypot(pl.x - b0().x, pl.z - b0().z) > 48) await this.walkTo({ x: pl.x, y: noY ? null : pl.y, z: pl.z }, tok, 600000);
             else await this.goto(noY ? new goals.GoalNearXZ(pl.x, pl.z, 2) : new goals.GoalNear(pl.x, pl.y, pl.z, 2), tok, 600000);
             r = `пришёл к месту «${pl.name}»`;
+            // метка дома на улице (старые метки, 23.11) - пришли, видим дом рядом: перенести метку внутрь
+            if (/(дом|база|хата|жиль)/i.test(pl.name) && !this.roofed(pl.x, pl.y, pl.z)) {
+              const h = this.houseSpot(new Vec3(pl.x, pl.y, pl.z));
+              if (h && Math.hypot(h.x - pl.x, h.z - pl.z) < 16) { this.memory.place({ ...pl, x: h.x, y: h.y, z: h.z }, this.opts.name + ' (поправил: метка была на улице)'); r += `; метка была на улице - перенёс в дом (${h.why}: ${h.x} ${h.y} ${h.z})`; }
+            }
             break;
           }
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
