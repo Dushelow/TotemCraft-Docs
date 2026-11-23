@@ -132,7 +132,7 @@ class Trade {
     if (!want) throw new Error('что получить? например emerald или bread');
     const inv = () => this.invCounts();
     const list = this.villagersNear(32);
-    if (!list.length) throw new Error('жителей рядом нет');
+    if (!list.length && (a._depth || 0) >= 2) throw new Error('жителей рядом нет');   // нет рядом - ниже пойдёт искать по поселению
     const V = (this.memory && this.memory.data.villagers) || {};
     // порядок: по памяти есть нужное; за изумруды - житель, который покупает то, что у меня есть (фермер - пшеницу);
     // потом ближе. Житель, который точно не купит моё, за изумрудами не обходится
@@ -146,26 +146,45 @@ class Trade {
     list.sort((x, y) => score(y) - score(x));
     let fails = 0;
     let lastWhy = `никто рядом не продаёт ${want}`;
-    for (const e of list.slice(0, 8)) {
+    const noReach = (this._noReach = this._noReach || new Map());
+    for (const e of list.filter((x) => !(Date.now() - (noReach.get(this.villagerKey(x)) || 0) < 10 * 60000)).slice(0, 10)) {
       this.check(tok);
       const known = V[this.villagerKey(e)];
       if (known && Date.now() - known.at < 1800000 && !known.offers.some((o) => (o.out || '').includes(want) && !o.off && o.left > 0)) continue;
       let v;
-      try { v = await this.openTrader(e, tok); } catch (err) { if (this.isCancel(err)) throw err; lastWhy = err.message; this.log(`торговля: ${profession(e) || 'житель'} у ${Math.round(e.position.x)} ${Math.round(e.position.z)} - ${err.message}`); if (++fails >= 4) break; continue; }
+      try { v = await this.openTrader(e, tok); } catch (err) { if (this.isCancel(err)) throw err; lastWhy = err.message; this.log(`торговля: ${profession(e) || 'житель'} у ${Math.round(e.position.x)} ${Math.round(e.position.z)} - ${err.message}; иду к другим`); if (/подойти|пути|path/i.test(err.message)) noReach.set(this.villagerKey(e), Date.now()); if (++fails >= 6) break; continue; }
       try {
         await sleep(250);
         this.noteOffers(e, v);
-        const idx = (v.trades || []).findIndex((t) => t.outputItem && t.outputItem.name.includes(want) && !t.tradeDisabled && t.nbTradeUses < t.maximumNbTradeUses);
-        if (idx < 0) continue;
-        const t = v.trades[idx];
-        const can = Math.min(times, t.maximumNbTradeUses - t.nbTradeUses,
+        // из всех подходящих сделок - та, на которую хватает своего больше всего (23.11: брал первую - «за изумруд просят
+        // 22 моркови», хотя тот же житель покупал пшеницу, которая была)
+        const canOf = (t) => Math.min(times, t.maximumNbTradeUses - t.nbTradeUses,
           Math.floor((inv()[t.inputItem1.name] || 0) / Math.max(1, t.realPrice || t.inputItem1.count)),
           t.inputItem2 && t.inputItem2.count ? Math.floor((inv()[t.inputItem2.name] || 0) / t.inputItem2.count) : 64);
+        const cand = (v.trades || []).map((t, i) => ({ t, i })).filter(({ t }) => t.outputItem && t.outputItem.name.includes(want) && !t.tradeDisabled && t.nbTradeUses < t.maximumNbTradeUses);
+        if (!cand.length) continue;
+        cand.sort((x, y) => canOf(y.t) - canOf(x.t));
+        const idx = cand[0].i, t = cand[0].t;
+        const can = canOf(t);
         if (can < 1) { lastWhy = `за ${itemText(t.outputItem)} просят ${t.realPrice || t.inputItem1.count} ${t.inputItem1.name}${t.inputItem2 && t.inputItem2.count ? ' + ' + itemText(t.inputItem2) : ''} - у меня не хватает`; continue; }
         await this.bot.trade(v, idx, can);
         await sleep(300);
-        return `поменялась ${can} раз: ${t.realPrice || t.inputItem1.count} ${t.inputItem1.name}${t.inputItem2 && t.inputItem2.count ? ' + ' + itemText(t.inputItem2) : ''} -> ${itemText(t.outputItem)}`;
+        return `обмен ${can} раз: ${t.realPrice || t.inputItem1.count} ${t.inputItem1.name}${t.inputItem2 && t.inputItem2.count ? ' + ' + itemText(t.inputItem2) : ''} -> ${itemText(t.outputItem)}`;
       } finally { try { v.close(); } catch {} }
+    }
+    // рядом не вышло - как игрок в большом городе: к жителю, который (по памяти) даёт нужное за то, что у меня есть; не
+    // помню такого - пройтись по поселению и поискать других (23.11: «жителей миллион, а он мотался по ближним закоулкам»)
+    const depth = a._depth || 0;
+    if (depth < 2) {
+      const have = inv();
+      const far = Object.entries(V).filter(([k, x]) => x.dim === this.dimName() && !(Date.now() - (noReach.get(k) || 0) < 10 * 60000) && Math.hypot(x.x - me.x, x.z - me.z) > 12 && Math.hypot(x.x - me.x, x.z - me.z) < 300
+        && x.offers.some((o) => (o.out || '').includes(want) && !o.off && o.left > 0 && (() => { const m = /^(\d+) ([a-z_]+)/.exec(o.give || ''); return m && (have[m[2]] || 0) >= +m[1]; })()))
+        .sort((p, q) => Math.hypot(p[1].x - me.x, p[1].z - me.z) - Math.hypot(q[1].x - me.x, q[1].z - me.z))[0];
+      try {
+        if (far) { this.log(`торговля: рядом не вышло - иду к жителю у ${far[1].x} ${far[1].z} (помню, что меняет)`); await this.walkTo({ x: far[1].x, y: far[1].y, z: far[1].z }, tok, 180000); }
+        else { this.log('торговля: рядом не вышло - пройдусь по поселению, поищу других жителей'); await this.wander({ radius: 40 }, tok); }
+      } catch (err) { if (this.isCancel(err)) throw err; }
+      return this.doTrade({ ...a, _depth: depth + 1 }, tok);
     }
     throw new Error(lastWhy);
   }

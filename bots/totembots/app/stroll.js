@@ -17,7 +17,7 @@ function standY(b, x, z, y0) {
   for (let y = Math.floor(y0) + 3; y >= Math.floor(y0) - 4; y--) {
     const f = b.blockAt(new V(x, y - 1, z)), a = b.blockAt(new V(x, y, z)), h = b.blockAt(new V(x, y + 1, z));
     if (!f || !a || !h) continue;
-    if (f.boundingBox !== 'block' || /lava|magma|fire|cactus|farmland|water|powder_snow|sweet_berry/.test(f.name)) continue;
+    if (f.boundingBox !== 'block' || /lava|magma|fire|cactus|farmland|water|powder_snow|sweet_berry|chest|barrel|_bed$|crafting|furnace|smoker|anvil|lectern|composter|cauldron|_table$|leaves|hay_block|_fence|_wall$|_stairs$|trapdoor|shulker|bookshelf|loom|stonecutter|grindstone|bell|beehive|melon|pumpkin|_head$|_skull$|pot$/.test(f.name)) continue;   // только пол: на сундуки и мебель не вставать (23.11)
     if (a.boundingBox !== 'empty' || h.boundingBox !== 'empty' || /water|lava|fire|portal|berry|cobweb/.test(a.name + h.name)) continue;
     return y;
   }

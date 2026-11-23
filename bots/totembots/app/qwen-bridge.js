@@ -708,7 +708,7 @@ class QwenBridge {
           for (let k = 0; k < 10; k++) {
             await sleep(2500);
             const h = await this.historyAnswer(this.currentChat() || chatId, sentAt).catch(() => null);
-            if (h && h.done && h.text) { this.onAttention(`Qwen: ${r.done.error}, но ответ в чате есть - взяла его`); return { answer: h.text, chatId: this.currentChat() || chatId }; }
+            if (h && h.done && h.text) { this.onAttention(`Qwen: ${r.done.error}, но ответ в чате есть - беру его`); return { answer: h.text, chatId: this.currentChat() || chatId }; }
             if (!h) break;   // ответа нет и не пишется
           }
           throw new Error(r.done.error);

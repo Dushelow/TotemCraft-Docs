@@ -69,7 +69,7 @@ class Marks {
         await b.equip(torch, 'hand');
         await b.placeBlock(floor, new Vec3(0, 1, 0));
         this.myTorches.push(p.offset(dx, 0, dz));
-        this.log(`поставила факел у ${p.x + dx} ${p.y} ${p.z + dz} (темно)`);
+        this.log(`поставлено: факел у ${p.x + dx} ${p.y} ${p.z + dz} (темно)`);
         if (held && held.name !== 'torch') await b.equip(held, 'hand').catch(() => {});
       } catch {} finally { this.busyLook = false; }
       return;

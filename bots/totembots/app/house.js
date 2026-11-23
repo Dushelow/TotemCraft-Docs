@@ -72,7 +72,7 @@ class House {
   async stash(a, tok) {
     const b = this.bot, h = this.house();
     // только свои сундуки: поставленные самой или в своём доме («мой дом» в памяти, 16 бл.) - не в чужие
-    // (21.11 выложила 250 вещей в сундуки чужого амбара и «поблагодарила за помощь»)
+    // (21.11 выложено 250 вещей в сундуки чужого амбара и «поблагодарила за помощь»)
     const myHome = require('./life').home(this);
     const own = (v) => this.skills.mine(v) || (myHome && Math.hypot(myHome.x - v.x, myHome.z - v.z) <= 16 && Math.abs(myHome.y - v.y) <= 12);
     const chests = (h && h.chests.length ? h.chests : b.findBlocks({ matching: (bl) => /^(chest|trapped_chest|barrel)$/.test(bl.name), maxDistance: 8, count: 10 })).filter(own);

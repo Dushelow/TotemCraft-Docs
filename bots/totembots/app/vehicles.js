@@ -111,7 +111,7 @@ class Vehicles {
     if (b.entities[boat.id]) throw new Error('лодку выбить не вышло');
     await sleep(400);
     try { const it = Object.values(b.entities).find((e) => e.name === 'item' && e.position.distanceTo(boat.position) < 4); if (it) await this.goto(new goals.GoalNear(it.position.x, it.position.y, it.position.z, 0.5), tok, 8000); } catch {}
-    return `забрала лодку${who ? ' (в ней были: ' + who + ' - вышли)' : ''}`;
+    return `лодка забрана${who ? ' (в ней были: ' + who + ' - вышли)' : ''}`;
   }
 
   /** Поставить свою лодку на воду или лёд рядом (как игрок: лодка в руке, правый клик по блоку). */

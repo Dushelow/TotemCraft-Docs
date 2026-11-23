@@ -92,7 +92,7 @@ ${genderLine(bot)}
   [квест] и разговариваешь. Пример: хозяин голоден, просит еды и продать пшеницу ->
   ответ: сделаю: соберу пшеницу, испеку хлеба, отдам тебе, остальное продам
   \`\`\`
-  !quest("!harvest(wheat); !craft(bread, 6); give ${cfg.masters[0] || 'Ник'} bread 6; !trade(emerald, 4); night")
+  !quest("!harvest(wheat, 18); !craft(bread, 6); give ${cfg.masters[0] || 'Ник'} bread 6; !trade(emerald, 4); night")
   \`\`\`
   Квест идёт - не давай телу других команд, пока хозяин не попросил другое (тогда «отбой» или новый !quest).
 - Бой и война: тело само оценивает, по силам ли бой (оружие, броня, здоровье, щит, лук против врагов рядом), не тянет -
@@ -588,8 +588,8 @@ class Brain {
       // длинный чат тянет старые привычки (22.11: «просто общается» - в чате сотни прошлых ответов «спрошу хозяина»):
       // после 120 обменов или при новой вводной - свежий чат; память и дела приходят с первым же сообщением
       this.botCfg.chatTurns = (this.botCfg.chatTurns || 0) + 1;
-      const stale = this.botCfg.chatId && (this.botCfg.chatTurns > 120 || this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg)));
-      if (stale) { this.log(`новый чат: ${this.botCfg.chatTurns > 120 ? 'старый длинный (' + this.botCfg.chatTurns + ' обменов)' : 'обновились правила'}`); this.botCfg.chatId = ''; this.botCfg.chatTurns = 1; this.save(); this.pending.push({ line: '[память] ' + (this.memory ? this.memory.digest(this.botCfg.name).replace(/^\[память\]\n/, '') : ''), from: '@self' }); }
+      const stale = this.botCfg.chatId && (this.botCfg.chatTurns > 250 || this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg)));
+      if (stale) { this.log(`новый чат: ${this.botCfg.chatTurns > 250 ? 'старый длинный (' + this.botCfg.chatTurns + ' обменов)' : 'обновились правила'}`); this.botCfg.chatId = ''; this.botCfg.chatTurns = 1; this.save(); this.pending.push({ line: '[память] ' + (this.memory ? this.memory.digest(this.botCfg.name).replace(/^\[память\]\n/, '') : ''), from: '@self' }); }
       if (!this.botCfg.chatId) await this.warm();
       batch = this.pending.splice(0);
       if (this.bridge.ensureWarm) this.bridge.ensureWarm(this.botCfg.chatId, warmText(this.cfg(), this.botCfg));
@@ -674,6 +674,16 @@ class Brain {
       if (r.thought) { this.log('(мысль) ' + r.thought); try { this.body.thought && this.body.thought(r.thought, false); } catch {} }
       // рядом никого - реплика хозяину в личку, а не в пустоту (22.11: «где ты?» никуда; 23.11: любая речь, не только
       // вопросы - иначе снова «пишет, что мысли»)
+      // «рядом», а хозяина рядом нет (другой мир, далеко) и последнее он писал в личку - ответить в личку: ближний чат он
+      // не услышит (23.11: «нахуй ты рядом пишешь, я тебя не слышу, ты в Незере, а я дома»)
+      if (r.say && rc.channel === 'local') {
+        const ms = (this.cfg().masters || []).filter((n) => this.body.bot && this.body.bot.players[n]);
+        const me = this.body.bot && this.body.bot.entity;
+        const heard = (n) => { const e = this.body.player && this.body.player(n); return e && me && e.position.distanceTo(me.position) < 40; };
+        const anyoneNear = me && Object.values(this.body.bot.players).some((p) => p.entity && p.entity !== me && p.entity.position.distanceTo(me.position) < 40);
+        const m0 = ms.find((n) => !heard(n));
+        if (m0 && (whisperFrom || !anyoneNear || batch.some((x) => x.from === m0))) { rc = { channel: 'whisper', to: m0 }; r.channel = 'whisper'; r.to = m0; this.log(`хозяин ${m0} не рядом - отвечаю в личку`); }
+      }
       if (r.say && rc.channel === 'none') {
         const m0 = (this.cfg().masters || []).find((n) => this.body.bot && this.body.bot.players[n]);
         if (m0) { rc = { channel: 'whisper', to: m0 }; r.channel = 'whisper'; r.to = m0; this.log(`рядом никого - хозяину ${m0} в личку: ${r.say}`); }
@@ -709,7 +719,7 @@ class Brain {
         const spokenNow = batch.some((x) => /^\[(чат|голос|приказ)/.test(x.line || ''));
         const dup = spokenNow ? this.saidRecent.find((x) => x.t === r.say && Date.now() - x.at < 60000)
           : w1.size >= 2 && this.saidRecent.find((x) => { let n = 0; for (const w of w1) if (x.w.has(w)) n++; return n / Math.min(w1.size, x.w.size) > 0.6; });
-        if (dup) { this.log('(почти то же уже говорила - молчу) ' + r.say); this.unsaid(r.say, 'почти то же уже было сказано недавно'); r.say = ''; }
+        if (dup) { this.log('(почти то же уже было сказано - молчу) ' + r.say); this.unsaid(r.say, 'почти то же уже было сказано недавно'); r.say = ''; }
         else this.saidRecent.push({ w: w1, t: r.say, at: Date.now() });
       }
       // голос - только если реплика действительно звучит (в ближнем и личке его слышат рядом)

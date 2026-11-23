@@ -83,7 +83,7 @@ class Companion {
       // конец занятия: хозяин пошёл, отошли далеко, пришло дело, время вышло
       const gone = owner && (owner.position.distanceTo(C.stop || owner.position) > 1.5 || now - C.stillSince < 1000 || owner.position.distanceTo(b.entity.position) > 14);
       if (busy || sb.token !== this.token || gone || now > sb.until || (this.mode === 'follow' && !owner)) { this.sandboxEnd(gone ? 'хозяин пошёл' : ''); return; }
-      if (sb.phase === 'go' && b.entity.position.distanceTo(sb.spot) < 1.3) { sb.phase = 'at'; this.task = sb.what; if (!sb.hops) this.log('сама: ' + sb.what); }
+      if (sb.phase === 'go' && b.entity.position.distanceTo(sb.spot) < 1.3) { sb.phase = 'at'; this.task = sb.what; if (!sb.hops) this.log('своё: ' + sb.what); }
       if (sb.phase === 'go' && now - sb.at > 12000) { this.sandboxEnd('не дошла'); return; }
       if (sb.phase === 'at') {
         if (this.propOn) this.propOn(sb).catch(() => {});
@@ -198,7 +198,7 @@ class Companion {
     if (this.propOff) this.propOff(sb).catch(() => {});
     if (sb.lay && this.pose) this.poseEnd();
     if (this.task === sb.what) this.task = '';
-    if (why) this.log(`закончила: ${sb.what} (${why})`);
+    if (why) this.log(`закончено: ${sb.what} (${why})`);
     if (sb.token !== this.token) return;   // пришло новое дело - его цель не трогать
     try {
       if (this.mode === 'follow' && this.followName) { const e = this.player(this.followName); if (e) b.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true); }
@@ -273,7 +273,7 @@ class Companion {
     const say = (topic) => {
       if (now - (C.topic[topic] || 0) < 20 * 60000) return false;
       C.topic[topic] = now; C.barkAt = now;
-      try { this.say(pick(BARKS[topic]), 'local'); this.log(`сама сказала (${topic})`); } catch {}
+      try { this.say(pick(BARKS[topic]), 'local'); this.log(`сказано самим (${topic})`); } catch {}
       return true;
     };
     const t = b.time && b.time.timeOfDay, over = /overworld/.test(b.game.dimension || '');

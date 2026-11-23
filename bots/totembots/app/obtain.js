@@ -103,15 +103,15 @@ class Obtain {
       this.check(tok);
       try { await this.goto(new goals.GoalNear(c.x, c.y, c.z, 3), tok, 120000); } catch (e) { if (this.isCancel(e)) throw e; continue; }
       const n = await this.takeFromOwn(want, left(), tok);
-      looked.push(`сундук ${c.x} ${c.y} ${c.z}: ${n ? 'взяла ' + n : 'уже нет'}`);
+      looked.push(`сундук ${c.x} ${c.y} ${c.z}: ${n ? 'взято: ' + n : 'уже нет'}`);
     }
     const h = require('./life').home(this);
     if (left() > 0 && h && h.dim === dim && Math.hypot(h.x - me().x, h.z - me().z) <= 600) {
       try {
         if (Math.hypot(h.x - me().x, h.z - me().z) > 12) await this.goto(new goals.GoalNear(h.x, h.y, h.z, 3), tok, 180000);
         const n = await this.takeFromOwn(want, left(), tok);
-        looked.push(`сундуки дома: ${n ? 'взяла ' + n : 'нет'}`);
-      } catch (e) { if (this.isCancel(e)) throw e; looked.push('до дома не дошла: ' + e.message); }
+        looked.push(`сундуки дома: ${n ? 'взято: ' + n : 'нет'}`);
+      } catch (e) { if (this.isCancel(e)) throw e; looked.push('до дома не дойти: ' + e.message); }
     } else if (left() > 0 && !h) looked.push('своего дома не знаю');
     // 2. жители: кто продаёт (по памяти, до 200 бл.); незнакомые рядом - сначала посмотреть
     if (left() > 0) {

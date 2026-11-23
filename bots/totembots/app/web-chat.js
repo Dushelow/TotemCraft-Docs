@@ -108,6 +108,12 @@ class WebChat {
       await sleep(500);
       if (await this.captcha()) { await this.js(LOCK_OFF).catch(() => {}); this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке`); throw new Error(`${s.name}: проверка «не робот»`); }
       const r = (await readNow()) || { n: 0, t: '' };
+      // сайт просит не частить («Messages too frequent. Try again later», DeepSeek 23.11) - не жать «повтор», а отдохнуть
+      if (Date.now() - t0 > 1500 && Date.now() - (this._freqChk || 0) > 2000) {
+        this._freqChk = Date.now();
+        const freq = await this.js(`(() => /too frequent|try again later|слишком часто|请稍后|频繁/i.test(document.body.innerText.slice(-4000)))()`).catch(() => false);
+        if (freq) throw new Error(`${s.name}: слишком частые сообщения (rate limit) - подождать`);
+      }
       if (r.n <= before + (s.history ? 1 : 0) || !r.t) {
         // не ушло или сайт показал ошибку - как человек: нажать «повторить» (у DeepSeek - значок повторной отправки),
         // а если сообщения нет совсем - отправить ещё раз; на 12-й и 30-й секунде

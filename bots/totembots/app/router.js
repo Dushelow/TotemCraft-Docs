@@ -85,6 +85,11 @@ class Router {
     let last;
     for (const b of this.order()) {
       if (this.isResting(b.id)) continue;
+      // не частить: сайты режут за сообщения подряд («Messages too frequent», DeepSeek 23.11 - бот слал каждые 8 с);
+      // между запросами к одному мозгу - не меньше 12 с для сайтов, 3 с для Qwen
+      { const gap = b.id === 'qwen' ? 3000 : 12000, w = (this.lastAskAt = this.lastAskAt || {})[b.id] || 0, need = w + gap - Date.now();
+        if (need > 0) await new Promise((r) => setTimeout(r, need));
+        this.lastAskAt[b.id] = Date.now(); }
       try {
         const answer = b.id === 'qwen' ? await this.askQwen(ch, text, opt) : b.web ? await this.askWeb(b, ch, text) : b.claude ? await this.askClaude(b, ch, text) : await this.askApi(b, ch, text);
         if (!answer || !String(answer).trim()) throw new Error('пустой ответ');
@@ -108,7 +113,7 @@ class Router {
           if (/PARENT_NOT_FOUND/i.test(e.message) || ch.qwenBusy >= 2) { ch.qwenId = ''; ch.qwenBusy = 0; }
         }
         // отдых: настоящий лимит - 10 мин; нужен вход - 3 мин; обычный сбой - 20 с (не полчаса, как раньше)
-        if (b.id !== 'qwen') this.rest[b.id] = Date.now() + (LIMITED.test(e.message) ? 10 * 60000 : /нужен вход|нет поля/.test(e.message) ? 3 * 60000 : 20000);
+        if (b.id !== 'qwen') this.rest[b.id] = Date.now() + (/слишком частые/.test(e.message) ? 60000 : LIMITED.test(e.message) ? 10 * 60000 : /нужен вход|нет поля/.test(e.message) ? 3 * 60000 : 20000);
         if (b.web && /вход|не робот|нет поля/.test(e.message)) this.onAttention(e.message);
         if (b.web && ch.webIds && BROKEN_CHAT.test(e.message)) delete ch.webIds[b.id];
         this.log(`мозг ${b.name}: ${e.message.slice(0, 120)} - пробую следующий`);

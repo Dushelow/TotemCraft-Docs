@@ -358,7 +358,7 @@ class Gestures {
       if (!b.vehicle) return false;
       this.seat = { since: Date.now(), at: ground };
       this.task = 'сижу рядом';
-      this.log('села рядом на землю');
+      this.log('присел(а) рядом на землю');
       return true;
     }
     const where = cushion ? cushion.position : target.position;
@@ -369,7 +369,7 @@ class Gestures {
       if (!b.vehicle) return false;
       this.seat = { since: Date.now(), at: where };
       this.task = 'сижу рядом';
-      this.log(`села рядом на ${target.name}`);
+      this.log(`присел(а) рядом на ${target.name}`);
       return true;
     }
     // пустая рука (GSit: empty-hand-only)
@@ -379,7 +379,7 @@ class Gestures {
     if (!b.vehicle) return false;
     this.seat = { since: Date.now(), at: where };
     this.task = 'сижу рядом';
-    this.log('села рядом' + (cushion ? ' на подушку' : ` на ${target.name}`));
+    this.log('присел(а) рядом' + (cushion ? ' на подушку' : ` на ${target.name}`));
     return true;
   }
 

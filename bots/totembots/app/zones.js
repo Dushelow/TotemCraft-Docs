@@ -286,13 +286,13 @@ class Zones {
         for (const [k, pl] of Object.entries(P)) {
           if (!/из чата/.test(pl.by || '')) continue;
           const n = cleanName(pl.name);
-          if (!n) { delete P[k]; this.memory.save(); this.log(`метка «${pl.name}» - не название места, убрала`); }
+          if (!n) { delete P[k]; this.memory.save(); this.log(`метка «${pl.name}» - не название места, убрано`); }
           else if (n !== pl.name && !P[n.toLowerCase()]) { delete P[k]; P[n.toLowerCase()] = { ...pl, name: n }; this.memory.save(); this.log(`метка «${pl.name}» -> «${n}»`); }
         }
         for (const [k, pl] of Object.entries(P)) {
           if (pl.dim !== this.dimName() || Math.hypot(pl.x - me.x, pl.z - me.z) > 64) continue;
           const a = b.blockAt(new V(pl.x, pl.y, pl.z)), c = b.blockAt(new V(pl.x, pl.y + 1, pl.z));
-          if (a && c && /water/.test(a.name) && /water/.test(c.name)) { delete P[k]; this.memory.save(); this.log(`место «${pl.name}» было под водой - убрала из памяти`); }
+          if (a && c && /water/.test(a.name) && /water/.test(c.name)) { delete P[k]; this.memory.save(); this.log(`место «${pl.name}» было под водой - убрано из памяти`); }
         }
       } catch {}
     }

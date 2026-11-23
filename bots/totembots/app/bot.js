@@ -180,7 +180,14 @@ class TotemBot extends EventEmitter {
         // В поселении - по дорожкам, а не по газонам у домов (23.11, владелец: по карте видно - коричневое тропа, вокруг
         // зелень и участки). Тропа бывает любой: протоптанная земля, гравий, булыжник, плитка, светлые блоки на площади.
         // Газон - трава, мох, подзол, цветы и трава у ног: в 2,5 раза дороже; прочее природное - чуть дороже
+        // Незер: дороги метро (лёд, синий лёд) - дешевле, голый незеррак - дороже: держаться дорог
+        if (/nether/.test(bot.game.dimension || '')) return /ice$/.test(under) ? 0.6 : /^(netherrack|soul_sand|soul_soil|basalt|blackstone|magma_block|crimson_nylium|warped_nylium)$/.test(under) ? 1.4 : 1;
         if (/^(dirt_path|gravel|coarse_dirt|packed_mud|mud|suspicious_gravel)$/.test(under)) return 1;
+        // листва (кусты, живые изгороди), сено, тыквы, верх заборов и стен, сундуки, бочки, кровати, ульи - не дорога: в
+        // поселении в 4 раза дороже, в лесу листва - вдвое (23.11: шёл за хозяином по заборам, листьям и стогам вместо тропы)
+        if (/leaves|hay_block|_fence$|_wall$|chest|barrel|_bed$|beehive|bee_nest|melon|pumpkin|composter|_table$|anvil|cauldron|lectern|bookshelf|target|_head$|_skull$/.test(under)) {
+          return (nearBuilt(new Vec3(x, y - 1, z)) || (this.skills && this.skills.builtChunk(new Vec3(x, y, z)))) ? 4 : (/leaves/.test(under) ? 2 : 1.5);
+        }
         if (!NATURAL.test(under) && !/leaves|farmland|moss_block|moss_carpet/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
         if (!nearBuilt(new Vec3(x, y - 1, z)) && !(this.skills && this.skills.builtChunk(new Vec3(x, y, z)))) return 1;
         const feet = bot.blockAt(new Vec3(x, y, z), false), fn = feet ? feet.name : '';
@@ -428,7 +435,7 @@ class TotemBot extends EventEmitter {
     let t = String(text).replace(/^[/!]+/, '').slice(0, 240);   // своя реплика не должна стать командой
     if (!t) return;
     // тихий режим (lifeview.js): только личка; общий и ближний чат - молча (в журнал)
-    if (this.opts.quiet && !(channel === 'whisper' && to)) { this.log('(тихо, не сказала) ' + t); if (this.thought) this.thought(t, false); return; }
+    if (this.opts.quiet && !(channel === 'whisper' && to)) { this.log('(тихо, не сказано) ' + t); if (this.thought) this.thought(t, false); return; }
     if (this.thought) this.thought(t, true);
     if (channel === 'whisper' && to) t = `/msg ${to} ${t}`;
     else if (channel === 'local') t = '!' + t;
@@ -602,7 +609,7 @@ class TotemBot extends EventEmitter {
       } else {
         const L = this.lastSeen;
         if (L && L.name === this.followName && Date.now() - L.at < 60000) {
-          if (!this._seekLast) { this._seekLast = true; this.log(`${this.followName} не видно - иду, где видела последний раз: ${Math.floor(L.pos.x)} ${Math.floor(L.pos.y)} ${Math.floor(L.pos.z)}`); b.pathfinder.setGoal(new goals.GoalNear(L.pos.x, L.pos.y, L.pos.z, 1.5)); }
+          if (!this._seekLast) { this._seekLast = true; this.log(`${this.followName} не видно - иду, где видно было последний раз: ${Math.floor(L.pos.x)} ${Math.floor(L.pos.y)} ${Math.floor(L.pos.z)}`); b.pathfinder.setGoal(new goals.GoalNear(L.pos.x, L.pos.y, L.pos.z, 1.5)); }
         } else if (!this.lostReported) { this.lostReported = true; this._seekLast = false; this.event(`${this.followName} пропал из виду (далеко или в другом измерении)`, true); }
       }
     }
@@ -993,7 +1000,21 @@ class TotemBot extends EventEmitter {
       const d = Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z);
       if (s.do === 'portal') await this.portal(s, tok);
       else if (s.do === 'find_portal') {
-        await this.goto(new goals.GoalNearXZ(s.x, s.z, 6), tok, legTime(d));
+        // Незер: метро сервера расходится от незерхаба (0 0) ветками по осям (23.11, владелец: «красная ветка до
+        // -8125»). Знаю хаб и цель далеко почти по оси - через хаб и вдоль ветки, а не напрямик по незерраку
+        try {
+          const hub = /nether/.test(b.game.dimension) && this.memory && (this.memory.findPlace('незерхаб') || this.memory.findPlace('хаб'));
+          if (hub && hub.dim === this.dimName() && Math.hypot(s.x - hub.x, s.z - hub.z) > 150) {
+            const ax = Math.abs(s.x - hub.x) < Math.abs(s.z - hub.z) * 0.35, az = Math.abs(s.z - hub.z) < Math.abs(s.x - hub.x) * 0.35;
+            if (ax || az) {
+              this.log(`Незер: к цели по ветке метро от незерхаба (${ax ? 'вдоль Z' : 'вдоль X'})`);
+              if (Math.hypot(hub.x - b.entity.position.x, hub.z - b.entity.position.z) > 8) await this.walkTo({ x: hub.x, y: hub.y, z: hub.z }, tok, legTime(Math.hypot(hub.x - b.entity.position.x, hub.z - b.entity.position.z)));
+              const w = ax ? { x: hub.x, z: s.z } : { x: s.x, z: hub.z };
+              await this.walkTo({ x: w.x, y: hub.y, z: w.z }, tok, legTime(Math.hypot(w.x - hub.x, w.z - hub.z)));
+            }
+          }
+        } catch (e) { if (e instanceof Cancelled) throw e; this.log('по ветке не вышло: ' + String(e.message).slice(0, 80)); }
+        await this.goto(new goals.GoalNearXZ(s.x, s.z, 6), tok, legTime(Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z)));
         let pb = b.findBlock({ matching: b.registry.blocksByName.nether_portal.id, maxDistance: 40 });
         // у расчётной точки портала нет - ближайший виденный в этом мире (кэш), до 400 бл. от неё
         if (!pb && this.passCacheShared) {
@@ -1096,7 +1117,7 @@ class TotemBot extends EventEmitter {
     const far = Math.hypot(s.x - b.entity.position.x, s.z - b.entity.position.z);
     if (far > 48) {
       let done = false;
-      if (far <= 160) { try { await this.goto(goal, tok, Math.min(ms, 90000)); done = true; } catch (e) { if (e instanceof Cancelled) throw e; this.log('напрямую не дошла: ' + String(e.message).slice(0, 80) + ' - разведка'); } }
+      if (far <= 160) { try { await this.goto(goal, tok, Math.min(ms, 90000)); done = true; } catch (e) { if (e instanceof Cancelled) throw e; this.log('напрямую не дойти: ' + String(e.message).slice(0, 80) + ' - разведка'); } }
       if (done) return;
       await require('./scout').explore(this, s.x, s.z, tok, ms);
     }

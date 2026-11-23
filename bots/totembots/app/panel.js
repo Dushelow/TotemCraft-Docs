@@ -16,7 +16,7 @@ const HUMAN = [
   [/ERR_INTERNET_DISCONNECTED|ERR_NETWORK_CHANGED|ERR_NAME_NOT_RESOLVED/, 'нет интернета'],
   [/No path|noPath/, 'не нашла дорогу: цель за стеной или слишком далеко'],
   [/Took to long to decide path/, 'слишком долго искала дорогу: цель далеко или кругом препятствия'],
-  [/goal was changed/i, 'цель поменялась по ходу'],
+  [/goal was changed/i, 'цель поменяли по ходу'],
   [/disconnect\.quitting/, 'вышла с сервера'],
   [/duplicate_login|logged in from another location/i, 'под этим ником зашли с другого места'],
   [/whitelist|не в белом списке/i, 'ник не в белом списке сервера'],
@@ -263,7 +263,7 @@ function meter(ic, val, label) {
   return `<div class="meter ${cls}" title="${label} ${v} из 20">${icon(ic, 14)}<div class="bar"><i style="width:${v * 5}%"></i></div><span>${v}</span></div>`;
 }
 function doingText(s, on) {
-  return s.mode === 'follow' ? `идёт за ${s.follow}` : s.mode === 'task' ? `занят: ${s.task}` : s.mode === 'ride' ? 'едет' : s.mode === 'life' ? 'сама: ' + s.task
+  return s.mode === 'follow' ? `идёт за ${s.follow}` : s.mode === 'task' ? `занят: ${s.task}` : s.mode === 'ride' ? 'едет' : s.mode === 'life' ? 'своё: ' + s.task
     : s.mode === 'hold' ? 'ждёт на месте' : s.mode === 'paused' ? 'пауза' : on ? 'свободен' : '';
 }
 function botCard(b) {

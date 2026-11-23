@@ -80,6 +80,13 @@ function parse(text) {
     steps.push(a);
   }
   if (!steps.length) throw new Error('пустой план');
+  // урожай в квесте - сколько нужно, а не всё поле (23.11: квест «1 хлеб отнести» - и бот собрал всю пшеницу вокруг):
+  // дальше хлеб N - пшеницы 3N (+3 про запас), иначе 16
+  for (const st of steps) if (st.do === 'cmd' && st.act.act === 'harvest' && !st.act.count) {
+    const bread = steps.find((x) => x.do === 'cmd' && x.act.act === 'craft' && /bread/.test(String(x.act.item)));
+    st.act.count = bread ? (+bread.act.count || 1) * 3 + 3 : 16;
+    st.title += ` - ${st.act.count} шт.`;
+  }
   if (steps.length > 20) throw new Error('слишком длинный план (больше 20 шагов) - разбей на поручения поменьше');
   return steps;
 }
@@ -99,7 +106,7 @@ class Errands {
     this.log(`поручение: ${e.steps.map((s) => s.title).join(' → ')}`);
     this.ev('поручение', { steps: e.steps.map((s) => s.title) });
     setTimeout(() => this.errandLoop().catch((err) => this.log('поручение: ' + err.message)), 500);
-    return `принято поручение из ${e.steps.length} шагов: ${e.steps.map((s, i) => `${i + 1}) ${s.title}`).join('; ')}. Делаю сама по шагам, тебе ничего вести не надо`;
+    return `принято поручение из ${e.steps.length} шагов: ${e.steps.map((s, i) => `${i + 1}) ${s.title}`).join('; ')}. Делаю сам(а) по шагам, тебе ничего вести не надо`;
   }
 
   /** Хозяин: «отбой» - бросить, «продолжай» - продолжить после неудачи или прерывания. */
@@ -116,7 +123,7 @@ class Errands {
   errandText() {
     const e = this.errand();
     if (!e || e.state === 'done' || e.state === 'cancel') return '';
-    return `квест (${{ run: 'выполняю', stuck: 'застряла, жду хозяина', pause: 'прервано' }[e.state] || e.state}): ` +
+    return `квест (${{ run: 'выполняю', stuck: 'застрял, жду хозяина', pause: 'прервано' }[e.state] || e.state}): ` +
       e.steps.map((s, i) => `${i === e.cur ? '▶' : s.st === 'done' ? '✓' : ' '}${i + 1}) ${s.title}${s.note ? ' (' + s.note + ')' : ''}`).join('; ');
   }
 
@@ -162,7 +169,14 @@ class Errands {
         this.log(msg);
         const boss = e2.from || (this.masters && this.masters[0]);
         if (boss) this.say(msg, 'whisper', boss);
-        if (this.brainHook) this.brainHook(`[поручение застряло] ${msg} Можешь предложить хозяину, как быть.`);
+        if (this.brainHook) this.brainHook(`[поручение застряло] ${msg} Можешь предложить хозяину, как быть, или сам продолжить другим способом (новый !quest).`);
+        // хозяин не обязан жать «продолжай» (23.11: «я как ленивый пользователь туда почти не лезу») - через 2 мин
+        // попробовать тот же шаг ещё раз сам, до 2 раз; если за это время дали новый квест или «отбой» - не трогать
+        e2.autoRetry = (e2.autoRetry || 0) + 1; this.saveErrand(e2);
+        if (e2.autoRetry <= 2) {
+          const at = e2.at;
+          setTimeout(() => { const e3 = this.errand(); if (e3 && e3.at === at && e3.state === 'stuck') { this.log('квест: пробую застрявший шаг ещё раз сам'); this.resumeErrand(); } }, 120000);
+        }
         return;
       }
     } finally { this._errandBusy = false; this.travelling = false; }
@@ -305,7 +319,7 @@ class Errands {
     }
     if (this.guard) await this.guard.gear().catch(() => {});
     const lack = [foodN() < 4 && 'еды почти нет', blockN() < 8 && 'блоков для мостков нет'].filter(Boolean);
-    return (got.length ? 'взяла ' + got.join(', ') : 'всё нужное уже с собой') + (lack.length ? ` (${lack.join(', ')} - иду так)` : '');
+    return (got.length ? 'взято: ' + got.join(', ') : 'всё нужное уже с собой') + (lack.length ? ` (${lack.join(', ')} - иду так)` : '');
   }
 }
 

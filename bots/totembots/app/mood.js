@@ -83,7 +83,7 @@ class Mood {
       if (!here || was) continue;   // только при входе в место
       if (now - ((C.topic || {})[topic] || 0) < (topic === 'город игроков' || topic === 'деревня' ? 180 : 30) * 60000) continue;
       C.topic[topic] = now; C.barkAt = now;
-      try { this.say(pick(this.playful() ? playful : serious), 'local'); this.log(`сама сказала (${topic})`); } catch {}
+      try { this.say(pick(this.playful() ? playful : serious), 'local'); this.log(`сказано самим (${topic})`); } catch {}
       return;
     }
   }

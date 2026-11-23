@@ -113,10 +113,10 @@ function start(tb) {
     tb.cancel();
     const tok = tb.token;
     tb.mode = 'life'; tb.task = n.why;
-    tb.log(`сама: ${n.why}`);
+    tb.log(`своё: ${n.why}`);
     let failed = false, cut = false;
     tb.taskOwner = null;   // жизнь тела - младше всех: любое дело мозга или хозяина её прервёт
-    try { await act(tb, n, tok); } catch (e) { cut = tb.isCancel(e); failed = !cut; if (failed) tb.log(`сама не смогла (${n.k}): ${e.message.slice(0, 100)}`); }
+    try { await act(tb, n, tok); } catch (e) { cut = tb.isCancel(e); failed = !cut; if (failed) tb.log(`своё не вышло (${n.k}): ${e.message.slice(0, 100)}`); }
     finally {
       tb.lifeBusy = false;
       tb.lifeLast = { k: n.k, at: Date.now(), failed, cut: cut || tok !== tb.token };

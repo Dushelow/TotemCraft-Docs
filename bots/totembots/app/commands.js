@@ -26,7 +26,7 @@ const C = [
   ['smelt', 'smeltItem,cook', 'предмет, сколько', 'переплавить в своей печи (нет печи - сделаю)', (a) => ({ act: 'smelt', item: a[0], count: a[1] })],
   ['place', 'placeHere,placeBlock,put_block', 'блок[, x, y, z]', 'поставить блок (без координат - рядом с собой)', (a) => ({ act: 'place', block: a[0], x: a[1], y: a[2], z: a[3] })],
   ['breakBlock', 'break,destroy', 'x, y, z', 'сломать блок (природный или свой)', (a) => ({ act: 'break', x: a[0], y: a[1], z: a[2] })],
-  ['harvest', 'gatherCrops', '[растение]', 'собрать спелый урожай рядом и посадить обратно', (a) => ({ act: 'harvest', crop: a[0] })],
+  ['harvest', 'gatherCrops', '[растение, сколько]', 'собрать спелый урожай рядом и посадить обратно (сколько нужно: на 1 хлеб - 3 пшеницы; без числа - всё спелое рядом)', (a) => ({ act: 'harvest', crop: a[0], count: a[1] })],
   ['till', 'hoe,plow', '[x, y, z]', 'вспахать землю мотыгой (без координат - ближайшую)', (a) => ({ act: 'till', x: a[0], y: a[1], z: a[2] })],
   ['plant', 'sow,seed', 'семена[, x, y, z]', 'посадить на вспаханную грядку: wheat_seeds, carrot, potato, beetroot_seeds', (a) => ({ act: 'plant', item: a[0], x: a[1], y: a[2], z: a[3] })],
   ['farm', 'makeFarm,garden', 'семена, сколько', 'огород: вспахать и засадить несколько клеток рядом', (a) => ({ act: 'farm', item: a[0], count: a[1] })],
@@ -110,7 +110,9 @@ function splitArgs(s) {
     cur += ch;
   }
   if (cur.trim()) out.push(cur.trim());
-  return out.map((x) => (/^-?\d+(\.\d+)?$/.test(x) ? +x : x)).filter((x) => x !== '');
+  // «200 -8125» одним аргументом (без запятой) - это два числа (23.11: !travel(200 -8125) - «не принимает координаты»)
+  const flat = []; for (const x of out) { if (/^-?\d+(\.\d+)?(\s+-?\d+(\.\d+)?)+$/.test(x)) flat.push(...x.split(/\s+/)); else flat.push(x); }
+  return flat.map((x) => (/^-?\d+(\.\d+)?$/.test(x) ? +x : x)).filter((x) => x !== '');
 }
 
 // Частые ошибки нейросети - исправить по смыслу, а не отказывать

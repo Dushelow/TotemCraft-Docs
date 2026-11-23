@@ -77,7 +77,7 @@ async function explore(tb, gx, gz, tok, ms = 600000) {
       } catch (e) {
         if (tb.isCancel(e)) throw e;
         banned.push({ x: c.x, z: c.z });
-        if (!tb._scoutErrAt || Date.now() - tb._scoutErrAt > 10000) { tb._scoutErrAt = Date.now(); tb.log(`разведка: к ${c.x} ${c.y} ${c.z} не дошла: ${String(e.message).slice(0, 80)}`); }
+        if (!tb._scoutErrAt || Date.now() - tb._scoutErrAt > 10000) { tb._scoutErrAt = Date.now(); tb.log(`разведка: к ${c.x} ${c.y} ${c.z} не дойти: ${String(e.message).slice(0, 80)}`); }
       }
     }
     if (!ok) { if (!side) side = Math.random() < 0.5 ? 1 : -1; tb.log('разведка: в эту сторону не пройти - обхожу'); await sleep(1500); }

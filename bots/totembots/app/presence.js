@@ -138,7 +138,7 @@ class Presence {
     if (still < 5000) P.afkSaid = false;
     if (still > 40000 && still < 5 * 60000 && now - (P.talkAt || 0) > 25 * 60000 && now - (C.barkAt || 0) > 120000) {
       P.talkAt = now;
-      this.event(`повод поговорить: ${owner.username} рядом, вы давно молчите. Можно заговорить первым коротко и по-живому: спросить, как дела, вспомнить недавнее, рассказать, что видела, предложить дело. Не обязательно - если нечего сказать, промолчи`, true);
+      this.event(`повод поговорить: ${owner.username} рядом, вы давно молчите. Можно заговорить первым коротко и по-живому: спросить, как дела, вспомнить недавнее, рассказать, что видно было, предложить дело. Не обязательно - если нечего сказать, промолчи`, true);
       return;
     }
     const t = b.time && b.time.timeOfDay, h = require('./life').home(this);
@@ -153,7 +153,7 @@ class Presence {
       const f = b.inventory.items().find((i) => /^(poppy|dandelion|cornflower|allium|azure_bluet|oxeye_daisy|lily_of_the_valley|.*_tulip|blue_orchid|sunflower|peony|rose_bush|lilac)$/.test(i.name));
       if (f && !this.busyLook) {
         P.giftAt = now;
-        (async () => { this.busyLook = true; try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(f.type, null, 1); this.log('подарила хозяину ' + f.name); try { this.say('это тебе', 'local'); } catch {} } catch {} finally { this.busyLook = false; } })();
+        (async () => { this.busyLook = true; try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(f.type, null, 1); this.log('подарок: хозяину ' + f.name); try { this.say('это тебе', 'local'); } catch {} } catch {} finally { this.busyLook = false; } })();
       }
     }
   }
@@ -259,7 +259,7 @@ class Presence {
     if (this.moodShift) this.moodShift('play', -0.25, 'хозяин ранен');
     (async () => {
       this.busyLook = true;
-      try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(food.type, null, Math.min(food.count, 3)); this.log(`у хозяина ${Math.round(hp)}/20 - бросила ему ${food.name}`); try { this.say(pick(PLACE_BARK.owner_hurt), 'local'); } catch {} }
+      try { await b.lookAt(owner.position.offset(0, 1.2, 0), true); await b.toss(food.type, null, Math.min(food.count, 3)); this.log(`у хозяина ${Math.round(hp)}/20 - брошено ему ${food.name}`); try { this.say(pick(PLACE_BARK.owner_hurt), 'local'); } catch {} }
       catch {} finally { this.busyLook = false; }
     })();
   }
@@ -280,7 +280,7 @@ class Presence {
     const say = (topic) => {
       if (now - (C.topic[topic] || 0) < 30 * 60000) return false;
       C.topic[topic] = now; C.barkAt = now;
-      try { this.say(pick(PLACE_BARK[topic]), 'local'); this.log(`сама сказала (${topic})`); } catch {}
+      try { this.say(pick(PLACE_BARK[topic]), 'local'); this.log(`сказано самим (${topic})`); } catch {}
       return true;
     };
     if (place && place !== P.place) { P.place = place; if (say(place)) return; }

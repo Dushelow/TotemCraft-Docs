@@ -149,7 +149,7 @@ class Guard {
     const me = b.entity.position;
     // огненный шар гаста летит рядом - отбить ударом (как игроки), иначе взорвёт мост под ногами
     const fb = Object.values(b.entities).find((e) => /^(fireball)$/.test(this.name(e)) && e.position.distanceTo(me) < 4.5);
-    if (fb && Date.now() - (this.fbAt || 0) > 400) { this.fbAt = Date.now(); try { await b.lookAt(fb.position, true); b.attack(fb); tb.log('отбила огненный шар'); } catch {} }
+    if (fb && Date.now() - (this.fbAt || 0) > 400) { this.fbAt = Date.now(); try { await b.lookAt(fb.position, true); b.attack(fb); tb.log('отбит удар: огненный шар'); } catch {} }
 
     // крипер: пока не шипит - бьём и отскакиваем (как игроки), зашипел или варден - отбегаем
     const swelling = (e) => this.name(e) === 'creeper' && (e.metadata[16] === 1 || e.metadata[18] === true);
@@ -178,7 +178,9 @@ class Guard {
     // не тянем - уйти из-под обстрела за укрытие или к хозяину, а не стоять под стрелами до 6 здоровья
     let outmatched = false;
     if (t) {
-      const foes = Object.values(b.entities).filter((e) => e !== b.entity && e.position && e.position.distanceTo(me) < 16 && this.isHostile(e) && !NEUTRAL.has(this.name(e)));
+      // фантомы в небе - не повод бросать дело (23.11: шла спать, а от каждого налёта фантома «ухожу из-под удара» и не дошла;
+      // от фантомов спасает как раз сон)
+      const foes = Object.values(b.entities).filter((e) => e !== b.entity && e.position && e.position.distanceTo(me) < 16 && this.isHostile(e) && !NEUTRAL.has(this.name(e)) && !(this.name(e) === 'phantom' && e.position.y - me.y > 2));
       const o = this.odds(foes.length ? foes : [t]);
       const ranged = foes.some((e) => RANGED.test(this.name(e)));
       const shieldOn = b.inventory.slots[45] && b.inventory.slots[45].name === 'shield';

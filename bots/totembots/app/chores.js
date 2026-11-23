@@ -65,7 +65,7 @@ class Chores {
       if (inWay) continue;   // в проёме кто-то (хозяин идёт следом) - подождать
       M.delete(k);
       this._closing = true;
-      b.lookAt(c.offset(0, 0.5, 0), true).then(() => b.activateBlock(bl)).then(() => this.log(`закрыла за собой ${bl.name.replace(/_/g, ' ')}`)).catch(() => {}).finally(() => { this._closing = false; });
+      b.lookAt(c.offset(0, 0.5, 0), true).then(() => b.activateBlock(bl)).then(() => this.log(`закрыто за собой: за собой ${bl.name.replace(/_/g, ' ')}`)).catch(() => {}).finally(() => { this._closing = false; });
       return;
     }
   }
