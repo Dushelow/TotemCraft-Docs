@@ -131,20 +131,29 @@ function findFirefox() {
 }
 async function loginViaFirefox(profileDir, onStatus, S, exe) {
   fs.mkdirSync(profileDir, { recursive: true });
-  const proc = spawn(exe || findFirefox(), ['-profile', profileDir, '-no-remote', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
+  exe = exe || findFirefox();
+  // 1) обычный Firefox без управления: Google не пускает вход в браузер под управлением программы («браузер не
+  // безопасен», 23.11). Вошли - закрыли окно. 2) тот же профиль скрыто с портом отладки - забрать вход.
+  const plain = spawn(exe, ['-profile', profileDir, '-no-remote', S.url], { stdio: 'ignore' });
+  onStatus(`Войдите в ${S.name} в открывшемся окне Firefox, потом ЗАКРОЙТЕ это окно Firefox`);
+  const until0 = Date.now() + 15 * 60 * 1000;
+  while (plain.exitCode === null && Date.now() < until0) await sleep(1000);
+  if (plain.exitCode === null) { plain.kill(); throw new Error('не дождались входа за 15 минут'); }
+  await sleep(1500);
+  const proc = spawn(exe, ['-profile', profileDir, '-no-remote', '-headless', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
   try {
-    onStatus(`Войдите в ${S.name} в открывшемся окне Firefox`);
+    onStatus(`Забираю вход в ${S.name} из Firefox`);
     let ws;
     for (let i = 0; i < 30 && !ws; i++) { await sleep(1000); try { ws = await cdp(`ws://127.0.0.1:${PORT}/session`); } catch {} }
     if (!ws) throw new Error('Firefox не дал подключиться');
     const raw = (method, params = {}) => ws.send(method, params);   // тот же формат {id, method, params}
     await raw('session.new', { capabilities: {} });
-    const until = Date.now() + 10 * 60 * 1000;
-    let first;
+    const until = Date.now() + 40 * 1000;
+    let first = '';
     try {
       while (Date.now() < until) {
         await sleep(2000);
-        if (proc.exitCode !== null) throw new Error('Firefox закрыли до входа');
+        if (proc.exitCode !== null) throw new Error('Firefox закрылся');
         const tree = await raw('browsingContext.getTree', {});
         const ctx = (tree.contexts || []).find((c) => String(c.url).startsWith(S.url)) || (tree.contexts || [])[0];
         if (!ctx) continue;
@@ -158,7 +167,7 @@ async function loginViaFirefox(profileDir, onStatus, S, exe) {
         onStatus('Вход получен, закрываю Firefox');
         return { cookies: out, token };
       }
-      throw new Error('не дождались входа за 10 минут');
+      throw new Error(`в Firefox нет входа в ${S.name}: войдите и закройте окно ещё раз`);
     } finally { ws.close(); }
   } finally { proc.kill(); }
 }
