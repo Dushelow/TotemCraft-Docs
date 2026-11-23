@@ -81,7 +81,7 @@ class WebChat {
     if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через Chrome»`);
     const want = chatId && s.chatUrl ? s.chatUrl(chatId) : (chatId && this.wc.getURL().includes(chatId) ? this.wc.getURL() : s.home);
     if (!this.wc.getURL().startsWith(want) || !chatId) { await this.wc.loadURL(want); await sleep(1500); }
-    if (await this.captcha()) { await this.js(LOCK_OFF).catch(() => {}); throw new Error(`${s.name}: проверка «не робот» - пройдите её в окне бота`); }
+    if (await this.captcha()) { this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке, жду до 3 мин`); let ok = false; for (let w = 0; w < 90; w++) { await sleep(2000); if (!(await this.captcha().catch(() => false))) { ok = true; break; } } if (!ok) { await this.js(LOCK_OFF).catch(() => {}); throw new Error(`${s.name}: проверка «не робот» не пройдена за 3 мин`); } }
     // поле ввода
     let ok = false;
     for (let i = 0; i < 40 && !ok; i++) { ok = await this.js(`!!document.querySelector(${JSON.stringify(s.input)})`).catch(() => false); if (!ok) await sleep(250); }

@@ -73,6 +73,13 @@ class Guard {
     const near = Object.values(b.entities).filter((e) => e !== b.entity && e.type !== 'player' && e.position && !PEACE.test(this.name(e)) && e.position.distanceTo(me) < 5)
       .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
     if (near) this.hurtBy.set(near.id, now);
+    // «мобов не трогаю», а бьют уже не раз и здоровье падает - защищаться самому, не ждать просьбы (23.11: фантомы
+    // били стоящего бота, режим был «off»); через 30 с без ударов - прежний режим
+    this.hits = (this.hits || []).filter((t) => now - t < 8000).concat(now);
+    if (this.mode === 'off' && near && this.isHostile(near) && (this.hits.length >= 2 || b.health <= 12)) {
+      this.mode = 'defend'; this.autoDefend = now; this.tb.log('меня бьют - защищаюсь сам (режим «не трогать мобов» на время)');
+      if (this.tb.brainHook) this.tb.brainHook('[итог] на меня напали (' + this.name(near) + ') - тело само включило защиту на время боя');
+    }
   }
 
   /** Враг стоит на пути (впереди по ходу, ближе 3 бл., не крипер): в дороге его выгоднее ударить, чем стоять. */
@@ -209,7 +216,8 @@ class Guard {
       return;
     }
     if (!t) {
-      if (this.fighting) { this.fighting = false; this.target = null; tb.log('бой окончен'); this.resume(); }
+      if (this.autoDefend && Date.now() - this.autoDefend > 30000 && !this.fighting) { this.mode = 'off'; this.autoDefend = 0; tb.log('бой кончился - снова «мобов не трогаю»'); }
+      if (this.fighting) { this.fighting = false; this.target = null; tb.log('бой окончен'); this.resume(); this.autoDefend = this.autoDefend && Date.now(); }
       return;
     }
     if (!this.fighting) { this.fighting = true; tb.log('защищаюсь: ' + this.name(t)); await this.equipWeapon().catch(() => {}); }
