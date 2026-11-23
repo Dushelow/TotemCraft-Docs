@@ -82,7 +82,12 @@ class Stroll {
           if (this.zoneAt) { const zn = this.zoneAt(x, z); if (zn && /запрет|опасно/.test(zn.kind || '')) continue; }
           const y = standY(b, x, z, me.y);
           // за забором, стеной, калиткой - не туда (23.11: прыгал у забора, глядя на него: точка была по ту сторону)
-          if (y !== null && fenced(b, me, x + 0.5, z + 0.5)) continue;
+          // за забором можно, если есть обход: путь найден и не длиннее 2,5 прямой (не ломиться сквозь)
+          if (y !== null && fenced(b, me, x + 0.5, z + 0.5)) {
+            let ok = false;
+            try { const r = b.pathfinder.getPathTo(mv, new goals.GoalNear(x + 0.5, y, z + 0.5, 1), 300); ok = r && r.status === 'success' && r.path.length <= 2.5 * Math.hypot(x - me.x, z - me.z) + 4; } catch {}
+            if (!ok) continue;
+          }
           if (y !== null) dest = new me.constructor(x + 0.5, y, z + 0.5);
         }
         if (!dest) { await sleep(1500); continue; }
