@@ -171,7 +171,9 @@ async function loginViaFirefox(profileDir, onStatus, S, exe) {
         const { cookies } = await raw('storage.getCookies', {});
         const out = cookies.filter((c) => S.all || c.domain.includes(host)).map((c) => ({ name: c.name, value: c.value && c.value.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite === 'none' ? 'None' : c.sameSite === 'strict' ? 'Strict' : 'Lax', expires: c.expiry || -1 }));
         onStatus('Вход получен, закрываю Firefox');
-        return { cookies: out, token };
+        let ua = '';
+        try { const u = await raw('script.evaluate', { expression: 'navigator.userAgent', target: { context: ctx.context }, awaitPromise: false }); ua = String(u.result && u.result.value || '').replace(/\s*Headless/i, ''); } catch {}
+        return { cookies: out, token, ua };
       }
       throw new Error(`в Firefox нет входа в ${S.name}: войдите и закройте окно ещё раз`);
     } finally { ws.close(); }

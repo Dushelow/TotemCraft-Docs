@@ -243,7 +243,7 @@ const webViews = {}, webChats = {};
 function webView(site) {
   if (webViews[site]) return webViews[site];
   const ses = session.fromPartition('persist:' + site);
-  ses.setUserAgent(CHROME_UA);
+  ses.setUserAgent((cfg.siteUA && cfg.siteUA[site]) || CHROME_UA);
   const v = new WebContentsView({ webPreferences: { session: ses, backgroundThrottling: false } });
   win.contentView.addChildView(v, 0);
   v.webContents.setAudioMuted(true);
@@ -269,7 +269,7 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'panel.html'));
 
   const qs = session.fromPartition('persist:qwen');
-  qs.setUserAgent(CHROME_UA);
+  qs.setUserAgent((cfg.siteUA && cfg.siteUA.qwen) || CHROME_UA);
   qwen = new WebContentsView({ webPreferences: { session: qs, backgroundThrottling: false } });
   win.contentView.addChildView(qwen);
   // первый запуск: окно сайта лежит поверх панели и закрывало мастер настройки (23.11, установка у друга) - спрятать до «Готово»
@@ -733,8 +733,10 @@ async function loginSite(site) {
   const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   if (!SITES[site]) return { ok: false };
   try {
-    const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-' + site)), status, site);
+    const { cookies, token, ua } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-' + site)), status, site);
     const v = webView(site), ses = v.webContents.session;
+    cfg.siteUA = { ...(cfg.siteUA || {}), [site]: ua || '' }; saveCfg();
+    ses.setUserAgent(ua || CHROME_UA);
     for (const c of cookies) {
       try { await ses.cookies.set({ url: 'https://' + c.domain.replace(/^\./, '') + c.path, name: c.name, value: c.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: SAME_SITE[c.sameSite] || 'unspecified', ...(c.expires > 0 ? { expirationDate: c.expires } : {}) }); } catch {}
     }
@@ -776,8 +778,12 @@ ipcMain.handle('qwen-login-chrome', () => loginQwen());
 async function loginQwen() {
   const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   try {
-    const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login')), status);
+    const { cookies, token, ua } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login')), status);
     const qs = qwen.webContents.session;
+    // вход из Firefox: сайт привязал его к браузеру - представляться тем же Firefox (23.11 у друга: через 17 мин Qwen
+    // перестал принимать сообщения, «Сетевая ошибка»); вход из Chrome - обычный Chrome
+    cfg.siteUA = { ...(cfg.siteUA || {}), qwen: ua || '' }; saveCfg();
+    qs.setUserAgent(ua || CHROME_UA);
     for (const c of cookies) {
       await qs.cookies.set({
         url: 'https://' + c.domain.replace(/^\./, '') + c.path, name: c.name, value: c.value, domain: c.domain,

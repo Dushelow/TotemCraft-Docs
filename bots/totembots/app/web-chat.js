@@ -78,7 +78,7 @@ class WebChat {
     // владелец печатает в этом окне (поле в фокусе и не пустое) - подождать, а не отказывать
     for (let i = 0; i < 30 && this.inUse && this.inUse() && await this.js(`(() => { const t = document.activeElement; return !!(t && (t.value || t.innerText || '').trim() && /TEXTAREA|DIV/.test(t.tagName)); })()`).catch(() => false); i++) await sleep(1000);
     for (let i = 0; i < 40 && !(await this.loggedIn()); i++) await sleep(400);   // окно могло только что открыться
-    if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через Chrome»`);
+    if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через браузер»`);
     const want = chatId && s.chatUrl ? s.chatUrl(chatId) : (chatId && this.wc.getURL().includes(chatId) ? this.wc.getURL() : s.home);
     if (!this.wc.getURL().startsWith(want) || !chatId) { await this.wc.loadURL(want); await sleep(1500); }
     if (await this.captcha()) { this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке, жду до 3 мин`); let ok = false; for (let w = 0; w < 90; w++) { await sleep(2000); if (!(await this.captcha().catch(() => false))) { ok = true; break; } } if (!ok) { await this.js(LOCK_OFF).catch(() => {}); throw new Error(`${s.name}: проверка «не робот» не пройдена за 3 мин`); } }
