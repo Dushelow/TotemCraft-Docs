@@ -209,7 +209,7 @@ class Vehicles {
     const ps = v.passengers || [];
     const driver = /boat|raft/.test(v.name || '') && (!ps.length || ps[0] === b.entity);
     // shift - слезть (с 1.21.2 сервер высаживает по «присесть» во вводе, а не по прыжку, как шлёт mineflayer.dismount)
-    try { b._client.write('player_input', { inputs: { forward: c('forward'), backward: c('back'), left: c('left'), right: c('right'), jump: false, shift: !!this._wantOff, sprint: false } }); } catch {}
+    try { b._client.write('player_input', { inputs: { forward: c('forward'), backward: c('back'), left: c('left'), right: c('right'), jump: false, shift: !!this._wantOff || c('sneak'), sprint: false } }); } catch {}   // присед = встать с сиденья GSit (standUp)
     if (driver) {
       if (R.yawDeg === null) R.yawDeg = 180 - (v.yaw || 0) * 180 / Math.PI;   // mineflayer: yaw = рад(180 - градусы игры)
       if (c('left')) R.dRot -= 1;

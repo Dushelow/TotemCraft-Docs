@@ -40,6 +40,55 @@ function install(mv, bot) {
     return c === undefined ? null : fake(['air', 'water', 'stone', 'lava'][c], x, y, z);
   };
 
+  // Калитка, дверь, люк, за которыми заперты жители или скот (загон, палатка торговца, ячейка трейдхолла): открывать
+  // в последнюю очередь - путь в обход дешевле на 40 шагов (23.11, владелец: «приоритет не заходить и не открывать,
+  // если они заперты и выйти не могут, а открытие поможет им выйти; не помогает - пусть ходит»). Заперты ли - заливка
+  // по клеткам от каждого существа рядом при закрытой калитке: упёрлась в 250 клеток - вольер не замкнут, неважно.
+  const PENNED = /^(villager|wandering_trader|cow|sheep|pig|chicken|horse|donkey|mule|goat|rabbit|llama|trader_llama|mooshroom|camel|turtle|armadillo|sniffer|fox|cat|parrot|axolotl|frog|iron_golem)$/;
+  const penCache = new Map();
+  const solidAt = (x, y, z) => { const k = blk(x, y, z); return k ? k.boundingBox === 'block' : false; };
+  const UNJUMP = /fence|wall|_gate|_bars|glass_pane|_door|trapdoor/;
+  function confined(gx, gy, gz) {
+    const mobs = Object.values(mv.bot.entities).filter((e) => e.position && PENNED.test(e.name || '') && Math.abs(e.position.y - gy) < 3 && Math.hypot(e.position.x - gx - 0.5, e.position.z - gz - 0.5) < 9).slice(0, 6);
+    if (!mobs.length) return false;
+    for (const e of mobs) {
+      const y = Math.floor(e.position.y + 0.01), sx = Math.floor(e.position.x), sz = Math.floor(e.position.z);
+      // клетка проходима для существа: на уровне ног пусто, либо блок высотой 1, через который прыгают (не забор)
+      const pass = (x, z) => {
+        if (x === gx && z === gz) return false;   // калитка закрыта
+        const f = blk(x, y, z); if (!f) return true;   // не загружено - считать открытым (не запертым)
+        if (f.boundingBox !== 'block') return !solidAt(x, y + 1, z);
+        return !UNJUMP.test(f.name) && !solidAt(x, y + 1, z) && !solidAt(x, y + 2, z);
+      };
+      const seen = new Set([sx + ',' + sz]), q = [[sx, sz]];
+      let touches = false, open = false;
+      while (q.length) {
+        const [x, z] = q.shift();
+        if (Math.abs(x - gx) + Math.abs(z - gz) === 1) touches = true;
+        if (seen.size > 250) { open = true; break; }
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const k = (x + dx) + ',' + (z + dz);
+          if (seen.has(k) || !pass(x + dx, z + dz)) continue;
+          seen.add(k); q.push([x + dx, z + dz]);
+        }
+      }
+      if (!open && touches) return true;
+    }
+    return false;
+  }
+  function penPenalty(list) {
+    let p = 0;
+    for (const g of list || []) {
+      if (!g.want) continue;   // закрыть - не мешает
+      const k = g.x + ',' + g.y + ',' + g.z, c = penCache.get(k);
+      if (c && Date.now() - c.at < (c.v ? 20000 : 3000)) { p = Math.max(p, c.v); continue; }   // «никого» - ненадолго: существа подгружаются позже блоков
+      let v = 0; try { v = confined(g.x, g.y, g.z) ? 40 : 0; } catch {}
+      penCache.set(k, { at: Date.now(), v }); p = Math.max(p, v);
+    }
+    return p;
+  }
+  mv._penPenalty = penPenalty;
+
   function shapesOf(b, x, y, z) {
     const r = [];
     if (b && b.boundingBox !== 'empty' && b.shapes) for (const s of b.shapes) r.push({ x0: x + s[0], y0: y + s[1], z0: z + s[2], x1: x + s[3], y1: y + s[4], z1: z + s[5] });
@@ -377,7 +426,7 @@ function install(mv, bot) {
       // под ногами в конце шага: грядку вытаптывает прыжок и падение на неё - такие шаги нельзя; ходить по ней - дорого
       const under = cell(nx, Math.floor(w.feet - 0.01), nz).b, uname = under ? under.name : '';
       if (uname === 'farmland' && (w.jumped || rise < -0.25)) continue;
-      let cost = (dx && dz ? Math.SQRT2 : 1) + (w.jumped ? 1 : rise > EPS ? 0.3 : 0) + (rise < -1 ? -rise * 0.5 : 0) + (w.opened ? (w.gentle ? 0.5 : 2) : 0);
+      let cost = (dx && dz ? Math.SQRT2 : 1) + (w.jumped ? 1 : rise > EPS ? 0.3 : 0) + (rise < -1 ? -rise * 0.5 : 0) + (w.opened ? (w.gentle ? 0.5 : 2) + penPenalty(toPlace) : 0);
       // ловушка: спуск туда, откуда не выбраться (яма, загон, медовая яма) - только если цель там же (очень дорого)
       if (rise < -0.7 && !trapCheck && !escapable(nx, ny, nz, fy)) cost += 60;
       if (uname === 'farmland') cost += 3;

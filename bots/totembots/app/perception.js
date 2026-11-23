@@ -59,7 +59,7 @@ class Perception {
     const doing = (ride ? ride + '; ' : '') + (s.mode === 'follow' ? `идёшь за ${s.follow}` : s.mode === 'task' ? `выполняешь: ${s.task}` : s.mode === 'life' ? `тело само: ${s.task}` : s.mode === 'hold' ? 'стоишь и ждёшь (сказали ждать)' : ride ? 'без дела' : 'стоишь');
     return {
       pos: s.pos,
-      core: `${(() => { try { const d = this.district(); return d ? d + '; ' : ''; } catch { return ''; } })()}${(() => { try { const h = this.homeText(); return h ? h + '; ' : ''; } catch { return ''; } })()}${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}${this.errandText && this.errandText() ? '; ' + this.errandText() : ''}`,
+      core: `${(() => { try { const d = this.district(); return d ? d + '; ' : ''; } catch { return ''; } })()}${(() => { try { const h = this.homeText(); return h ? h + '; ' : ''; } catch { return ''; } })()}${s.dim} ${s.pos.join(' ')}${/nether/.test(b.game.dimension || '') ? ` (это Незер; в обычном мире это около ${s.pos[0] * 8} ${s.pos[2] * 8})` : ''}${under}; ${tod}${weather}; здоровье ${s.health}/20, еда ${s.food}/20; ${doing}`,
       near: s.near.length ? 'рядом: ' + s.near.map((n) => `${n.name} ${n.dist} бл.`).join(', ') : 'рядом никого (48 бл.)',
       inv: Object.entries(s.items).map(([k, v]) => `${k} x${v}`).join(', ') || 'пусто',
       online: Object.keys(b.players || {}).filter((n) => n !== this.opts.name).sort(),

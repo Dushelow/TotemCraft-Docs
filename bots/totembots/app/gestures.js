@@ -389,7 +389,9 @@ class Gestures {
     if (!this.seat && !b.vehicle) return;
     this.seat = null;
     if (this.task === 'сижу рядом') this.task = '';
-    try { b.setControlState('sneak', true); await sleep(300); b.setControlState('sneak', false); } catch {}
+    // держать присед, пока сервер не снимет с сиденья (до 2 с): 300 мс иногда не хватало, и бот оставался сидеть
+    try { b.setControlState('sneak', true); await sleep(300); for (let i = 0; i < 17 && b.vehicle; i++) await sleep(100); b.setControlState('sneak', false); } catch {}
+    if (b.vehicle && !/boat|raft|horse|donkey|mule|camel|pig|strider|llama|minecart/.test(b.vehicle.name || '')) this.log('встать не вышло: сервер не снял с сиденья');
   }
 }
 

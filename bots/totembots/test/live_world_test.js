@@ -5,6 +5,9 @@
 //   4) лодка: поставить свою, сесть, доплыть к точке у стены и встать, не въехав в стену;
 //   5) подо льдом: воздух кончается - найти выход или пробить лёд, не утонуть;
 //   6) трейдхолл: житель в ячейке за компостером, торговать через щель;
+//   7) загон с жителем на прямом пути: обойти, калитки не открывать;
+//   8) прогулка: шагом, не по прямой, с остановками, не дальше радиуса;
+//   9) квест: пшеница -> хлеб -> хозяину -> поспать, если ночь; перед этим бот сидит на ступеньке;
 //   (всё внутри границы мира стенда ±1500: за ней сервер возвращает игрока на спавн)
 //   и отметки Vulcan за всё время. node test/live_world_test.js [номер проверки]
 const { execSync } = require('child_process');
@@ -13,7 +16,7 @@ const rcon = (c) => execSync(`docker exec tc-up rcon-cli "${c.replace(/"/g, '\\"
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const only = process.argv[2] ? +process.argv[2] : 0;
 const res = []; const ok = (n, c, i) => { res.push([n, !!c]); console.log(`${c ? 'да ' : 'НЕТ'} ${n}${i !== undefined ? ' - ' + i : ''}`); };
-const until = async (fn, ms, step = 250) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (fn()) return Date.now() - t0; } catch {} await sleep(step); } return 0; };
+const until = async (fn, ms, step = 250) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (fn()) return Math.max(1, Date.now() - t0); } catch {} await sleep(step); } return 0; };
 const tp = (who, x, y, z) => rcon(`execute in minecraft:overworld run minecraft:tp ${who} ${x} ${y} ${z}`);
 // перенести и дождаться, что бот действительно там (сразу после входа сервер переносы иногда не делает)
 const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { const o = tp(who, x, y, z); if (i === 3) console.log('   перенос', who, ':', o); await sleep(1000); const p = bot.bot && bot.bot.entity && bot.bot.entity.position; if (p && Math.abs(p.x - x) < 2 && Math.abs(p.z - z) < 2) return true; } console.log('   ПЕРЕНОС НЕ ВЫШЕЛ:', who, '- проверка ниже недостоверна'); return false; };
@@ -23,6 +26,8 @@ const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { con
   for (const n of ['TbOwner', 'TbAlex']) { try { rcon(`authme register ${n} Tb12345x`); } catch {} }
   const owner = new TotemBot({ name: 'TbOwner', password: 'Tb12345x', host: '127.0.0.1', port: 25566, combat: 'off' });
   const tb = new TotemBot({ name: 'TbAlex', password: 'Tb12345x', host: '127.0.0.1', port: 25566, combat: 'off' });
+  // своя память во временной папке (квест хранится в памяти бота, как в программе)
+  { const { Memory } = require('../app/memory'); const d = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'tbmem-')); tb.memory = new Memory(d); }
   const logs = []; tb.on('log', (t) => { logs.push(new Date().toISOString().slice(11, 19) + ' ' + t); if (/закрыла|торговля|лодк|сел|пробив|воздух|лиан|застрял|не сел|упёрлась|доплыл/.test(t)) console.log('   бот:', t); });
   // сервер пускает с одного адреса не чаще раза в 4 с («Connection throttled») - входить по очереди и ждать, что бот в мире
   const online = async (x) => { x.start(); for (let i = 0; i < 120 && !(x.bot && x.bot.entity && x.bot.player); i++) await sleep(250); await sleep(1500); };
@@ -40,19 +45,83 @@ const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { con
     rcon(`fill ${X - 4} ${Y} ${Z - 4} ${X + 4} ${Y} ${Z + 4} oak_fence`); rcon(`fill ${X - 3} ${Y} ${Z - 3} ${X + 3} ${Y} ${Z + 3} air`);
     rcon(`setblock ${X + 4} ${Y} ${Z} oak_fence_gate[facing=east]`);
     rcon(`minecraft:kill @e[type=villager,distance=..20,x=${X},y=${Y},z=${Z}]`);
-    rcon(`summon villager ${X} ${Y} ${Z} {NoAI:0b,PersistenceRequired:1b}`);
-    await tpSure(owner, 'TbOwner', X - 2, Y, Z - 1);   // хозяин в загоне у дальней стенки - бот идёт к нему через калитку
+    rcon(`summon villager ${X + 2} ${Y} ${Z - 2} {NoAI:0b,PersistenceRequired:1b}`);
+    // хозяин в середине загона: снаружи через забор не дотянуться - войти можно только калиткой (житель внутри, поэтому
+    // калитку бот открывает, только когда иначе никак, и закрывает за собой)
+    await tpSure(owner, 'TbOwner', X, Y, Z);
     await tpSure(tb, 'TbAlex', X + 10, Y, Z);
     await sleep(1500); tb.follow('TbOwner');
     const gateAt = () => tb.bot.blockAt(new (tb.bot.entity.position.constructor)(X + 4, Y, Z));
     let wasOpen = false, track = []; const spy = setInterval(() => { const g = gateAt(); if (g && String(g.getProperties().open) === 'true') wasOpen = true; const q = tb.bot.entity.position; if (track.length < 40) track.push(`${(q.x - X).toFixed(1)},${(q.z - Z).toFixed(1)}${wasOpen ? 'o' : ''}`); }, 100);
-    const inside = await until(() => { const q = tb.bot.entity.position; return q.x < X + 3.7 && Math.abs(q.z - Z) < 3.7 && q.y > Y - 0.5; }, 25000);   // за забором, внутри, на полу
+    const inside = await until(() => { const q = tb.bot.entity.position; return Math.abs(q.x - X) < 3.7 && Math.abs(q.z - Z) < 3.7 && q.y > Y - 0.5; }, 25000);   // за забором, внутри, на полу
     await sleep(4000); clearInterval(spy); if (process.env.TRACK) console.log('   путь (x,z от центра):', track.join(' '));
     const gate = gateAt();
     const open = gate && (gate.getProperties().open === true || gate.getProperties().open === 'true');
     ok('прошёл через калитку к хозяину', !!inside, inside ? (inside / 1000).toFixed(1) + ' с' : 'не дошёл');
     ok('калитку открыл, прошёл и закрыл за собой', wasOpen && gate && !open, gate ? gate.name + (wasOpen ? ' была открыта, ' : ' не открывалась, ') + (open ? 'сейчас открыта' : 'сейчас закрыта') : '?');
     tb.cancel && tb.cancel();
+  }
+
+  // 7. загон с жителем на прямом пути: обойти, калитки не открывать (житель выйдет); без жителя - всё равно
+  if (!only || only === 7) {
+    const X = 1300, Y = 64, Z = 1000; await area(X, Z);
+    rcon(`fill ${X - 16} ${Y - 5} ${Z - 14} ${X + 16} ${Y - 2} ${Z + 14} stone`); rcon(`fill ${X - 16} ${Y - 1} ${Z - 14} ${X + 16} ${Y - 1} ${Z + 14} grass_block`);
+    rcon(`fill ${X - 16} ${Y} ${Z - 14} ${X + 16} ${Y + 5} ${Z + 14} air`);
+    // загон длинный поперёк пути: в обход ~31 бл., напрямик через две калитки ~20
+    rcon(`fill ${X - 4} ${Y} ${Z - 9} ${X + 4} ${Y} ${Z + 9} oak_fence`); rcon(`fill ${X - 3} ${Y} ${Z - 8} ${X + 3} ${Y} ${Z + 8} air`);
+    rcon(`setblock ${X + 4} ${Y} ${Z} oak_fence_gate[facing=east]`); rcon(`setblock ${X - 4} ${Y} ${Z} oak_fence_gate[facing=west]`);
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X},y=${Y},z=${Z},distance=..20]`);
+    if (!process.env.NOVIL) rcon(`summon villager ${X} ${Y} ${Z - 2} {NoAI:1b,PersistenceRequired:1b}`);   // NOVIL=1 - проверка без жителя (должен идти напрямик)
+    await tpSure(owner, 'TbOwner', X - 10, Y, Z); await tpSure(tb, 'TbAlex', X + 10, Y, Z);
+    await sleep(1500);
+    const gAt = (x) => tb.bot.blockAt(new (tb.bot.entity.position.constructor)(x, Y, Z));
+    let opened = false; const spy = setInterval(() => { for (const x of [X + 4, X - 4]) { const g = gAt(x); if (g && String(g.getProperties().open) === 'true') opened = true; } }, 50);
+    tb.follow('TbOwner');
+    const t = await until(() => tb.bot.entity.position.distanceTo(owner.bot.entity.position) < 3.5, 30000);
+    clearInterval(spy); tb.cancel && tb.cancel();
+    ok('загон с жителем обошёл, калитки не открывал', t && !opened, t ? `${(t / 1000).toFixed(1)} с, калитки ${opened ? 'открывались' : 'не открывались'}` : 'не дошёл за 30 с');
+  }
+
+  // 8. прогулка: шагом, не по прямой, с остановками, не дальше радиуса
+  if (!only || only === 8) {
+    const X = 1300, Y = 64, Z = 1060; await area(X, Z);
+    rcon(`fill ${X - 18} ${Y - 5} ${Z - 18} ${X + 18} ${Y - 2} ${Z + 18} stone`); rcon(`fill ${X - 18} ${Y - 1} ${Z - 18} ${X + 18} ${Y - 1} ${Z + 18} grass_block`);
+    rcon(`fill ${X - 18} ${Y} ${Z - 18} ${X + 18} ${Y + 5} ${Z + 18} air`);
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X},y=${Y},z=${Z},distance=..25]`);
+    rcon(`summon sheep ${X + 5} ${Y} ${Z + 3}`); rcon(`setblock ${X - 4} ${Y} ${Z - 4} campfire`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); await sleep(1000);
+    let sprintT = 0, far = 0, stopT = 0, n = 0; const pts = []; let last = null;
+    const spy = setInterval(() => { const b = tb.bot; if (!b || !b.entity) return; n++; const p = b.entity.position; if (b.getControlState('sprint')) sprintT++; far = Math.max(far, Math.hypot(p.x - X, p.z - Z)); if (last && Math.hypot(p.x - last.x, p.z - last.z) < 0.02) stopT++; last = p.clone(); if (n % 10 === 0) pts.push(p.clone()); }, 100);
+    const who = {}; if (process.env.SPRINTDBG) { const o = tb.bot.setControlState.bind(tb.bot); tb.bot.setControlState = (k, v) => { if (k === 'sprint' && v) { const st = new Error().stack.split(/\r?\n/).slice(2, 4).map((l) => l.trim().split(/[\\/]/).pop()).join(' < '); who[st] = (who[st] || 0) + 1; } return o(k, v); }; }
+    const r = await tb.run([{ act: 'stroll', radius: 10, ms: 35000 }], 'прогулка', 'master').catch((e) => 'ошибка: ' + e.message);
+    clearInterval(spy); if (process.env.SPRINTDBG) console.log('   бег включали:', JSON.stringify(who));
+    // повороты: направление между соседними отрезками по 1 с меняется больше чем на 40° - сколько раз
+    let turns = 0; for (let i = 2; i < pts.length; i++) { const a1 = Math.atan2(pts[i - 1].z - pts[i - 2].z, pts[i - 1].x - pts[i - 2].x), a2 = Math.atan2(pts[i].z - pts[i - 1].z, pts[i].x - pts[i - 1].x); let d = Math.abs(a2 - a1); if (d > Math.PI) d = 2 * Math.PI - d; if (pts[i].distanceTo(pts[i - 1]) > 0.5 && pts[i - 1].distanceTo(pts[i - 2]) > 0.5 && d > 0.7) turns++; }
+    ok('прогулка шагом, с остановками и поворотами, в радиусе', sprintT < 5 && far < 12.5 && stopT > 60 && turns >= 3, `${r}; бег ${(sprintT / 10).toFixed(1)} с, дальше всего ${far.toFixed(1)} бл., стоял ${(stopT / 10).toFixed(0)} с из ${(n / 10).toFixed(0)}, поворотов ${turns}`);
+  }
+
+  // 9. квест из 4 шагов одной командой: собрать пшеницу, испечь хлеб, отдать хозяину, поспать если ночь (днём - пропуск);
+  //    перед ним бот сидит на ступеньке (GSit) - встать сам
+  if (!only || only === 9) {
+    const X = 1340, Y = 64, Z = 1100; await area(X, Z);
+    rcon(`fill ${X - 12} ${Y - 5} ${Z - 12} ${X + 12} ${Y - 2} ${Z + 12} stone`); rcon(`fill ${X - 12} ${Y - 1} ${Z - 12} ${X + 12} ${Y - 1} ${Z + 12} grass_block`);
+    rcon(`fill ${X - 12} ${Y} ${Z - 12} ${X + 12} ${Y + 5} ${Z + 12} air`);
+    rcon(`fill ${X + 2} ${Y - 1} ${Z - 3} ${X + 6} ${Y - 1} ${Z + 3} farmland[moisture=7]`); rcon(`setblock ${X + 4} ${Y - 1} ${Z} water`);
+    rcon(`fill ${X + 2} ${Y} ${Z - 3} ${X + 6} ${Y} ${Z + 3} wheat[age=7]`); rcon(`setblock ${X + 4} ${Y} ${Z} air`);
+    rcon(`setblock ${X - 3} ${Y} ${Z + 2} crafting_table`); rcon(`setblock ${X - 3} ${Y} ${Z - 2} oak_stairs[facing=east]`);
+    rcon('time set day'); rcon('clear TbAlex');
+    await tpSure(owner, 'TbOwner', X - 5, Y, Z); await tpSure(tb, 'TbAlex', X - 2, Y, Z - 2);
+    rcon('clear TbOwner');
+    await sleep(1500);
+    await tb.run([{ act: 'sit' }], 'сесть', 'master').catch(() => {});
+    const sat = !!(await until(() => !!tb.bot.vehicle, 8000));
+    const t0 = Date.now();
+    const r = await tb.run([{ act: 'errand', plan: '!harvest(wheat); !craft(bread, 2); give TbOwner bread 2; night', task: 'хлеб хозяину' }], 'квест', 'master').catch((e) => 'ошибка: ' + e.message);
+    const fin = await until(() => { const e = tb.errand(); return e && /done|stuck/.test(e.state); }, 150000, 1000);
+    await sleep(3500);   // брошенное игрок подбирает через 2 с
+    const e = tb.errand(), bread = owner.bot.inventory.items().filter((i) => i.name === 'bread').reduce((s2, i) => s2 + i.count, 0);
+    ok('квест из 4 шагов: пшеница -> хлеб -> хозяину (сидел - встал сам)', sat && e && e.state === 'done' && bread >= 2, `сидел перед квестом: ${sat ? 'да' : 'нет'}; ${r.slice(0, 120)}; итог: ${e ? e.state : '?'} (${tb.errandText ? tb.errandText().slice(0, 200) : ''}); у хозяина хлеба ${bread}; ${((Date.now() - t0) / 1000).toFixed(0)} с`);
+    if (e && e.state !== 'done') tb.cancelErrand();
   }
 
   // 2. висячие лианы над водой

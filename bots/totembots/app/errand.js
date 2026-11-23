@@ -10,22 +10,49 @@
 //   - хозяин видит поручение в панели, отменяет словом «отбой», продолжает - «продолжай».
 //
 // Шаги (через «;»): come ник | wait предмет сколько | gear | goto x y z [мир] | place название | find ник [x z] |
-//   give ник предмет [сколько] | confirm ник | home | say ник текст
+//   give ник предмет [сколько] | confirm ник | home | say ник текст | night (поспать, если ночь) |
+//   любая команда тела: !harvest(wheat) | !craft(bread, 5) | !trade(emerald, 4) | !obtain(bread, 5) | !sleep ...
+// (23.11: «надыбай еды, продай пшеницу, поспим если надо» не помещалось в шаги - нейросеть дала один шаг «домой»,
+// тело село отдохнуть, и всё. Теперь это один квест из 5 шагов, тело ведёт его само и проверяет каждый шаг)
 const { goals } = require('mineflayer-pathfinder');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const CMD_TITLE = {
+  harvest: (a) => `собрать урожай${a.crop ? ' (' + a.crop + ')' : ''}`, craft: (a) => `сделать ${a.count || ''} ${a.item}`, smelt: (a) => `переплавить ${a.item}`,
+  trade: (a) => `поторговать с жителями: получить ${a.want || a.item || ''}`, trades: () => 'посмотреть товары жителей', obtain: (a) => `достать ${a.count || ''} ${a.item}`,
+  gather: (a) => `добыть ${a.count || ''} ${a.block}`, mine: (a) => `накопать ${a.block}`, hunt: (a) => `поохотиться на ${a.animal}`, fish: () => 'порыбачить',
+  sleep: () => 'поспать', eat: () => 'поесть', give: (a) => `отдать ${a.who} ${a.count || ''} ${a.item}`, goto_place: (a) => `дойти до «${a.name}»`,
+  goto: (a) => `дойти до ${a.x} ${a.z}`, travel: (a) => `дойти до ${a.x} ${a.z}`, come: (a) => `подойти к ${a.who}`, stash: () => 'разложить лишнее по сундукам',
+  farm: (a) => `засадить огород (${a.item || ''})`, plant: (a) => `посадить ${a.item}`, breed: (a) => `развести ${a.animal || 'животных'}`, bonemeal: () => 'удобрить костной мукой',
+  pickup: () => 'подобрать вещи', shear: () => 'постричь овец', take: (a) => `взять ${a.item || ''} из сундука`, put: (a) => `положить ${a.item || ''} в сундук`,
+};
 
 const TITLES = {
   come: (a) => `подойти к ${a.who}`, wait: (a) => `дождаться ${a.count} ${a.item}`, gear: () => 'снарядиться в дорогу',
   goto: (a) => `дойти до ${a.x} ${a.y ?? ''} ${a.z}${a.dim ? ' (' + a.dim + ')' : ''}`, place: (a) => `дойти до «${a.name}»`,
   find: (a) => `найти ${a.who}${a.x !== undefined ? ' у ' + a.x + ' ' + a.z : ''}`, give: (a) => `отдать ${a.who} ${a.count || ''} ${a.item}`,
   confirm: (a) => `убедиться, что у ${a.who} всё в порядке`, home: () => 'вернуться домой', say: (a) => `написать ${a.who}`,
+  night: () => 'поспать, если ночь',
 };
 
 /** Разбор плана из строки нейросети: «come Valghard; wait white_wool 128; gear; goto 10000 70 200; ...». */
 function parse(text) {
   const steps = [];
   for (const raw of String(text || '').split(/[;\n]+/)) {
-    const w = raw.trim().replace(/^[-*\d.)\s]+/, '').split(/\s+/).filter(Boolean);
+    const line = raw.trim().replace(/^[-*\d.)\s]+(?=[!a-zA-Zа-яё])/, '');
+    if (!line) continue;
+    // шаг - команда тела («!craft(bread, 5)»): её выполняет run, как приказ хозяина
+    if (line.startsWith('!')) {
+      const { parseCommands } = require('./commands');
+      const { acts, unknown } = parseCommands(line);
+      if (!acts.length) throw new Error(`непонятный шаг «${line}»${unknown.length ? ' (нет команды ' + unknown.join(', ') + ')' : ''}`);
+      for (const act of acts) {
+        if (/^(errand|errandStop|errandGo|stop|follow|hold)$/.test(act.act)) throw new Error(`в квесте нельзя шаг «${line}»`);
+        const t = CMD_TITLE[act.act];
+        steps.push({ do: 'cmd', act, title: t ? t(act).replace(/\s+/g, ' ').trim() : line.slice(1) });
+      }
+      continue;
+    }
+    const w = line.split(/\s+/).filter(Boolean);
     if (!w.length) continue;
     const k = w[0].toLowerCase(), n = (i) => (w[i] !== undefined && !isNaN(+w[i]) ? +w[i] : undefined);
     let a = null;
@@ -39,7 +66,8 @@ function parse(text) {
     else if (k === 'confirm') a = { do: 'confirm', who: w[1] };
     else if (k === 'home') a = { do: 'home' };
     else if (k === 'say') a = { do: 'say', who: w[1], text: w.slice(2).join(' ') };
-    if (!a) throw new Error(`непонятный шаг «${raw.trim()}». Шаги: come, wait, gear, goto, place, find, give, confirm, home, say`);
+    else if (k === 'night') a = { do: 'night' };
+    if (!a) throw new Error(`непонятный шаг «${raw.trim()}». Шаги: команды тела (!harvest(wheat), !craft(bread, 5)...) или come, wait, gear, goto, place, find, give, confirm, home, say, night`);
     if (/^(come|find|give|confirm|say)$/.test(a.do) && !a.who) throw new Error(`в шаге «${raw.trim()}» нет ника`);
     if (a.do === 'goto' && (a.x === undefined || a.z === undefined)) throw new Error(`в шаге «${raw.trim()}» нужны x и z`);
     if ((a.do === 'wait' || a.do === 'give') && !a.item) throw new Error(`в шаге «${raw.trim()}» нет предмета`);
@@ -83,7 +111,7 @@ class Errands {
   errandText() {
     const e = this.errand();
     if (!e || e.state === 'done' || e.state === 'cancel') return '';
-    return `поручение (${{ run: 'выполняю', stuck: 'застряла, жду хозяина', pause: 'прервано' }[e.state] || e.state}): ` +
+    return `квест (${{ run: 'выполняю', stuck: 'застряла, жду хозяина', pause: 'прервано' }[e.state] || e.state}): ` +
       e.steps.map((s, i) => `${i === e.cur ? '▶' : s.st === 'done' ? '✓' : ' '}${i + 1}) ${s.title}${s.note ? ' (' + s.note + ')' : ''}`).join('; ');
   }
 
@@ -213,6 +241,16 @@ class Errands {
         return `${s.who}: «${reply.slice(0, 80)}»`;
       }
       case 'say': this.say(s.text, 'whisper', s.who); return 'написала ' + s.who;
+      case 'night': {
+        const t = b.time && b.time.timeOfDay;
+        if (t === undefined || (t > 0 && t < 12542)) return 'сейчас день - спать не нужно';
+        return run([{ act: 'sleep' }]);
+      }
+      case 'cmd': {
+        const r = await run([{ ...s.act }]);
+        if (/инвентарь не изменился|ничего не (собрала|получилось)|не нашла|нет рядом/.test(r) && !/задание выполнено/.test(r)) throw new Error(r.slice(0, 160));
+        return r;
+      }
       default: throw new Error('неизвестный шаг ' + s.do);
     }
   }

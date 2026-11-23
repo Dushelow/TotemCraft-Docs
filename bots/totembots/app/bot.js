@@ -380,6 +380,7 @@ class TotemBot extends EventEmitter {
     const now = Date.now();
     if (this.lastChat && this.lastChat.key === key && now - this.lastChat.at < 2000) return;   // одно сообщение двумя путями
     this.lastChat = { key, at: now };
+    if ((this.opts.masters || []).includes(from)) this.ownerAskAt = now;   // хозяин что-то сказал - не садиться отдыхать, пока не ясно, что он хочет
     this.emit('player-chat', { from, text: String(text).trim(), whisper: channel === 'whisper', channel });
   }
 
@@ -1582,6 +1583,10 @@ class TotemBot extends EventEmitter {
         let r;
         // идти пешком, сидя: на сиденье (полублок, ступенька) - встать; в лодке за рулём - плыть туда же (!drive),
         // пассажиром - сказать, кто рулит (22.11: в лодке давал «шагать» вместо «плыть»)
+        // на сиденье (GSit) - встать перед любым делом, кроме тех, что делаются сидя (23.11: присела отдохнуть, пришло
+        // «добудь хлеб» - и просидела, пока программу не выключили: вставала только перед ходьбой)
+        const STILL = /^(stand|sit|dismount|drive|mount|gesture|quiet|combat|followDist|signs|where|errand|errandStop|errandGo|eat|equip|cmd|say|remember\w*|forget\w*|forbidArea|allowArea)$/;
+        if (this.bot.vehicle && !STILL.test(a.act) && !/boat|raft|horse|donkey|mule|camel|pig|strider|llama|minecart/.test(this.bot.vehicle.name || '')) { await this.standUp(); await sleep(300); }
         if (this.bot.vehicle && /^(goto|come|goto_place|wander|gather|mine|harvest|take|put|use|trades|trade)$/.test(a.act)) {
           const v = this.bot.vehicle, isRide = /boat|raft|horse|donkey|mule|camel|pig|strider|llama/.test(v.name || '');
           if (!isRide) { await this.standUp(); await sleep(300); }
@@ -1644,6 +1649,7 @@ class TotemBot extends EventEmitter {
           }
           case 'wait': await sleep(Math.min(60, +a.seconds || 3) * 1000); this.check(tok); r = 'подождал'; break;
           case 'wander': r = await this.wander(a, tok); break;
+          case 'stroll': r = await this.stroll(a, tok); break;
           case 'gather': r = await this.skills.gather(a, tok); break;
           case 'till': r = await this.skills.till(a, tok); break;
           case 'plant': r = await this.skills.plant(a, tok); break;
@@ -1722,7 +1728,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

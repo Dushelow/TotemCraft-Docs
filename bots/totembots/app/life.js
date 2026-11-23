@@ -46,6 +46,11 @@ function needs(tb) {
     const ripe = b.findBlock({ matching: (bl) => /^(wheat|carrots|potatoes|beetroots)$/.test(bl.name) && bl.getProperties && +bl.getProperties().age >= (bl.name === 'beetroots' ? 3 : 7), maxDistance: 12 });
     if (ripe && !tb.skills.builtNear(ripe.position, 0) && Math.hypot(ripe.position.x - h.x, ripe.position.z - h.z) < 40) out.push({ k: 'урожай', s: 25, why: 'спелый урожай у дома', crop: ripe.name });
   }
+  // делать нечего: хозяина рядом нет, давно ничего не просил - прогуляться у дома или где стоит, а не стоять истуканом
+  // (23.11, владелец: «как в Скайриме компаньоны ходят что-то делают даже без нейронки»)
+  const ownerNear = (tb.opts.masters || []).some((n) => tb.player && tb.player(n) && tb.player(n).position.distanceTo(b.entity.position) < 12);
+  if (!out.length && !ownerNear && Date.now() - (tb.ownerAskAt || 0) > 3 * 60000 && !(tb.errand && tb.errand() && /run|stuck|pause/.test(tb.errand().state)))
+    out.push({ k: 'прогулка', s: 21, why: 'гуляю, осматриваюсь', center: h && Math.hypot(h.x - b.entity.position.x, h.z - b.entity.position.z) < 40 ? h : null });
   return out.sort((x, y) => y.s - x.s);
 }
 
@@ -69,6 +74,7 @@ async function act(tb, n, tok) {
     await tb.stash({}, tok).catch((e) => tb.log('выложить не вышло: ' + e.message));
     return;
   }
+  if (n.k === 'прогулка') { await tb.stroll({ radius: n.center ? 16 : 12, ms: 60000 + Math.random() * 60000, center: n.center }, tok); return; }
   if (n.k === 'урожай') { tb.lifeHarvestAt = Date.now(); await tb.harvest({ crop: n.crop }, tok).catch(() => {}); }
 }
 

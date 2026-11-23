@@ -174,6 +174,10 @@ class Companion {
 
   sandboxStart(o, owner) {
     const b = this.bot, C = this.comp;
+    // присесть, прилечь - не когда хозяин только что о чём-то попросил или идёт квест (23.11: хозяин попросил еды,
+    // бот дошёл до дома, «присела отдохнуть» и так и сидела)
+    const q = this.errand && this.errand();
+    if ((o.lay || /присел|присяд|отдохн|прилег|прилёг/.test(o.what || '')) && (Date.now() - (this.ownerAskAt || 0) < 5 * 60000 || (q && /run|stuck|pause/.test(q.state)))) return;
     const spot = o.spot || (o.ent ? o.ent.position.clone() : null);
     if (!spot) return;
     C.spots.push(o.key); if (C.spots.length > 5) C.spots.shift();
