@@ -1545,6 +1545,21 @@ class TotemBot extends EventEmitter {
           if (attempt < 1 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(400); continue; }
           // путь не строится, а рядом механизм (железная дверь, поршни, скрытый проход): нажать кнопку, рычаг, встать
           // на плиту (и в воде) - и попробовать снова (23.11, хозяин: «научи проходить скрытые двери»)
+          // цель выше или ниже на 3+ бл., а путь не строится - лестница рядом: залезть (спуститься) по ней навыком, как
+          // игрок, без подсказки (23.11: стоял у лестницы и ждал, пока скажут «лезь»)
+          {
+            const gy = goal.y, me2 = b.entity.position;
+            const gk = `${goal.x},${gy},${goal.z}`, AC = (this._autoClimbN = this._autoClimbN && Date.now() - this._autoClimbN.at < 120000 ? this._autoClimbN : { at: Date.now(), n: {} });   // на одну цель - не больше 3 раз за 2 мин
+            if (gy !== undefined && Math.abs(gy - me2.y) >= 3 && (AC.n[gk] || 0) < 3 && Date.now() - (this._autoClimbAt || 0) > 4000) {
+              const lad = b.findBlocks({ matching: (bl) => /^(ladder|vine|scaffolding)$/.test(bl.name), maxDistance: 6, count: 20 }).filter((q) => gy > me2.y ? Math.abs(q.y - me2.y) <= 2 : q.y < me2.y && q.y >= me2.y - 3);
+              if (lad.length) {
+                AC.n[gk] = (AC.n[gk] || 0) + 1; this._autoClimbAt = Date.now();
+                const m = await this.climbLadder({ dir: gy > me2.y ? 'up' : 'down' }, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
+                this.log('путь не строится, цель ' + (gy > me2.y ? 'выше' : 'ниже') + ' - по лестнице: ' + m);
+                if (m && !/не вижу|застрял/.test(m)) { attempt = 0; continue; }
+              }
+            }
+          }
           // только что нажал - поршням нужно время: пробовать путь каждые 0,25 с до 3 с, к другому механизму не бежать
           // (23.11 22:08: нажал кнопку и через 0,6 с побежал к плите снаружи - проход открылся, а он ушёл)
           if (this._mechAt && Date.now() - this._mechAt < 3000) { await sleep(250); attempt = Math.min(attempt, 1); continue; }
