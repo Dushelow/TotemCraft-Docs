@@ -1365,6 +1365,7 @@ class TotemBot extends EventEmitter {
       return false;
     };
     const t0 = Date.now(); let lastY = b.entity.position.y, still = Date.now(), opened = 0;
+    this._sideTried = false;
     this.busyLook = true;
     try {
       while (Date.now() - t0 < 60000) {
@@ -1403,6 +1404,24 @@ class TotemBot extends EventEmitter {
           if (b.entity.onGround && !CL.test((b.blockAt(new Vec3(x, fy - 1, z)) || {}).name || '') && Date.now() - t0 > 1500 && Math.abs(p.y - lastY) < 0.05) return `спустился по лестнице до ${fy}${opened ? `, открыл люков: ${opened}` : ''}`;
         }
         if (Math.abs(p.y - lastY) > 0.2) { lastY = p.y; still = Date.now(); }
+        else if (up && Date.now() - still > 1500 && !this._sideTried) {
+          // вверх не лезется (люк, потолок) - выход сбоку, как игрок: с последней ступеньки прыгнуть на блок рядом
+          // (23.11: поднялся до 68 и дёргался под люком, а выход был сбоку)
+          this._sideTried = true;
+          for (const dy of [0, 1, -1]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const fl = b.blockAt(new Vec3(x + ax, fy + dy, z + az)), s1 = b.blockAt(new Vec3(x + ax, fy + dy + 1, z + az)), s2 = b.blockAt(new Vec3(x + ax, fy + dy + 2, z + az));
+            if (!fl || fl.boundingBox !== 'block' || CL.test(fl.name) || !s1 || (s1.boundingBox !== 'empty' && !/_trapdoor$|_carpet$/.test(s1.name)) || !s2 || s2.boundingBox !== 'empty') continue;
+            this.log(`наверх не лезется - выхожу сбоку на ${x + ax} ${fy + dy + 1} ${z + az}`);
+            await b.lookAt(new Vec3(x + ax + 0.5, fy + dy + 2.2, z + az + 0.5), true);
+            ctl('jump', true); ctl('forward', true);
+            const t1 = Date.now();
+            while (Date.now() - t1 < 2000) { await sleep(50); const q = b.entity.position; if (b.entity.onGround && Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) break; }
+            ctl('forward', false); ctl('jump', false);
+            const q = b.entity.position;
+            if (Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) return `поднялся по лестнице и вышел сбоку на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
+          }
+          still = Date.now();
+        }
         else if (Date.now() - still > 4000) return `застрял на лестнице на ${fy} (дальше не лезется: ${(b.blockAt(new Vec3(x, fy + (up ? 2 : -1), z)) || {}).name})`;
         await sleep(50);
       }
