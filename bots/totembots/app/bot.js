@@ -1459,7 +1459,8 @@ class TotemBot extends EventEmitter {
     // по образцу Baritone FarmProcess: что спелое и как сажать
     const CROPS = { wheat: [7, 'wheat_seeds'], carrots: [7, 'carrot'], potatoes: [7, 'potato'], beetroots: [3, 'beetroot_seeds'],
       nether_wart: [3, 'nether_wart'], sugar_cane: ['stack'], bamboo: ['stack'], melon: ['fruit'], pumpkin: ['fruit'] };
-    const want = a.crop ? String(a.crop).replace(/^minecraft:/, '') : '';
+    const want0 = a.crop ? String(a.crop).replace(/^minecraft:/, '').toLowerCase() : '';
+    const want = { carrot: 'carrots', potato: 'potatoes', beetroot: 'beetroots', wheat_seeds: 'wheat', beetroot_seeds: 'beetroots', 'пшеница': 'wheat', 'морковь': 'carrots', 'картофель': 'potatoes', 'картошка': 'potatoes', 'свёкла': 'beetroots' }[want0] || want0;
     const ids = Object.keys(CROPS).filter((n) => !want || n === want || n.startsWith(want)).map((n) => b.registry.blocksByName[n].id);
     const ready = (bl) => {
       const rule = CROPS[bl.name][0];
@@ -1474,7 +1475,7 @@ class TotemBot extends EventEmitter {
     };
     const r = Math.min(32, +a.radius || 16);
     let done = 0, replanted = 0;
-    const limit = +a.count || 256;
+    const limit = a.sowOnly ? 0 : (+a.count || 256);   // sowOnly - только засеять пустые (23.11: просил засеять, а он собирал спелое)
     for (let i = 0; i < limit; i++) {
       this.check(tok);
       const skip = (this._cropSkip = this._cropSkip || new Map());
@@ -1543,6 +1544,7 @@ class TotemBot extends EventEmitter {
       } catch (e) { if (e instanceof Cancelled) throw e; }
     }
     const tail = (filled ? `, засадил пустых грядок: ${filled}` : '') + (noSeed.size ? `; нечем засадить пустое: нет ${[...noSeed].join(', ')}` : '');
+    if (a.sowOnly) return filled ? `засеял пустых грядок: ${filled}` + (noSeed.size ? `; не хватило: ${[...noSeed].join(', ')}` : '') : (noSeed.size ? `нечем засеять: нет ${[...noSeed].join(', ')}` : 'пустых грядок рядом нет');
     return (done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет') + tail;
   }
 
