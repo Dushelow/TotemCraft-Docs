@@ -1727,22 +1727,35 @@ class TotemBot extends EventEmitter {
     const bl = b.blockAt(p);
     if (/_pressure_plate$/.test(bl.name)) {
       // плита: встать на неё (в воде - доплыть), постоять, пока откроется
-      await this.goto(new goals.GoalBlock(p.x, p.y, p.z), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
+      // плита в воде (канал, течение): как игрок - встать по дну рядом с ней на её уровне и идти вперёд шагом, без
+      // прыжков (прыжок в воде = всплыть, течение сносит; 23.11 владелец: «медленно иду вперёд или ныряю»)
+      const wetPlate = /water/.test((b.blockAt(p.offset(1, 0, 0)) || {}).name + (b.blockAt(p.offset(-1, 0, 0)) || {}).name + (b.blockAt(p.offset(0, 0, 1)) || {}).name + (b.blockAt(p.offset(0, 0, -1)) || {}).name + (b.blockAt(p.offset(0, 1, 0)) || {}).name);
+      if (wetPlate) {
+        const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => p.offset(dx, 0, dz)).filter((q) => { const fl = b.blockAt(q.offset(0, -1, 0)), at = b.blockAt(q); return fl && fl.boundingBox === 'block' && at && at.boundingBox === 'empty'; })
+          .sort((u, v) => u.distanceTo(me) - v.distanceTo(me));
+        if (nb[0]) { try { await this.goto(new goals.GoalBlock(nb[0].x, nb[0].y, nb[0].z), tok, 15000); } catch (e) { if (e instanceof Cancelled) throw e; } }
+      } else await this.goto(new goals.GoalBlock(p.x, p.y, p.z), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
       // не встал (вода над плитой, течение, низкий потолок) - руками: лицом к плите, вперёд, ниже - присесть (опуститься в
       // воде), выше - прыжок (23.11 стенд: плита в канале у секретной стены, бот держался у поверхности)
       if (b.entity.position.floored().x !== p.x || b.entity.position.floored().z !== p.z) {
         const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
         try { b.pathfinder.setGoal(null); } catch {}   // модуль пути не должен жать своё (в воде - прыжок, всплыть)
+        this._plBest = Infinity; this._plAt = Date.now();
         const t1 = Date.now(); this._trailBusy = true;   // «держать над водой» тела - не мешать опуститься к плите
         try {
-          while (Date.now() - t1 < 4000) {
+          while (Date.now() - t1 < 8000) {
             this.check(tok);
             const q = b.entity.position;
             if (Math.floor(q.x) === p.x && Math.floor(q.z) === p.z && Math.abs(q.y - p.y) < 0.6) break;
             await b.lookAt(new Vec3(p.x + 0.5, p.y + 0.3, p.z + 0.5), true);
-            const hd = Math.hypot(p.x + 0.5 - q.x, p.z + 0.5 - q.z);
-            // присед в воде своя физика бота не знает (только замедляет): опускаться - отпустив прыжок, вверх на плиту - прыжком
-            ctl('forward', hd > 0.25); ctl('sprint', hd > 1); ctl('jump', q.y < p.y - 0.15 && hd < 1.6);
+            const hd = Math.hypot(p.x + 0.5 - q.x, p.z + 0.5 - q.z), wetQ = b.entity.isInWater;
+            // в воде - шагом по дну, без бега и прыжка (всплыл бы); выше плиты - не идти, пока не опустился (голова в потолок)
+            const high = q.y > p.y + 0.7;
+            // течение держит: 0,8 с не ближе - рывок бегом (как «нырнуть» у владельца)
+            if (hd < (this._plBest ?? Infinity) - 0.1) { this._plBest = hd; this._plAt = Date.now(); }
+            const stall = Date.now() - (this._plAt || Date.now()) > 800;
+            // ямка на блок ниже у плиты: прыжок наверх, когда ниже её уровня и рядом
+            ctl('forward', hd > 0.25 && !(wetQ && high)); ctl('sprint', hd > 1 && (!wetQ || stall)); ctl('jump', q.y < p.y - 0.15 && hd < 1.8);
             await sleep(50);
           }
         } finally { for (const k of ['forward', 'sprint', 'sneak', 'jump']) ctl(k, false); this._trailBusy = false; }
