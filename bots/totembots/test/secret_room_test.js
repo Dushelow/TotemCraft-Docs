@@ -25,6 +25,8 @@ const [SX, SY, SZ] = process.argv.length >= 5 ? process.argv.slice(2, 5).map(Num
   let r;
   const ACT = process.env.ACT ? JSON.parse(process.env.ACT) : [{ act: 'outside' }];
   try { r = await tb.run(ACT, 'тест', 'master'); } catch (e) { r = 'ошибка: ' + e.message; }
+  if (tb._lastExit) console.log('СЛЕД:', tb._lastExit.pts.filter((q, i) => i % 3 === 0).map((q) => q.x.toFixed(1) + ',' + q.y.toFixed(1) + ',' + q.z.toFixed(1)).join(' '));
+  if (process.env.BACK && tb._lastExit) { await sleep(2000); try { r += ' | назад: ' + (await tb.run([{ act: 'wait', seconds: 1 }], 'ждать', 'master'), await tb.walkBackRun()); } catch (e) { r += ' | назад ошибка: ' + e.message; } }
   const p = tb.bot.entity.position;
   console.log('ИТОГ:', r, '| стою', p.x.toFixed(1), p.y.toFixed(1), p.z.toFixed(1));
   tb.stop && tb.stop();

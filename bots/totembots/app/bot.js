@@ -1398,7 +1398,7 @@ class TotemBot extends EventEmitter {
       return false;
     };
     const t0 = Date.now(); let lastY = b.entity.position.y, still = Date.now(), opened = 0;
-    this._sideTried = false;
+    this._sideTried = false; this._hatchFlips = 0;
     this.busyLook = true;
     try {
       while (Date.now() - t0 < 60000) {
@@ -1476,8 +1476,12 @@ class TotemBot extends EventEmitter {
             const q = b.entity.position;
             if (Math.floor(q.x) === x + ax && Math.floor(q.z) === z + az) return (await this.afterClimb(tok)) + `поднялся по лестнице и вышел сбоку на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
           }
-          // вбок некуда - тогда люк над головой: открыть и лезть дальше
+          // вбок некуда - тогда люк над головой: открыть и лезть дальше; открыт, а всё равно не лезется (повёрнут не так,
+          // стоит ребром поперёк) - переключить, до 2 раз (23.11 стенд: люк над лестницей в разном положении)
           if (await hatchOpen(fy + 2) || await hatchOpen(fy + 1)) { opened++; this._sideTried = false; }
+          else if ((this._hatchFlips = (this._hatchFlips || 0) + 1) <= 2) {
+            for (const yy of [fy + 2, fy + 1]) { const h = b.blockAt(new Vec3(x, yy, z)); if (h && /_trapdoor$/.test(h.name) && !/^iron_/.test(h.name)) { ctl('jump', false); await b.lookAt(new Vec3(x + 0.5, yy + 0.5, z + 0.5), true); await b.activateBlock(h); await sleep(250); this._sideTried = false; this.log(`люк над головой мешает - переключил (${h.getProperties().open ? 'закрыл' : 'открыл'})`); break; } }
+          }
           still = Date.now();
         }
         else if (Date.now() - still > 4000) { this.dumpArea('застрял на лестнице'); return `застрял на лестнице на ${fy} (дальше не лезется: ${(b.blockAt(new Vec3(x, fy + (up ? 2 : -1), z)) || {}).name})`; }
@@ -1489,6 +1493,16 @@ class TotemBot extends EventEmitter {
 
   /** Выйти наружу, под открытое небо (23.11: «вылезти в город» - вылез из лаза в комнату и решил, что на улице). */
   async goOutside(a, tok) {
+    const b = this.bot;
+    // свой путь наружу - шаг в шаг: обратно к хозяину по нему же (через секретную стену, лаз; 23.11: вернуться пошёл в
+    // пещеру, где прохода нет)
+    const trail = [b.entity.position.clone()];
+    const rec = () => { try { const q = b.entity.position, l = trail[trail.length - 1]; if (q.distanceTo(l) >= 0.7) trail.push(q.clone()); } catch {} };
+    b.on('physicsTick', rec);
+    try { return await this.goOutsideInner(a, tok); } finally { b.removeListener('physicsTick', rec); if (trail.length > 3) this._lastExit = { pts: trail, at: Date.now() }; }
+  }
+
+  async goOutsideInner(a, tok) {
     const b = this.bot;
     const sky = (x, y, z) => { for (let yy = y + 2; yy < y + 40; yy++) { const k = b.blockAt(new Vec3(x, yy, z)); if (!k) return true; if (k.boundingBox === 'block' || /water|lava/.test(k.name)) return false; } return true; };
     const p0 = b.entity.position.floored();
@@ -1631,6 +1645,56 @@ class TotemBot extends EventEmitter {
     if (Math.floor(b.entity.position.x) !== far.x || Math.floor(b.entity.position.z) !== far.z) { try { await this.goto(new goals.GoalNear(far.x, far.y, far.z, 1), tok, 8000); } catch (e) { if (this.isCancel(e)) throw e; } }
     const q = b.entity.position;
     return `прошёл в открывшийся проход у ${c.x} ${c.y} ${c.z} (стою ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)})`;
+  }
+
+  /** Для проверок: назад своим путём наружу как отдельное задание. */
+  async walkBackRun() { const tok = ++this.token; this.mode = 'task'; try { return await this.walkBack(this._lastExit.pts, tok); } finally { this.mode = 'idle'; } }
+
+  /** Назад своим следом (обратный порядок), руками: лицом к точке, вперёд, прыжок вверх / по лестнице, вниз - сползти. */
+  async walkBack(pts, tok) {
+    const b = this.bot, P = pts.slice().reverse();
+    const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
+    // начать с ближайшей точки следа
+    let i0 = 0, bd = Infinity; P.forEach((q, i) => { const d = q.distanceTo(b.entity.position); if (d < bd) { bd = d; i0 = i; } });
+    if (bd > 6) { try { await this.goto(new goals.GoalNear(P[i0].x, P[i0].y, P[i0].z, 1), tok, 30000); } catch (e) { if (this.isCancel(e)) throw e; } }
+    this.log(`назад своим путём: ${P.length - i0} точек`);
+    this._platesDone = new Set();
+    try {
+      for (let i = i0; i < P.length; i++) {
+        const t = P[i];
+        // плита на следе: встать на неё как следует (стена открыта, пока стою), потом сразу дальше следом
+        { const pc = t.floored(); const pl = b.blockAt(pc); if (pl && /_pressure_plate$/.test(pl.name) && !(this._platesDone || (this._platesDone = new Set())).has(pc.toString())) {
+          this._platesDone.add(pc.toString());
+          for (const k of ['forward', 'sprint', 'jump', 'sneak']) ctl(k, false);
+          try { await this.goto(new goals.GoalBlock(pc.x, pc.y, pc.z), tok, 12000); this.log(`назад: встал на ${pl.name} у ${pc.x} ${pc.y} ${pc.z}`); } catch (e) { if (this.isCancel(e)) throw e; }
+          await sleep(250);
+          continue;
+        } }
+        const until = Date.now() + 2500;
+        let best = Infinity, bestAt = Date.now();
+        while (Date.now() < until) {
+          this.check(tok);
+          const q = b.entity.position;
+          if (Math.hypot(t.x - q.x, t.z - q.z) < 0.5 && Math.abs(t.y - q.y) < 1.1) break;
+          // секунду не ближе (течение, вода у стены) - обычной ходьбой с её водными приёмами
+          const dd = q.distanceTo(t); if (dd < best - 0.15) { best = dd; bestAt = Date.now(); }
+          if (Date.now() - bestAt > 1000) {
+            for (const k of ['forward', 'sprint', 'jump', 'sneak']) ctl(k, false);
+            try { await this.goto(new goals.GoalNear(t.x, t.y, t.z, 0.6), tok, 8000); } catch (e) { if (this.isCancel(e)) throw e; }
+            break;
+          }
+          const lad = /ladder|vine/.test((b.blockAt(q) || {}).name || '');
+          await b.lookAt(new Vec3(t.x, t.y + 1.5, t.z), true);
+          const near = Math.hypot(t.x - q.x, t.z - q.z) < 0.35;
+          const wet = b.entity.isInWater;
+          ctl('forward', !near); ctl('sprint', !lad);   // в воде тоже бегом: против течения у стены иначе стоит ctl('jump', (t.y > q.y + 0.4) || (wet && t.y > q.y - 0.1)); ctl('sneak', wet && t.y < q.y - 0.3);   // в воде к точке ниже - нырнуть
+          await sleep(50);
+        }
+        if (process.env.TB_DEBUG_BACK) { const q = b.entity.position; this.log(`назад: точка ${i} ${t.x.toFixed(1)} ${t.y.toFixed(1)} ${t.z.toFixed(1)} - я ${q.x.toFixed(1)} ${q.y.toFixed(1)} ${q.z.toFixed(1)}${b.entity.isInWater ? ' вода' : ''}`); }
+      }
+    } finally { for (const k of ['forward', 'sprint', 'jump', 'sneak']) ctl(k, false); }
+    const q = b.entity.position;
+    return `вернулся своим путём до ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}`;
   }
 
   dashAfterMech() {
@@ -2400,9 +2464,16 @@ class TotemBot extends EventEmitter {
             break;
           }
           case 'come': {
-            const e = this.player(a.who);
+            let e = this.player(a.who);
+            const X = this._lastExit && Date.now() - this._lastExit.at < 30 * 60000 ? this._lastExit : null;
+            // недавно вышел наружу, а хозяин внизу или не виден - назад тем же путём (шаг в шаг, плиты и лестницы по дороге)
+            if (X && (!e || (e.position.y < this.bot.entity.position.y - 4 && e.position.distanceTo(X.pts[0]) < 24))) {
+              r = await this.walkBack(X.pts, tok);
+              e = this.player(a.who);
+              if (!e) break;
+            }
             if (!e) throw new Error(`не вижу ${a.who}`);
-            await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, 2), tok, 300000); r = `подошёл к ${a.who}`; break;
+            await this.goto(new goals.GoalNear(e.position.x, e.position.y, e.position.z, 2), tok, 300000); r = (r ? r + '; ' : '') + `подошёл к ${a.who}`; break;
           }
           case 'take': r = await this.take(a, tok); break;
           case 'put': r = await this.put(a, tok); break;
