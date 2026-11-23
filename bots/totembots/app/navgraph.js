@@ -83,7 +83,15 @@ class NavGraph {
     const p = e ? e.position : null;
     if (!p) return;
     const last = T.pts[T.pts.length - 1];
-    if (!last || last.dim !== dim || Math.hypot(last.x - p.x, last.z - p.z) >= 4 || Math.abs(last.y - p.y) >= 3) T.pts.push({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim });
+    // как хозяин проходит: в тесноте (лаз, лестница, вода, люк, дверь рядом) - каждый блок, на просторе - через 4
+    // (23.11: секретная дверь, кнопка под лестницей, лаз с люками - бот проходил «пердя скрипя», без записи хода)
+    const f = p.floored(), at = (dx, dy, dz) => (this.bot.blockAt(f.offset(dx, dy, dz)) || {}).name || '';
+    const ladder = /ladder|vine|scaffolding/.test(at(0, 0, 0) + at(0, 1, 0));
+    const wet = /water/.test(at(0, 0, 0));
+    const tight = ladder || wet || [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => { const k = this.bot.blockAt(f.offset(dx, 1, dz)); return k && k.boundingBox === 'block'; }).length >= 2
+      || [[1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]].some(([dx, dz]) => /door|trapdoor|gate|pressure_plate|button|lever/.test(at(dx, 0, dz) + at(dx, 1, dz) + at(dx, -1, dz)));
+    const step = tight ? 1 : 4;
+    if (!last || last.dim !== dim || Math.hypot(last.x - p.x, last.z - p.z) >= step || Math.abs(last.y - p.y) >= (tight ? 1 : 3)) T.pts.push({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim, ...(ladder ? { ladder: 1 } : {}), ...(tight ? { tight: 1 } : {}), ...(wet ? { wet: 1 } : {}) });
     if (Date.now() - T.at > 2 * 3600000) this.teachStop(true);
   }
   teachStop(timeout) {
@@ -138,11 +146,52 @@ class NavGraph {
         if (this.dimName() !== p.dim) throw new Error(`портал привёл не туда (${this.dimName()}, а в записи ${p.dim})`);
         continue;
       }
-      if (i % 2 && i !== pts.length - 1) continue;   // через точку - ~8 бл., ровнее
-      if (Math.hypot(p.x - b.entity.position.x, p.z - b.entity.position.z) < 3) continue;
-      await this.walkTo({ x: p.x, y: p.y, z: p.z }, tok, 120000);
+      if (p.press) {
+        // здесь хозяин нажал кнопку, рычаг или встал на плиту - сделать то же и сразу дальше, бегом
+        const k = b.blockAt(new (b.entity.position.constructor)(p.press.x, p.press.y, p.press.z));
+        try {
+          if (k && /_pressure_plate$/.test(k.name)) await this.goto(new goals.GoalBlock(p.press.x, p.press.y, p.press.z), tok, 20000);
+          else if (k) { await this.goto(new goals.GoalNear(p.press.x, p.press.y, p.press.z, 2), tok, 20000); await b.lookAt(k.position.offset(0.5, 0.5, 0.5), true); await b.activateBlock(k); }
+          this.log(`по дороге «${r.name}»: ${k ? k.name : 'механизм'} у ${p.press.x} ${p.press.y} ${p.press.z}, как хозяин`);
+          if (this.dashAfterMech) this.dashAfterMech();
+        } catch (e) { if (this.isCancel(e)) throw e; }
+        continue;
+      }
+      if (p.ladder) {
+        // участок лестницы: лезть до её конца навыком, пропустив записанные точки лестницы
+        let j = i; while (j + 1 < pts.length && pts[j + 1].ladder) j++;
+        const up = pts[j].y >= p.y;
+        if (Math.abs(b.entity.position.y - pts[j].y) > 1.5) { try { await this.climbLadder({ dir: up ? 'up' : 'down' }, tok); } catch (e) { if (this.isCancel(e)) throw e; } }
+        i = j; continue;
+      }
+      if (!p.tight && i % 2 && i !== pts.length - 1) continue;   // на просторе через точку - ~8 бл., ровнее
+      if (Math.hypot(p.x - b.entity.position.x, p.z - b.entity.position.z) < (p.tight ? 0.8 : 3) && Math.abs(p.y - b.entity.position.y) < 1.5) continue;
+      try { await this.walkTo({ x: p.x, y: p.y, z: p.z }, tok, p.tight ? 20000 : 120000); }
+      catch (e) {
+        if (this.isCancel(e) || !p.tight) throw e;
+        // в тесноте путь не строится (течение, ребро люка) - как хозяин: лицом к точке и вперёд руками
+        await this.stepTo(p, tok);
+      }
     }
     return `прошёл по дороге «${r.name}»`;
+  }
+
+  /** Шаг руками к соседней точке (лаз, вода, ребро люка), как игрок: лицом, вперёд, прыжок вверх/в воде - вперёд под водой. */
+  async stepTo(p, tok) {
+    const b = this.bot, V = b.entity.position.constructor, t = new V(p.x + 0.5, p.y, p.z + 0.5), until = Date.now() + 3000;
+    const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
+    try {
+      while (Date.now() < until) {
+        this.check(tok);
+        const q = b.entity.position;
+        if (Math.hypot(t.x - q.x, t.z - q.z) < 0.6 && Math.abs(t.y - q.y) < 1.2) return true;
+        await b.lookAt(t.offset(0, 1.5, 0), true);
+        const wet = /water/.test((b.blockAt(q) || {}).name || ''), upy = t.y - q.y;
+        ctl('forward', true); ctl('sprint', true); ctl('jump', wet ? upy > 0.6 : upy > 0.4); ctl('sneak', wet && upy < -0.3);
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return false;
+    } finally { for (const k of ['forward', 'sprint', 'jump', 'sneak']) ctl(k, false); }
   }
 
   /** Для мозга: какие дороги показаны. */

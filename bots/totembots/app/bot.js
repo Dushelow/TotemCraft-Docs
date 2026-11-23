@@ -331,6 +331,14 @@ class TotemBot extends EventEmitter {
         if (!who) return;
         const k = n.position.toString();
         this._ownerMech = (this._ownerMech || []).filter((x) => Date.now() - x.at < 30 * 60000 && x.k !== k).concat({ k, p: n.position.clone(), name: n.name, at: Date.now() }).slice(-12);
+        // показывает дорогу - нажатие в маршрут, на своём месте по порядку (плита: только когда встал, не когда сошёл)
+        const T = this._teach;
+        const pressed = /_pressure_plate$/.test(n.name) ? (pn.powered === true || pn.powered === 'true' || +pn.power > 0) : true;
+        if (T && T.who === who.username && pressed && !(T.pts.length && T.pts[T.pts.length - 1].press && T.pts[T.pts.length - 1].press.k === k)) {
+          const wp = who.position.floored();
+          T.pts.push({ x: wp.x, y: wp.y, z: wp.z, dim: this.dimName ? this.dimName() : '', press: { x: n.position.x, y: n.position.y, z: n.position.z, k } });
+          this.log(`запись дороги: ${who.username} нажал ${n.name} у ${n.position.x} ${n.position.y} ${n.position.z}`);
+        }
       } catch {}
     });
     bot.on('blockUpdate', (o, n) => {
