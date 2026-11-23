@@ -537,6 +537,16 @@ class Brain {
     if (from && from !== '@self') { this.idleSkips = 0; this.selfChain = 0; }
     this.pending.push({ line, from, channel, at: Date.now(), ...extra });
     this.log('→ ' + line);
+    // короткая «передача смены» (23.11): последние просьбы людей и итоги тела - в память на диск. Оборвался чат
+    // (лимит, ошибка, перезапуск, новый аккаунт) - новый чат получит её вместе с вводной и продолжит, а не начнёт с нуля
+    try {
+      if (/^\[(чат|итог|поручение|квест)/.test(line) && this.memory) {
+        const m = this.memory.bot(this.botCfg.name), h = (m.handoff = m.handoff || []);
+        h.push(`${new Date().toISOString().slice(11, 16)} ${line.replace(/\s+/g, ' ').slice(0, 160)}`);
+        if (h.length > 12) h.splice(0, h.length - 12);
+        if (Date.now() - (this._hoSaved || 0) > 3000) { this._hoSaved = Date.now(); this.memory.save(); }
+      }
+    } catch {}
     if (wake) this.pump();
   }
 
@@ -545,7 +555,15 @@ class Brain {
     const q = this.cfg().qwen || {};
     const text = warmText(this.cfg(), this.botCfg);
     const head = into ? '[обновлённая вводная, она заменяет прежнюю]\n' : '';
-    const { answer, chatId } = await this.bridge.ask(into, head + text, { mode: q.chatMode ?? 'fast', models: q.models || [] });
+    // новый чат после обрыва - передать, на чём остановились (время UTC)
+    let tail = '';
+    try {
+      const m = this.memory && this.memory.bot(this.botCfg.name), h = (m && m.handoff) || [];
+      const qt = this.body.errandText && this.body.errandText();
+      if (!into && (h.length || qt)) tail = '\n\n[перед обрывом] Прошлый чат оборвался (лимит, ошибка или перезапуск). Последнее, что было (время UTC):\n' +
+        h.join('\n') + (qt ? '\n[квест] ' + qt : '') + '\nПродолжай с этого места: незаконченную просьбу доделай, квест тело ведёт само.';
+    } catch {}
+    const { answer, chatId } = await this.bridge.ask(into, head + text + tail, { mode: q.chatMode ?? 'fast', models: q.models || [] });
     this.botCfg.warmHash = hash(text);
     if (chatId !== this.botCfg.chatId) { this.sent = {}; this.sentDigest = -1; }   // новый чат ничего не знает
     this.botCfg.chatId = chatId;
