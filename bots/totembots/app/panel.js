@@ -87,7 +87,7 @@ function paintStrip() {
   if (v.mode === 'mine') text = `Ваше окно ${cur.name}: тот же вход, бот сюда не заходит. Здесь можно писать, менять настройки и голос.`;
   else if (cur.captcha) { text = `${cur.name} просит пройти проверку «не робот»: пройдите её прямо здесь, программа ждёт и ничего не нажимает.`; cls = 'bad'; }
   else if (cur.busy) { text = `Бот сейчас работает в этом окне: листать можно, нажимать и печатать нельзя. Писать самому - «Моё окно».`; cls = 'busy'; }
-  else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Войдите здесь или кнопкой «Войти через Chrome» в разделе «Мозги».`; cls = 'bad'; }
+  else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Войдите здесь или кнопкой «Войти через браузер» в разделе «Мозги».`; cls = 'bad'; }
   else text = `Окно бота ${cur.name}: бот может начать работу в любой момент. Писать самому - «Моё окно».`;
   $('stripText').textContent = text;
   if ($('stripHint').className !== 'r2 ' + cls) {
@@ -216,7 +216,7 @@ function renderNow() {
   if (st.paused) out.push(step('warn', 'Пауза', 'боты стоят на сервере и ничего не делают сами, к нейросетям не обращаются; сообщения игроков копятся. «Продолжить» вверху - ответят и продолжат'));
   const logged = sites.filter((s) => s.inOrder && s.logged);
   out.push(logged.length ? step('ok', 'Мозги готовы: ' + logged.map((s) => s.name).join(', '), st.brains && st.brains.now ? 'сейчас думает через ' + st.brains.now : 'список и вход - раздел «Мозги»')
-    : step('bad', 'Нет ни одного мозга с входом', 'раздел «Мозги»: войдите хотя бы в Qwen («Войти через Chrome»)'));
+    : step('bad', 'Нет ни одного мозга с входом', 'раздел «Мозги»: войдите хотя бы в Qwen («Войти через браузер»)'));
   if (!st.bots.length) out.push(step('warn', 'Ботов нет', 'добавьте бота ниже: «Добавить бота»'));
   for (const b of st.bots) {
     const s = b.state || {}, br = b.brain;
@@ -430,7 +430,7 @@ function renderSites() {
       <div class="acts">${s.captcha ? `<button class="pri sm" data-site-work="${s.id}" title="пройти проверку в окне бота">${icon('triangle-alert', 14)}Пройти проверку</button>`
         : s.logged ? `<button class="sm" data-site-work="${s.id}" title="окно, где работает бот">${icon('app-window', 14)}Окно бота</button><button class="sm" data-site-mine="${s.id}" title="ваше окно с тем же входом: писать самому, менять модель и голос">${icon('user', 14)}Моё окно</button>
           <button class="quiet sm" data-site-test="${s.id}" title="проверить, отвечает ли">${icon('activity', 14)}Проверить</button>`
-        : `<button class="pri sm" data-site-login="${s.id}" title="откроется настоящий Chrome: войдите там, вход перенесётся в программу">${icon('log-in', 14)}Войти через Chrome</button><button class="sm" data-site-work="${s.id}" title="войти прямо в окне программы">${icon('app-window', 14)}Окно бота</button>
+        : `<button class="pri sm" data-site-login="${s.id}" title="откроется ваш браузер (Chrome или Firefox): войдите там, вход перенесётся в программу">${icon('log-in', 14)}Войти через браузер</button><button class="sm" data-site-work="${s.id}" title="войти прямо в окне программы">${icon('app-window', 14)}Окно бота</button>
           ${s.id !== 'qwen' ? `<button class="quiet sm" data-site-mark="${s.id}" title="уже вошли прямо в окне сайта">${icon('check', 14)}Я вошёл</button>` : ''}`}</div></div>`;
   }).join('');
 }
