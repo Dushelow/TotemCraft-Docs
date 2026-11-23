@@ -8,7 +8,7 @@ function rock(set, cols) {
   for (let x = -3; x <= 5; x++) for (let z = -3; z <= 3; z++) for (let y = 50; y <= 63; y++) set(x, y, z, 'stone');
   for (const [x, y, z] of cols) set(x, y, z, 'air');
 }
-const TD = (half, open, facing = 'north') => ['oak_trapdoor', { facing, half, open, powered: false, waterlogged: false }];
+const TD = (half, open, facing = 'west') => ['oak_trapdoor', { facing, half, open, powered: false, waterlogged: false }];
 const LAD = (facing) => ['ladder', { facing, waterlogged: false }];
 
 const CASES = {
@@ -29,7 +29,7 @@ const CASES = {
   // открытый люк посреди лаза (стоит ребром у стенки) и закрытый внизу у пола
   'открытый люк в лазе': (set) => {
     const c = []; for (let y = 55; y <= 64; y++) c.push([1, y, 0]); rock(set, c);
-    set(1, 64, 0, ...TD('top', true, 'east'));
+    set(1, 64, 0, ...TD('top', true));
     for (let y = 59; y <= 63; y++) set(1, y, 0, ...LAD('west'));
     set(1, 58, 0, ...TD('top', false));
     for (let y = 55; y <= 57; y++) set(1, y, 0, ...LAD('west'));
@@ -37,11 +37,14 @@ const CASES = {
 };
 
 let bad = 0;
-for (const [name, build] of Object.entries(CASES)) {
+// и обратно: снизу вверх по тем же лазам
+const RUNS = [];
+for (const [name, build] of Object.entries(CASES)) { RUNS.push([name + ' (вниз)', build, [0, 65, 0], new goals.GoalBlock(1, 55, 0)]); RUNS.push([name + ' (вверх)', build, [1, 55, 0], new goals.GoalBlock(0, 65, 0)]); }
+for (const [name, build, from, goal] of RUNS) {
   let r, why = null;
-  try { r = find(world(build), [0, 65, 0], new goals.GoalBlock(1, 55, 0)); } catch (e) { why = 'поиск упал: ' + e.message; }
+  try { r = find(world(build), from, goal); } catch (e) { why = 'поиск упал: ' + e.message; }
   if (!why && r.status !== 'success') why = `пути нет (${r.status}), дошёл до ${r.path.length ? Object.values(r.path[r.path.length - 1]).slice(0, 3).join(',') : '-'}`;
-  if (!why) { try { why = replay(world(build), [0, 65, 0], r, lastCtlOf()); } catch (e) { why = 'проверка упала: ' + e.message; } }
+  if (!why) { try { why = replay(world(build), from, r, lastCtlOf()); } catch (e) { why = 'проверка упала: ' + e.message; } }
   console.log(`${why ? 'НЕТ' : 'ДА '} ${name}${why ? ': ' + why : ''}${r && r.path ? '; путь ' + r.path.map((p) => `${p.x},${p.y},${p.z}${p.opens ? 'о' : ''}`).join(' ') : ''}`);
   if (why) bad++;
 }

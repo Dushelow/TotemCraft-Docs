@@ -552,6 +552,15 @@ function install(mv, bot) {
         const c = cell(x, y + h, z);
         if (isHatch(c)) {
           const yt = y + h;
+          if (openHatch(c)) continue;   // открытый - не преграда, лезть дальше
+          // над люком лаз продолжается (лестница или пусто в столбе) - открыть и лезть в него (23.11: три люка на разной
+          // высоте - наверх «путь есть, а стою»)
+          if (passable(cell(x, yt + 1, z)) && ((cell(x, yt + 1, z).b && CLIMB.test(cell(x, yt + 1, z).b.name)) || (cell(x, yt + 2, z).b && CLIMB.test(cell(x, yt + 2, z).b.name)))) {
+            const m = new Move(x, yt + 1, z, node.remainingBlocks, 2 + h * 0.4, [], []);
+            m.opens = [{ x, y: yt, z, want: true }]; m.feet = yt + 1; m.cell = [x, z]; m.hatch = 'up';
+            out.push(m);
+            break;
+          }
           if (!passable(cell(x, yt + 1, z)) || !passable(cell(x, yt + 2, z))) break;
           for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const fl = cell(x + dx, yt, z + dz);
@@ -695,7 +704,16 @@ function install(mv, bot) {
       const path = bot._navPath, e = bot.entity;
       if (!path || !path.length || !e) return;
       const m = path[0], p = e.position;
-      const onLadder = /^(ladder|vine|scaffolding)$/.test((bot.blockAt(p) || {}).name || '');
+      const fb = bot.blockAt(p), fbn = (fb || {}).name || '';
+      // открытый люк над лестницей - в игре тоже лестница (по нему лезут дальше вверх)
+      const onLadder = /^(ladder|vine|scaffolding)$/.test(fbn);
+      const ladUp = onLadder || (/_trapdoor$/.test(fbn) && fb.getProperties && (fb.getProperties().open === true || fb.getProperties().open === 'true') && (() => { const l = bot.blockAt(p.offset(0, -1, 0)); return l && l.name === 'ladder' && l.getProperties().facing === fb.getProperties().facing; })());
+      if (ladUp && m.y > p.y + 0.3) {
+        const same = Math.abs(m.x + 0.5 - p.x) < 0.45 && Math.abs(m.z + 0.5 - p.z) < 0.45;
+        bot.setControlState('jump', true); bot.setControlState('sprint', false);
+        if (same) bot.setControlState('forward', false);
+        return;
+      }
       const tol = onLadder || !e.onGround ? 0.3 : 0.12;   // ещё стоит наверху - дойти до середины (ребро люка держит тело)
       if (m.y >= p.y - (onLadder ? 0.05 : 0.9) || Math.abs(m.x + 0.5 - p.x) > tol || Math.abs(m.z + 0.5 - p.z) > tol) return;
       bot.setControlState('forward', false); bot.setControlState('sprint', false); bot.setControlState('jump', false);

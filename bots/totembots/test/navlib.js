@@ -15,7 +15,7 @@ function world(build) {
   const set = (x, y, z, name, props) => w.set(`${x},${y},${z}`, props ? Block.fromProperties(name, props, 0).stateId : registry.blocksByName[name].defaultState);
   for (let x = -6; x <= 12; x++) for (let z = -6; z <= 6; z++) set(x, 64, z, 'stone');   // пол
   build(set);
-  const blockAt = (v) => { v = v.floored(); const st = w.get(`${v.x},${v.y},${v.z}`); const b = Block.fromStateId(st ?? registry.blocksByName.air.defaultState, 0); b.position = v; return b; };
+  const blockAt = (v) => { v = v.floored(); const st = w.get(`${v.x},${v.y},${v.z}`); const b = Block.fromStateId(st ?? registry.blocksByName.air.defaultState, 0); b.position = v; try { b._properties = b.getProperties(); } catch {} return b; };   // физика смотрит _properties (люк-лестница)
   const toggle = (x, y, z, want) => {
     const b = blockAt(new Vec3(x, y, z)), open = want === undefined ? !b.getProperties().open : want;
     const s = (X, Y, Z) => w.set(`${X},${Y},${Z}`, Block.fromProperties(b.name, { ...blockAt(new Vec3(X, Y, Z)).getProperties(), open }, 0).stateId);
@@ -42,17 +42,18 @@ function walkTo(bot, ent, to) {
     const e = { position: ent.position.clone(), velocity: new Vec3(0, 0, 0), onGround: true, isInWater: false, isInLava: false, isInWeb: false, isCollidedHorizontally: false, isCollidedVertically: false, elytraFlying: false, yaw: 0, pitch: 0, effects: {}, attributes: {} };
     const p = { entity: e, version: '1.21.4', jumpTicks: 0, jumpQueued: false, fireworkRocketDuration: 0, game: {}, inventory: { slots: [] }, registry };
     // спуск по лестнице - 0,15 бл. за такт: на высокий лаз нужно больше тактов
-    for (let t = 0; t < 60 + 12 * Math.max(0, Math.ceil(ent.position.y - to.y)); t++) {
+    for (let t = 0; t < 60 + 12 * Math.ceil(Math.abs(ent.position.y - to.y)); t++) {
       const dx = to.x + 0.5 - e.position.x, dz = to.z + 0.5 - e.position.z;
       if (Math.abs(dx) <= 0.2 && Math.abs(dz) <= 0.2 && e.onGround) {
         if (Math.floor(e.position.y + 1e-3) === to.y) { ent.position = e.position; return true; }
         // над целью, но ещё на высоте прошлого шага (сходит с края) - идти дальше, как модуль пути (|dy| < 1)
       }
       e.yaw = Math.atan2(-dx, -dz);
-      const lad = /^(ladder|vine)$/.test(bot.blockAt(e.position).name);
+      const fbk = bot.blockAt(e.position), lad = /^(ladder|vine)$/.test(fbk.name), ladUp = lad || (/_trapdoor$/.test(fbk.name) && fbk.getProperties().open && bot.blockAt(e.position.offset(0, -1, 0)).name === 'ladder' && bot.blockAt(e.position.offset(0, -1, 0)).getProperties().facing === fbk.getProperties().facing);
       const tol = lad || !e.onGround ? 0.3 : 0.12;
       const down = to.y < e.position.y - (lad ? 0.05 : 0.9) && Math.abs(dx) <= tol && Math.abs(dz) <= tol;   // над спуском - не жать вперёд (как nav-вниз)
-      const st = new PlayerState(p, { forward: !down, back: false, left: false, right: false, jump: jump && !down, sprint: false, sneak: false });
+      const climb = ladUp && to.y > e.position.y + 0.3, col = Math.abs(dx) < 0.45 && Math.abs(dz) < 0.45;   // как nav-вниз: вверх - прыжок
+      const st = new PlayerState(p, { forward: climb ? !col : !down, back: false, left: false, right: false, jump: climb || (jump && !down), sprint: false, sneak: false });
       physics.simulatePlayer(st, world); st.apply(p);
     }
   }
@@ -75,7 +76,7 @@ function leapTo(bot, ent, m, ctl) {
 function replay(bot, from, r, ctl) {
   const ent = { position: new Vec3(from[0] + 0.5, from[1], from[2] + 0.5) };
   const g = bot.blockAt(new Vec3(from[0], from[1], from[2]));   // старт на кровати, плите, люке - ноги выше клетки
-  if (g.shapes && g.shapes.length) ent.position.y = from[1] + Math.max(...g.shapes.map((s) => s[4]));
+  if (g.shapes && g.shapes.length && !/ladder|vine/.test(g.name)) ent.position.y = from[1] + Math.max(...g.shapes.map((s) => s[4]));
   for (const m of r.path) {
     for (const p of m.opens || []) bot.toggle(p.x, p.y, p.z, p.want);   // как тело: только в нужное положение
     if (m.leap ? !leapTo(bot, ent, m, ctl) : !walkTo(bot, ent, m)) return `физически не прошла к ${m.x},${m.y},${m.z} (стоит на ${ent.position.x.toFixed(2)},${ent.position.y.toFixed(2)},${ent.position.z.toFixed(2)})`;
