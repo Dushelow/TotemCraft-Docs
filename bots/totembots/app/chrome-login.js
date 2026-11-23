@@ -134,12 +134,18 @@ async function loginViaFirefox(profileDir, onStatus, S, exe) {
   exe = exe || findFirefox();
   // 1) обычный Firefox без управления: Google не пускает вход в браузер под управлением программы («браузер не
   // безопасен», 23.11). Вошли - закрыли окно. 2) тот же профиль скрыто с портом отладки - забрать вход.
-  const plain = spawn(exe, ['-profile', profileDir, '-no-remote', S.url], { stdio: 'ignore' });
+  // firefox.exe на Windows открывает окно и сразу завершается сам (23.11: программа решила, что окно закрыто, и запустила
+  // второй Firefox на том же профиле - «Firefox уже запущен»). -wait-for-browser держит процесс до закрытия окна, а
+  // надёжнее всего - замок профиля parent.lock: пока Firefox открыт, файл занят и не удаляется
+  const plain = spawn(exe, ['-profile', profileDir, '-no-remote', '-wait-for-browser', S.url], { stdio: 'ignore' });
   onStatus(`Войдите в ${S.name} в открывшемся окне Firefox, потом ЗАКРОЙТЕ это окно Firefox`);
+  const lock = path.join(profileDir, 'parent.lock');
+  const running = () => { if (plain.exitCode === null) return true; if (!fs.existsSync(lock)) return false; try { fs.unlinkSync(lock); return false; } catch { return true; } };
   const until0 = Date.now() + 15 * 60 * 1000;
-  while (plain.exitCode === null && Date.now() < until0) await sleep(1000);
-  if (plain.exitCode === null) { plain.kill(); throw new Error('не дождались входа за 15 минут'); }
-  await sleep(1500);
+  await sleep(8000);
+  while (running() && Date.now() < until0) await sleep(1000);
+  if (running()) { try { plain.kill(); } catch {} throw new Error('не дождались входа за 15 минут'); }
+  await sleep(2000);
   const proc = spawn(exe, ['-profile', profileDir, '-no-remote', '-headless', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
   try {
     onStatus(`Забираю вход в ${S.name} из Firefox`);
