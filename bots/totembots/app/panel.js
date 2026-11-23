@@ -453,6 +453,7 @@ function renderBrains() {
   if (brainsFilled) return;
   brainsFilled = true;
   $('brainOrder').value = B.order.join(', ');
+  renderOrder(B);
   $('brainKeys').innerHTML = Object.entries(B.presets).map(([k, p]) => `<label style="display:flex;align-items:center;gap:6px">${esc(p.name)} ${B.has[k] ? `<span class="pill ok">${icon('check', 12)}ключ вставлен</span>` : ''}<span class="grow"></span><a href="#" data-url="${esc(p.keyUrl)}" class="keylink">где взять ${icon('external-link', 12)}</a></label>
     <div class="row"><input class="grow" data-key="${k}" placeholder="${B.has[k] ? 'пусто - оставить, «-» - удалить' : 'вставьте ключ'}"><input style="width:42%" data-model="${k}" value="${esc(B.models[k])}" title="модель"></div>`).join('')
     + `<div class="row" style="margin-top:var(--s3)"><button id="keysSave" class="pri">${icon('check')}Сохранить ключи</button></div>`;
@@ -1003,3 +1004,20 @@ document.addEventListener('click', (e) => {
     if (r && r.ok) { box.remove(); location.reload(); } else box.querySelector('#su-err').textContent = 'Проверьте: ' + ((r && r.error) || 'поля');
   };
 })();
+
+// Порядок мозгов - списком с кнопками: выше - спрашивается первым; галочка - включён (выключенные не спрашиваются)
+const BRAIN_NAMES = { qwen: 'Qwen (сайт)', deepseekweb: 'DeepSeek (сайт)', geminiweb: 'Gemini (сайт)', arenaweb: 'LM Arena (сайт)', kimiweb: 'Kimi (сайт)', glmweb: 'GLM (сайт)', mistralweb: 'Mistral (сайт)', grokweb: 'Grok (сайт)', chatgptweb: 'ChatGPT (сайт)', copilotweb: 'Copilot (сайт)', claude: 'Claude (ключ)', gemini: 'Gemini (ключ)', groq: 'Groq (ключ)', openrouter: 'OpenRouter (ключ)', deepseek: 'DeepSeek (ключ)' };
+function renderOrder(B) {
+  const box = $('brainOrderList'); if (!box) return;
+  const on = B.order.filter((x) => !String(x).startsWith('-'));
+  const all = on.concat(Object.keys(BRAIN_NAMES).filter((k) => !on.includes(k)));
+  const save = (list) => { $('brainOrder').value = list.join(', '); saveBrains(null); B.order = list; renderOrder(B); };
+  box.innerHTML = all.map((k, i) => `<div class="row" style="gap:6px;align-items:center">
+    <input type="checkbox" data-bo-on="${k}" ${on.includes(k) ? 'checked' : ''}>
+    <span class="grow">${i < on.length ? (i + 1) + '. ' : ''}${esc(BRAIN_NAMES[k] || k)}</span>
+    <button class="ghost" data-bo-up="${k}" ${i === 0 || !on.includes(k) ? 'disabled' : ''}>вверх</button>
+    <button class="ghost" data-bo-down="${k}" ${i >= on.length - 1 || !on.includes(k) ? 'disabled' : ''}>вниз</button></div>`).join('');
+  box.querySelectorAll('[data-bo-on]').forEach((c) => { c.onchange = () => { const k = c.dataset.boOn; save(c.checked ? on.concat(k) : on.filter((x) => x !== k)); }; });
+  box.querySelectorAll('[data-bo-up]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boUp, l = on.slice(), i = l.indexOf(k); if (i > 0) { [l[i - 1], l[i]] = [l[i], l[i - 1]]; save(l); } }; });
+  box.querySelectorAll('[data-bo-down]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boDown, l = on.slice(), i = l.indexOf(k); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; save(l); } }; });
+}

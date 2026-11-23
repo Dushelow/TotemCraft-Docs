@@ -282,7 +282,8 @@ function createWindow() {
   router = new Router({ qwen: bridge, cfg: () => cfg, webs: {}, save: () => saveCfg(), log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
     log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
-  bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled !== false ? project.id : '');
+  // новые чаты - вне проекта Qwen: создание чата в проекте висело по 40-80 с, а потом Qwen не отвечал (23.11)
+  bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled === true ? project.id : '');
   bridge.beforeNewChat = async () => {
     if (!projectEnabled()) return;
     try { if (!project.id || !(await project.exists())) await project._ensure(); } catch (e) { logAll('проект Qwen: ' + e.message + ' (чат будет вне проекта)'); }
