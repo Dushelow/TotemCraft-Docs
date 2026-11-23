@@ -341,12 +341,12 @@ function install(mv, bot) {
       const here = blk(node.x, node.y, node.z);
       if (here && /^(ladder|vine|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(here.name)) {
         const above = blk(node.x, node.y + 1, node.z);
-        if (!(above && CL.test(above.name)) && !cell(node.x, node.y + 1, node.z).boxes.length) {
+        if (!(above && CL.test(above.name)) && (!cell(node.x, node.y + 1, node.z).boxes.length || openHatch(cell(node.x, node.y + 1, node.z)))) {
           for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ly of [node.y + 1, node.y + 2]) {
             const x = node.x + ax, z = node.z + az;
             const fl = cell(x, ly - 1, z);
             if (!fl.boxes.length || fl.bad || CL.test((fl.b || {}).name || '') || cell(x, ly, z).boxes.length || cell(x, ly + 1, z).boxes.length) continue;
-            if (ly === node.y + 2 && cell(node.x, node.y + 2, node.z).boxes.length) continue;   // низко над головой - не прыгнуть
+            if (ly === node.y + 2 && cell(node.x, node.y + 2, node.z).boxes.length && !openHatch(cell(node.x, node.y + 2, node.z))) continue;   // низко над головой - не прыгнуть
             const k = `${x},${ly},${z}`; if (have.has(k)) continue;
             have.add(k); const m = new Move(x, ly, z, node.remainingBlocks, 2.5, [], []); m.ladderTop = true; out.push(m);
             break;
