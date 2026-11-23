@@ -177,8 +177,15 @@ class TotemBot extends EventEmitter {
         if (foe > 1) return foe;
         const d = require('./travel').dkey(bot.game.dimension);
         if (this.travel.trails.heat(d, x, y, z) >= 2) return 1;
-        if (!NATURAL.test(under) && !/leaves|farmland/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
-        return nearBuilt(new Vec3(x, y - 1, z)) ? 1.6 : 1;   // Vec3: builtNear берёт pos.offset (22.11 простой объект ронял поиск пути)
+        // В поселении - по дорожкам, а не по газонам у домов (23.11, владелец: по карте видно - коричневое тропа, вокруг
+        // зелень и участки). Тропа бывает любой: протоптанная земля, гравий, булыжник, плитка, светлые блоки на площади.
+        // Газон - трава, мох, подзол, цветы и трава у ног: в 2,5 раза дороже; прочее природное - чуть дороже
+        if (/^(dirt_path|gravel|coarse_dirt|packed_mud|mud|suspicious_gravel)$/.test(under)) return 1;
+        if (!NATURAL.test(under) && !/leaves|farmland|moss_block|moss_carpet/.test(under)) return 1;   // выложенное: дорожка, плитка, пол
+        if (!nearBuilt(new Vec3(x, y - 1, z)) && !(this.skills && this.skills.builtChunk(new Vec3(x, y, z)))) return 1;
+        const feet = bot.blockAt(new Vec3(x, y, z), false), fn = feet ? feet.name : '';
+        const lawn = /^(grass_block|moss_block|moss_carpet|podzol|mycelium|rooted_dirt)$/.test(under) || /flower|tulip|poppy|dandelion|orchid|allium|bluet|daisy|cornflower|lily|rose|peony|lilac|short_grass|tall_grass|fern|sapling|pink_petals|leaf_litter|wildflowers|bush/.test(fn) || (fn === 'snow' && /grass_block|dirt|podzol/.test(under));
+        return lawn ? 2.5 : 1.3;   // Vec3: builtNear берёт pos.offset (22.11 простой объект ронял поиск пути)
       };
       this.movements = mv;
       bot.pathfinder.setMovements(mv);

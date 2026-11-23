@@ -89,6 +89,20 @@ function install(mv, bot) {
   }
   mv._penPenalty = penPenalty;
 
+  // мебель и крыша (см. цену шага)
+  const FURN = /_stairs$|_slab$|_trapdoor$|_fence$|_wall$|^(barrel|chest|trapped_chest|ender_chest|crafting_table|smithing_table|fletching_table|cartography_table|loom|stonecutter|grindstone|anvil|chipped_anvil|damaged_anvil|lectern|composter|cauldron|water_cauldron|lava_cauldron|brewing_stand|enchanting_table|furnace|blast_furnace|smoker|bookshelf|chiseled_bookshelf|decorated_pot|flower_pot|.*_bed|.*_shulker_box|shulker_box|jukebox|note_block|beehive|bell|.*_banner|scaffolding|.*_carpet)$/;
+  function roofedAt(x, y, z) { for (let dy = 2; dy <= 7; dy++) { const k = blk(x, y + dy, z); if (k && k.boundingBox === 'block') return true; } return false; }
+  // пролёт лестницы: рядом ступень или полублок на уровень выше или ниже (стулья и диваны стоят на одном уровне с полом)
+  function flight(x, sy, z, name) {
+    if (!/_stairs$|_slab$/.test(name)) return false;
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [1, -1]) {
+      const k = blk(x + dx, sy + dy, z + dz);
+      if (k && /_stairs$|_slab$/.test(k.name)) return true;
+      if (dy === 1 && k && k.boundingBox === 'block' && !FURN.test(k.name)) { const a1 = blk(x + dx, sy + 2, z + dz); if (a1 && a1.boundingBox === 'empty') return true; }   // ступень к полу второго этажа
+    }
+    return false;
+  }
+
   function shapesOf(b, x, y, z) {
     const r = [];
     if (b && b.boundingBox !== 'empty' && b.shapes) for (const s of b.shapes) r.push({ x0: x + s[0], y0: y + s[1], z0: z + s[2], x1: x + s[3], y1: y + s[4], z1: z + s[5] });
@@ -430,6 +444,15 @@ function install(mv, bot) {
       // ловушка: спуск туда, откуда не выбраться (яма, загон, медовая яма) - только если цель там же (очень дорого)
       if (rise < -0.7 && !trapCheck && !escapable(nx, ny, nz, fy)) cost += 60;
       if (uname === 'farmland') cost += 3;
+      // В помещении ходить по полу и не лезть на мебель (23.11, владелец: встаёт на стул у стола, на барную стойку в
+      // пекарне). Мебель в Minecraft - ступеньки и полублоки (стулья, диваны, ступени-кресла), люки (тумбы, стены
+      // шкафов), заборы с плитой (столы), бочки, сундуки, верстаки, наковальни, кафедры и любые блоки, на которые надо
+      // подняться с пола. Шаг на неё под крышей - дорого; настоящая лестница на второй этаж - пролёт ступенек вверх -
+      // обычной ценой (это не мебель).
+      if (!trapCheck && roofedAt(nx, ny, nz)) {
+        const furn = FURN.test(uname) || (rise > 0.3 && !/_stairs$|_slab$|ladder|scaffolding/.test(uname));
+        if (furn && !flight(nx, Math.floor(w.feet - 0.01), nz, uname)) cost += rise > 0.3 ? 8 : 5;
+      }
       // цена клетки от тела (дороги дешевле, газоны у чужих домов дороже) - bot.js задаёт mv.navStepCost
       // ошибка в цене клетки не должна ломать поиск пути (22.11: падение -> «путь пустой» десятки раз, бот дёргался)
       if (mv.navStepCost) { try { cost *= mv.navStepCost(nx, ny, nz, uname) || 1; } catch (e) { if (!mv._costErr) { mv._costErr = 1; console.error('nav: цена клетки', e.message); } } }
