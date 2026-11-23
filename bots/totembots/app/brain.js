@@ -397,7 +397,7 @@ class Brain {
   // Свобода воли: долго никто ничего не просит - нейросеть сама придумывает, чем заняться (без готового меню)
   idle() {
     const ini = this.cfg().initiative || { enabled: true, minutes: 1 };
-    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body.mode === 'life' || this.body._errandBusy || this.body.sandbox || this.busy || this.pending.length || this.bridge.resting) return;   // занята сама (песочница) - не дёргать нейросеть
+    if (this.cfg().paused || !ini.enabled || !this.body.bot || this.body.status !== 'online' || this.body.mode === 'task' || this.body.mode === 'hold' || this.body._errandBusy || this.body.sandbox || this.busy || this.pending.length || this.bridge.resting) return;   // занята сама (песочница) - не дёргать нейросеть
     // только что зашла в игру - сразу (через пару секунд), а не через минуту молчания (22.11: «долго инициируется»)
     const fresh = !this.startedAt && this.body.bot.entity && Date.now() - (this.body.onlineAt || 0) > 2500;
     if (fresh) this.startedAt = Date.now();
