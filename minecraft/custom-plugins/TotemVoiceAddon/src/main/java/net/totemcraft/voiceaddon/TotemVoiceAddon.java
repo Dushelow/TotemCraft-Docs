@@ -55,6 +55,13 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
 
     private ServerSourceLine line;
     private final Set<String> bots = new HashSet<>();
+    private boolean anyBot = true;   // любой клиент TotemBots (подписан на totem:ears) - бот, без списка ников
+
+    /** Бот ли это: ник из списка или клиент программы TotemBots (сам подписался на канал totem:ears при входе). */
+    private boolean isBot(Player p) {
+        if (bots.contains(p.getName().toLowerCase(Locale.ROOT))) return true;
+        return anyBot && p.getListeningPluginChannels().contains("totem:ears");
+    }
     private short distance;
     private final Map<UUID, ByteArrayOutputStream> buffers = new ConcurrentHashMap<>();
     private final Map<UUID, ServerEntitySource> sources = new ConcurrentHashMap<>();
@@ -76,6 +83,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
         saveDefaultConfig();
         bots.clear();
         for (String n : getConfig().getStringList("bots")) bots.add(n.toLowerCase(Locale.ROOT));
+        anyBot = getConfig().getBoolean("any-totembots", true);
         distance = (short) getConfig().getInt("distance", 24);
         getServer().getMessenger().registerIncomingPluginChannel(this, CHANNEL, this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, EARS);
@@ -87,7 +95,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
             for (Map.Entry<UUID, Speech> e : speech.entrySet()) if (now - e.getValue().last > 800) flush(e.getKey());
         }, 10L, 10L);
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Голос ботов: " + bots + ", слышно на " + distance + " блоков");
+        getLogger().info("Голос ботов: " + (anyBot ? "любой клиент TotemBots" : "только список") + " + " + bots + ", слышно на " + distance + " блоков");
     }
 
     @Override
@@ -112,7 +120,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
         if (!CHANNEL.equals(channel) || message.length == 0) return;
-        if (!bots.contains(player.getName().toLowerCase(Locale.ROOT))) return;   // только боты из списка
+        if (!isBot(player)) return;   // только боты: клиент TotemBots или ник из списка
         UUID id = player.getUniqueId();
         switch (message[0]) {
             case 1 -> buffers.put(id, new ByteArrayOutputStream());
@@ -160,7 +168,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
         VoicePlayer vp = event.getPlayer();
         UUID id = vp.getInstance().getUuid();
         String name = vp.getInstance().getName();
-        if (bots.contains(name.toLowerCase(Locale.ROOT))) return;   // бот себя не слушает
+        { Player self = Bukkit.getPlayer(id); if (bots.contains(name.toLowerCase(Locale.ROOT)) || (self != null && isBot(self))) return; }   // бот себя не слушает
         Speech sp = speech.computeIfAbsent(id, k -> new Speech());
         if (sp.packets++ == 0 && getConfig().getBoolean("log", true)) getLogger().info("уши: " + name + " говорит");
         try {
@@ -194,7 +202,7 @@ public final class TotemVoiceAddon extends JavaPlugin implements AddonInitialize
         if (speaker == null) return;
         List<Player> listeners = new ArrayList<>();
         for (Player p : Bukkit.getOnlinePlayers()) {
-            if (!bots.contains(p.getName().toLowerCase(Locale.ROOT)) || p.getWorld() != speaker.getWorld()) continue;
+            if (!isBot(p) || p.getWorld() != speaker.getWorld()) continue;
             if (p.getLocation().distance(speaker.getLocation()) <= earsDistance) listeners.add(p);
         }
         if (listeners.isEmpty()) { if (log) getLogger().info("уши: " + speaker.getName() + " сказал, но бота нет ближе " + earsDistance + " блоков"); return; }
