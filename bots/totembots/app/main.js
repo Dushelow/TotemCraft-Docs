@@ -744,6 +744,9 @@ async function loginSite(site) {
     try { const ls = JSON.parse(token); for (const [k, val] of Object.entries(ls)) await v.webContents.executeJavaScript(`localStorage.setItem(${JSON.stringify(k)}, ${JSON.stringify(val)})`); } catch {}
     await v.webContents.loadURL(SITES[site].home);
     cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg();
+    // 23.11: вошёл в DeepSeek, пока Qwen без лимитов - а бот так и сидел на Qwen до перезапуска; после перезапуска
+    // DeepSeek начал «снова в игре» в пустом чате без вводной
+    try { if (router) { router.rest[site + 'web'] = 0; for (const ch of router.chats.values()) if (ch.webIds) delete ch.webIds[site + 'web']; router.log(`${SITES[site].name}: вход есть - можно сразу, старый чат сайта забыт`); } } catch {}
     status(`Готово: ${SITES[site].name} вошёл в программе`); win.focus();
     return { ok: true };
   } catch (e) { status(`${SITES[site].name}: не вышло - ${e.message}`); return { ok: false, error: e.message }; }

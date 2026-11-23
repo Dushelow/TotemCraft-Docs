@@ -241,7 +241,22 @@ class TotemBot extends EventEmitter {
       if (this.dim && this.dim !== bot.game.dimension) this.arrivedAt = Date.now();
       this.dim = bot.game.dimension; this.inPortal = null;
     });
-    bot.on('path_update', (r) => { this.lastPath = { status: r.status, path: r.path, at: Date.now() }; });
+    bot.on('path_update', (r) => {
+      this.lastPath = { status: r.status, path: r.path, at: Date.now() };
+      // иду за хозяином, а до него прохода нет (он за скрытой дверью, в закрытой комнате): путь «частичный» уводит в
+      // обход куда попало - 23.11 убежал вниз в пещеры и заблудился. Не уходить: стоять, ждать, пробовать механизм
+      try {
+        if (this.mode !== 'follow' || r.status !== 'partial' || !this._followEnt || !r.path.length) return;
+        const own = this._followEnt.position, me = bot.entity.position, end = r.path[r.path.length - 1];
+        if (!own || me.distanceTo(own) > 24 || end.distanceTo(own) <= 4) return;
+        if (end.distanceTo(own) < me.distanceTo(own) - 2) return;   // частичный, но ведёт ближе - пусть идёт
+        bot.pathfinder.setGoal(null);
+        if (!this._waitWallSaid || Date.now() - this._waitWallSaid > 60000) { this._waitWallSaid = Date.now(); this.log(`к ${this.followName} прохода не вижу - жду здесь, не ухожу`); }
+        if (!this._mechBusy) { this._mechBusy = true; this.useMechanism(own, this.token).then((m) => { if (m) this.log(m + ' - бегом к хозяину'); }).catch(() => {}).finally(() => { this._mechBusy = false; }); }
+        clearTimeout(this._followRetry);
+        this._followRetry = setTimeout(() => { try { if (this.mode === 'follow' && this._followEnt && this._followEnt.isValid !== false) bot.pathfinder.setGoal(new goals.GoalFollow(this._followEnt, this.followDist()), true); } catch {} }, 3000);
+      } catch {}
+    });
     bot.on('messagestr', (msg, pos, json, sender) => {
       if (pos === 'system' || pos === 'game_info') { this.lastSystem = (this.lastSystem || []).concat(String(msg).slice(0, 160)).slice(-10); }
       // сообщение сервера о своей смерти («Loki drowned», «Loki was slain by Zombie») - причина для зоны (zones.js)

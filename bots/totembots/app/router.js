@@ -148,8 +148,15 @@ class Router {
     let send = text;
     if (!ch.webIds[b.id] && !ch.warm) ch.warm = Object.values(this.warms || {}).pop() || '';
     if (!ch.webIds[b.id]) send = ch.turns.length ? this.recap(ch) + '\n\n' + text : (ch.warm && ch.warm !== text ? ch.warm + '\n\n' + text : text);
-    const r = await b.web.ask(ch.webIds[b.id] || '', send);
+    const old = ch.webIds[b.id] || '';
+    let r = await b.web.ask(old, send);
     ch.webIds[b.id] = r.chatId || ch.webIds[b.id];
+    // просили продолжить старый чат, а сайт открыл новый (чат удалён, другой аккаунт): он ничего не знает - вводная
+    if (old && r.chatId && r.chatId !== old) {
+      if (!ch.warm) ch.warm = Object.values(this.warms || {}).pop() || '';
+      const intro = ch.turns.length ? this.recap(ch) : ch.warm;
+      if (intro) { this.log(`${b.name}: старого чата нет, открылся новый - отправляю вводную`); r = await b.web.ask(r.chatId, intro + '\n\n' + text); }
+    }
     return r.answer;
   }
 
