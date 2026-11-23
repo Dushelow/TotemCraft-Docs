@@ -38,6 +38,14 @@ function nextPoint(tb) {
 /** Каждый тик физики. Возвращает true, если управлял сам (тогда старая логика воды не нужна). */
 function swimTick(tb) {
   const b = tb.bot, e = b.entity;
+  // водяной лифт: стою в пузырьковом столбе, следующий шаг пути - в том же столбе: ничего не жать, столб везёт сам
+  if (e && b.pathfinder.isMoving()) {
+    const k = b.blockAt(e.position.floored()), nx0 = ((tb.lastPath || {}).path || [])[0];
+    if (k && k.name === 'bubble_column' && nx0 && Math.floor(nx0.x) === Math.floor(e.position.x) && Math.floor(nx0.z) === Math.floor(e.position.z)) {
+      for (const c of ['forward', 'back', 'jump', 'sneak', 'sprint']) b.setControlState(c, false);
+      return true;
+    }
+  }
   if (!e || tb.busyLook || !b.pathfinder.isMoving()) { if (tb.swimming2) { tb.swimming2 = false; b.setControlState('sprint', false); } return false; }
   const p = e.position, feet = p.floored();
   if (!isWater(b, feet) && !isWater(b, feet.offset(0, 1, 0))) { if (tb.swimming2) { tb.swimming2 = false; b.setControlState('sprint', false); } return false; }

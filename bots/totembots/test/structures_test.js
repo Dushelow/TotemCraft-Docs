@@ -23,12 +23,17 @@ const S = {
   'калитка в заборе': [(set) => { for (let z = -6; z <= 6; z++) set(2, 65, z, 'oak_fence', { east: false, west: false, north: true, south: true, waterlogged: false }); set(2, 65, 0, 'oak_fence_gate', { facing: 'east', open: false, powered: false, in_wall: false }); }, [0, 65, 0], [5, 65, 0]],
   'прыжок в воду с высоты': [(set) => { solid(set, -3, 8, 50, 63, -3, 3); air(set, 3, 5, 52, 64, -1, 1); for (let x = 3; x <= 5; x++) for (let z = -1; z <= 1; z++) for (let y = 52; y <= 54; y++) set(x, y, z, 'water'); solid(set, 6, 8, 52, 54, -1, 1); air(set, 6, 8, 55, 64, -1, 1); for (let y = 55; y <= 64; y++) set(8, y, 0, 'ladder', { facing: 'west', waterlogged: false }); }, [2, 65, 0], [7, 55, 0]],
   'лабиринт': [(set) => { solid(set, -3, 9, 65, 66, -3, 3); const cells = [[-2, 0], [-1, 0], [0, 0], [0, 1], [0, 2], [1, 2], [2, 2], [2, 1], [2, 0], [2, -1], [2, -2], [3, -2], [4, -2], [4, -1], [4, 0], [5, 0], [6, 0], [7, 0], [8, 0]]; for (const [x, z] of cells) air(set, x, x, 65, 66, z, z); }, [-2, 65, 0], [8, 65, 0]],
+  'водяной лифт вверх (песок душ)': [(set) => { solid(set, -3, 5, 50, 63, -3, 3); set(1, 54, 0, 'soul_sand'); for (let y = 55; y <= 64; y++) set(1, y, 0, 'bubble_column', { drag: false }); air(set, 0, 0, 55, 56, 0, 0); air(set, -2, 0, 55, 56, 0, 0); air(set, 1, 1, 65, 66, 0, 0); }, [-2, 55, 0], [0, 65, 0], 1],
+  'водяной лифт вниз (магма)': [(set) => { solid(set, -3, 5, 50, 63, -3, 3); set(1, 54, 0, 'magma_block'); for (let y = 55; y <= 64; y++) set(1, y, 0, 'bubble_column', { drag: true }); air(set, 2, 4, 55, 56, 0, 0); }, [0, 65, 0], [3, 55, 0], 1],
+  'прыжок на слизь с высоты': [(set) => { solid(set, -3, 8, 30, 63, -3, 3); air(set, 3, 5, 31, 64, -1, 1); for (let x = 3; x <= 5; x++) for (let z = -1; z <= 1; z++) set(x, 30, z, 'slime_block'); }, [2, 65, 0], [4, 31, 0], 1],
+  'адские вьющиеся лианы вверх': [(set) => { solid(set, -3, 5, 50, 63, -3, 3); air(set, 1, 1, 55, 64, 0, 0); for (let y = 55; y <= 64; y++) set(1, y, 0, y === 64 ? 'twisting_vines' : 'twisting_vines_plant'); }, [1, 55, 0], [0, 65, 0]],
   'лианы по стене': [(set) => { solid(set, -3, 5, 50, 63, -3, 3); air(set, 1, 1, 55, 64, 0, 0); for (let y = 55; y <= 64; y++) set(1, y, 0, 'vine', { east: true, west: false, north: false, south: false, up: false }); }, [0, 65, 0], [1, 55, 0]],
 };
 
 let bad = 0, total = 0;
-for (const [name, [build, top, bottom]] of Object.entries(S)) {
-  for (const [dir, from, to] of [['туда', top, bottom], ['обратно', bottom, top]]) {
+// 4-й элемент 1 - постройка в одну сторону (лифт по течению, прыжок вниз): обратно не проверяем
+for (const [name, [build, top, bottom, oneWay]] of Object.entries(S)) {
+  for (const [dir, from, to] of oneWay ? [['туда', top, bottom]] : [['туда', top, bottom], ['обратно', bottom, top]]) {
     total++;
     let r, why = null;
     try { r = find(world(build), from, new goals.GoalBlock(to[0], to[1], to[2])); } catch (e) { why = 'поиск упал: ' + e.message; }

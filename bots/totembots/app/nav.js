@@ -335,6 +335,38 @@ function install(mv, bot) {
         if (hatch !== null) m.opens = [{ x, y: hatch, z, want: true }];
         out.push(m);
       }
+    // водяной лифт (пузырьковый столб): над песком душ - несёт вверх, над магмой - тянет вниз. Войти в столб (своя клетка
+    // или соседняя) и ехать до конца: вверх - к верхней клетке воды под воздухом, вниз - до дна
+    const bub = (x, y, z) => { const k = blk(x, y, z); return k && k.name === 'bubble_column' ? (k.getProperties().drag === true || k.getProperties().drag === 'true' ? 'down' : 'up') : null; };
+    for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = node.x + ax, z = node.z + az;
+      for (const yy of [node.y, node.y - 1]) {
+        const d = bub(x, yy, z); if (!d) continue;
+        if ((ax || az) && (cell(x, node.y + 1, z).boxes.length)) continue;
+        let y = yy, n = 0;
+        if (d === 'up') { while (n < 60 && bub(x, y + 1, z) === 'up') { y++; n++; } if (cell(x, y + 1, z).boxes.length) continue; }
+        else { while (n < 60 && bub(x, y - 1, z) === 'down') { y--; n++; } }
+        if (n < 2) continue;
+        const k = `${x},${y},${z}`; if (have.has(k)) continue;
+        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.15, [], []); m.swim = true; m.lift = d; out.push(m);
+        break;
+      }
+    }
+    // мягкое приземление: блок слизи - с любой высоты; сено, мёд - до 12 бл. (урон сильно меньше); рыхлый снег - до 8
+    for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = node.x + ax, z = node.z + az;
+      if (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) continue;
+      let y = node.y - 1, n = 0;
+      while (n < 60 && !cell(x, y, z).boxes.length && !waterAt(x, y, z)) { y--; n++; }
+      const land = blk(x, y, z);
+      if (!land || n < 4) continue;
+      const max = /^slime_block$/.test(land.name) ? 60 : /^(hay_block|honey_block)$/.test(land.name) ? 12 : /^powder_snow$/.test(land.name) ? 8 : 0;
+      if (!max || n > max) continue;
+      const ly = /^powder_snow$/.test(land.name) ? y : y + 1;
+      if (cell(x, ly, z).boxes.length && !/^powder_snow$/.test(land.name)) continue;
+      const k = `${x},${ly},${z}`; if (have.has(k)) continue;
+      have.add(k); out.push(new Move(x, ly, z, node.remainingBlocks, 3 + n * 0.2, [], []));
+    }
     // прыжок в воду с высоты: обрыв рядом, внизу вода (с любой высоты до 40 бл. - в воду падать не больно)
     for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const x = node.x + ax, z = node.z + az;
