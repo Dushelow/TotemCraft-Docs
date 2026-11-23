@@ -269,6 +269,8 @@ function createWindow() {
   qs.setUserAgent(CHROME_UA);
   qwen = new WebContentsView({ webPreferences: { session: qs, backgroundThrottling: false } });
   win.contentView.addChildView(qwen);
+  // первый запуск: окно сайта лежит поверх панели и закрывало мастер настройки (23.11, установка у друга) - спрятать до «Готово»
+  if (!(cfg.setupDone && cfg.host)) qwen.setVisible(false);
   qwen.webContents.loadURL(QWEN_URL);
   qwen.webContents.setAudioMuted(true);   // сайт сам не звучит: голос идёт только туда, где выбрано в «Голосе»
   bridge = new QwenBridge(qwen.webContents);
@@ -603,6 +605,7 @@ ipcMain.handle('setup-save', (_e, s) => {
   if (s.version === '26.1' || s.version === '1.21.11') cfg.mcVersion = s.version;
   if (name && !cfg.bots.some((x) => x.name === name)) cfg.bots.push({ name, password: String(s.password || ''), persona: String(s.persona || '').slice(0, 600) });
   cfg.setupDone = true; saveCfg();
+  try { qwen.setVisible(true); } catch {}
   return { ok: true };
 });
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
