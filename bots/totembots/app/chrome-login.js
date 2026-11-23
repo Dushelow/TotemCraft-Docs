@@ -33,7 +33,7 @@ function cdp(wsUrl) {
         msg.error ? fail(new Error(msg.error.message)) : ok(msg.result);
       }
     };
-    ws.onerror = () => reject(new Error('нет связи с Chrome'));
+    ws.onerror = () => reject(new Error('нет связи с браузером'));
     ws.onopen = () => resolve({
       send: (method, params = {}) => new Promise((ok, fail) => {
         wait.set(++id, { ok, fail });
@@ -69,7 +69,7 @@ async function sitePage(url) {
 async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   const S = SITES[siteId];
   const exe = findChrome();
-  if (!exe) throw new Error('Chrome не найден: войдите без Google (почта и пароль) прямо в окне сайта');
+  if (!exe) { if (findFirefox()) return loginViaFirefox(profileDir + '-firefox', onStatus, S); throw new Error('не найден ни Chrome, ни Firefox: войдите без Google (почта и пароль) прямо в окне сайта'); }
   const proc = spawn(exe, [`--user-data-dir=${profileDir}`, `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--new-window', S.url], { detached: false, stdio: 'ignore' });
   try {
@@ -107,4 +107,43 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   }
 }
 
-module.exports = { loginViaChrome, findChrome, SITES };
+// Нет Chrome - Firefox (23.11: у друга только Firefox). Протокол WebDriver BiDi: отдельный чистый профиль, порт
+// отладки, ждём вход, забираем куки и признак входа так же, как у Chrome.
+const FF = ['C:\Program Files\Mozilla Firefox\firefox.exe', 'C:\Program Files (x86)\Mozilla Firefox\firefox.exe',
+  path.join(process.env.LOCALAPPDATA || '', 'Mozilla Firefox\firefox.exe')];
+function findFirefox() { return FF.find((p) => p && fs.existsSync(p)); }
+async function loginViaFirefox(profileDir, onStatus, S) {
+  fs.mkdirSync(profileDir, { recursive: true });
+  const proc = spawn(findFirefox(), ['-profile', profileDir, '-no-remote', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
+  try {
+    onStatus(`Войдите в ${S.name} в открывшемся окне Firefox`);
+    let ws;
+    for (let i = 0; i < 30 && !ws; i++) { await sleep(1000); try { ws = await cdp(`ws://127.0.0.1:${PORT}/session`); } catch {} }
+    if (!ws) throw new Error('Firefox не дал подключиться');
+    const raw = (method, params = {}) => ws.send(method, params);   // тот же формат {id, method, params}
+    await raw('session.new', { capabilities: {} });
+    const until = Date.now() + 10 * 60 * 1000;
+    let first;
+    try {
+      while (Date.now() < until) {
+        await sleep(2000);
+        if (proc.exitCode !== null) throw new Error('Firefox закрыли до входа');
+        const tree = await raw('browsingContext.getTree', {});
+        const ctx = (tree.contexts || []).find((c) => String(c.url).startsWith(S.url)) || (tree.contexts || [])[0];
+        if (!ctx) continue;
+        let token = '';
+        try { const r = await raw('script.evaluate', { expression: S.ready, target: { context: ctx.context }, awaitPromise: false }); token = r.result && r.result.value || ''; } catch { continue; }
+        if (first === undefined) { first = token; if (first) onStatus(`В Firefox уже есть вход в ${S.name}. Чтобы сменить аккаунт - выйдите и войдите заново`); }
+        if (!token || token === first) continue;
+        const host = new URL(S.url).hostname.replace(/^chat\./, '');
+        const { cookies } = await raw('storage.getCookies', {});
+        const out = cookies.filter((c) => S.all || c.domain.includes(host)).map((c) => ({ name: c.name, value: c.value && c.value.value, domain: c.domain, path: c.path, secure: c.secure, httpOnly: c.httpOnly, sameSite: c.sameSite === 'none' ? 'None' : c.sameSite === 'strict' ? 'Strict' : 'Lax', expires: c.expiry || -1 }));
+        onStatus('Вход получен, закрываю Firefox');
+        return { cookies: out, token };
+      }
+      throw new Error('не дождались входа за 10 минут');
+    } finally { ws.close(); }
+  } finally { proc.kill(); }
+}
+
+module.exports = { loginViaChrome, findChrome: () => findChrome() || findFirefox(), SITES };
