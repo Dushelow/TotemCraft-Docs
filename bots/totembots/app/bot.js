@@ -1373,7 +1373,7 @@ class TotemBot extends EventEmitter {
         while (Date.now() - t1 < 2500 && Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 0.35) {
           this.check(tok);
           await b.lookAt(new Vec3(x + 0.5, b.entity.position.y + 1.6, z + 0.5), true);
-          ctl0('forward', true); ctl0('sprint', true); ctl0('jump', b.entity.isCollidedHorizontally && b.entity.onGround);
+          ctl0('forward', true); ctl0('sprint', true);   // без прыжков: у двери задевал косяк и скакал (23.11)
           await sleep(50);
         }
       } finally { ctl0('forward', false); ctl0('sprint', false); ctl0('jump', false); }
@@ -1397,8 +1397,12 @@ class TotemBot extends EventEmitter {
         this.check(tok);
         const p = b.entity.position;
         // держаться в столбе
-        const dx = x + 0.5 - p.x, dz = z + 0.5 - p.z;
-        if (Math.hypot(dx, dz) > 0.25) { await b.lookAt(new Vec3(x + 0.5, p.y + 1.6, z + 0.5), true); ctl('forward', true); } else ctl('forward', false);
+        // держаться в столбе без дёрганья: поправка, только если ушёл от середины дальше 0,35, до 0,15; голову - не
+        // каждый такт (23.11: «дёргался как читер» - взгляд и «вперёд» переключались 20 раз в секунду)
+        const dc = Math.hypot(x + 0.5 - p.x, z + 0.5 - p.z);
+        if (dc > 0.35 && !this._ladFix) this._ladFix = true;
+        if (this._ladFix && dc < 0.15) { this._ladFix = false; ctl('forward', false); }
+        if (this._ladFix) { if (Date.now() - (this._ladLook || 0) > 300) { this._ladLook = Date.now(); await b.lookAt(new Vec3(x + 0.5, p.y + 1.6, z + 0.5), true); } ctl('forward', true); }
         const fy = Math.floor(p.y + 0.01);
         if (up) {
           ctl('jump', true);   // люки над головой не открывать заранее: открытый встаёт стенкой и закрывает выход вбок (23.11)
