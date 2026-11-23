@@ -260,7 +260,7 @@ class Errands {
       }
       case 'give': {
         const r = await run([{ act: 'give', who: s.who, item: s.item, count: s.count }]);
-        if (/инвентарь не изменился/.test(r)) throw new Error('вещи не ушли');
+        if (/инвентарь не изменился|не получилось отдать/.test(r)) throw new Error('вещи не дошли: ' + r.slice(0, 120));
         return r;
       }
       case 'confirm': {

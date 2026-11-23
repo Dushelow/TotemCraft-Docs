@@ -82,8 +82,13 @@ class Vehicles {
     this._interactQ = null;
     const t = q.target, hit = { x: 0, y: (t.height || 0.5) / 2, z: 0 };
     try {
-      b._client.write('use_entity', { target: t.id, mouse: 2, sneaking: false, hand: 0, x: hit.x, y: hit.y, z: hit.z });
-      b._client.write('use_entity', { target: t.id, mouse: 0, sneaking: false, hand: 0 });
+      // 26.x: один пакет (рука, точка касания), удар - отдельный пакет; 1.21.11: «клик в точку» и «клик» (стенд 23.11:
+      // на 26.1 жители не открывали торговлю - уходил старый формат)
+      if (b.registry.version['>=']('26.1')) b._client.write('use_entity', { target: t.id, hand: 'main_hand', location: hit, sneaking: false });
+      else {
+        b._client.write('use_entity', { target: t.id, mouse: 2, sneaking: false, hand: 0, x: hit.x, y: hit.y, z: hit.z });
+        b._client.write('use_entity', { target: t.id, mouse: 0, sneaking: false, hand: 0 });
+      }
       b.swingArm('right');
     } catch (e) { this.log('клик по существу: ' + e.message); }
     q.res();

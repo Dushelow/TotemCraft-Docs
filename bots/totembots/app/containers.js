@@ -150,35 +150,48 @@ class Containers {
 
   async give(a, tok) {
     const b = this.bot;
-    const e = this.player(a.who);
-    if (!e) throw new Error(`не вижу ${a.who} (далеко или в другом измерении)`);
-    // хозяин мог отойти, пока шли (23.11: хлеб бросил в сторону, хозяин ушёл - хлеб так и не дошёл): подойти вплотную,
-    // до 3 раз, и смотреть точно на него (взгляд держим сами - жизнь тела его не перебьёт)
-    for (let i = 0; i < 3; i++) {
-      const t = this.player(a.who); if (!t) break;
-      if (t.position.distanceTo(b.entity.position) <= 2.2) break;
-      await this.goto(new goals.GoalNear(t.position.x, t.position.y, t.position.z, 1.5), tok);
-    }
-    const e2 = this.player(a.who);
-    if (!e2) throw new Error(`${a.who} ушёл, не вижу`);
-    this.busyLook = true;
-    try { await b.lookAt(e2.position.offset(0, 1.2, 0), true); } catch {}
-    let left = a.count ? +a.count : Infinity, gave = 0;
-    for (const it of this.matchItems(b.inventory.items(), a.item)) {
-      if (left <= 0) break;
-      const n = Math.min(left, it.count);
-      await b.toss(it.type, null, n);
-      left -= n; gave += n;
-      await sleep(rnd(200, 500));
-    }
-    this.busyLook = false;
+    if (!this.player(a.who)) throw new Error(`не вижу ${a.who} (далеко или в другом измерении)`);
+    // подойти вплотную (до 1,3 бл.): брошенное летит ~1,5 бл., а подбирают только вплотную (стенд 23.11: с 2 бл. хлеб
+    // падал перед хозяином, и он его не поднимал)
+    const close = async () => {
+      for (let i = 0; i < 3; i++) {
+        const t = this.player(a.who); if (!t) break;
+        if (t.position.distanceTo(b.entity.position) <= 1.4) break;
+        await this.goto(new goals.GoalNear(t.position.x, t.position.y, t.position.z, 1), tok);
+      }
+      const t = this.player(a.who);
+      if (!t) throw new Error(`${a.who} ушёл, не вижу`);
+      return t;
+    };
+    const toss = async (t, want) => {
+      this.busyLook = true;
+      try { await b.lookAt(t.position.offset(0, 0.4, 0), true); } catch {}   // в ноги - не перелетит
+      let left = want, gave = 0;
+      for (const it of this.matchItems(b.inventory.items(), a.item)) {
+        if (left <= 0) break;
+        const n = Math.min(left, it.count);
+        await b.toss(it.type, null, n);
+        left -= n; gave += n;
+        await sleep(rnd(200, 400));
+      }
+      this.busyLook = false;
+      return gave;
+    };
+    const lyingNear = () => Object.values(b.entities).filter((x) => x.name === 'item' && x.position.distanceTo(b.entity.position) < 5);
+    const want = a.count ? +a.count : Infinity;
+    let gave = await toss(await close(), want);
     if (!gave) throw new Error(`нет у меня ${a.item}`);
-    // подобрал ли: через 2,5 с (раньше игрок поднять не может) брошенное ещё лежит рядом - сказать честно где
+    // подобрал ли: через 2,5 с (раньше игрок поднять не может). Лежит - поднять и отдать ещё раз, ближе
     await sleep(2500);
-    const lying = Object.values(b.entities).filter((x) => x.name === 'item' && x.position.distanceTo(b.entity.position) < 5);
-    if (lying.length) { const q = lying[0].position; return `бросил ${a.who} ${gave} ${a.item}, но ${a.who} пока не подобрал: лежит на земле у ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}`; }
+    if (lyingNear().length) {
+      try { await this.pickup({ radius: 5 }, tok); } catch (e) { if (this.isCancel(e)) throw e; }
+      if (this.matchItems(b.inventory.items(), a.item).length) { await toss(await close(), gave); await sleep(2500); }
+    }
+    const lying = lyingNear();
+    if (lying.length) { const q = lying[0].position; return `бросил ${a.who} ${gave} ${a.item}, но ${a.who} не подобрал: лежит на земле у ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)} - не получилось отдать в руки`; }
     return `отдал ${a.who} ${gave} ${a.item}`;
   }
+
 
 }
 
