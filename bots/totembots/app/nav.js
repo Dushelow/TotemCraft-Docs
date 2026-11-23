@@ -784,6 +784,15 @@ function install(mv, bot) {
     }));
     // спуск по лестнице или в лаз: над клеткой следующего шага, а он ниже - отпустить «вперёд» (в лестницу «вперёд» -
     // это лезть вверх: 23.11 бот повисал на верху лаза и не спускался; стенд test/shaft_test.js)
+    // плавание рывком (как у игрока: бег в воде - быстрее), своей физики бота нет: против течения в канале у секретного
+    // входа бот стоял на месте шагом и бегом (23.11 стенд). В воде, жмёт вперёд с бегом, а скорость мала - подгрести
+    // вдоль взгляда (до 0,1 бл./такт - медленнее плавания игрока, чтобы не выглядеть читом)
+    bot.on('physicsTick', safe('nav-гребок', () => {
+      const e = bot.entity; if (!e || !e.isInWater || !bot.getControlState('forward') || !bot.getControlState('sprint')) return;
+      const hv = Math.hypot(e.velocity.x, e.velocity.z); if (hv > 0.1) return;
+      const yaw = e.yaw, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+      e.velocity.x += fx * 0.03; e.velocity.z += fz * 0.03;
+    }));
     bot.on('physicsTick', safe('nav-лианы', () => {
       const e = bot.entity; if (!e) return;
       const k = bot.blockAt(e.position); if (!k) return;
