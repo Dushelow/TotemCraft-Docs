@@ -257,7 +257,7 @@ class Zones {
     const old = this.zones().find((q) => q.dim === dim && q.kind === 'опасно' && Math.hypot(q.x - pt.x, q.z - pt.z) < q.r + 8);
     if (old) {
       old.deaths = (old.deaths || 1) + 1;
-      old.name = `погибала тут ${old.deaths} раза (${why})`.slice(0, 60);
+      old.name = `место смерти, ${old.deaths} раза (${why})`.slice(0, 60);
       old.r = Math.min(12, old.r + 2); old.until = Date.now() + 2 * 86400000; old.at = Date.now();
       this.memory.save(); this.log(`зона: опасно «${old.name}» ${old.x} ${old.z}, радиус ${old.r}`);
       return;

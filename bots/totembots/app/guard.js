@@ -12,6 +12,10 @@ const FLEE = new Set(['creeper', 'warden']);
 const COOLDOWN = { sword: 13, axe: 20, trident: 19, mace: 34, spear: 20, hand: 5 };
 const WEAPON_SCORE = { netherite_sword: 8, diamond_sword: 7, netherite_axe: 7.5, diamond_axe: 7, iron_sword: 6, iron_axe: 6.5,
   stone_sword: 5, stone_axe: 6, golden_sword: 4, wooden_sword: 4, copper_sword: 5.5, copper_axe: 6.2, trident: 6, mace: 5 };
+const RANGED = /^(skeleton|stray|bogged|pillager|witch|blaze)$/;
+// опасность врага (примерно: урон и живучесть) - для оценки «по силам ли бой»
+const DANGER = { creeper: 4, skeleton: 3, stray: 3, bogged: 3, pillager: 3, witch: 4, blaze: 4, vindicator: 5, evoker: 6, ravager: 8, zombie: 2, husk: 2, drowned: 2.5, spider: 2, cave_spider: 2.5, enderman: 4, piglin_brute: 6, wither_skeleton: 5, hoglin: 4, zoglin: 4, slime: 1.5, magma_cube: 2, phantom: 2.5, vex: 3, silverfish: 1, endermite: 1, guardian: 3, elder_guardian: 6, breeze: 4, warden: 99 };
+const ARMOR_PTS = { leather: [1, 3, 2, 1], golden: [2, 5, 3, 1], chainmail: [2, 5, 4, 1], copper: [2, 4, 3, 1], iron: [2, 6, 5, 2], diamond: [3, 8, 6, 3], netherite: [3, 8, 6, 3] };
 const ARMOR_TIER = ['leather', 'golden', 'chainmail', 'copper', 'iron', 'diamond', 'netherite'];
 const SLOTS = { helmet: 'head', chestplate: 'torso', leggings: 'legs', boots: 'feet' };
 
@@ -105,6 +109,25 @@ class Guard {
     return best;
   }
 
+  /** Очки брони сейчас (0-20). */
+  armorPts() {
+    const b = this.bot; let a = 0;
+    [5, 6, 7, 8].forEach((sl, i) => { const it = b.inventory.slots[sl]; if (it) { const t = it.name.split('_')[0]; if (ARMOR_PTS[t]) a += ARMOR_PTS[t][i]; } });
+    return a;
+  }
+  has(re) { return this.bot.inventory.items().find((i) => re.test(i.name)) || null; }
+  /** Сила бота против врагов рядом: больше 1 - бой по силам. Как прикидывает игрок: оружие, броня, здоровье, щит, лук, еда. */
+  odds(foes) {
+    const b = this.bot;
+    const w = b.inventory.items().reduce((m, i) => Math.max(m, WEAPON_SCORE[i.name] || 0), 1);
+    const shield = (b.inventory.slots[45] && b.inventory.slots[45].name === 'shield') || !!this.has(/^shield$/);
+    const bow = !!this.has(/^(bow|crossbow)$/) && !!this.has(/arrow$/);
+    const me = (w / 4) * (1 + this.armorPts() / 10) * (b.health / 20) * (shield ? 1.4 : 1) * (bow ? 1.2 : 1) * (b.food > 6 ? 1 : 0.7);
+    let them = 0;
+    for (const e of foes) { const n = this.name(e); them += (DANGER[n] || 2) / 3 * (RANGED.test(n) && !shield && !bow ? 1.5 : 1); }
+    return them ? me / them : 9;
+  }
+
   weaponKind(item) {
     if (!item) return 'hand';
     const n = item.name;
@@ -151,15 +174,23 @@ class Guard {
     if (this.fleeing) { this.fleeing = false; b.setControlState('sprint', false); this.resume(); }
 
     const t = this.pick();
-    // мало здоровья или режим «убегать»: к хозяину, есть
-    if (t && (this.mode === 'flee' || b.health <= 6)) {
-      const own = this.owner();
-      if (own) b.pathfinder.setGoal(new goals.GoalFollow(own, 1), true);
-      else if (tb.steerAway && Date.now() - (this.fleeAt || 0) > 1000) {   // хозяина нет рядом - отойти от врагов с умом
-        this.fleeAt = Date.now();
-        const s = tb.steerAway([t], 12);
-        if (s) b.pathfinder.setGoal(new goals.GoalNear(s.x + 0.5, s.y, s.z + 0.5, 1), false);
-      }
+    // Бой по силам? (23.11: зашёл на сервер без брони, полез на скелета с мечом и за 10 с умер от стрел.) Враги в 16 бл.;
+    // не тянем - уйти из-под обстрела за укрытие или к хозяину, а не стоять под стрелами до 6 здоровья
+    let outmatched = false;
+    if (t) {
+      const foes = Object.values(b.entities).filter((e) => e !== b.entity && e.position && e.position.distanceTo(me) < 16 && this.isHostile(e) && !NEUTRAL.has(this.name(e)));
+      const o = this.odds(foes.length ? foes : [t]);
+      const ranged = foes.some((e) => RANGED.test(this.name(e)));
+      const shieldOn = b.inventory.slots[45] && b.inventory.slots[45].name === 'shield';
+      outmatched = o < 0.8 || b.health <= (ranged && !shieldOn ? 10 : 6);
+      if (outmatched && !this.retreatSaid) { this.retreatSaid = Date.now(); tb.log(`бой не по силам (${o.toFixed(2)}: здоровье ${Math.round(b.health)}, броня ${this.armorPts()}, врагов ${foes.length}${ranged ? ', стрелки' : ''}) - ухожу из-под удара`); }
+      if (!outmatched) this.retreatSaid = 0;
+      // мало здоровья - зелье лечения, если есть
+      if (b.health <= 8 && Date.now() - (this.potAt || 0) > 4000) this.drinkHeal().catch(() => {});
+    }
+    // бой не по силам или режим «убегать»: к хозяину или за укрытие
+    if (t && (this.mode === 'flee' || outmatched)) {
+      this.cover(t);
       if (!this.fighting) { this.fighting = true; tb.log(b.health <= 6 ? 'мало здоровья, отступаю' : 'убегаю от ' + this.name(t)); }
       return;
     }
@@ -170,10 +201,23 @@ class Guard {
     if (!this.fighting) { this.fighting = true; tb.log('защищаюсь: ' + this.name(t)); await this.equipWeapon().catch(() => {}); }
     this.target = t;
     const d = t.position.distanceTo(me);
+    const tn = this.name(t);
+    // далеко, есть лук и стрелы - стрелять (как игроки: лук против стрелков и между ударами)
+    if (d > 7 && d < 28 && !this.shooting && this.has(/^(bow|crossbow)$/) && this.has(/arrow$/) && (!tb.seesEntity || tb.seesEntity(t)) && (RANGED.test(tn) || d > 10)) { this.shoot(t).catch(() => {}); return; }
+    if (this.shooting) return;
     if (d > 2.8) {
       if (tb.mode !== 'task') b.pathfinder.setGoal(new goals.GoalFollow(t, 1.5), true);   // в задании путь не перехватываем
+      // к стрелку - зигзагом (стрейф влево-вправо: труднее попасть) и со щитом, если он во второй руке
+      if (RANGED.test(tn)) {
+        const side = Math.floor(Date.now() / 600) % 2 ? 'left' : 'right';
+        b.setControlState('left', side === 'left'); b.setControlState('right', side === 'right'); this.strafing = true;
+        const off = b.inventory.slots[45];
+        if (off && off.name === 'shield' && !this.blockingNow && d > 4) { try { b.activateItem(true); this.blockingNow = true; } catch {} }
+      }
       return;
     }
+    if (this.strafing) { this.strafing = false; b.setControlState('left', false); b.setControlState('right', false); }
+    if (this.blockingNow) { try { b.deactivateItem(); } catch {} this.blockingNow = false; }   // щит опустить перед ударом
     // вплотную - путь не нужен: он поворачивает голову по ходу шага и мешает прицелу
     if (tb.mode !== 'task' && b.pathfinder.goal && b.pathfinder.goal.entity === t) b.pathfinder.setGoal(null);
     // поворот и удар - в combatTick, синхронно с тиками клиента
@@ -211,8 +255,73 @@ class Guard {
     setTimeout(() => { try { b.setControlState('back', false); } catch {} }, this.name(t) === 'creeper' ? 450 : 250);
   }
 
+  /** Уйти из-под удара: к хозяину, иначе за укрытие - место прочь от врагов, куда их взгляд упирается в блок. */
+  cover(t) {
+    const b = this.bot, tb = this.tb;
+    if (this.strafing) { this.strafing = false; b.setControlState('left', false); b.setControlState('right', false); }
+    if (this.blockingNow) { try { b.deactivateItem(); } catch {} this.blockingNow = false; }
+    if (Date.now() - (this.fleeAt || 0) < 1000) return;
+    this.fleeAt = Date.now();
+    const own = this.owner();
+    if (own && own.position.distanceTo(b.entity.position) < 40) { b.pathfinder.setGoal(new goals.GoalFollow(own, 1), true); return; }
+    const me = b.entity.position, foes = Object.values(b.entities).filter((e) => e !== b.entity && e.position && e.position.distanceTo(me) < 16 && this.isHostile(e));
+    let best = null, bs = -Infinity;
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * 2 * Math.PI, r = 6 + (i % 3) * 3, x = Math.floor(me.x + Math.cos(a) * r), z = Math.floor(me.z + Math.sin(a) * r);
+      let y = null;
+      for (let yy = Math.floor(me.y) + 2; yy >= Math.floor(me.y) - 3; yy--) {
+        const f = b.blockAt(new Vec3(x, yy - 1, z)), c = b.blockAt(new Vec3(x, yy, z)), h = b.blockAt(new Vec3(x, yy + 1, z));
+        if (f && c && h && f.boundingBox === 'block' && c.boundingBox === 'empty' && h.boundingBox === 'empty' && !/lava|water|fire/.test(c.name + f.name)) { y = yy; break; }
+      }
+      if (y === null) continue;
+      const spot = new Vec3(x + 0.5, y + 1.5, z + 0.5);
+      let sc = Math.min(20, ...foes.map((e) => e.position.distanceTo(spot)));
+      for (const e of foes) { try { const eye = e.position.offset(0, (e.height || 1.8) * 0.85, 0), dir = spot.minus(eye), L = dir.norm(); if (b.world.raycast(eye, dir.scaled(1 / L), L)) sc += 8; } catch {} }
+      if (sc > bs) { bs = sc; best = new Vec3(x + 0.5, y, z + 0.5); }
+    }
+    if (best) b.pathfinder.setGoal(new goals.GoalNear(best.x, best.y, best.z, 1), false);
+    else if (tb.steerAway) { const s2 = tb.steerAway(foes.length ? foes : [t], 12); if (s2) b.pathfinder.setGoal(new goals.GoalNear(s2.x + 0.5, s2.y, s2.z + 0.5, 1), false); }
+  }
+
+  /** Выстрел из лука: натянуть ~1 с, целиться с упреждением (движение цели, падение стрелы). */
+  async shoot(t) {
+    const b = this.bot;
+    const bow = this.has(/^(bow|crossbow)$/); if (!bow) return;
+    this.shooting = true;
+    try {
+      if (!b.heldItem || b.heldItem.name !== bow.name) await b.equip(bow, 'hand');
+      b.pathfinder.setGoal(null);
+      b.activateItem();
+      for (let i = 0; i < 20 && t.isValid; i++) {
+        const d = t.position.distanceTo(b.entity.position), tt = d / 3, drop = 0.025 * tt * tt;
+        await b.lookAt(t.position.offset((t.velocity ? t.velocity.x * tt : 0), (t.height || 1.8) * 0.6 + drop, (t.velocity ? t.velocity.z * tt : 0)), true);
+        await new Promise((r) => setTimeout(r, 55));
+      }
+      b.deactivateItem();
+      this.tb.log('выстрел из лука в ' + this.name(t));
+    } catch {} finally { this.shooting = false; await this.equipWeapon().catch(() => {}); }
+  }
+
+  /** Зелье лечения (питьё или взрывное под ноги) или регенерации, если есть. */
+  async drinkHeal() {
+    const b = this.bot;
+    const it = b.inventory.items().find((i) => /potion/.test(i.name) && /healing|regeneration|heal/.test(JSON.stringify(i.components || i.nbt || '')));
+    if (!it) return;
+    this.potAt = Date.now();
+    this.tb.eating = true;
+    try {
+      await b.equip(it, 'hand');
+      if (/splash|lingering/.test(it.name)) { await b.look(b.entity.yaw, -Math.PI / 2, true); b.activateItem(); }
+      else { b.activateItem(); await new Promise((r) => setTimeout(r, 1700)); b.deactivateItem(); }
+      this.tb.log('зелье: ' + it.name);
+    } catch {} finally { this.tb.eating = false; await this.equipWeapon().catch(() => {}); }
+  }
+
   // после боя вернуться к тому, что делали: идти за хозяином
   resume() {
+    const b0 = this.bot;
+    if (this.strafing) { this.strafing = false; try { b0.setControlState('left', false); b0.setControlState('right', false); } catch {} }
+    if (this.blockingNow) { try { b0.deactivateItem(); } catch {} this.blockingNow = false; }
     const tb = this.tb, b = this.bot;
     if (tb.mode === 'follow') {
       const own = this.owner();
@@ -237,6 +346,7 @@ class Guard {
     const off = b.inventory.slots[45];
     const totem = b.inventory.items().find((i) => i.name === 'totem_of_undying');
     if (totem && (!off || off.name !== 'totem_of_undying')) { await b.equip(totem, 'off-hand'); this.tb.log('тотем во второй руке'); }
+    else if (!totem && (!off || off.name !== 'shield')) { const sh = b.inventory.items().find((i) => i.name === 'shield'); if (sh) { await b.equip(sh, 'off-hand'); this.tb.log('щит во второй руке'); } }
   }
 }
 
