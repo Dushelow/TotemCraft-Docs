@@ -1486,21 +1486,34 @@ class TotemBot extends EventEmitter {
     }
     // ближе по горизонтали и по высоте - раньше
     cand.sort((u, v) => (Math.hypot(u.x - p0.x, u.z - p0.z) + Math.abs(u.y - p0.y) * 0.5) - (Math.hypot(v.x - p0.x, v.z - p0.z) + Math.abs(v.y - p0.y) * 0.5));
-    const tried = [];
-    for (const q of cand) {
-      if (tried.length >= 8) break;
-      if (tried.some((t) => t.distanceTo(q) < 8)) continue;
-      tried.push(q);
-      try {
-        await this.goto(new goals.GoalNear(q.x, q.y, q.z, 1), tok, 45000);
-        const f = b.entity.position.floored();
-        if (sky(f.x, f.y, f.z)) return `вышел наружу: ${f.x} ${f.y} ${f.z}`;
-      } catch (e) { if (this.isCancel(e)) throw e; }
+    if (!cand.length) return 'наружу не вышел: поверхности рядом не вижу (48 бл.)';
+    // по шагам, как игрок (23.11: «пробовал 8» за 2 с - через секретную дверь на кнопке путь не строится): к лучшему
+    // выходу насколько пускают; не вышел - лестница вверх рядом, кнопка у прохода, и снова; до 8 раундов
+    const done = [];
+    let best = cand[0];
+    for (let round = 0; round < 8; round++) {
+      this.check(tok);
+      const f0 = b.entity.position.floored();
+      if (sky(f0.x, f0.y, f0.z)) return `вышел наружу: ${f0.x} ${f0.y} ${f0.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
+      // к выходу: и частичный путь годится - ближе к поверхности
+      const y0 = b.entity.position.y;
+      try { await this.goto(new goals.GoalNear(best.x, best.y, best.z, 1), tok, 25000); } catch (e) { if (this.isCancel(e)) throw e; }
+      let f = b.entity.position.floored();
+      if (sky(f.x, f.y, f.z)) return `вышел наружу: ${f.x} ${f.y} ${f.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
+      let moved = b.entity.position.y > y0 + 1.5;
+      // выше по лестнице рядом
+      if (!moved) {
+        try { const m = await this.climbLadder({ dir: 'up', toward: { x: best.x, z: best.z } }, tok); if (/поднялся/.test(m)) { done.push(m); moved = true; } } catch (e) { if (this.isCancel(e)) throw e; }
+      }
+      // кнопка, рычаг, плита у прохода
+      if (!moved) {
+        try { const m = await this.useMechanism({ x: best.x, y: best.y, z: best.z }, tok); if (m) { done.push(m); moved = true; } } catch (e) { if (this.isCancel(e)) throw e; }
+      }
+      // ничего не сдвинулось - следующий выход
+      if (!moved) { cand.shift(); while (cand.length && cand[0].distanceTo(best) < 8) cand.shift(); if (!cand.length) break; best = cand[0]; }
     }
-    // запасное: вверх по лестнице рядом, потом ещё раз
-    try { const m = await this.climbLadder({ dir: 'up' }, tok); const f = b.entity.position.floored(); if (sky(f.x, f.y, f.z)) return m + ', я снаружи'; } catch (e) { if (this.isCancel(e)) throw e; }
     const f = b.entity.position.floored();
-    return sky(f.x, f.y, f.z) ? `вышел наружу: ${f.x} ${f.y} ${f.z}` : `наружу не вышел: проходов к небу рядом не нашёл (пробовал ${tried.length})`;
+    return sky(f.x, f.y, f.z) ? `вышел наружу: ${f.x} ${f.y} ${f.z}` : `наружу не вышел${done.length ? ' (' + done.join('; ') + ')' : ''}: стою на ${f.x} ${f.y} ${f.z}`;
   }
 
   /** Вылез по лестнице, а над головой крыша - кнопка, рычаг или плита у прохода (секретная дверь), бегом (23.11). */
