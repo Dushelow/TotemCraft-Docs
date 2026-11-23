@@ -292,6 +292,21 @@ class TotemBot extends EventEmitter {
     this.closeBehindAttach(bot);   // двери, калитки, люки - закрывать за собой (chores.js)   // езда: конец такта и движение лодки, пока физика mineflayer выключена (vehicles.js)
     if (this.partOn('companion')) this.musicAttach(bot);   // музыка рядом - пританцовывать (mood.js)   // язык тела: узнать жесты игроков и ответить (gestures.js)   // равновесие после толчка (steer.js)
     // поток лавы рядом (сломали блок, гаст взорвал, натекло сверху) - отойти от него сразу, не ждать, пока зальёт
+    // хозяин открыл скрытый проход (поршни в стене): кнопка, рычаг, плита сменили состояние, а он рядом - запомнить,
+    // где и что; когда путь за ним не строится - сделать то же самое (23.11, владелец: «если хозяин зашёл через скрытую
+    // дверь - чтоб он тоже прошёл»)
+    bot.on('blockUpdate', (o, n) => {
+      try {
+        if (!n || !/(_button|^lever|_pressure_plate)$/.test(n.name) || !o || o.name !== n.name) return;
+        const po = o.getProperties ? o.getProperties() : {}, pn = n.getProperties ? n.getProperties() : {};
+        if (JSON.stringify(po) === JSON.stringify(pn)) return;
+        const m = this.opts.masters || [];
+        const who = Object.values(bot.players).find((p) => p.entity && m.includes(p.username) && p.entity.position.distanceTo(n.position) < 3.5);
+        if (!who) return;
+        const k = n.position.toString();
+        this._ownerMech = (this._ownerMech || []).filter((x) => Date.now() - x.at < 30 * 60000 && x.k !== k).concat({ k, p: n.position.clone(), name: n.name, at: Date.now() }).slice(-12);
+      } catch {}
+    });
     bot.on('blockUpdate', (o, n) => {
       try {
         if (!n || n.name !== 'lava' || !bot.entity || this.paused) return;
@@ -1225,7 +1240,9 @@ class TotemBot extends EventEmitter {
     const cands = b.findBlocks({ matching: (bl) => CTRL.test(bl.name), maxDistance: 16, count: 40 })
       .filter((p) => !tried.set.has(p.toString()) && near(p))
       .sort((u, v) => (u.distanceTo(me) + u.distanceTo(gp) * 0.5) - (v.distanceTo(me) + v.distanceTo(gp) * 0.5));
-    const p = cands[0];
+    // сначала - то, что недавно нажимал хозяин (скрытая дверь: механизм может быть далеко от поршней)
+    const own = (this._ownerMech || []).filter((x) => !tried.set.has(x.k) && x.p.distanceTo(me) < 32).sort((u, v) => u.p.distanceTo(me) - v.p.distanceTo(me)).map((x) => x.p);
+    const p = own[0] || cands[0];
     if (!p) return '';
     tried.set.add(p.toString());
     const bl = b.blockAt(p);
@@ -1509,7 +1526,7 @@ class TotemBot extends EventEmitter {
       }
       return (bl.getProperties().age | 0) >= rule;
     };
-    const r = Math.min(32, +a.radius || 16);
+    const r = Math.min(32, +a.radius || (a.sowOnly ? 32 : 16));
     let done = 0, replanted = 0;
     const limit = a.sowOnly ? 0 : (+a.count || 256);   // sowOnly - только засеять пустые (23.11: просил засеять, а он собирал спелое)
     for (let i = 0; i < limit; i++) {
@@ -1562,11 +1579,11 @@ class TotemBot extends EventEmitter {
     // пустые грядки (залысины) засадить: семенами культуры, которая растёт по соседству (23.11: собирал, а пустое так и
     // оставалось). Семена - из просьбы (crop) или от соседей; нет семян - сказать
     const SEED = { wheat: 'wheat_seeds', carrots: 'carrot', potatoes: 'potato', beetroots: 'beetroot_seeds' };
-    let filled = 0, noSeed = new Set();
+    let filled = 0, noSeed = new Set(); this._mostCrop = null;
     const fl = b.registry.blocksByName.farmland.id;
     // вытоптанная грядка - снова земля (23.11: просил засеять пустое на морковном поле - пустые клетки были землёй, не
     // пашней, и он их не видел). Земля посреди поля (с двух сторон культура) - вскопать мотыгой, потом засеять
-    const soilIds = ['dirt', 'grass_block', 'coarse_dirt', 'dirt_path'].map((n) => b.registry.blocksByName[n] && b.registry.blocksByName[n].id).filter((x) => x !== undefined);
+    const soilIds = ['dirt', 'coarse_dirt'].map((n) => b.registry.blocksByName[n] && b.registry.blocksByName[n].id).filter((x) => x !== undefined);
     const hoe = () => b.inventory.items().filter((x) => /_hoe$/.test(x.name)).sort((x, y) => y.type - x.type)[0];
     let noHoe = false;
     const cropAt = (p) => { const n = b.blockAt(p); return n && SEED[n.name] ? n.name : null; };
@@ -1574,7 +1591,7 @@ class TotemBot extends EventEmitter {
       this.check(tok);
       const up = b.blockAt(sp.offset(0, 1, 0)); if (!up || up.name !== 'air') continue;
       const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => cropAt(sp.offset(dx, 1, dz))).filter(Boolean);
-      if (nb.length < 2 || (want && SEED[want] && !nb.includes(want))) continue;   // не посреди поля - не трогать (дорожки, газон)
+      if (nb.length < 3 || (want && SEED[want] && !nb.includes(want))) continue;   // окружена грядками с 3 сторон - вытоптанная грядка, не тропинка   // не посреди поля - не трогать (дорожки, газон)
       const h = hoe(); if (!h) { noHoe = true; break; }
       try {
         if (b.entity.position.distanceTo(sp.offset(0.5, 1, 0.5)) > 4.2) await this.goto(new goals.GoalNear(sp.x, sp.y + 1, sp.z, 2), tok, 15000);
@@ -1589,6 +1606,7 @@ class TotemBot extends EventEmitter {
       emptySeen++;
       let crop = want && SEED[want] ? want : null;
       if (!crop) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) { const n = b.blockAt(sp.offset(dx, 1, dz)); if (n && SEED[n.name]) { crop = n.name; break; } }
+      if (!crop) crop = this._mostCrop || (this._mostCrop = (() => { const cnt = {}; for (const n of Object.keys(SEED)) { const id = b.registry.blocksByName[n] && b.registry.blocksByName[n].id; if (id !== undefined) cnt[n] = b.findBlocks({ matching: id, maxDistance: 24, count: 500 }).length; } const top = Object.entries(cnt).sort((u, v) => v[1] - u[1])[0]; return top && top[1] ? top[0] : null; })());
       if (!crop) continue;
       const s = b.inventory.items().find((x) => x.name === SEED[crop]);
       if (!s) { noSeed.add(SEED[crop]); continue; }
