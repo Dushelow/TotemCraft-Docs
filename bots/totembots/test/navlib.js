@@ -44,7 +44,9 @@ function walkTo(bot, ent, to) {
     // спуск по лестнице - 0,15 бл. за такт: на высокий лаз нужно больше тактов
     for (let t = 0; t < 60 + 12 * Math.ceil(Math.abs(ent.position.y - to.y)); t++) {
       const dx = to.x + 0.5 - e.position.x, dz = to.z + 0.5 - e.position.z;
-      if (Math.abs(dx) <= 0.2 && Math.abs(dz) <= 0.2 && e.onGround) {
+      const onLad = /^(ladder|vine)$/.test(bot.blockAt(e.position).name);
+      if (Math.abs(dx) <= 0.3 && Math.abs(dz) <= 0.3 && onLad && Math.floor(e.position.y + 1e-3) === to.y) { ent.position = e.position; return true; }   // на лестнице тело висит, не стоит
+      if (Math.abs(dx) <= 0.2 && Math.abs(dz) <= 0.2 && (e.onGround || (e.isInWater && Math.floor(e.position.y + 1e-3) === to.y))) {
         if (Math.floor(e.position.y + 1e-3) === to.y) { ent.position = e.position; return true; }
         // над целью, но ещё на высоте прошлого шага (сходит с края) - идти дальше, как модуль пути (|dy| < 1)
       }

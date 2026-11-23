@@ -1424,7 +1424,9 @@ class TotemBot extends EventEmitter {
             let top = null;
             for (let yy = fy + 1; yy >= fy - 3; yy--) { const k = b.blockAt(new Vec3(x, yy, z)); if (k && k.name === 'ladder') { top = k; break; } }
             const F = top && { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] }[top.getProperties().facing];
-            if (F) {
+            // куда прыгаем - должен быть пол и место для тела, иначе это шаг в пустоту (лестница без стен, обрыв)
+            const landOk = F && [fy + 1, fy + 2].some((ly) => { const fl = b.blockAt(new Vec3(x + F[0], ly - 1, z + F[1])), s1 = b.blockAt(new Vec3(x + F[0], ly, z + F[1])), s2 = b.blockAt(new Vec3(x + F[0], ly + 1, z + F[1])); return fl && fl.boundingBox === 'block' && s1 && s1.boundingBox === 'empty' && s2 && s2.boundingBox === 'empty'; });
+            if (F && landOk) {
               const [wx, wz] = F;
               this.log(`наверх не лезется - встаю на лестницу и прыгаю вперёд (${wx},${wz})`);
               await b.lookAt(new Vec3(x + 0.5 + wx * 2, fy + 2.5, z + 0.5 + wz * 2), true);

@@ -321,7 +321,10 @@ function install(mv, bot) {
         const isCL = (yy) => CL.test((blk(x, yy, z) || {}).name || '');
         // люк над лестницей (лаз в полу закрыт люком, 23.11 секретная комната): открыть и спускаться
         const hb = blk(x, y, z), hatch = hb && /_trapdoor$/.test(hb.name) && !/^iron_/.test(hb.name) && isCL(y - 1) ? y : null;
-        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '') && hatch === null) continue;
+        // над верхом лестницы бывает 1-2 пустых блока (лестница не доведена до пола) - спрыгнуть в столб
+        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '') && hatch === null) {
+          if (!cell(x, y, z).boxes.length && (isCL(y - 1) || (!cell(x, y - 1, z).boxes.length && isCL(y - 2)))) { /* дальше - как обычно */ } else continue;
+        }
         let n = 0;
         // лестница - тонкая рамка, тоже «boxes»: считать пустой. Пол - твёрдое и не лестница
         const free = (yy) => yy === hatch || isCL(yy) || !cell(x, yy, z).boxes.length;
@@ -332,6 +335,16 @@ function install(mv, bot) {
         if (hatch !== null) m.opens = [{ x, y: hatch, z, want: true }];
         out.push(m);
       }
+    // прыжок в воду с высоты: обрыв рядом, внизу вода (с любой высоты до 40 бл. - в воду падать не больно)
+    for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const x = node.x + ax, z = node.z + az;
+      if (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) continue;
+      let y = node.y - 1, n = 0;
+      while (n < 40 && !cell(x, y, z).boxes.length && !waterAt(x, y, z)) { y--; n++; }
+      if (n < 4 || !waterAt(x, y, z)) continue;   // до 3 бл. - обычный спуск модуля пути
+      const k = `${x},${y},${z}`; if (have.has(k)) continue;
+      have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 3 + n * 0.2, [], []); m.swim = true; out.push(m);
+    }
     return out;
   }
 
