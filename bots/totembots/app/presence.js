@@ -247,10 +247,10 @@ class Presence {
   /** У хозяина мало здоровья, у бота есть еда - бросить ему (раз в 90 с). */
   helpTick(owner, now, P) {
     const b = this.bot;
-    if (!owner || now - P.helpAt < 90000 || owner.position.distanceTo(b.entity.position) > 6 || (this.guard && this.guard.fighting)) return;
+    if (!owner || now - P.helpAt < 90000 || owner.position.distanceTo(b.entity.position) > 10) return;
     const idx = ((b.registry.entitiesByName.player || {}).metadataKeys || []).indexOf('health');
     const hp = idx >= 0 && owner.metadata ? owner.metadata[idx] : null;
-    if (typeof hp !== 'number' || hp > 7 || hp <= 0) return;
+    if (typeof hp !== 'number' || hp > 12 || hp <= 0) return;   // 23.11: у хозяина мало здоровья после боя - не покормил (порог был 7, в бою не смотрел)
     const foods = b.registry.foodsByName || {};
     const food = b.inventory.items().filter((i) => foods[i.name] && !/rotten|spider_eye|poison|pufferfish|chorus/.test(i.name))
       .sort((x, y) => (foods[y.name].foodPoints + foods[y.name].saturation) - (foods[x.name].foodPoints + foods[x.name].saturation))[0];

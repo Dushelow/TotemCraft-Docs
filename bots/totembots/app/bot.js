@@ -1431,11 +1431,13 @@ class TotemBot extends EventEmitter {
     await this.goto(new goals.GoalNear(d.x, d.y, d.z, 2), tok, 300000);
     // предметы на земле сервер показывает не сразу после прихода: смотрим ещё пару раз
     let r = '';
-    for (let i = 0; i < 3; i++) {
-      r = await this.pickup({ x: d.x, y: d.y, z: d.z, radius: 10 }, tok);
-      if (!/нет$/.test(r)) break;
-      await sleep(1500);
+    // вещи разлетаются: собирать кругами, пока два раза подряд пусто (23.11: подобрал часть и ушёл, остальное лежало рядом)
+    let empty = 0, got = [];
+    for (let i = 0; i < 12 && empty < 2; i++) {
+      r = await this.pickup({ x: d.x, y: d.y, z: d.z, radius: 14 }, tok);
+      if (/нет$/.test(r)) { empty++; await sleep(1500); } else { empty = 0; got.push(r); }
     }
+    if (got.length) r = got.join('; ');
     this.deathPoint = null;
     return 'дошёл до места смерти, ' + r;
   }
