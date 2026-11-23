@@ -1661,6 +1661,27 @@ class TotemBot extends EventEmitter {
     return { x: Math.round((Math.min(...xs) + Math.max(...xs)) / 2), z: Math.round((Math.min(...zs) + Math.max(...zs)) / 2), y: ys[ys.length >> 1], n: got.length, w: Math.max(...xs) - Math.min(...xs) + 1, l: Math.max(...zs) - Math.min(...zs) + 1 };
   }
 
+  /** Все отдельные участки культуры в 24 бл.: [{x,y,z,n,w,l}], ближние первыми. Зазор до 1 бл. (дорожка) - тот же участок. */
+  cropFields(name) {
+    const b = this.bot, id = b.registry.blocksByName[name] && b.registry.blocksByName[name].id;
+    if (id === undefined) return [];
+    const ps = b.findBlocks({ matching: id, maxDistance: 24, count: 3000 });
+    const set = new Map(ps.map((p) => [p.x + ',' + p.z, p])), seen = new Set(), out = [];
+    for (const s0 of ps) {
+      const k0 = s0.x + ',' + s0.z; if (seen.has(k0)) continue; seen.add(k0);
+      const q = [s0], got = [];
+      while (q.length) {
+        const p = q.pop(); got.push(p);
+        for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) { const k = (p.x + dx) + ',' + (p.z + dz); if (!seen.has(k) && set.has(k)) { seen.add(k); q.push(set.get(k)); } }
+      }
+      if (got.length < 3) continue;
+      const xs = got.map((p) => p.x), zs = got.map((p) => p.z), ys = got.map((p) => p.y).sort((u, v) => u - v);
+      out.push({ x: Math.round((Math.min(...xs) + Math.max(...xs)) / 2), z: Math.round((Math.min(...zs) + Math.max(...zs)) / 2), y: ys[ys.length >> 1], n: got.length, w: Math.max(...xs) - Math.min(...xs) + 1, l: Math.max(...zs) - Math.min(...zs) + 1 });
+    }
+    const me = b.entity.position;
+    return out.sort((u, v) => Math.hypot(u.x - me.x, u.z - me.z) - Math.hypot(v.x - me.x, v.z - me.z));
+  }
+
   remember(a, by) {
     const m = this.memory;
     if (!m) return 'памяти нет';
@@ -1675,9 +1696,11 @@ class TotemBot extends EventEmitter {
         // общее «запиши, где поля» (23.11: спрашивал, где они, а вокруг росли картошка, морковь, тыквы) - все культуры рядом
         const RU = { carrots: 'морковь', potatoes: 'картофель', wheat: 'пшеница', beetroots: 'свёкла', pumpkin: 'тыквы', melon: 'арбузы', sugar_cane: 'тростник', nether_wart: 'незерский_нарост' };
         const out = [];
+        // каждый отдельный участок - своя метка (23.11: вокруг много маленьких огородов, а метка была одна на культуру)
         for (const [, id] of CROP) {
-          const c = this.cropCenter(id, null);
-          if (c && c.n >= 3) out.push(this.memory.place({ name: 'поле_' + RU[id], x: c.x, y: c.y, z: c.z, dim: this.dimName(), note: `участок ${c.n} грядок, ${c.w}x${c.l}` }, who));
+          const fs2 = this.cropFields(id);
+          fs2.forEach((c, i) => out.push(this.memory.place({ name: 'поле_' + RU[id] + (fs2.length > 1 ? '_' + (i + 1) : ''), x: c.x, y: c.y, z: c.z, dim: this.dimName(), note: `участок ${c.n} грядок, ${c.w}x${c.l}` }, who)));
+          if (fs2.length > 1 && this.memory.data.places) delete this.memory.data.places[('поле_' + RU[id]).toLowerCase()];   // старая общая метка
         }
         return out.length ? out.join('; ') : 'полей рядом не вижу (до 24 бл.)';
       }
