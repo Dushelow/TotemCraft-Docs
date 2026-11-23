@@ -59,6 +59,20 @@ class TotemBot extends EventEmitter {
     this.status = 'connecting';
     this.log(`захожу на ${host}:${port} как ${name}`);
     const bot = this.bot = mineflayer.createBot({ host, port, username: name, version: this.opts.version || process.env.TB_VERSION || VERSION, auth: 'offline', hideErrors: true });   // версия протокола: настройка бота, иначе стабильная
+    // Номер состояния окна: mineflayer берёт его из любого пакета слота. Сервер 26.3 через ViaVersion после каждого клика
+    // в верстаке присылает синхронизацию слота инвентаря игрока (окно 0) со своим номером - клики в окне верстака уходили
+    // с чужим номером, и сервер их откатывал (стенд 23.11: крафт поршня, полки, компаса не проходил). Пока открыто
+    // другое окно - пакеты окна 0 не трогают его номер
+    {
+      const lastState = new Map();
+      const fix = (pk) => {
+        if (pk.windowId !== undefined && pk.windowId !== 0) { lastState.set(pk.windowId, pk.stateId); return; }
+        const cw = bot.currentWindow;
+        if (cw && cw.id !== 0 && lastState.has(cw.id)) pk.stateId = lastState.get(cw.id);
+      };
+      bot._client.prependListener('set_slot', fix);
+      bot._client.prependListener('window_items', fix);
+    }
     bot.loadPlugin(pathfinder);
     bot._client.on('show_dialog', (d) => this.onDialog(d));
     // Уши: аддон TotemVoiceAddon присылает речь игроков рядом по каналу totem:ears ([1]+ник, [2]+PCM 48 кГц, [3]).
@@ -1835,6 +1849,7 @@ class TotemBot extends EventEmitter {
           case 'fly': r = await this.fly(a, tok); break;
           case 'rail': r = await this.rail(a, tok); break;
           case 'brew': r = await this.brew(a, tok); break;
+          case 'smith': r = await this.smith(a, tok); break;
           case 'link': r = this.link(a); break;
           case 'howTo': r = this.howTo(a); break;
           case 'prepare': r = await this.prepare(a, tok); break;

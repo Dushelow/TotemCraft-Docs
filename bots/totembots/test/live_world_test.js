@@ -8,6 +8,7 @@
 //   7) загон с жителем на прямом пути: обойти, калитки не открывать;
 //   8) прогулка: шагом, не по прямой, с остановками, не дальше радиуса;
 //   10) «это наш дом» с улицы - метка внутри дома;
+//   17) элитры; 18) вагонетка; 19) лошадь; 20) лодка в обход острова; 21) варка зелья;
 //   13) мебель: обойти сундуки; 14) обследование тоннелей; 15) «покажу дорогу» и пройти самому; 16) торговля с дальним жителем;
 //   11) бой с 3 зомби: удары в прыжке, щит; 12) 2 скелета, бот без оружия и брони - уйти, не умереть;
 //   9) квест: пшеница -> хлеб -> хозяину -> поспать, если ночь; перед этим бот сидит на ступеньке;
@@ -263,6 +264,137 @@ const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { con
     tb.opts.life = true;
     const em = tb.bot.inventory.items().filter((i) => i.name === 'emerald').reduce((s2, i) => s2 + i.count, 0);
     ok('ближний житель недоступен - пошёл к дальнему и поторговался', em > 0, `${r.slice(0, 200)}; изумрудов ${em}`);
+  }
+
+  // 17. элитры: взлёт с площадки, 120 бл. на ракетах, посадка на площадку у цели
+  if (!only || only === 17) {
+    const X = -1000, Y = 100, Z = 1000;
+    rcon(`forceload add ${X - 16} ${Z - 16} ${X + 140} ${Z + 16}`); await sleep(3000);
+    rcon(`fill ${X - 4} ${Y - 1} ${Z - 4} ${X + 4} ${Y - 1} ${Z + 4} stone`); rcon(`fill ${X - 4} ${Y} ${Z - 4} ${X + 4} ${Y + 4} ${Z + 4} air`);
+    rcon(`fill ${X + 116} ${Y - 31} ${Z - 6} ${X + 128} ${Y - 31} ${Z + 6} stone`); rcon(`fill ${X + 116} ${Y - 30} ${Z - 6} ${X + 128} ${Y - 20} ${Z + 6} air`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex'); rcon('minecraft:give TbAlex minecraft:elytra'); rcon('minecraft:give TbAlex minecraft:firework_rocket 32'); rcon('effect give TbAlex minecraft:instant_health 1 5');
+    tb.opts.life = false; await sleep(2000);
+    const log0 = +execSync('docker exec tc-up sh -c "wc -l < /data/logs/latest.log"').toString().trim();
+    let died = false; tb.bot.once('death', () => { died = true; });
+    const r = await tb.run([{ act: 'fly', x: X + 122, z: Z }], 'лети', 'master').catch((e) => 'ошибка: ' + e.message);
+    const p2 = tb.bot.entity.position;
+    const fl = execSync(`docker exec tc-up sh -c "tail -n +${log0} /data/logs/latest.log | grep 'Vulcan\\] TbAlex' || true"`).toString().trim();
+    // сервер 26.3 через ViaVersion не принимает команду раскрытия элитр от клиента 1.21.11 (выкидывает) - бот честно
+    // отказывается и остаётся на сервере; с elytra: true (родной протокол 26.3) - должен долететь
+    if (tb.opts.elytra) ok('элитры: долетел 120 бл. и сел у цели, живой', !died && Math.hypot(p2.x - X - 122, p2.z - Z) < 14, `${r}; у ${Math.floor(p2.x - X)} ${Math.floor(p2.y)} ${Math.floor(p2.z - Z)} от старта, ${died ? 'УМЕР' : 'жив'}`);
+    else ok('элитры на 26.3 через ViaVersion: честный отказ, бот на сервере', /пока не работают/.test(r) && tb.bot && tb.bot.entity, r.slice(0, 120));
+    ok('элитры: Vulcan молчит в полёте', !fl, fl ? fl.split('\n').slice(0, 3).join(' | ') : '');
+    tb.opts.life = true;
+    rcon(`forceload remove ${X - 16} ${Z - 16} ${X + 140} ${Z + 16}`);
+  }
+
+  // 18. вагонетка: рельсы 40 бл. с ускорителями - сесть, доехать до конца, выйти
+  if (!only || only === 18) {
+    const X = -1000, Y = 64, Z = 1100; await area(X + 20, Z, 30);
+    rcon(`fill ${X - 4} ${Y - 3} ${Z - 4} ${X + 46} ${Y - 1} ${Z + 4} stone`); rcon(`fill ${X - 4} ${Y} ${Z - 4} ${X + 46} ${Y + 4} ${Z + 4} air`);
+    rcon(`fill ${X} ${Y} ${Z} ${X + 40} ${Y} ${Z} rail[shape=east_west]`);
+    for (let x = X + 1; x <= X + 40; x += 6) { rcon(`setblock ${x} ${Y - 1} ${Z} redstone_block`); rcon(`setblock ${x} ${Y} ${Z} powered_rail[shape=east_west,powered=true]`); }
+    rcon(`setblock ${X + 41} ${Y} ${Z} stone`);
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X + 20},y=${Y},z=${Z},distance=..40]`);
+    rcon(`summon minecart ${X + 0.5} ${Y} ${Z + 0.5}`);
+    await tpSure(tb, 'TbAlex', X, Y, Z + 2); tb.opts.life = false; await sleep(2000);
+    const r = await tb.run([{ act: 'rail', x: X + 40, z: Z }], 'вагонетка', 'master').catch((e) => 'ошибка: ' + e.message);
+    const p2 = tb.bot.entity.position; tb.opts.life = true;
+    ok('вагонетка: доехал до конца рельсов и вышел', !tb.bot.vehicle && p2.x > X + 34, `${r}; x от начала ${(p2.x - X).toFixed(1)}`);
+  }
+
+  // 19. лошадь: прирученная под седлом - сесть, доехать 30 бл. по полю со ступенькой
+  if (!only || only === 19) {
+    const X = -1000, Y = 64, Z = 1200; await area(X + 15, Z, 30);
+    rcon(`fill ${X - 6} ${Y - 3} ${Z - 6} ${X + 40} ${Y - 1} ${Z + 6} stone`); rcon(`fill ${X - 6} ${Y} ${Z - 6} ${X + 40} ${Y + 5} ${Z + 6} air`);
+    rcon(`fill ${X + 15} ${Y} ${Z - 6} ${X + 40} ${Y} ${Z + 6} stone`);   // ступенька на 1 блок посреди пути
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X + 15},y=${Y},z=${Z},distance=..40]`);
+    rcon(`summon horse ${X + 2} ${Y} ${Z} {Tame:1b,PersistenceRequired:1b,equipment:{saddle:{id:"minecraft:saddle",count:1}},SaddleItem:{id:"minecraft:saddle",count:1}}`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); tb.opts.life = false; await sleep(2000);
+    const log0 = +execSync('docker exec tc-up sh -c "wc -l < /data/logs/latest.log"').toString().trim();
+    const m = await tb.run([{ act: 'mount', what: 'horse' }], 'на лошадь', 'master').catch((e) => 'ошибка: ' + e.message);
+    const on = !!(tb.bot.vehicle && /horse/.test(tb.bot.vehicle.name));
+    let r = '-';
+    if (on) r = await tb.run([{ act: 'drive', x: X + 32, z: Z }], 'скачи', 'master').catch((e) => 'ошибка: ' + e.message);
+    const vp = tb.bot.vehicle ? tb.bot.vehicle.position : tb.bot.entity.position;
+    const fl = execSync(`docker exec tc-up sh -c "tail -n +${log0} /data/logs/latest.log | grep -E 'Vulcan\\] TbAlex|moved too quickly|moved wrongly' || true"`).toString().trim();
+    ok('лошадь: сел и доскакал 30 бл. через ступеньку', on && vp.x > X + 28 && vp.y > Y + 0.5, `${m}; ${r}; лошадь у x+${(vp.x - X).toFixed(1)} y ${vp.y.toFixed(1)}`);
+    ok('лошадь: сервер и Vulcan не жалуются', !fl, fl ? fl.split('\n').slice(0, 3).join(' | ') : '');
+    if (tb.bot.vehicle) await tb.run([{ act: 'dismount' }], 'слезь', 'master').catch(() => {});
+    tb.opts.life = true;
+  }
+
+  // 20. лодка в обход острова: остров между стартом и целью
+  if (!only || only === 20) {
+    const X = 500, Y = 62, Z = 1420; await area(X + 20, Z, 40);   // у отрицательных X стенд лодки не ставит (плагин участка) - здесь ставит
+    rcon(`fill ${X - 8} ${Y - 3} ${Z - 16} ${X + 48} ${Y + 4} ${Z + 16} air`); rcon(`fill ${X - 8} ${Y - 3} ${Z - 16} ${X + 48} ${Y - 3} ${Z + 16} sand`);
+    rcon(`fill ${X - 8} ${Y - 2} ${Z - 16} ${X + 48} ${Y} ${Z + 16} water`);
+    rcon(`fill ${X + 16} ${Y - 2} ${Z - 6} ${X + 24} ${Y + 2} ${Z + 6} grass_block`);   // остров поперёк
+    rcon(`fill ${X - 16} ${Y - 2} ${Z - 16} ${X - 9} ${Y} ${Z + 16} grass_block`);       // берег
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X + 20},y=${Y},z=${Z},distance=..50]`);
+    await tpSure(tb, 'TbAlex', X - 10, Y + 1, Z); rcon('clear TbAlex'); rcon('minecraft:give TbAlex minecraft:oak_boat'); tb.opts.life = false; await sleep(2000);
+    const m = await tb.run([{ act: 'mount', what: 'boat' }, { act: 'drive', x: X + 40, z: Z }], 'плыви', 'master').catch((e) => 'ошибка: ' + e.message);
+    const vp = tb.bot.vehicle ? tb.bot.vehicle.position : tb.bot.entity.position;
+    ok('лодка: обошла остров и доплыла', Math.hypot(vp.x - X - 40, vp.z - Z) < 6, `${m.slice(0, 160)}; лодка у x+${(vp.x - X).toFixed(1)} z${(vp.z - Z).toFixed(1)}`);
+    if (tb.bot.vehicle) await tb.run([{ act: 'dismount' }], 'слезь', 'master').catch(() => {});
+    tb.opts.life = true;
+  }
+
+  // 21. варка: зелье скорости из воды, адского нароста, сахара, огненного порошка
+  if (!only || only === 21) {
+    const X = -1000, Y = 64, Z = 1400; await area(X, Z, 20);
+    rcon(`fill ${X - 6} ${Y - 3} ${Z - 6} ${X + 6} ${Y - 1} ${Z + 6} stone`); rcon(`fill ${X - 6} ${Y} ${Z - 6} ${X + 6} ${Y + 4} ${Z + 6} air`);
+    rcon(`setblock ${X + 2} ${Y} ${Z} brewing_stand`); rcon(`setblock ${X - 2} ${Y - 1} ${Z} water`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex');
+    for (const it of ['glass_bottle 3', 'nether_wart 2', 'sugar 2', 'blaze_powder 2']) rcon(`minecraft:give TbAlex minecraft:${it}`);
+    tb.opts.life = false; await sleep(2000);
+    const r = await tb.run([{ act: 'brew', potion: 'скорость', count: 3 }], 'свари', 'master').catch((e) => 'ошибка: ' + e.message);
+    const potItems = tb.bot.inventory.items().filter((i) => i.name === 'potion'); console.log('   зелья:', potItems.length, JSON.stringify(potItems[0] && (potItems[0].components || potItems[0].nbt)).slice(0, 300));
+    const pots = potItems.filter((i) => /swiftness/.test(require('../app/guard').potionName(i))).length;
+    ok('варка: 3 зелья скорости', pots >= 3, `${r}; зелий скорости ${pots}`);
+    tb.opts.life = true;
+  }
+
+  // 22. варка цепочкой: взрывное сильное лечение (нарост, арбуз, светопыль, порох)
+  if (!only || only === 22) {
+    const X = -1000, Y = 64, Z = 1450; await area(X, Z, 20);
+    rcon(`fill ${X - 6} ${Y - 3} ${Z - 6} ${X + 6} ${Y - 1} ${Z + 6} stone`); rcon(`fill ${X - 6} ${Y} ${Z - 6} ${X + 6} ${Y + 4} ${Z + 6} air`);
+    rcon(`setblock ${X + 2} ${Y} ${Z} brewing_stand`); rcon(`setblock ${X - 2} ${Y - 1} ${Z} water`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex');
+    for (const it of ['glass_bottle 3', 'nether_wart 1', 'glistering_melon_slice 1', 'glowstone_dust 1', 'gunpowder 1', 'blaze_powder 3']) rcon(`minecraft:give TbAlex minecraft:${it}`);
+    tb.opts.life = false; await sleep(2000);
+    const r = await tb.run([{ act: 'brew', potion: 'взрывное сильное лечение', count: 3 }], 'свари', 'master').catch((e) => 'ошибка: ' + e.message);
+    const pots = tb.bot.inventory.items().filter((i) => i.name === 'splash_potion' && require('../app/guard').potionName(i) === 'strong_healing').length;
+    ok('варка цепочкой: 3 взрывных сильных лечения', pots >= 3, `${r}; таких зелий ${pots}`);
+    tb.opts.life = true;
+  }
+
+  // 23. кузнечный стол: алмазный меч -> незеритовый
+  if (!only || only === 23) {
+    const X = -1100, Y = 64, Z = 1300; await area(X, Z, 20);
+    rcon(`fill ${X - 6} ${Y - 3} ${Z - 6} ${X + 6} ${Y - 1} ${Z + 6} stone`); rcon(`fill ${X - 6} ${Y} ${Z - 6} ${X + 6} ${Y + 4} ${Z + 6} air`);
+    rcon(`setblock ${X + 2} ${Y} ${Z} smithing_table`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex');
+    for (const it of ['diamond_sword', 'netherite_upgrade_smithing_template', 'netherite_ingot']) rcon(`minecraft:give TbAlex minecraft:${it}`);
+    tb.opts.life = false; await sleep(2000);
+    const r = await tb.run([{ act: 'smith', item: 'sword' }], 'незерит', 'master').catch((e) => 'ошибка: ' + e.message);
+    ok('кузнечный стол: незеритовый меч', tb.bot.inventory.items().some((i) => i.name === 'netherite_sword'), r);
+    tb.opts.life = true;
+  }
+
+  // 24. крафт разных рецептов на верстаке: поршень, книжная полка, компас
+  if (!only || only === 24) {
+    const X = -1100, Y = 64, Z = 1350; await area(X, Z, 20);
+    rcon(`fill ${X - 6} ${Y - 3} ${Z - 6} ${X + 6} ${Y - 1} ${Z + 6} stone`); rcon(`fill ${X - 6} ${Y} ${Z - 6} ${X + 6} ${Y + 4} ${Z + 6} air`);
+    rcon(`setblock ${X + 2} ${Y} ${Z} crafting_table`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex');
+    for (const it of ['oak_planks 9', 'cobblestone 4', 'iron_ingot 5', 'redstone 2', 'book 3']) rcon(`minecraft:give TbAlex minecraft:${it}`);
+    tb.opts.life = false; await sleep(2000);
+    const out = [];
+    for (const it of ['piston', 'bookshelf', 'compass']) out.push(await tb.run([{ act: 'craft', item: it, count: 1 }], 'крафт', 'master').catch((e) => 'ошибка: ' + e.message));
+    const have = (n) => tb.bot.inventory.items().some((i) => i.name === n);
+    ok('крафт: поршень, книжная полка, компас', have('piston') && have('bookshelf') && have('compass'), out.map((x) => x.slice(0, 60)).join(' | '));
+    tb.opts.life = true;
   }
 
   // 2. висячие лианы над водой

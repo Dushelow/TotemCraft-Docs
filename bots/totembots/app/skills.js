@@ -146,9 +146,12 @@ class Skills {
         const list = Object.entries(need).map(([k, v]) => k + ' x' + v).join(', ');
         throw new Error(`для ${name} ${list ? 'не хватает: ' + list : 'нужен верстак рядом'}${best.requiresTable && !table ? (list ? ' (и нужен верстак)' : '') : ''}`);
       }
-      await tb.goto(new goals.GoalLookAtBlock(table.position, b.world, { reach: 4 }), tok, 30000);
+      // верстак рядом (до 4 бл. от глаз) - никуда не идти; иначе подойти (поиск «чтобы видеть блок» бывал по 15+ с даже
+      // в двух шагах - «Took too long», стенд 23.11)
+      if (table.position.offset(0.5, 0.5, 0.5).distanceTo(b.entity.position.offset(0, 1.62, 0)) > 4.2) await tb.goto(new goals.GoalNear(table.position.x, table.position.y, table.position.z, 2), tok, 30000);
     }
     const r = recipes[0];
+    const before0 = tb.invCounts()[name] || 0;
     const times = Math.ceil(count / (r.result.count || 1));
     let made = 0;
     for (let i = 0; i < times; i++) {
@@ -159,6 +162,9 @@ class Skills {
       await sleep(200);
     }
     if (!made) throw new Error(`не хватило материалов на ${name}`);
+    // результат в инвентаре - не сразу; не появился за 1,5 с - сказать честно (проверка run покажет изменение инвентаря)
+    for (let k = 0; k < 15 && (tb.invCounts()[name] || 0) < before0 + 1; k++) await sleep(100);
+    if ((tb.invCounts()[name] || 0) < before0 + 1) throw new Error(`верстак не отдал ${name} (сервер отклонил крафт)`);
     return `скрафтил ${name} x${made}`;
   }
 

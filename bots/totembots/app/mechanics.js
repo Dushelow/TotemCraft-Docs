@@ -10,14 +10,50 @@
 const { Vec3 } = require('vec3');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// зелье -> ингредиент (к грубому зелью)
-const BREW = {
-  'лечение': 'glistering_melon_slice', healing: 'glistering_melon_slice', 'сила': 'blaze_powder', strength: 'blaze_powder',
-  'скорость': 'sugar', swiftness: 'sugar', speed: 'sugar', 'огнестойкость': 'magma_cream', fire_resistance: 'magma_cream',
-  'регенерация': 'ghast_tear', regeneration: 'ghast_tear', 'ночное зрение': 'golden_carrot', night_vision: 'golden_carrot',
-  'подводное дыхание': 'pufferfish', water_breathing: 'pufferfish', 'медленное падение': 'phantom_membrane', slow_falling: 'phantom_membrane',
-  'прыгучесть': 'rabbit_foot', leaping: 'rabbit_foot',
+// Варка - все зелья игры. Цепочка ингредиентов от бутылки воды: адский нарост (грубое), основной ингредиент, порча
+// (приготовленный паучий глаз), усиление (редстоун - дольше, светопыль - сильнее), вид (порох - взрывное, драконье
+// дыхание - оседающее). Каждый шаг ~20 с, топливо - огненный порошок.
+const BASE = {
+  healing: 'glistering_melon_slice', strength: 'blaze_powder', swiftness: 'sugar', fire_resistance: 'magma_cream', regeneration: 'ghast_tear',
+  night_vision: 'golden_carrot', water_breathing: 'pufferfish', slow_falling: 'phantom_membrane', leaping: 'rabbit_foot', poison: 'spider_eye',
+  turtle_master: 'turtle_helmet', wind_charged: 'breeze_rod', weaving: 'cobweb', oozing: 'slime_block', infested: 'stone',
 };
+// порча: из какого зелья (приготовленным паучьим глазом)
+const CORRUPT = { invisibility: 'night_vision', slowness: 'swiftness', harming: 'healing', weakness: null };
+const RU = {
+  'лечение': 'healing', 'исцеление': 'healing', 'сила': 'strength', 'скорость': 'swiftness', 'огнестойкость': 'fire_resistance', 'регенерация': 'regeneration',
+  'ночное зрение': 'night_vision', 'подводное дыхание': 'water_breathing', 'медленное падение': 'slow_falling', 'прыгучесть': 'leaping', 'прыжок': 'leaping',
+  'яд': 'poison', 'отравление': 'poison', 'черепашья мощь': 'turtle_master', 'черепаха': 'turtle_master', 'невидимость': 'invisibility', 'замедление': 'slowness',
+  'урон': 'harming', 'вред': 'harming', 'слабость': 'weakness', 'ветер': 'wind_charged', 'плетение': 'weaving', 'слизь': 'oozing', 'заражение': 'infested',
+};
+/** «взрывное сильное лечение», «long swiftness», «splash_healing» -> { eff, long, strong, kind } */
+function parsePotion(t) {
+  t = String(t || '').toLowerCase().replace(/_/g, ' ');
+  const long = /долг|длит|long|продл/.test(t), strong = /сильн|strong|\bii\b/.test(t);   // «мощь» - это черепашья мощь, не усиление
+  const kind = /взрыв|splash|бросок/.test(t) ? 'splash' : /оседа|lingering|облак/.test(t) ? 'lingering' : '';
+  let eff = Object.keys(BASE).concat(Object.keys(CORRUPT)).find((k) => t.includes(k.replace(/_/g, ' ')));
+  if (!eff) { const r = Object.keys(RU).sort((a, b) => b.length - a.length).find((k) => t.includes(k)); eff = r && RU[r]; }
+  return eff ? { eff, long, strong, kind } : null;
+}
+/** Ингредиенты по порядку от бутылки воды. */
+function brewChain(p) {
+  const out = [];
+  if (p.eff === 'weakness') out.push('fermented_spider_eye');
+  else {
+    out.push('nether_wart');
+    if (CORRUPT[p.eff]) out.push(BASE[CORRUPT[p.eff]], 'fermented_spider_eye');
+    else out.push(BASE[p.eff]);
+  }
+  if (p.long) out.push('redstone'); else if (p.strong) out.push('glowstone_dust');
+  if (p.kind === 'splash' || p.kind === 'lingering') out.push('gunpowder');
+  if (p.kind === 'lingering') out.push('dragon_breath');
+  return out;
+}
+const WHERE = { nether_wart: 'крепость Незера', blaze_powder: 'из огненного стержня (блейзы, крепость Незера)', glistering_melon_slice: 'кусок арбуза + 8 золотых самородков',
+  magma_cream: 'кубы магмы или слизь + огненный порошок', ghast_tear: 'гасты в Незере', golden_carrot: 'морковь + 8 золотых самородков', pufferfish: 'рыбалка',
+  phantom_membrane: 'фантомы', rabbit_foot: 'кролики', spider_eye: 'пауки', fermented_spider_eye: 'паучий глаз + сахар + коричневый гриб', turtle_helmet: 'щитки черепашат',
+  redstone: 'шахта', glowstone_dust: 'светокамень в Незере', gunpowder: 'криперы', dragon_breath: 'дракон в Энде (в бутылку)', breeze_rod: 'вихри в испытаниях',
+  cobweb: 'шахты', slime_block: '9 слизи', stone: 'шахта', sugar: 'тростник' };
 
 class Mechanics {
   // ---------------- лошадь (и свинья, страйдер, верблюд - ездовые, которыми правит седок)
@@ -191,19 +227,50 @@ class Mechanics {
     return `вагонетка: ${why}, теперь у ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}`;
   }
 
+  // ---------------- кузнечный стол: алмазное -> незеритовое (шаблон + вещь + незеритовый слиток)
+  async smith(a, tok) {
+    const b = this.bot, want = String(a.item || '').toLowerCase().replace(/^minecraft:/, '');
+    const inv = () => b.inventory.items();
+    const base = inv().find((i) => /^diamond_(sword|axe|pickaxe|shovel|hoe|helmet|chestplate|leggings|boots)$/.test(i.name) && (!want || i.name.includes(want.replace(/^netherite_/, ''))));
+    const lack = [];
+    if (!base) lack.push('алмазная вещь для улучшения');
+    if (!inv().some((i) => i.name === 'netherite_upgrade_smithing_template')) lack.push('шаблон улучшения (бастионы в Незере)');
+    if (!inv().some((i) => i.name === 'netherite_ingot')) lack.push('незеритовый слиток (4 обломка древних обломков + 4 золота)');
+    if (lack.length) throw new Error('для незерита не хватает: ' + lack.join('; '));
+    const { goals } = require('mineflayer-pathfinder');
+    const st = b.findBlock({ matching: (bl) => bl.name === 'smithing_table', maxDistance: 16 });
+    if (!st) throw new Error('кузнечного стола рядом нет (скрафтить: 4 доски + 2 железа)');
+    if (st.position.distanceTo(b.entity.position) > 3.5) await this.goto(new goals.GoalNear(st.position.x, st.position.y, st.position.z, 2), tok, 30000);
+    const win = await b.openBlock(b.blockAt(st.position));
+    const at = (name) => win.slots.findIndex((s2, i) => i >= 4 && s2 && s2.name === name);
+    const one = async (name, dest) => { const i = at(name); if (i < 0) throw new Error('нет ' + name); await b.clickWindow(i, 0, 0); await b.clickWindow(dest, 1, 0); await b.clickWindow(i, 0, 0); };
+    try {
+      await one('netherite_upgrade_smithing_template', 0); await one(base.name, 1); await one('netherite_ingot', 2);
+      for (let k = 0; k < 20 && !win.slots[3]; k++) await sleep(150);
+      if (!win.slots[3]) throw new Error('стол не дал результат');
+      // забрать результат в свободную ячейку (шифт-клик mineflayer не делает)
+      const free = win.slots.findIndex((s2, i) => i >= win.inventoryStart && !s2);
+      await b.moveSlotItem(3, free >= 0 ? free : win.inventoryStart);
+      await sleep(400);
+      if (!b.inventory.items().some((i) => /^netherite_/.test(i.name) && i.name === base.name.replace('diamond', 'netherite')) && !win.slots.some((s2, i) => i >= win.inventoryStart && s2 && s2.name === base.name.replace('diamond', 'netherite'))) throw new Error('результат не забрался');
+    } finally { try { win.close(); } catch {} }
+    return `улучшил ${base.name} -> ${base.name.replace('diamond', 'netherite')}`;
+  }
+
   // ---------------- варка зелий
   async brew(a, tok) {
-    const b = this.bot, want = String(a.potion || a.what || '').toLowerCase().trim(), n = Math.max(1, Math.min(3, +a.count || 3));
-    const ing = BREW[want];
-    if (!ing) throw new Error(`не знаю зелья «${want}»; умею: ${[...new Set(Object.keys(BREW).filter((k) => /[а-я]/.test(k)))].join(', ')}`);
+    const b = this.bot, n = Math.max(1, Math.min(3, +a.count || 3));
+    const want = parsePotion(a.potion || a.what);
+    if (!want) throw new Error(`не знаю зелья «${a.potion || a.what}»; умею: ${Object.keys(RU).join(', ')} - обычные, долгие, сильные, взрывные, оседающие`);
+    if (want.long && want.strong) throw new Error('зелье бывает либо долгим (редстоун), либо сильным (светопыль), не всё сразу');
+    const chain = brewChain(want);
     const have = () => this.invCounts();
     const lack = [];
-    if ((have().nether_wart || 0) < 1) lack.push('адский нарост (nether_wart) - растёт в крепостях Незера');
-    if ((have()[ing] || 0) < 1) lack.push(ing);
-    if ((have().blaze_powder || 0) < 1) lack.push('огненный порошок (blaze_powder) - топливо стойки');
-    if ((have().glass_bottle || 0) + (have().potion || 0) < n) lack.push(`бутылки (${n} шт., glass_bottle)`);
-    if (lack.length) throw new Error('для «' + want + '» не хватает: ' + lack.join('; '));
-    // стойка: рядом или своя
+    for (const it of chain) if ((have()[it] || 0) < 1) lack.push(`${it}${WHERE[it] ? ' (' + WHERE[it] + ')' : ''}`);
+    if ((have().blaze_powder || 0) < (chain.includes('blaze_powder') ? 2 : 1)) lack.push('огненный порошок для топлива (blaze_powder)');
+    if ((have().glass_bottle || 0) + b.inventory.items().filter((x) => x.name === 'potion' && /water/.test(require('./guard').potionName(x))).length < n) lack.push(`бутылки (${n} шт., glass_bottle - 3 стекла)`);
+    if (lack.length) throw new Error('не хватает: ' + [...new Set(lack)].join('; '));
+    const { goals } = require('mineflayer-pathfinder');
     let st = b.findBlock({ matching: (bl) => bl.name === 'brewing_stand', maxDistance: 16 });
     if (!st) {
       if (!have().brewing_stand) throw new Error('варочной стойки нет рядом и с собой (скрафтить: огненный стержень + 3 булыжника)');
@@ -211,28 +278,34 @@ class Mechanics {
       st = b.findBlock({ matching: (bl) => bl.name === 'brewing_stand', maxDistance: 6 });
       if (!st) throw new Error('стойку поставить не вышло');
     }
-    // бутылки с водой: пустую бутылку - в воду (взгляд на воду, «использовать»)
-    for (let i = 0; i < n && !(b.inventory.items().filter((x) => x.name === 'potion').length >= n); i++) {
+    // бутылки с водой
+    const water = () => b.inventory.items().filter((x) => x.name === 'potion' && /water/.test(require('./guard').potionName(x))).length;
+    for (let i = 0; i < 6 && water() < n; i++) {
       const w = b.findBlock({ matching: (bl) => bl.name === 'water', maxDistance: 16 });
       if (!w) throw new Error('воды рядом нет - набрать в бутылки негде');
-      if (w.position.distanceTo(b.entity.position) > 4) await this.goto(new (require('mineflayer-pathfinder').goals.GoalNear)(w.position.x, w.position.y, w.position.z, 3), tok, 30000);
+      if (w.position.distanceTo(b.entity.position) > 4) await this.goto(new goals.GoalNear(w.position.x, w.position.y, w.position.z, 3), tok, 30000);
       const bt = b.inventory.items().find((x) => x.name === 'glass_bottle'); if (!bt) break;
       await b.equip(bt, 'hand'); await b.lookAt(w.position.offset(0.5, 0.8, 0.5), true); b.activateItem(); await sleep(400);
     }
-    if (st.position.distanceTo(b.entity.position) > 3.5) await this.goto(new (require('mineflayer-pathfinder').goals.GoalNear)(st.position.x, st.position.y, st.position.z, 2), tok, 30000);
+    if (st.position.distanceTo(b.entity.position) > 3.5) await this.goto(new goals.GoalNear(st.position.x, st.position.y, st.position.z, 2), tok, 30000);
     const win = await b.openBlock(b.blockAt(st.position));   // openContainer стойку не знает (нет в его списке окон)
-    const slotOf = (name) => win.slots.findIndex((s, i) => i >= 5 && s && s.name === name);
-    const put = async (name, dest, one) => { const i = slotOf(name); if (i < 0) throw new Error('нет ' + name); if (one) { await b.clickWindow(i, 0, 0); await b.clickWindow(dest, 1, 0); await b.clickWindow(i, 0, 0); } else await b.moveSlotItem(i, dest); };
-    const waitBrew = async () => { for (let k = 0; k < 60; k++) { await sleep(500); this.check(tok); if (!win.slots[3]) return; } throw new Error('варка не закончилась за 30 с'); };
+    const slotOf = (pred) => win.slots.findIndex((s2, i) => i >= 5 && s2 && pred(s2));
+    const putOne = async (name, dest) => { const i = slotOf((x) => x.name === name); if (i < 0) throw new Error('нет ' + name); await b.clickWindow(i, 0, 0); await b.clickWindow(dest, 1, 0); await b.clickWindow(i, 0, 0); };
+    const waitBrew = async () => { for (let k2 = 0; k2 < 70; k2++) { await sleep(500); this.check(tok); if (!win.slots[3]) return; } throw new Error('варка не закончилась за 35 с'); };
+    const done = [];
     try {
-      if (!win.slots[4]) await put('blaze_powder', 4, true);                                   // топливо - 1 порошок
-      for (let k = 0; k < n; k++) if (!win.slots[k]) await put('potion', k, false);             // бутылки с водой
-      await put('nether_wart', 3, true); await waitBrew();                                        // грубое зелье
-      await put(ing, 3, true); await waitBrew();                                                  // нужное
-      for (let k = 0; k < n; k++) if (win.slots[k]) await b.moveSlotItem(k, win.inventoryStart + win.slots.slice(win.inventoryStart).findIndex((s) => !s));
+      if (!win.slots[4]) await putOne('blaze_powder', 4);
+      for (let k2 = 0; k2 < n; k2++) if (!win.slots[k2]) { const i = slotOf((x) => x.name === 'potion' && /water/.test(require('./guard').potionName(x))); if (i >= 0) await b.moveSlotItem(i, k2); }
+      for (const ing of chain) {
+        if (!win.slots[4] || (win.slots[4] && win.slots[4].count < 1)) await putOne('blaze_powder', 4).catch(() => {});
+        await putOne(ing, 3); await waitBrew(); done.push(ing);
+      }
+      for (let k2 = 0; k2 < 3; k2++) if (win.slots[k2]) { const free = win.slots.findIndex((s2, i) => i >= win.inventoryStart && !s2); if (free >= 0) await b.moveSlotItem(k2, free); }
     } finally { try { win.close(); } catch {} }
-    return `сварил ${n} зелья «${want}»`;
+    const name = `${want.kind === 'splash' ? 'взрывное ' : want.kind === 'lingering' ? 'оседающее ' : ''}${want.long ? 'долгое ' : want.strong ? 'сильное ' : ''}${want.eff}`;
+    return `сварил ${n} зелья «${name}» (${done.join(' -> ')})`;
   }
+
 }
 
-module.exports = { Mechanics, BREW };
+module.exports = { Mechanics, parsePotion, brewChain };
