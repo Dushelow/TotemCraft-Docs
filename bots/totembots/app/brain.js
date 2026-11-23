@@ -208,7 +208,7 @@ function quickOrder(text, from) {
   if (t.length > 40) return null;
   // «за мной» в любом разговорном виде: «пойдём за мной», «идём со мной», «давай за мной», «погнали» (22.11: «пойдем за мной
   // алекс» уходило в нейросеть, и она шла следом только через 25 с)
-  const t2 = (' ' + t + ' ').replace(/\s(пожалуйста|плиз|давай|ну|быстрее|скорее|бегом)(?=\s)/g, ' ').replace(/\s+/g, ' ').trim();
+  const t2 = (' ' + t + ' ').replace(/\s(пожалуйста|плиз|давай|ну|быстрее|скорее|бегом|уже|блин|блять|бля|сука|нахуй|заебал|заебала|епта|ёпта|тупой|дурак|короче|наконец)(?=\s)/g, ' ').replace(/[,!.?]+/g, ' ').replace(/\s+/g, ' ').trim();
   if (/^((иди|пошли|пошл[иа]|пойд[её]м|пойди|ид[её]м|иди-ка|го|гоу|айда|давай|следуй|двигай|топай|бежим)( за мной| со мной| следом)?|за мной|со мной|следом|следуй|погнали|пошли|follow me)$/.test(t2)) return [{ act: 'follow', who: from }];
   // «ко мне» - сразу телу (23.11: позвал, а он ждал нейросеть)
   if (/^((иди|беги|подойди|подбеги|давай|спускайся|иди-ка) ?(ко мне|сюда|вниз ко мне)|ко мне|сюда|подойди|иди сюда|спускайся|спускайся ко мне)$/.test(t2)) return [{ act: 'come', who: from }];
@@ -654,7 +654,12 @@ class Brain {
       this.inProgress = 0;
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
-      if (r.say && this.pending.some((x) => x.from && x.from !== '@self' && this.isMaster(x.from) && /^\[(чат|голос)/.test(x.line || ''))) { this.log('(устарело: хозяин уже написал новое, ответ и действия отброшены) ' + r.say); r.say = ''; r.actions = []; }
+      // устарел - выбросить, но не больше раза подряд: 23.11 хозяин писал без перерыва, три ответа подряд ушли в мусор, и
+      // бот вообще ничего не делал. Второй раз - выполнить, новое придёт следом
+      if (r.say && this.pending.some((x) => x.from && x.from !== '@self' && this.isMaster(x.from) && /^\[(чат|голос)/.test(x.line || ''))) {
+        if (!this._staleDrop) { this._staleDrop = true; this.log('(устарело: хозяин уже написал новое, ответ и действия отброшены) ' + r.say); r.say = ''; r.actions = []; }
+        else { this._staleDrop = false; this.log('(устарело, но уже второй раз подряд - выполняю) ' + r.say); }
+      } else this._staleDrop = false;
       if (this.transcript) try { this.transcript(msg, answer); } catch {}
       this.log('← ' + JSON.stringify(r));
       this.lastDecision = { at: Date.now(), say: r.say, acts: r.actions.map((a) => a && (a._cmd || a.act)).filter(Boolean), model: this.bridge.lastPick ? this.bridge.lastPick.model : '' };
