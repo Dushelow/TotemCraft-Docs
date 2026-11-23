@@ -335,7 +335,22 @@ function install(mv, bot) {
         if (up === 2 && cell(x, y - 1, z).boxes.length && !waterAt(x, y - 1, z)) continue;   // между водой и лианой - твёрдое
         if ((ax || az) && cell(x, node.y + 1, z).boxes.length && !CL.test((blk(x, node.y + 1, z) || {}).name || '')) continue;
         have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 1.5 + up * 0.5, [], []); m.swim = true; out.push(m); break;
-      } }
+      }
+      // вниз по лестнице (23.11: второй этаж, спуск лазом с лестницей - ходил вокруг дыры): столб лестницы под ногами или
+      // рядом в проёме - сойти в него и спуститься до пола, сколько бы этажей
+      for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const x = node.x + ax, z = node.z + az;
+        if ((ax || az) && (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
+        let y = node.y - 1;
+        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
+        if (!CL.test((blk(x, y, z) || {}).name || '') && cell(x, y, z).boxes.length) continue;
+        let n = 0;
+        while (n < 40 && (CL.test((blk(x, y, z) || {}).name || '') || !cell(x, y, z).boxes.length) && !cell(x, y - 1, z).boxes.length) { y--; n++; }
+        if (n < 2 || cell(x, y, z).boxes.length || cell(x, y - 1, z).bad) continue;
+        const k = `${x},${y},${z}`; if (have.has(k)) continue;
+        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.6, [], []); m.swim = true; out.push(m);
+      }
+    }
     for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 0, 1], [0, 0, -1], [0, 1, 0], [0, -1, 0], [1, 0, 1], [1, 0, -1], [-1, 0, 1], [-1, 0, -1], [1, -1, 0], [-1, -1, 0], [0, -1, 1], [0, -1, -1], [1, 1, 0], [-1, 1, 0], [0, 1, 1], [0, 1, -1]]) {
       const nx = node.x + dx, ny = node.y + dy, nz = node.z + dz, k = `${nx},${ny},${nz}`;
       if (have.has(k) || !waterAt(nx, ny, nz)) continue;
