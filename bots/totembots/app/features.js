@@ -203,6 +203,7 @@ class Features {
       }
     } catch {}
     this._scene = { at: now, dim, roads, marks, signs, pos: p.clone() };
+    try { if (this.graphFeed) this.graphFeed(roads); } catch {}   // увиденные проходы - в карту связей (navgraph.js)
     this.rememberFeatures(dim, roads, marks);
   }
 
