@@ -763,9 +763,11 @@ class TotemBot extends EventEmitter {
       const p = portal.position;
       const known = Object.values(m.data.places).some((x) => x.dim === dim && Math.hypot(x.x - p.x, x.y - p.y, x.z - p.z) < 12);
       if (!known) {
+        try { if (this.linkAdd && this._lastPortalFrom && this._lastPortalFrom.dim !== dim) this.linkAdd({ a: this._lastPortalFrom.name, b: `портал ${dim === 'Незер' ? 'в Незере' : 'в обычном мире'} ${p.x} ${p.z}`, how: 'через портал', dim }); } catch {}
         const r = m.place({ name: `портал ${dim === 'Незер' ? 'в Незере' : 'в обычном мире'} ${p.x} ${p.z}`, x: p.x, y: p.y, z: p.z, dim, note: 'нашёл сам' }, this.opts.name);
         this.log(r);
         this.event(`найден портал в Незер: ${p.x} ${p.y} ${p.z} (${dim}), записан в память`, false);
+        this._lastPortalFrom = { name: `портал ${dim === 'Незер' ? 'в Незере' : 'в обычном мире'} ${p.x} ${p.z}`, dim };   // связь «портал - портал» при следующем
       }
     }
     this.met = this.met || new Set();
@@ -1827,6 +1829,12 @@ class TotemBot extends EventEmitter {
           case 'teach': r = this.teachStart({ ...a, who: a.who || this.runFrom || (this.opts.masters || [])[0] }); return done.concat(r).join('; ');
           case 'teachStop': r = this.teachStop(); break;
           case 'route': r = await this.routeRun(a, tok); break;
+          case 'survey': r = await this.survey(a, tok); break;
+          case 'link': r = this.link(a); break;
+          case 'howTo': r = this.howTo(a); break;
+          case 'prepare': r = await this.prepare(a, tok); break;
+          case 'findEntity': r = this.findEntity(a); break;
+          case 'scanBlocks': r = this.scanBlocks(a); break;
           case 'loadout': r = await this.loadout(a, tok); break;
           case 'gather': r = await this.skills.gather(a, tok); break;
           case 'till': r = await this.skills.till(a, tok); break;
@@ -1906,7 +1914,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll, require('./loadout').Loadout, require('./features').Features, require('./navgraph').NavGraph]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll, require('./loadout').Loadout, require('./features').Features, require('./navgraph').NavGraph, require('./survey').Survey]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 
