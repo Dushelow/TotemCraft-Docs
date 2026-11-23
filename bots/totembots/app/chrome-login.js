@@ -69,7 +69,7 @@ async function sitePage(url) {
 async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   const S = SITES[siteId];
   const exe = findChrome();
-  if (!exe) throw new Error('Chrome не найден');
+  if (!exe) throw new Error('не найден ни Chrome, ни Edge: войдите без Google (почта и пароль) прямо в окне сайта');
   const proc = spawn(exe, [`--user-data-dir=${profileDir}`, `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--new-window', S.url], { detached: false, stdio: 'ignore' });
   try {
