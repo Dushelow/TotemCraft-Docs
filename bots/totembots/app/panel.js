@@ -155,6 +155,7 @@ function renderStart() {
     check('ok', 'Сервер: ' + srvName(st.host), `${st.host}:${st.port}`, '<button class="ghost sm" data-go="settings">Сменить</button>'),
     cap.length ? check('bad', `${cap.map((s) => s.name).join(', ')} просит проверку «не робот»`, 'пройдите её в окне справа', '<button class="ghost sm" data-go="brains">Мозги</button>')
       : ready.length ? check('ok', 'Мозги: ' + ready.map((s) => s.name).join(', '), pinName ? 'выбран вручную: ' + pinName : 'по порядку, при лимите - следующий', '<button class="ghost sm" data-go="brains">Мозги</button>')
+      : sites.some((s) => s.logged) ? check('bad', 'Вход есть, но мозг выключен', `вошли: ${sites.filter((s) => s.logged).map((s) => s.name).join(', ')} - включите галочку в разделе «Мозги»`, '<button class="pri sm" data-go="brains">Мозги</button>')
       : check('bad', 'Нет ни одного мозга с входом', 'войдите хотя бы в один сайт: раздел «Мозги»', '<button class="pri sm" data-go="brains">Войти</button>'),
     st.bots.length ? check(picked.length ? 'ok' : 'warn', picked.length ? `Запустятся: ${picked.map((b) => b.name).join(', ')}` : 'Не выбран ни один бот', 'кого запускать - переключатель «Запускать» в карточке бота')
       : check('warn', 'Ботов нет', 'добавьте первого внизу: «Добавить бота»'),

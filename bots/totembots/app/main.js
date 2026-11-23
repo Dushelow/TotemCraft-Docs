@@ -234,10 +234,12 @@ function showTab(name) { return name === 'mine' ? showView('mine', 'qwen') : sho
 function openMine(url) { showView('mine', 'qwen'); myViews.qwen.webContents.loadURL(url); }
 function brainOrder() { return (cfg.brains && cfg.brains.order) || ['deepseekweb', 'geminiweb', 'arenaweb', 'qwen']; }
 // вошёл ли владелец на сайтах (по окнам бота, которые уже открыты)
-setInterval(async () => {
+async function checkLogins() {
   try { if (qwen) siteLogged.qwen = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")'); } catch {}
-  for (const [id, w] of Object.entries(webChats)) { try { siteLogged[id] = await w.loggedIn(); } catch {} }
-}, 10000);
+  for (const id of Object.keys(webViews)) { try { siteLogged[id] = await webChat(id).loggedIn(); } catch {} }
+}
+setInterval(checkLogins, 10000);
+setTimeout(checkLogins, 2500);   // сразу после загрузки страниц, а не через 10 с («сайты загрузились, а пишет - нет мозгов»)
 
 const webViews = {}, webChats = {};
 function webView(site) {
