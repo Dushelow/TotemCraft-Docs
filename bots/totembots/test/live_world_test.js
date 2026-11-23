@@ -8,6 +8,7 @@
 //   7) загон с жителем на прямом пути: обойти, калитки не открывать;
 //   8) прогулка: шагом, не по прямой, с остановками, не дальше радиуса;
 //   10) «это наш дом» с улицы - метка внутри дома;
+//   11) бой с 3 зомби: удары в прыжке, щит; 12) 2 скелета, бот без оружия и брони - уйти, не умереть;
 //   9) квест: пшеница -> хлеб -> хозяину -> поспать, если ночь; перед этим бот сидит на ступеньке;
 //   (всё внутри границы мира стенда ±1500: за ней сервер возвращает игрока на спавн)
 //   и отметки Vulcan за всё время. node test/live_world_test.js [номер проверки]
@@ -141,6 +142,51 @@ const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { con
     const pl = tb.memory.findPlace('наш дом');
     const inside = pl && pl.x > X + 2 && pl.x < X + 8 && Math.abs(pl.z - Z) < 3;
     ok('«это наш дом» с улицы - метка внутри дома', inside, `${r}`);
+  }
+
+  // 11. бой: меч, щит, железная броня против 3 зомби ночью - удары в прыжке, щит между ударами, выжил
+  // 12. скелет, а бот без брони и щита - бой не по силам: уйти из-под стрел, не умереть
+  if (!only || only === 11 || only === 12) {
+    const X = 1340, Y = 64, Z = 1160; await area(X, Z);
+    rcon(`fill ${X - 14} ${Y - 5} ${Z - 14} ${X + 14} ${Y - 1} ${Z + 14} stone`); rcon(`fill ${X - 14} ${Y} ${Z - 14} ${X + 14} ${Y + 6} ${Z + 14} air`);
+    rcon(`fill ${X - 3} ${Y} ${Z - 8} ${X + 3} ${Y + 3} ${Z - 8} stone`);   // стенка - укрытие
+    const alive = () => /passed/i.test(rcon('execute if entity @e[tag=cz]'));
+    tb.opts.life = false; tb.cancel && tb.cancel();   // ночь - «пора домой» увела бы с арены; свои дела на время боя выключены
+    if (!only || only === 11) {
+      rcon(`minecraft:kill @e[type=!minecraft:player,x=${X},y=${Y},z=${Z},distance=..40]`);
+      rcon('difficulty normal'); rcon('time set midnight');
+      await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex'); rcon('effect clear TbAlex'); rcon('effect give TbAlex minecraft:instant_health 1 5');
+      for (const it of ['iron_sword', 'shield', 'iron_helmet', 'iron_chestplate', 'iron_leggings', 'iron_boots', 'cooked_beef 16']) rcon(`minecraft:give TbAlex minecraft:${it}`);
+      if (tb.guard) tb.guard.mode = 'defend'; tb.opts.combat = 'defend';   // на стенде бот создан с «мобов не трогаю»
+      await sleep(7000);   // броня и щит надеваются сами (gear раз в 3 с)
+      console.log('   снаряжение:', tb.bot.inventory.items().map((i) => i.name).join(', '), '| слоты брони:', [5, 6, 7, 8, 45].map((n) => (tb.bot.inventory.slots[n] || {}).name || '-').join(', '));
+      let crits = 0, hits = 0, blocked = 0, died = false;
+      tb.bot.once('death', () => { died = true; });
+      const att = tb.bot.attack.bind(tb.bot); tb.bot.attack = (e) => { hits++; if (!tb.bot.entity.onGround && tb.bot.entity.velocity.y < -0.03) crits++; return att(e); };
+      const act = tb.bot.activateItem.bind(tb.bot); tb.bot.activateItem = (o) => { if (o) blocked++; return act(o); };
+      for (let i = 0; i < 3; i++) rcon(`summon zombie ${X + 5 + i} ${Y} ${Z + 4} {Tags:["cz"],PersistenceRequired:1b}`);
+      const t = await until(() => !alive(), 90000, 1000);
+      const armor = tb.guard ? tb.guard.armorPts() : '?';
+      ok('бой с 3 зомби: убиты, бот жив, удары в прыжке, щит', t && !died && crits > 0 && blocked > 0, `убиты за ${t ? (t / 1000).toFixed(0) + ' с' : 'не убиты'}, ${died ? 'УМЕР' : 'жив ' + Math.round(tb.bot.health) + '/20'}, броня ${armor}, ударов ${hits}, в прыжке ${crits}, щит ${blocked}`);
+      tb.bot.attack = att; tb.bot.activateItem = act;
+      rcon('minecraft:kill @e[tag=cz]');
+    }
+    if (!only || only === 12) {
+      rcon(`minecraft:kill @e[type=!minecraft:player,x=${X},y=${Y},z=${Z},distance=..40]`);
+      rcon('difficulty normal'); rcon('time set midnight');
+      await tpSure(tb, 'TbAlex', X, Y, Z - 4); rcon('clear TbAlex'); rcon('effect give TbAlex minecraft:instant_health 1 5');   // без оружия и брони
+      if (tb.guard) tb.guard.mode = 'defend'; tb.opts.combat = 'defend';
+      await sleep(3000);
+      let died = false, retreat = false;
+      tb.bot.once('death', () => { died = true; });
+      const lg = (x) => { if (/не по силам|укрыт|отступаю/.test(x)) retreat = true; }; tb.on('log', lg);
+      rcon(`summon skeleton ${X - 2} ${Y} ${Z + 10} {Tags:["cz"],PersistenceRequired:1b}`); rcon(`summon skeleton ${X + 2} ${Y} ${Z + 10} {Tags:["cz"],PersistenceRequired:1b}`);
+      await sleep(25000);
+      tb.removeListener('log', lg);
+      ok('2 скелета, а бот без оружия и брони: понял, что не по силам, ушёл, не умер', retreat && !died, `${retreat ? 'отступал' : 'не отступал'}, ${died ? 'УМЕР' : 'жив ' + Math.round(tb.bot.health) + '/20'}`);
+      rcon('minecraft:kill @e[tag=cz]');
+    }
+    rcon('time set day'); rcon('difficulty peaceful'); tb.opts.life = true;
   }
 
   // 2. висячие лианы над водой
