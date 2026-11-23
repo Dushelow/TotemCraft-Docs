@@ -335,6 +335,25 @@ function install(mv, bot) {
         if (hatch !== null) m.opens = [{ x, y: hatch, z, want: true }];
         out.push(m);
       }
+    // верх лестницы (выше лестницы нет): прыжком на пол рядом - на уровне ног, +1 или +2 (встать на верх лестницы и
+    // прыгнуть, 23.11 приём владельца). Без этого путь вёл в пустую клетку над лестницей - тело там не держится
+    {
+      const here = blk(node.x, node.y, node.z);
+      if (here && /^(ladder|vine|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(here.name)) {
+        const above = blk(node.x, node.y + 1, node.z);
+        if (!(above && CL.test(above.name)) && !cell(node.x, node.y + 1, node.z).boxes.length) {
+          for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ly of [node.y + 1, node.y + 2]) {
+            const x = node.x + ax, z = node.z + az;
+            const fl = cell(x, ly - 1, z);
+            if (!fl.boxes.length || fl.bad || CL.test((fl.b || {}).name || '') || cell(x, ly, z).boxes.length || cell(x, ly + 1, z).boxes.length) continue;
+            if (ly === node.y + 2 && cell(node.x, node.y + 2, node.z).boxes.length) continue;   // низко над головой - не прыгнуть
+            const k = `${x},${ly},${z}`; if (have.has(k)) continue;
+            have.add(k); const m = new Move(x, ly, z, node.remainingBlocks, 2.5, [], []); m.ladderTop = true; out.push(m);
+            break;
+          }
+        }
+      }
+    }
     // водяной лифт (пузырьковый столб): над песком душ - несёт вверх, над магмой - тянет вниз. Войти в столб (своя клетка
     // или соседняя) и ехать до конца: вверх - к верхней клетке воды под воздухом, вниз - до дна
     const bub = (x, y, z) => { const k = blk(x, y, z); return k && k.name === 'bubble_column' ? (k.getProperties().drag === true || k.getProperties().drag === 'true' ? 'down' : 'up') : null; };
@@ -434,6 +453,11 @@ function install(mv, bot) {
       const CLB = /^(vine|ladder|weeping_vines|twisting_vines|cave_vines|cave_vines_plant|weeping_vines_plant|twisting_vines_plant)$/;
       const up = blk(node.x, node.y + 1, node.z), feet = blk(node.x, node.y, node.z);
       if (up && CLB.test(up.name) && !(feet && CLB.test(feet.name)) && !have.has(`${node.x},${node.y + 1},${node.z}`) && !cell(node.x, node.y + 2, node.z).boxes.length) extra.push(new Move(node.x, node.y + 1, node.z, node.remainingBlocks, 2, [], []));
+      // клетка прямо над верхом лиан (без опоры) - тело там не держится: такой шаг убрать, есть ход «с верха прыжком»
+      const nodeCl = blk(node.x, node.y, node.z);
+      if (nodeCl && /^(vine|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(nodeCl.name)) {
+        r = r.filter((m) => !(m.x === node.x && m.z === node.z && m.y === node.y + 1 && !/vine|ladder|scaffolding/.test((blk(m.x, m.y, m.z) || {}).name || '') && !cell(m.x, m.y - 1, m.z).boxes.length));
+      }
       return r.concat(extra);
     } catch { return r; }
   };
@@ -745,6 +769,15 @@ function install(mv, bot) {
     }));
     // спуск по лестнице или в лаз: над клеткой следующего шага, а он ниже - отпустить «вперёд» (в лестницу «вперёд» -
     // это лезть вверх: 23.11 бот повисал на верху лаза и не спускался; стенд test/shaft_test.js)
+    bot.on('physicsTick', safe('nav-лианы', () => {
+      const e = bot.entity; if (!e) return;
+      const k = bot.blockAt(e.position); if (!k) return;
+      // и открытый люк над лестницей, повёрнутый как она (в игре по нему лезут, своя физика бота этого не знает)
+      const hatchLad = /_trapdoor$/.test(k.name) && (k.getProperties().open === true || k.getProperties().open === 'true') && (() => { const l = bot.blockAt(e.position.offset(0, -1, 0)); return l && l.name === 'ladder' && l.getProperties().facing === k.getProperties().facing; })();
+      if (!hatchLad && !/^(twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(k.name)) return;
+      if (bot.getControlState('jump')) e.velocity.y = Math.max(e.velocity.y, 0.2);
+      else if (e.velocity.y < -0.15) e.velocity.y = -0.15;
+    }));
     bot.on('physicsTick', safe('nav-вниз', () => {
       const path = bot._navPath, e = bot.entity;
       if (!path || !path.length || !e) return;

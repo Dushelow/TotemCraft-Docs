@@ -44,19 +44,22 @@ function walkTo(bot, ent, to) {
     // спуск по лестнице - 0,15 бл. за такт: на высокий лаз нужно больше тактов
     for (let t = 0; t < 60 + 12 * Math.ceil(Math.abs(ent.position.y - to.y)); t++) {
       const dx = to.x + 0.5 - e.position.x, dz = to.z + 0.5 - e.position.z;
-      const onLad = /^(ladder|vine)$/.test(bot.blockAt(e.position).name);
+      const onLad = /^(ladder|vine|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(bot.blockAt(e.position).name);
       if (Math.abs(dx) <= 0.3 && Math.abs(dz) <= 0.3 && onLad && Math.floor(e.position.y + 1e-3) === to.y) { ent.position = e.position; return true; }   // на лестнице тело висит, не стоит
       if (Math.abs(dx) <= 0.2 && Math.abs(dz) <= 0.2 && (e.onGround || (e.isInWater && Math.floor(e.position.y + 1e-3) === to.y))) {
         if (Math.floor(e.position.y + 1e-3) === to.y) { ent.position = e.position; return true; }
         // над целью, но ещё на высоте прошлого шага (сходит с края) - идти дальше, как модуль пути (|dy| < 1)
       }
       e.yaw = Math.atan2(-dx, -dz);
-      const fbk = bot.blockAt(e.position), lad = /^(ladder|vine)$/.test(fbk.name), ladUp = lad || (/_trapdoor$/.test(fbk.name) && fbk.getProperties().open && bot.blockAt(e.position.offset(0, -1, 0)).name === 'ladder' && bot.blockAt(e.position.offset(0, -1, 0)).getProperties().facing === fbk.getProperties().facing);
+      const fbk = bot.blockAt(e.position), lad = /^(ladder|vine|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(fbk.name), ladUp = lad || (/_trapdoor$/.test(fbk.name) && fbk.getProperties().open && bot.blockAt(e.position.offset(0, -1, 0)).name === 'ladder' && bot.blockAt(e.position.offset(0, -1, 0)).getProperties().facing === fbk.getProperties().facing);
       const tol = lad || !e.onGround ? 0.3 : 0.12;
       const down = to.y < e.position.y - (lad ? 0.05 : 0.9) && Math.abs(dx) <= tol && Math.abs(dz) <= tol;   // над спуском - не жать вперёд (как nav-вниз)
       const climb = ladUp && to.y > e.position.y + 0.3, col = Math.abs(dx) < 0.45 && Math.abs(dz) < 0.45;   // как nav-вниз: вверх - прыжок
-      const st = new PlayerState(p, { forward: climb ? !col : !down, back: false, left: false, right: false, jump: climb || (jump && !down), sprint: false, sneak: false });
+      const wetUp = e.isInWater && to.y > e.position.y + 0.3 && !col;   // как water.js: к гребню прыжком, с гребня - вперёд
+      const crest = e.position.y - Math.floor(e.position.y) >= 0.45;
+      const st = new PlayerState(p, { forward: wetUp ? crest || !e.isCollidedHorizontally : climb ? !col : !down, back: false, left: false, right: false, jump: wetUp || climb || (jump && !down), sprint: false, sneak: false });
       physics.simulatePlayer(st, world); st.apply(p);
+      if (/^(twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(bot.blockAt(e.position).name) || (() => { const k = bot.blockAt(e.position), l = bot.blockAt(e.position.offset(0, -1, 0)); return /_trapdoor$/.test(k.name) && k.getProperties().open && l.name === 'ladder' && l.getProperties().facing === k.getProperties().facing; })()) { if (climb) e.velocity.y = Math.max(e.velocity.y, 0.2); else if (e.velocity.y < -0.15) e.velocity.y = -0.15; }   // как nav-лианы
     }
   }
   return false;
