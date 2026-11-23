@@ -1535,9 +1535,12 @@ class TotemBot extends EventEmitter {
           const m = await this.useMechanism({ x: best.x, y: best.y, z: best.z }, tok);
           if (m) {
             done.push(m); moved = true;
-            // проход открылся на секунду (плита, кнопка) - сразу к лестнице за ним, без похода к дальнему выходу (23.11:
-            // встал на плиту у двери, пошёл в другую сторону - дверь закрылась)
-            try { const c = await this.climbLadder({ dir: 'up', toward: { x: best.x, z: best.z } }, tok); if (/поднялся/.test(c)) done.push(c); } catch (e) { if (this.isCancel(e)) throw e; }
+            // проход открыт сейчас (кнопка, плита, стена на поршнях): сначала бегом к небу, если путь целый; нет - к лестнице
+            // за проходом (23.11: после кнопки полез в шахту вниз, а проход наружу был рядом)
+            let out2 = null;
+            for (const q of cand.slice(0, 12)) { try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 250); if (r && r.status === 'success') { out2 = q; break; } } catch {} }
+            if (out2) { try { await this.goto(new goals.GoalNear(out2.x, out2.y, out2.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
+            else { try { const c = await this.climbLadder({ dir: 'up', toward: { x: best.x, z: best.z } }, tok); if (/поднялся/.test(c)) done.push(c); } catch (e) { if (this.isCancel(e)) throw e; } }
           }
         } catch (e) { if (this.isCancel(e)) throw e; }
       }
@@ -1586,7 +1589,8 @@ class TotemBot extends EventEmitter {
       this.dashAfterMech();
       return `встал на ${bl.name} у ${p.x} ${p.y} ${p.z}`;
     }
-    await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
+    // дотягиваюсь (до 4 бл. от глаз) - жать с места: шаг к кнопке у лаза уводил обратно в шахту, и бот падал (23.11)
+    if (b.entity.position.offset(0, 1.6, 0).distanceTo(p.offset(0.5, 0.5, 0.5)) > 4) await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
     if (b.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) return '';
     await b.lookAt(p.offset(0.5, 0.5, 0.5), true);
     await b.activateBlock(b.blockAt(p));
