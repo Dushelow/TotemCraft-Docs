@@ -189,6 +189,10 @@ class Guard {
       if (!outmatched) this.retreatSaid = 0;
       // мало здоровья - зелье лечения, если есть
       if (b.health <= 8 && Date.now() - (this.potAt || 0) > 4000) this.drinkHeal().catch(() => {});
+      // тотем сработал посреди боя - следующий сразу во вторую руку (gear() в бою не работает)
+      { const off = b.inventory.slots[45]; const tot = b.inventory.items().find((i) => i.name === 'totem_of_undying'); if (tot && (!off || off.name !== 'totem_of_undying') && b.health <= 12 && Date.now() - (this.totAt || 0) > 1500) { this.totAt = Date.now(); b.equip(tot, 'off-hand').then(() => tb.log('новый тотем во второй руке')).catch(() => {}); } }
+      if (!outmatched) this.buffs(foes.length).catch(() => {});
+      if (outmatched && b.health <= 6 && foes.length) this.pearlOut(foes).catch(() => {});
     }
     // бой не по силам или режим «убегать»: к хозяину или за укрытие
     if (t && (this.mode === 'flee' || outmatched)) {
@@ -249,12 +253,85 @@ class Guard {
     this.aimed = Math.abs(dy - sy) < 0.15 && Math.abs(dp - sp) < 0.15;
     const dist = t.position.distanceTo(b.entity.position);
     const kind = this.weaponKind(b.heldItem);
-    if (!wasAimed || dist > 3.0 || this.tick - this.lastHit < COOLDOWN[kind] + Math.floor(Math.random() * 3)) return;
+    const tn = this.name(t), isPlayer = t.type === 'player';
+    if (this.hitJit === undefined) this.hitJit = Math.floor(Math.random() * 3);
+    const left = COOLDOWN[kind] + this.hitJit - (this.tick - this.lastHit);   // тиков до полной силы удара
+    const off = b.inventory.slots[45], shield = off && off.name === 'shield';
+    const e = b.entity, falling = !e.onGround && e.velocity.y < -0.06 && !e.isInWater;
+    // Щит между ударами (как игроки): враг ближнего боя вплотную, оружие ещё не готово - закрыться; перед ударом опустить
+    if (shield && dist < 3.5 && !RANGED.test(tn) && tn !== 'creeper' && left > 6 && !this.blockingNow && !this.critJump) { try { b.activateItem(true); this.blockingNow = true; } catch {} }
+    if (this.blockingNow && left <= 3) { try { b.deactivateItem(); } catch {} this.blockingNow = false; }
+    // Критический удар: прыжок перед готовностью оружия, удар в падении (+50% урона). Обычная физика клиента: прыжок и
+    // удар во время падения - так бьёт любой игрок. Не против крипера (держать дистанцию), не в воде, не при малом здоровье
+    const critOk = kind !== 'hand' && dist < 3.2 && tn !== 'creeper' && !e.isInWater && b.health > 8 && !this.blockingNow && !b.getControlState('sneak');
+    // прыжок за 4-8 тиков до готовности: вверх ~6 тиков, падение совпадает с готовностью оружия
+    if (critOk && e.onGround && left >= 3 && left <= 8 && !this.critJump) {
+      this.critJump = this.tick; b.setControlState('jump', true);
+      setTimeout(() => { try { b.setControlState('jump', false); } catch {} }, 120);
+    }
+    if (this.critJump) {
+      if (e.onGround && this.tick - this.critJump > 3) { this.critJump = 0; this.landAt = this.tick; }   // приземлился - прыжок отыгран
+      else if (!falling) return;   // ещё летит вверх - ждать падения
+    }
+    if (!wasAimed || dist > 3.0 || left > 0) return;
+    // против игрока со щитом в руке - топором: выбивает щит на 5 с (если топор есть), потом снова меч
+    if (isPlayer && t.equipment && t.equipment[1] && t.equipment[1].name === 'shield' && !/_axe$/.test((b.heldItem || {}).name || '')) {
+      const axe = b.inventory.items().find((i) => /_axe$/.test(i.name));
+      if (axe && Date.now() - (this.axeAt || 0) > 5000) { this.axeAt = Date.now(); b.equip(axe, 'hand').catch(() => {}); return; }
+    }
     b.attack(t);   // use_entity, затем взмах (порядок 1.9+ по признаку версии в mineflayer)
-    this.lastHit = this.tick;
-    // после удара шаг назад: моб чаще промахивается (так дерутся игроки)
-    b.setControlState('back', true);
-    setTimeout(() => { try { b.setControlState('back', false); } catch {} }, this.name(t) === 'creeper' ? 450 : 250);
+    this.lastHit = this.tick; this.hitJit = Math.floor(Math.random() * 3); this.critJump = 0;
+    if (/_axe$/.test((b.heldItem || {}).name || '') && this.axeAt && Date.now() - this.axeAt < 3000) setTimeout(() => this.equipWeapon().catch(() => {}), 150);
+    if (isPlayer) {
+      // сброс бега (W-tap): отпустить «вперёд» на пару тиков - следующий удар снова с рывком и сильнее отбрасывает
+      b.setControlState('sprint', false); b.setControlState('forward', false);
+      setTimeout(() => { try { b.setControlState('forward', true); b.setControlState('sprint', true); } catch {} }, 110);
+      setTimeout(() => { try { if (!this.target || this.target.position.distanceTo(b.entity.position) < 2) b.setControlState('forward', false); } catch {} }, 400);
+    } else {
+      // после удара шаг назад: моб чаще промахивается (так дерутся игроки)
+      b.setControlState('back', true);
+      setTimeout(() => { try { b.setControlState('back', false); } catch {} }, tn === 'creeper' ? 450 : 250);
+    }
+  }
+
+  /** Перед серьёзным боем и по обстановке - зелья: сила и скорость (3+ врага, дуэль, рейд), огнестойкость (горю, лава). */
+  async buffs(foes) {
+    const b = this.bot, now = Date.now();
+    if (this.tb.eating || now - (this.buffAt || 0) < 8000) return;
+    const effects = b.entity.effects || {};
+    const has = (id) => Object.values(effects).some((x) => x && (x.id === id));
+    const want = [];
+    const burning = b.entity.metadata && (b.entity.metadata[0] & 1);
+    const lava = !!b.findBlock({ matching: (bl) => bl.name === 'lava', maxDistance: 4 });
+    if ((burning || lava) && !has(12)) want.push(/fire_resistance/);
+    if ((foes >= 3 || this.prey) && !has(5)) want.push(/strength/);
+    if ((foes >= 3 || this.prey) && !has(1)) want.push(/swiftness|speed/);
+    for (const re of want) {
+      const it = b.inventory.items().find((i) => /potion$/.test(i.name) && !/splash|lingering/.test(i.name) && re.test(JSON.stringify(i.components || i.nbt || '')));
+      if (!it) continue;
+      this.buffAt = now; this.tb.eating = true;
+      try { await b.equip(it, 'hand'); b.activateItem(); await new Promise((r) => setTimeout(r, 1700)); b.deactivateItem(); this.tb.log('зелье перед боем: ' + re.source); }
+      catch {} finally { this.tb.eating = false; await this.equipWeapon().catch(() => {}); }
+      return;
+    }
+  }
+
+  /** Бой проигран, здоровья мало: жемчуг Края подальше от врагов (последний шанс уйти). */
+  async pearlOut(foes) {
+    const b = this.bot, pearl = b.inventory.items().find((i) => i.name === 'ender_pearl');
+    if (!pearl || Date.now() - (this.pearlAt || 0) < 15000 || b.health > 6) return false;
+    const me = b.entity.position;
+    let away = null;
+    if (this.tb.steerAway) { const s2 = this.tb.steerAway(foes, 16); if (s2) away = new Vec3(s2.x + 0.5, s2.y, s2.z + 0.5); }
+    if (!away) return false;
+    this.pearlAt = Date.now(); this.tb.busyLook = true;
+    try {
+      await b.equip(pearl, 'hand');
+      const d = Math.hypot(away.x - me.x, away.z - me.z);
+      await b.lookAt(away.offset(0, Math.min(6, d * 0.25), 0), true);   // чуть выше - жемчуг летит дугой
+      b.activateItem(); this.tb.log(`жемчуг к ${Math.floor(away.x)} ${Math.floor(away.z)} - ухожу из боя`);
+    } catch {} finally { this.tb.busyLook = false; await this.equipWeapon().catch(() => {}); }
+    return true;
   }
 
   /** Уйти из-под удара: к хозяину, иначе за укрытие - место прочь от врагов, куда их взгляд упирается в блок. */
