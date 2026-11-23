@@ -731,6 +731,26 @@ class TotemBot extends EventEmitter {
     // над головой блок - прыгать бесполезно (удар о потолок Vulcan видит как Jump C): только шаг назад
     const head = b.blockAt(b.entity.position.offset(0, 2.2, 0));
     if (!swim && head && head.boundingBox === 'block') { b.setControlState('back', true); setTimeout(() => { try { b.setControlState('back', false); if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 400); return; }
+    // застрял, а цель рядом за стеной (скрытая дверь, хозяин прошёл через поршни): кнопка, рычаг, плита (23.11)
+    {
+      const g = b.pathfinder.goal, gp = g && (g.entity ? g.entity.position : (g.x !== undefined ? { x: g.x, y: g.y, z: g.z } : null));
+      if (gp && this.stuck.tries <= 2 && !this._mechBusy) {
+        this._mechBusy = true;
+        this.useMechanism(gp, this.token).then((m) => { if (m) { this.log(m + ' - пробую пройти'); try { b.pathfinder.setGoal(g, true); } catch {} } }).catch(() => {}).finally(() => { this._mechBusy = false; });
+      }
+    }
+    // у забора, стены, калитки - не прыжок назад (23.11: «прыгает нонстопом, ходит задом» - так выбирался каждые 5 с),
+    // а шаг вбок вдоль забора, по очереди влево и вправо
+    {
+      const fl = p.floored();
+      const fence = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]].some(([dx, dz]) => { const k = b.blockAt(fl.offset(dx, 0, dz)); return k && /_fence|_wall$|_gate$|iron_bars|_pane$/.test(k.name); });
+      if (!swim && fence) {
+        const side = (this._sideFlip = !this._sideFlip) ? 'left' : 'right';
+        b.setControlState(side, true);
+        setTimeout(() => { try { b.setControlState(side, false); if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 350);
+        return;
+      }
+    }
     const dir = swim ? 'forward' : 'back';
     b.setControlState('jump', true);
     b.setControlState(dir, true);
