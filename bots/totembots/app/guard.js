@@ -76,8 +76,8 @@ class Guard {
     // «мобов не трогаю», а бьют уже не раз и здоровье падает - защищаться самому, не ждать просьбы (23.11: фантомы
     // били стоящего бота, режим был «off»); через 30 с без ударов - прежний режим
     this.hits = (this.hits || []).filter((t) => now - t < 8000).concat(now);
-    if (this.mode === 'off' && near && this.isHostile(near) && (this.hits.length >= 2 || b.health <= 12)) {
-      this.mode = 'defend'; this.autoDefend = now; this.tb.log('меня бьют - защищаюсь сам (режим «не трогать мобов» на время)');
+    if (this.mode === 'off' && near && this.isHostile(near) && (this.hits.length >= 3 && b.health <= 10)) {
+      this.mode = 'defend'; this.autoDefend = now; this.tb.log('загнали и бьют, здоровье ' + Math.round(b.health) + ' - отбиваюсь (крайний случай)');
       if (this.tb.brainHook) this.tb.brainHook('[итог] на меня напали (' + this.name(near) + ') - тело само включило защиту на время боя');
     }
   }
@@ -191,11 +191,20 @@ class Guard {
     // заранее (23.11: скелет подошёл, пока здоровье было полное, а бот стоял в «мобов не трогаю» и потом погиб;
     // крипер подходил к хозяину): враг в 10 бл. от бота или хозяина, здоровье >= 14 - защита на время, бить первым.
     // Крипер, пока не шипит, бьётся с отбросом - отогнать от хозяина
-    if (this.mode === 'off' && b.health >= 14) {
+    if (this.mode === 'off') {
       const own = this.owner(), op = own && own.position;
       const pre = Object.values(b.entities).find((e) => e !== b.entity && e.position && this.isHostile(e) && !NEUTRAL.has(this.name(e)) && this.name(e) !== 'warden'
         && !(/^(ghast|phantom)$/.test(this.name(e))) && (e.position.distanceTo(me) < 10 || (op && e.position.distanceTo(op) < 8)));
-      if (pre) { this.mode = 'defend'; this.autoDefend = Date.now(); tb.log('враг рядом (' + this.name(pre) + ') - защищаю заранее'); if (tb.brainHook) tb.brainHook('[итог] рядом ' + this.name(pre) + ' - тело само включило защиту на время'); }
+      // режим «не трогать» значит не трогать: не нападать, а отойти от врага заранее, к хозяину (не ждать ударов)
+      if (pre && pre.position.distanceTo(me) < 8 && (!this.dodgeAt || Date.now() - this.dodgeAt > 1500)) {
+        this.dodgeAt = Date.now();
+        const s = tb.steerAway ? tb.steerAway([pre], 8) : null;
+        const away = s ? new Vec3(s.x + 0.5, s.y, s.z + 0.5) : me.minus(pre.position).normalize().scaled(8).plus(me);
+        if (!this.dodging) { this.dodging = true; tb.log('рядом ' + this.name(pre) + ' - отхожу, не трогаю (режим «не трогать»)'); }
+        b.pathfinder.setGoal(new goals.GoalNear(away.x, away.y, away.z, 1), false);
+        return;
+      }
+      if (!pre && this.dodging) { this.dodging = false; this.resume(); }
     }
     const t = this.pick();
     // Бой по силам? (23.11: зашёл на сервер без брони, полез на скелета с мечом и за 10 с умер от стрел.) Враги в 16 бл.;
