@@ -30,12 +30,17 @@ class Survey {
       }
     };
     look('отсюда');
-    const report = [];
+    const report = [], lines = [];   // пройденные линии: тот же проход, увиденный с другого места, - не новый (стенд 23.11: 10 «проходов» из 3)
+    const sameLine = (r) => {
+      const mx = (r.e1.x + r.e2.x) / 2, mz = (r.e1.z + r.e2.z) / 2, L = Math.hypot(r.e2.x - r.e1.x, r.e2.z - r.e1.z) || 1, ux = (r.e2.x - r.e1.x) / L, uz = (r.e2.z - r.e1.z) / L;
+      // та же прямая И тот же пройденный отрезок (север и юг через зал - одна прямая, но разные проходы)
+      return lines.some((l) => { const t = (mx - l.x) * l.ux + (mz - l.z) * l.uz; return Math.abs(ux * l.ux + uz * l.uz) > 0.9 && Math.abs(-(mx - l.x) * l.uz + (mz - l.z) * l.ux) < 3 && t > -2 && t < (l.len || 0) + 2; });
+    };
     // проходы по очереди: ближний конец - вход, дальний - куда идти (до 30 бл. за раз)
     for (let guard = 0; guard < 10 && Date.now() < until; guard++) {
       this.check(tok);
       const me = b.entity.position;
-      const cand = seen.filter((x) => !done.has(x.k)).map((x) => {
+      const cand = seen.filter((x) => !done.has(x.k) && !sameLine(x.r)).map((x) => {
         const d1 = Math.hypot(x.r.e1.x - me.x, x.r.e1.z - me.z), d2 = Math.hypot(x.r.e2.x - me.x, x.r.e2.z - me.z);
         const near = d1 < d2 ? x.r.e1 : x.r.e2, far = d1 < d2 ? x.r.e2 : x.r.e1;
         return { ...x, near, far, d: Math.min(d1, d2) };
@@ -43,13 +48,22 @@ class Survey {
       const c = cand[0]; if (!c) break;
       done.add(c.k);
       const L = Math.hypot(c.far.x - c.near.x, c.far.z - c.near.z) || 1, ux = (c.far.x - c.near.x) / L, uz = (c.far.z - c.near.z) / L;
+      // продолжение уже пройденного (та же прямая, тот же ход, начало у его конца) - дописать в ту же запись
+      const cont = lines.find((l) => ux * l.ux + uz * l.uz > 0.9 && Math.abs(-(c.near.x - l.x) * l.uz + (c.near.z - l.z) * l.ux) < 3 && Math.abs((c.near.x - l.x) * l.ux + (c.near.z - l.z) * l.uz - l.len) < 6);
+      const line = cont || { x: c.near.x, z: c.near.z, ux, uz, len: 0 }; if (!cont) lines.push(line);
+      // проход идёт от меня в сторону, где я уже был (обратно к началу), - не новый
+      if (Math.hypot(c.far.x - start.x, c.far.z - start.z) < Math.hypot(c.near.x - start.x, c.near.z - start.z) - 2 && Math.hypot(c.near.x - start.x, c.near.z - start.z) > 6) continue;
       const go = Math.min(L, 30), tx = Math.round(c.near.x + ux * go), tz = Math.round(c.near.z + uz * go);
       let reached = true;
       try { await this.goto(new goals.GoalNearXZ(tx, tz, 2), tok, 40000); } catch (e) { if (this.isCancel(e)) throw e; reached = false; }
       const p = b.entity.position;
-      const what = this.surveySpot(p);
+      line.len = Math.max(line.len, (p.x - line.x) * ux + (p.z - line.z) * uz);   // пройденная часть прямой
+      // кончается ли: дальше по той же линии проходимо ещё 4 бл.?
+      const ahead = (() => { for (let k = 1; k <= 5; k++) { const x = Math.floor(p.x + ux * k), z = Math.floor(p.z + uz * k); const f = b.blockAt(new Vec3(x, Math.floor(p.y), z)), h = b.blockAt(new Vec3(x, Math.floor(p.y) + 1, z)); if (!f || !h || f.boundingBox !== 'empty' || h.boundingBox !== 'empty' || /chest|barrel|bed|table|furnace/.test(f.name)) return false; } return true; })();
+      const what = this.surveySpot(p, 7);
       const name = `${c.r.label ? '«' + c.r.label + '» ' : ''}${c.r.kind || 'дорога'} из ${c.r.mat[0]} на ${dirName(ux, uz)}`;
-      report.push(`${name}: ${reached ? 'прошёл ' + Math.round(Math.hypot(p.x - c.near.x, p.z - c.near.z)) + ' бл.' : 'не прошёл'}${c.r.more ? ', идёт дальше' : ', кончается'}${what ? '; там: ' + what : ''}`);
+      const entry = `${name}: ${reached ? 'прошёл ' + Math.round(line.len) + ' бл.' : 'не прошёл'}${ahead ? ', идёт дальше' : ', кончается'}${what ? '; там: ' + what : ''}`;
+      if (cont && line.ri !== undefined) report[line.ri] = entry; else { line.ri = report.length; report.push(entry); }
       // связь: отсюда по этому проходу туда
       if (reached && this.memory) this.linkAdd({ a: `${Math.floor(c.near.x)} ${Math.floor(c.near.z)}`, b: `${Math.floor(p.x)} ${Math.floor(p.z)}`, how: name + (what ? ' (' + what + ')' : ''), dim, ax: c.near.x, az: c.near.z, bx: p.x, bz: p.z });
       look(name);
@@ -64,6 +78,16 @@ class Survey {
   surveySpot(p, r = 20) {
     const b = this.bot, out = [];
     try { const n = b.findBlocks({ point: p, matching: b.registry.blocksByName.nether_portal.id, maxDistance: r, count: 50 }); if (n.length) out.push(`портал у ${n[0].x} ${n[0].y} ${n[0].z}`); } catch {}
+    // приметные блоки рядом: сундуки, кровати, верстаки, печи, рабочие места жителей, кафедры, колокол
+    try {
+      const NOTE = { chest: 'сундук', barrel: 'бочка', _bed: 'кровать', crafting_table: 'верстак', furnace: 'печь', lectern: 'кафедра', bell: 'колокол', anvil: 'наковальня', enchanting_table: 'стол зачарований', brewing_stand: 'варочная стойка', composter: 'компостер', smoker: 'коптильня' };
+      const found = {};
+      for (const v of b.findBlocks({ point: p, matching: (bl) => Object.keys(NOTE).some((k) => bl.name === k || bl.name.endsWith(k)), maxDistance: Math.min(r, 8), count: 40 })) {
+        const n = b.blockAt(v).name, k = Object.keys(NOTE).find((q) => n === q || n.endsWith(q)); found[NOTE[k]] = (found[NOTE[k]] || 0) + 1;
+      }
+      const t = Object.entries(found).map(([n, c]) => (c > 1 ? `${n} x${c}` : n)).join(', ');
+      if (t) out.push(t);
+    } catch {}
     const ents = Object.values(b.entities).filter((e) => e !== b.entity && e.position && e.position.distanceTo(p) < r);
     const vill = ents.filter((e) => e.name === 'villager').length, pl = ents.filter((e) => e.type === 'player').map((e) => e.username);
     const foes = ents.filter((e) => this.guard && this.guard.isHostile && this.guard.isHostile(e)).map((e) => e.name);

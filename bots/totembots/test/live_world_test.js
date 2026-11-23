@@ -8,6 +8,7 @@
 //   7) загон с жителем на прямом пути: обойти, калитки не открывать;
 //   8) прогулка: шагом, не по прямой, с остановками, не дальше радиуса;
 //   10) «это наш дом» с улицы - метка внутри дома;
+//   13) мебель: обойти сундуки; 14) обследование тоннелей; 15) «покажу дорогу» и пройти самому; 16) торговля с дальним жителем;
 //   11) бой с 3 зомби: удары в прыжке, щит; 12) 2 скелета, бот без оружия и брони - уйти, не умереть;
 //   9) квест: пшеница -> хлеб -> хозяину -> поспать, если ночь; перед этим бот сидит на ступеньке;
 //   (всё внутри границы мира стенда ±1500: за ней сервер возвращает игрока на спавн)
@@ -187,6 +188,81 @@ const tpSure = async (bot, who, x, y, z) => { for (let i = 0; i < 12; i++) { con
       rcon('minecraft:kill @e[tag=cz]');
     }
     rcon('time set day'); rcon('difficulty peaceful'); tb.opts.life = true;
+  }
+
+  // 13. мебель в доме: ряд сундуков поперёк комнаты, проход сбоку - обойти, не идти по сундукам
+  if (!only || only === 13) {
+    const X = 1100, Y = 64, Z = 1400; await area(X, Z);
+    rcon(`fill ${X - 9} ${Y - 5} ${Z - 6} ${X + 9} ${Y - 1} ${Z + 6} stone`); rcon(`fill ${X - 9} ${Y} ${Z - 6} ${X + 9} ${Y + 4} ${Z + 6} air`);
+    rcon(`fill ${X - 7} ${Y} ${Z - 4} ${X + 7} ${Y + 3} ${Z + 4} oak_planks hollow`);   // комната со стенами, полом-крышей
+    rcon(`fill ${X - 6} ${Y} ${Z - 3} ${X + 6} ${Y + 2} ${Z + 3} air`);
+    rcon(`fill ${X} ${Y} ${Z - 3} ${X} ${Y} ${Z + 1} chest`);   // сундуки поперёк, проход у z+2..z+3
+    await tpSure(owner, 'TbOwner', X + 4, Y, Z - 2); await tpSure(tb, 'TbAlex', X - 4, Y, Z - 2);
+    await sleep(1500);
+    let maxY = -99; const spy = setInterval(() => { const q = tb.bot.entity.position; if (Math.abs(q.x - X) < 0.8) maxY = Math.max(maxY, q.y); }, 50);
+    tb.follow('TbOwner');
+    const t = await until(() => tb.bot.entity.position.x > X + 1.5, 25000);
+    clearInterval(spy); tb.cancel && tb.cancel();
+    ok('в комнате обошёл сундуки через проход, а не по ним', t && maxY < Y + 0.5, t ? `${(t / 1000).toFixed(1)} с, высота над сундуками ${maxY === -99 ? 'не был' : maxY.toFixed(2)}` : 'не дошёл');
+  }
+
+  // 14. обследование: перекрёсток тоннелей в камне - пройти по веткам, рассказать, связи записаны
+  if (!only || only === 14) {
+    const X = 1200, Y = 64, Z = 1300; await area(X, Z, 40);
+    rcon(`fill ${X - 32} ${Y - 2} ${Z - 32} ${X + 32} ${Y + 4} ${Z + 32} stone`);
+    rcon(`fill ${X - 2} ${Y} ${Z - 2} ${X + 2} ${Y + 2} ${Z + 2} air`);   // зал
+    rcon(`fill ${X} ${Y} ${Z - 28} ${X + 1} ${Y + 1} ${Z - 3} air`); rcon(`fill ${X} ${Y} ${Z + 3} ${X + 1} ${Y + 1} ${Z + 28} air`);   // север, юг
+    rcon(`fill ${X + 3} ${Y} ${Z} ${X + 28} ${Y + 1} ${Z + 1} air`);                                                                 // восток
+    rcon(`fill ${X + 2} ${Y + 4} ${Z - 2} ${X + 2} ${Y + 4} ${Z - 2} glowstone`);
+    rcon(`setblock ${X} ${Y} ${Z - 27} chest`);   // в конце северного - сундук
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X},y=${Y},z=${Z},distance=..40]`);
+    rcon(`summon villager ${X + 26} ${Y} ${Z} {NoAI:1b,PersistenceRequired:1b}`);   // в конце восточного - житель
+    await tpSure(tb, 'TbAlex', X, Y, Z); await sleep(2000);
+    tb.opts.life = false;
+    const n0 = ((tb.memory.data.links) || []).length;
+    const r = await tb.run([{ act: 'survey', radius: 40 }], 'обследуй', 'master').catch((e) => 'ошибка: ' + e.message);
+    tb.opts.life = true;
+    const dirs = ['север', 'юг', 'восток'].filter((d) => r.includes('на ' + d)).length;
+    const links = ((tb.memory.data.links) || []).length - n0;
+    ok('обследование: 3 тоннеля пройдены и описаны, житель найден, связи записаны', dirs >= 3 && /жител/.test(r) && links >= 3, `${dirs} направления, связей ${links}; ${r.slice(0, 260)}`);
+    const back = tb.bot.entity.position.distanceTo(new (tb.bot.entity.position.constructor)(X, Y, Z));
+    ok('после обследования вернулся в зал', back < 4, back.toFixed(1) + ' бл.');
+  }
+
+  // 15. «покажу дорогу»: хозяин идёт Г-образным путём, бот следом записывает; потом с начала - пройти самому
+  if (!only || only === 15) {
+    const X = 1000, Y = 64, Z = 1400; await area(X, Z, 40);
+    rcon(`fill ${X - 5} ${Y - 3} ${Z - 5} ${X + 35} ${Y - 1} ${Z + 35} stone`); rcon(`fill ${X - 5} ${Y} ${Z - 5} ${X + 35} ${Y + 4} ${Z + 35} air`);
+    rcon(`fill ${X + 3} ${Y} ${Z - 5} ${X + 3} ${Y + 3} ${Z + 28} stone`);   // стена: напрямую не пройти, только в обход через z+30
+    await tpSure(owner, 'TbOwner', X, Y, Z); await tpSure(tb, 'TbAlex', X - 2, Y, Z); await sleep(1500);
+    const r0 = await tb.run([{ act: 'teach', name: 'склад', who: 'TbOwner' }], 'покажу дорогу', 'master').catch((e) => 'ошибка: ' + e.message);
+    const path = []; for (let z = Z; z <= Z + 30; z += 2) path.push([X, z]); for (let x = X; x <= X + 30; x += 2) path.push([x, Z + 30]); for (let z = Z + 30; z >= Z + 10; z -= 2) path.push([X + 30, z]);
+    for (const [x, z] of path) { tp('TbOwner', x, Y, z); await sleep(450); }
+    await sleep(2500);
+    const r1 = await tb.run([{ act: 'teachStop' }], 'пришли', 'master').catch((e) => 'ошибка: ' + e.message);
+    const rec = tb.routeFind && tb.routeFind('склад');
+    ok('дорога записана за хозяином', rec && rec.pts.length > 10, `${r0}; ${r1}`);
+    await tpSure(tb, 'TbAlex', X, Y, Z); await sleep(1500);
+    const t0 = Date.now();
+    const r2 = await tb.run([{ act: 'route', name: 'склад' }], 'по дороге', 'master').catch((e) => 'ошибка: ' + e.message);
+    const end = tb.bot.entity.position;
+    ok('прошёл показанную дорогу сам (в обход стены)', Math.hypot(end.x - X - 30, end.z - Z - 10) < 4, `${r2}; конец у ${Math.floor(end.x)} ${Math.floor(end.z)}, ${((Date.now() - t0) / 1000).toFixed(0)} с`);
+  }
+
+  // 16. торговля: ближний житель за стеклом (не подойти), дальний фермер в 30 бл. - пойти к нему
+  if (!only || only === 16) {
+    const X = 1200, Y = 64, Z = 1400; await area(X, Z, 40);
+    rcon(`fill ${X - 8} ${Y - 5} ${Z - 8} ${X + 38} ${Y - 1} ${Z + 8} stone`); rcon(`fill ${X - 8} ${Y} ${Z - 8} ${X + 38} ${Y + 5} ${Z + 8} air`);
+    rcon(`minecraft:kill @e[type=!minecraft:player,x=${X + 15},y=${Y},z=${Z},distance=..40]`);
+    const farmer = (x) => `summon villager ${x} ${Y} ${Z} {NoAI:1b,PersistenceRequired:1b,VillagerData:{profession:"minecraft:farmer",level:2,type:"minecraft:plains"},Offers:{Recipes:[{buy:{id:"minecraft:wheat",count:20},sell:{id:"minecraft:emerald",count:1},maxUses:16,rewardExp:1b}]}}`;
+    rcon(`fill ${X + 3} ${Y - 1} ${Z - 2} ${X + 7} ${Y + 3} ${Z + 2} glass hollow`); rcon(farmer(X + 5));   // за стеклом - не подойти
+    rcon(farmer(X + 32));                                                                                      // дальний, открытый
+    await tpSure(tb, 'TbAlex', X, Y, Z); rcon('clear TbAlex'); rcon('minecraft:give TbAlex minecraft:wheat 64'); await sleep(2500);
+    tb.opts.life = false;
+    const r = await tb.run([{ act: 'trade', want: 'emerald', times: 1 }], 'торговля', 'master').catch((e) => 'ошибка: ' + e.message);
+    tb.opts.life = true;
+    const em = tb.bot.inventory.items().filter((i) => i.name === 'emerald').reduce((s2, i) => s2 + i.count, 0);
+    ok('ближний житель недоступен - пошёл к дальнему и поторговался', em > 0, `${r.slice(0, 200)}; изумрудов ${em}`);
   }
 
   // 2. висячие лианы над водой

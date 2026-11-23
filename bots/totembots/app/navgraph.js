@@ -88,6 +88,8 @@ class NavGraph {
   }
   teachStop(timeout) {
     const T = this._teach; if (!T) return 'я ничего не записывал';
+    // «пришли» - где хозяин стоит сейчас, это и есть конец дороги (последний шаг мог не попасть в запись)
+    try { const e = this.player && this.player(T.who); if (e) { const p = e.position, last = T.pts[T.pts.length - 1], dim = this.dimName ? this.dimName() : ''; if (!last || Math.hypot(last.x - p.x, last.z - p.z) > 1.5) T.pts.push({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim }); } } catch {}
     this._teach = null;
     if (T.pts.length < 2) return 'дорога слишком короткая - не записал';
     const m = this.memory;
