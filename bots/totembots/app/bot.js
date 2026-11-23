@@ -604,7 +604,7 @@ class TotemBot extends EventEmitter {
     // в портале после перехода не стоять - затянет обратно (16.11: «сколько раз говорил!!!»); только если не заходим нарочно
     {
       const at = b.blockAt(b.entity.position);
-      if (at && at.name === 'nether_portal' && !this.portalTask && Date.now() - (this.arrivedAt || 0) > 1500 && Date.now() - (this.portalStepAt || 0) > 4000) {
+      if (at && at.name === 'nether_portal' && !this.portalTask && !(this.mode === 'follow' && this.followName && !this.player(this.followName)) && Date.now() - (this.arrivedAt || 0) > 1500 && Date.now() - (this.portalStepAt || 0) > 4000) {
         this.portalStepAt = Date.now();
         const p0 = b.entity.position.floored();
         const out = [[1, 0], [-1, 0], [0, 1], [0, -1], [2, 0], [-2, 0], [0, 2], [0, -2]].map(([dx, dz]) => p0.offset(dx, 0, dz))

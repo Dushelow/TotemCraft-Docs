@@ -611,7 +611,12 @@ class Brain {
       // длинный чат тянет старые привычки (22.11: «просто общается» - в чате сотни прошлых ответов «спрошу хозяина»):
       // после 120 обменов или при новой вводной - свежий чат; память и дела приходят с первым же сообщением
       this.botCfg.chatTurns = (this.botCfg.chatTurns || 0) + 1;
-      const stale = this.botCfg.chatId && (this.botCfg.chatTurns > 250 || this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg)));
+      // правила обновились - новую вводную в тот же чат, а не новый чат (новый чат в проекте Qwen грузился по 20-30 с и
+      // не находил поле ввода, 23.11); новый чат - только когда старый совсем длинный
+      if (this.botCfg.chatId && this.botCfg.chatTurns <= 250 && this.botCfg.warmHash !== hash(warmText(this.cfg(), this.botCfg))) {
+        try { await this.warm(this.botCfg.chatId); this.log('правила обновились - отправил новую вводную в тот же чат'); } catch (e) { this.log('вводная в тот же чат не ушла: ' + e.message); }
+      }
+      const stale = this.botCfg.chatId && this.botCfg.chatTurns > 250;
       if (stale) { this.log(`новый чат: ${this.botCfg.chatTurns > 250 ? 'старый длинный (' + this.botCfg.chatTurns + ' обменов)' : 'обновились правила'}`); this.botCfg.chatId = ''; this.botCfg.chatTurns = 1; this.save(); this.pending.push({ line: '[память] ' + (this.memory ? this.memory.digest(this.botCfg.name).replace(/^\[память\]\n/, '') : ''), from: '@self' }); }
       if (!this.botCfg.chatId) await this.warm();
       batch = this.pending.splice(0);
