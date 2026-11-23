@@ -343,10 +343,12 @@ function install(mv, bot) {
         if ((ax || az) && (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
         let y = node.y - 1;
         if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
-        if (!CL.test((blk(x, y, z) || {}).name || '') && cell(x, y, z).boxes.length) continue;
         let n = 0;
-        while (n < 40 && (CL.test((blk(x, y, z) || {}).name || '') || !cell(x, y, z).boxes.length) && !cell(x, y - 1, z).boxes.length) { y--; n++; }
-        if (n < 2 || cell(x, y, z).boxes.length || cell(x, y - 1, z).bad) continue;
+        // лестница - тонкая рамка, тоже «boxes»: считать пустой. Пол - твёрдое и не лестница
+        const isCL = (yy) => CL.test((blk(x, yy, z) || {}).name || '');
+        const free = (yy) => isCL(yy) || !cell(x, yy, z).boxes.length;
+        while (n < 40 && free(y) && free(y - 1)) { y--; n++; }
+        if (n < 1 || !free(y) || cell(x, y - 1, z).bad || !cell(x, y - 1, z).boxes.length) continue;
         const k = `${x},${y},${z}`; if (have.has(k)) continue;
         have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.6, [], []); m.swim = true; out.push(m);
       }
