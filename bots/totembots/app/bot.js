@@ -246,7 +246,7 @@ class TotemBot extends EventEmitter {
       // иду за хозяином, а до него прохода нет (он за скрытой дверью, в закрытой комнате): путь «частичный» уводит в
       // обход куда попало - 23.11 убежал вниз в пещеры и заблудился. Не уходить: стоять, ждать, пробовать механизм
       try {
-        if (this.mode !== 'follow' || r.status !== 'partial' || !this._followEnt || !r.path.length) return;
+        if (this._mechBusy || this.mode !== 'follow' || r.status !== 'partial' || !this._followEnt || !r.path.length) return;
         const own = this._followEnt.position, me = bot.entity.position, end = r.path[r.path.length - 1];
         if (!own || me.distanceTo(own) > 24 || end.distanceTo(own) <= 4) return;
         if (end.distanceTo(own) < me.distanceTo(own) - 2) return;   // частичный, но ведёт ближе - пусть идёт
