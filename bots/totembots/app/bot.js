@@ -1471,7 +1471,7 @@ class TotemBot extends EventEmitter {
    * Дом рядом с точкой, если сама точка на улице (23.11: хозяин сказал «дом вот белый», стоя на дороге и глядя на дом, -
    * метка встала на улице). Кровать под крышей, иначе дверь: клетка за ней под крышей; в сторону взгляда хозяина - вперёд.
    */
-  houseSpot(p, yaw) {
+  houseSpot(p, yaw, all) {
     const b = this.bot, R = 24;
     const fac = (q) => { if (yaw === undefined) return 0; const ang = Math.atan2(-(q.x - p.x), -(q.z - p.z)); let d = Math.abs(ang - yaw) % (2 * Math.PI); if (d > Math.PI) d = 2 * Math.PI - d; return d < 1.2 ? -8 : 0; };
     const score = (q) => Math.hypot(q.x - p.x, q.z - p.z) + fac(q);
@@ -1491,7 +1491,39 @@ class TotemBot extends EventEmitter {
       }
     } catch {}
     cands.sort((u, w) => score(u) - score(w));
+    if (all) return cands;
     return cands[0] || null;
+  }
+
+  /**
+   * Какой дом - непонятно (рядом ни одного или несколько): спросить хозяина и взять дом, на который он посмотрит
+   * (до 90 с; взгляд держится на одном месте 1,5 с). Работает телом, без нейросети - лимит Qwen не мешает.
+   */
+  askHouse(name, boss, dim, who) {
+    const b = this.bot;
+    if (this._houseAsk) clearInterval(this._houseAsk.t);
+    this.say('Какой дом? Посмотрите на него, я запомню.', 'whisper', boss);
+    const st = { until: Date.now() + 90000, key: '', since: 0 };
+    st.t = setInterval(() => {
+      try {
+        const o = this.player(boss);
+        if (Date.now() > st.until || !b || !b.entity) { clearInterval(st.t); this._houseAsk = null; if (Date.now() > st.until) this.say('Не понял(а), какой дом. Скажите «это наш дом», стоя внутри него.', 'whisper', boss); return; }
+        if (!o) return;
+        const eye = o.position.offset(0, 1.62, 0), dir = new Vec3(-Math.sin(o.yaw) * Math.cos(o.pitch), Math.sin(o.pitch), -Math.cos(o.yaw) * Math.cos(o.pitch));
+        const hit = b.world.raycast(eye, dir, 48);
+        if (!hit || !hit.position) { st.key = ''; return; }
+        const k = `${Math.floor(hit.position.x / 3)},${Math.floor(hit.position.z / 3)}`;
+        if (k !== st.key) { st.key = k; st.since = Date.now(); return; }
+        if (Date.now() - st.since < 1500) return;
+        const h = this.houseSpot(hit.position);
+        if (!h || Math.hypot(h.x - hit.position.x, h.z - hit.position.z) > 12) return;   // смотрит не на дом - ждать
+        clearInterval(st.t); this._houseAsk = null;
+        const r = this.memory.place({ name, x: h.x, y: h.y, z: h.z, dim }, who);
+        this.log(`${r} - дом, на который посмотрел ${boss} (${h.why})`);
+        this.say('Запомнил(а), это наш дом.', 'whisper', boss);
+      } catch {}
+    }, 500);
+    this._houseAsk = st;
   }
 
   remember(a, by) {
@@ -1520,7 +1552,12 @@ class TotemBot extends EventEmitter {
       // «это дом», а стоим на улице - метку в сам дом рядом (у кровати или за дверью), в сторону взгляда хозяина
       if (a.x === undefined && /(дом|база|хата|жиль)/i.test(String(a.name || '')) && !this.roofed(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z))) {
         const boss = (this.opts.masters || []).map((n) => this.player(n)).find((e) => e && e.position.distanceTo(p) < 12);
-        const h = this.houseSpot(boss ? boss.position : p, boss ? boss.yaw : undefined);
+        const all = this.houseSpot(boss ? boss.position : p, boss ? boss.yaw : undefined, true);
+        // разные дома - кандидаты дальше 10 бл. друг от друга; ни одного или несколько - переспросить, не угадывать
+        const houses = []; for (const c of all) if (!houses.some((q) => Math.hypot(q.x - c.x, q.z - c.z) < 10)) houses.push(c);
+        const faced = boss && houses.length > 1 && (() => { const ang = (q) => { let d = Math.abs(Math.atan2(-(q.x - boss.position.x), -(q.z - boss.position.z)) - boss.yaw) % (2 * Math.PI); return d > Math.PI ? 2 * Math.PI - d : d; }; const f = houses.filter((q) => ang(q) < 0.5); return f.length === 1 ? f[0] : null; })();
+        const h = houses.length === 1 ? houses[0] : faced;
+        if (!h && boss) { this.askHouse(a.name, boss.username, a.dim || this.dimName(), who); return `«${a.name}»: ${houses.length ? 'рядом несколько домов' : 'дома рядом не вижу'} - спросил хозяина, какой; запомню, когда посмотрит на него`; }
         if (h) { const r0 = m.place({ name: a.name, x: h.x, y: h.y, z: h.z, dim: a.dim || this.dimName(), note: a.note }, who); return `${r0} - в доме ${h.why} (стояли на улице)`; }
       }
       return m.place({ name: a.name, x: a.x ?? Math.floor(p.x), y: a.y ?? Math.floor(p.y), z: a.z ?? Math.floor(p.z), dim: a.dim || this.dimName(), note: a.note }, who);
