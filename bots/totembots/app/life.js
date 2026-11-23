@@ -25,6 +25,7 @@ function home(tb) {
   return all.filter((p) => p.kind === 'моя кровать' || (/^кровать у/i.test(p.name) && /спал/.test(p.note || ''))).sort((a, b) => b.at - a.at)[0] || null;
 }
 
+const ownerNear0 = (tb) => (tb.opts.masters || []).some((n) => tb.player && tb.player(n) && tb.bot && tb.player(n).position.distanceTo(tb.bot.entity.position) < 12);
 function needs(tb) {
   const b = tb.bot, me = b.entity.position, out = [];
   const t = b.time && b.time.timeOfDay;
@@ -45,6 +46,16 @@ function needs(tb) {
   if (h && over && t !== undefined && t < 11000 && Date.now() - (tb.lifeHarvestAt || 0) > 5 * 60000) {
     const ripe = b.findBlock({ matching: (bl) => /^(wheat|carrots|potatoes|beetroots)$/.test(bl.name) && bl.getProperties && +bl.getProperties().age >= (bl.name === 'beetroots' ? 3 : 7), maxDistance: 12 });
     if (ripe && !tb.skills.builtNear(ripe.position, 0) && Math.hypot(ripe.position.x - h.x, ripe.position.z - h.z) < 40) out.push({ k: 'урожай', s: 25, why: 'спелый урожай у дома', crop: ripe.name });
+  }
+  // дома без дел - иногда посидеть на стуле (ступенька или полублок под крышей на уровне пола, не лестница), раз в 10 мин
+  if (!out.length && !ownerNear0(tb) && h && Math.hypot(h.x - b.entity.position.x, h.z - b.entity.position.z) < 16 && Date.now() - (tb.chairAt || 0) > 10 * 60000 && Date.now() - (tb.ownerAskAt || 0) > 3 * 60000) {
+    const roof = (v) => { for (let dy = 1; dy <= 6; dy++) { const k = b.blockAt(v.offset(0, dy, 0)); if (k && k.boundingBox === 'block') return true; } return false; };
+    const chair = b.findBlock({ matching: (bl) => /_stairs$|_slab$/.test(bl.name) && (!/_slab$/.test(bl.name) || String(bl.getProperties().type) === 'bottom'), maxDistance: 10, useExtraInfo: (bl) => {
+      if (!roof(bl.position)) return false;
+      const up = b.blockAt(bl.position.offset(0, 1, 0)); if (!up || up.boundingBox !== 'empty') return false;
+      for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const dy of [1, -1]) { const k = b.blockAt(bl.position.offset(dx, dy, dz)); if (k && /_stairs$|_slab$/.test(k.name)) return false; }   // пролёт лестницы
+      return true; } });
+    if (chair) out.push({ k: 'посидеть', s: 22, why: 'присел посидеть дома', chair: chair.position });
   }
   // делать нечего: хозяина рядом нет, давно ничего не просил - прогуляться у дома или где стоит, а не стоять истуканом
   // (23.11, владелец: «как в Скайриме компаньоны ходят что-то делают даже без нейронки»)
@@ -72,6 +83,11 @@ async function act(tb, n, tok) {
   if (n.k === 'тяжело') {
     if (Math.hypot(h.x - b.entity.position.x, h.z - b.entity.position.z) > 12) await tb.walkTo({ x: h.x, y: h.y, z: h.z }, tok, 300000);
     await tb.stash({}, tok).catch((e) => tb.log('выложить не вышло: ' + e.message));
+    return;
+  }
+  if (n.k === 'посидеть') {
+    tb.chairAt = Date.now();
+    if (tb.sitNear && await tb.sitNear(n.chair)) { if (tb.seat) tb.seat.chill = Date.now() + 60000 + Math.random() * 120000; }
     return;
   }
   if (n.k === 'прогулка') { await tb.stroll({ radius: n.center ? 16 : 12, ms: 60000 + Math.random() * 60000, center: n.center }, tok); return; }

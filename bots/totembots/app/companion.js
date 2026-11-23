@@ -53,6 +53,11 @@ class Companion {
     if (this.presenceTick) this.presenceTick(owner, now);
     if (this.moodTick) this.moodTick(owner, now);   // оси настроения и реплики по месту, как у Сераны (mood.js)   // тихий шаг, личное место, помощь, комментарии (presence.js)
     // сидит рядом с хозяином (gestures.js): хозяин встал и пошёл - встать и следом
+    // сам присел посидеть дома (life.js «посидеть»): сидеть, пока не время вышло и нет дела; хозяин рядом - как обычно
+    if (this.seat && this.seat.chill && !owner) {
+      if (Date.now() > this.seat.chill || this.mode !== 'idle' || !b.vehicle) { this.seat.chill = 0; this.standUp().catch(() => {}); }
+      return;
+    }
     if (this.seat) {
       const up = !owner || now - C.stillSince < 1500 || owner.position.distanceTo(b.entity.position) > 8 || this.mode !== 'follow';
       if (up || !b.vehicle) { this.standUp().then(() => { if (this.mode === 'follow' && owner) try { b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); } catch {} }).catch(() => {}); }
