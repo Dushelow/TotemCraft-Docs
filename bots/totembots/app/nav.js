@@ -90,7 +90,7 @@ function install(mv, bot) {
   mv._penPenalty = penPenalty;
 
   // мебель и крыша (см. цену шага)
-  const FURN = /_stairs$|_slab$|_trapdoor$|_fence$|_wall$|^(barrel|chest|trapped_chest|ender_chest|crafting_table|smithing_table|fletching_table|cartography_table|loom|stonecutter|grindstone|anvil|chipped_anvil|damaged_anvil|lectern|composter|cauldron|water_cauldron|lava_cauldron|brewing_stand|enchanting_table|furnace|blast_furnace|smoker|bookshelf|chiseled_bookshelf|decorated_pot|flower_pot|.*_bed|.*_shulker_box|shulker_box|jukebox|note_block|beehive|bell|.*_banner|scaffolding|.*_carpet)$/;
+  const FURN = /_stairs$|_slab$|_trapdoor$|_fence$|_wall$|^(barrel|chest|trapped_chest|ender_chest|crafting_table|smithing_table|fletching_table|cartography_table|loom|stonecutter|grindstone|anvil|chipped_anvil|damaged_anvil|lectern|composter|cauldron|water_cauldron|lava_cauldron|brewing_stand|enchanting_table|furnace|blast_furnace|smoker|bookshelf|chiseled_bookshelf|decorated_pot|flower_pot|.*_bed|.*_shulker_box|shulker_box|jukebox|note_block|beehive|bell|.*_banner|scaffolding)$/;
   function roofedAt(x, y, z) { for (let dy = 2; dy <= 7; dy++) { const k = blk(x, y + dy, z); if (k && k.boundingBox === 'block') return true; } return false; }
   // пролёт лестницы: рядом ступень или полублок на уровень выше или ниже (стулья и диваны стоят на одном уровне с полом)
   function flight(x, sy, z, name) {
