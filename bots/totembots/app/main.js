@@ -730,7 +730,7 @@ function freshProfile(dir) {
   return dir;
 }
 async function loginSite(site) {
-  const status = (t) => win.webContents.send('qwen-login-status', t);
+  const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   if (!SITES[site]) return { ok: false };
   try {
     const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-' + site)), status, site);
@@ -753,7 +753,7 @@ ipcMain.handle('site-test', async (_e, site) => { try { const r = await webChat(
 // Вход в DeepSeek через настоящий Chrome (встроенное окно Google не пускает): куки и userToken - в окно DeepSeek
 ipcMain.handle('deepseek-login-chrome', () => loginDeepseek());
 async function loginDeepseek() {
-  const status = (t) => win.webContents.send('qwen-login-status', t);
+  const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   try {
     const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-deepseek')), status, 'deepseek');
     const ds = dsView.webContents.session;
@@ -774,7 +774,7 @@ async function loginDeepseek() {
 const SAME_SITE = { Strict: 'strict', Lax: 'lax', None: 'no_restriction' };
 ipcMain.handle('qwen-login-chrome', () => loginQwen());
 async function loginQwen() {
-  const status = (t) => win.webContents.send('qwen-login-status', t);
+  const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   try {
     const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login')), status);
     const qs = qwen.webContents.session;
