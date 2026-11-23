@@ -617,7 +617,7 @@ class TotemBot extends EventEmitter {
     if (!this.busyLook && !this._waterBy) {   // busyLook - бот сам ведёт движение; в воде клавиши у swim.js
       const here = b.blockAt(b.entity.position.offset(0, 1, 0));
       const inWater = here && /water|kelp|seagrass|bubble_column/.test(here.name);
-      if (inWater && !b.pathfinder.isMoving()) { b.setControlState('jump', true); this.swimming = true; }
+      if (inWater && !b.pathfinder.isMoving() && !this._trailBusy) { b.setControlState('jump', true); this.swimming = true; }
       else if (this.swimming) { b.setControlState('jump', false); this.swimming = false; }
     }
     this.notice().catch(() => {});
@@ -1299,13 +1299,18 @@ class TotemBot extends EventEmitter {
           if (Math.hypot(t.x - p.x, t.z - p.z) < 0.6 && Math.abs(t.y - p.y) < 1.2) break;
           await b.lookAt(t.offset(0, 1.5, 0), true);
           const wet = /water/.test((b.blockAt(p) || {}).name || '');
-          ctl('forward', true); ctl('sprint', true); ctl('jump', wet || t.y - p.y > 0.4);
+          // в воде - вперёд под водой, не всплывать (23.11: всплывал и не проходил в проём секретной двери); прыжок -
+          // только к точке выше вплотную (выход на уступ), присед - если точка ниже (нырнуть)
+          const up = t.y - p.y, near = Math.hypot(t.x - p.x, t.z - p.z) < 1.5;
+          ctl('forward', true); ctl('sprint', true);
+          ctl('jump', wet ? (up > 0.6 && near) : up > 0.4);
+          ctl('sneak', wet && up < -0.3);
           await new Promise((r) => setTimeout(r, 50));
         }
         if (this.mode !== 'follow') break;
         const own = this.player(who); if (own && own.position.distanceTo(b.entity.position) < 3) break;
       }
-    } finally { ctl('forward', false); ctl('sprint', false); ctl('jump', false); }
+    } finally { ctl('forward', false); ctl('sprint', false); ctl('jump', false); ctl('sneak', false); }
     try { const e = this.player(who); if (this.mode === 'follow' && e) b.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true); } catch {}
     return `прошёл следом за ${who}`;
   }
