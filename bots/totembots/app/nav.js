@@ -345,7 +345,8 @@ function install(mv, bot) {
           for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ly of [node.y + 1, node.y + 2]) {
             const x = node.x + ax, z = node.z + az;
             const fl = cell(x, ly - 1, z);
-            if (!fl.boxes.length || fl.bad || CL.test((fl.b || {}).name || '') || cell(x, ly, z).boxes.length || cell(x, ly + 1, z).boxes.length) continue;
+            const roomy = (c) => !c.boxes.length || /ladder|vine|_button$|torch|_sign$|carpet|pressure_plate|^lever$/.test((c.b || {}).name || '');
+            if (!fl.boxes.length || fl.bad || CL.test((fl.b || {}).name || '') || !roomy(cell(x, ly, z)) || !roomy(cell(x, ly + 1, z))) continue;
             if (ly === node.y + 2 && cell(node.x, node.y + 2, node.z).boxes.length && !openHatch(cell(node.x, node.y + 2, node.z))) continue;   // низко над головой - не прыгнуть
             const k = `${x},${ly},${z}`; if (have.has(k)) continue;
             have.add(k); const m = new Move(x, ly, z, node.remainingBlocks, 2.5, [], []); m.ladderTop = true; out.push(m);
