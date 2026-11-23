@@ -119,8 +119,10 @@ function steer(tb, dx, dy, dz, head, go) {
     const hv = Math.hypot(e.velocity.x, e.velocity.z), now = Date.now();
     if (b.getControlState('forward') && hv < 0.03) tb._against = tb._against || now; else if (hv > 0.08) tb._against = 0;
     if (tb._against && now - tb._against > 700) {
-      b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('jump', false); b.setControlState('sneak', true);
-      face(tb, dx, -0.4, dz, 1);
+      // мелко (вода по пояс, течение в канале) - прыжками вперёд, как игрок; глубоко - рывком под водой
+      const deepW = isWater(b, p.offset(0, 1.6, 0).floored()) && isWater(b, p.offset(0, 2.6, 0).floored());
+      b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('jump', !deepW); b.setControlState('sneak', false);
+      face(tb, dx, deepW ? -0.4 : 0, dz, 1);
       if (!tb._againstSaid || now - tb._againstSaid > 10000) { tb._againstSaid = now; tb.log('течение держит - плыву рывком под водой'); }
       return;
     }

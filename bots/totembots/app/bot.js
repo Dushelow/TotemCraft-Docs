@@ -1687,7 +1687,7 @@ class TotemBot extends EventEmitter {
           await b.lookAt(new Vec3(t.x, t.y + 1.5, t.z), true);
           const near = Math.hypot(t.x - q.x, t.z - q.z) < 0.35;
           const wet = b.entity.isInWater;
-          ctl('forward', !near); ctl('sprint', !lad);   // в воде тоже бегом: против течения у стены иначе стоит ctl('jump', (t.y > q.y + 0.4) || (wet && t.y > q.y - 0.1)); ctl('sneak', wet && t.y < q.y - 0.3);   // в воде к точке ниже - нырнуть
+          ctl('forward', !near); ctl('sprint', !lad);   // в воде тоже бегом: против течения у стены иначе стоит ctl('jump', (t.y > q.y + 0.4) || (wet && t.y > q.y - 0.1)); ctl('sneak', false);   // в воде ниже - просто без прыжка (присед своя физика в воде не знает)
           await sleep(50);
         }
         if (process.env.TB_DEBUG_BACK) { const q = b.entity.position; this.log(`назад: точка ${i} ${t.x.toFixed(1)} ${t.y.toFixed(1)} ${t.z.toFixed(1)} - я ${q.x.toFixed(1)} ${q.y.toFixed(1)} ${q.z.toFixed(1)}${b.entity.isInWater ? ' вода' : ''}`); }
@@ -1713,18 +1713,41 @@ class TotemBot extends EventEmitter {
     const tried = (this._mechTried = this._mechTried && Date.now() - this._mechTried.at < 60000 ? this._mechTried : { at: Date.now(), set: new Set() });
     const gp = goal.x !== undefined ? new Vec3(goal.x, goal.y ?? me.y, goal.z) : me;
     const near = (p) => { for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) { const k = b.blockAt(p.offset(dx, dy, dz)); if (k && GATE.test(k.name)) return true; } return false; };
-    const cands = b.findBlocks({ matching: (bl) => CTRL.test(bl.name), maxDistance: 16, count: 40 })
-      .filter((p) => !tried.set.has(p.toString()) && near(p))
+    if ((this._mechBudget = (this._mechBudget && Date.now() - this._mechBudget.at < 60000 ? this._mechBudget : { at: Date.now(), n: 0 })).n >= 4) return '';   // не больше 4 механизмов в минуту (23.11: жал кнопки по всему городу)
+    const cands = b.findBlocks({ matching: (bl) => CTRL.test(bl.name), maxDistance: 10, count: 40 })
+      .filter((p) => !tried.set.has(p.toString()) && near(p) && (p.distanceTo(gp) < 12 || p.distanceTo(me) < 6))
       .sort((u, v) => (u.distanceTo(me) + u.distanceTo(gp) * 0.5) - (v.distanceTo(me) + v.distanceTo(gp) * 0.5));
     // сначала - то, что недавно нажимал хозяин (скрытая дверь: механизм может быть далеко от поршней)
     const own = (this._ownerMech || []).filter((x) => !tried.set.has(x.k) && x.p.distanceTo(me) < 32).sort((u, v) => u.p.distanceTo(me) - v.p.distanceTo(me)).map((x) => x.p);
     const p = own[0] || cands[0];
     if (!p) return '';
+    this._mechBudget.n++;
+    if (process.env.TB_DEBUG_BACK) this.log(`механизм: выбран ${b.blockAt(p).name} у ${p.x} ${p.y} ${p.z}`);
     tried.set.add(p.toString());
     const bl = b.blockAt(p);
     if (/_pressure_plate$/.test(bl.name)) {
       // плита: встать на неё (в воде - доплыть), постоять, пока откроется
       await this.goto(new goals.GoalBlock(p.x, p.y, p.z), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
+      // не встал (вода над плитой, течение, низкий потолок) - руками: лицом к плите, вперёд, ниже - присесть (опуститься в
+      // воде), выше - прыжок (23.11 стенд: плита в канале у секретной стены, бот держался у поверхности)
+      if (b.entity.position.floored().x !== p.x || b.entity.position.floored().z !== p.z) {
+        const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
+        try { b.pathfinder.setGoal(null); } catch {}   // модуль пути не должен жать своё (в воде - прыжок, всплыть)
+        const t1 = Date.now(); this._trailBusy = true;   // «держать над водой» тела - не мешать опуститься к плите
+        try {
+          while (Date.now() - t1 < 4000) {
+            this.check(tok);
+            const q = b.entity.position;
+            if (Math.floor(q.x) === p.x && Math.floor(q.z) === p.z && Math.abs(q.y - p.y) < 0.6) break;
+            await b.lookAt(new Vec3(p.x + 0.5, p.y + 0.3, p.z + 0.5), true);
+            const hd = Math.hypot(p.x + 0.5 - q.x, p.z + 0.5 - q.z);
+            // присед в воде своя физика бота не знает (только замедляет): опускаться - отпустив прыжок, вверх на плиту - прыжком
+            ctl('forward', hd > 0.25); ctl('sprint', hd > 1); ctl('jump', q.y < p.y - 0.15 && hd < 1.6);
+            await sleep(50);
+          }
+        } finally { for (const k of ['forward', 'sprint', 'sneak', 'jump']) ctl(k, false); this._trailBusy = false; }
+        { const q = b.entity.position; this.log(`к плите ${p.x} ${p.y} ${p.z} руками: я ${q.x.toFixed(1)} ${q.y.toFixed(1)} ${q.z.toFixed(1)}`); }
+      }
       const fp = b.entity.position.floored();
       if (fp.x !== p.x || fp.z !== p.z || Math.abs(fp.y - p.y) > 1) return '';   // не дошёл до плиты (течение, стена)
       await sleep(300);   // поршням - полсекунды; дольше стоять нельзя: проход закрывается быстро (23.11)
@@ -1754,6 +1777,18 @@ class TotemBot extends EventEmitter {
     const gx = goal.x !== undefined ? goal.x : goal.entity ? null : null, gz = goal.z;
     let bestD = Infinity, bestAt = Date.now();
     const far = () => (gx === undefined || gx === null ? 0 : Math.hypot(b.entity.position.x - gx, b.entity.position.z - gz));
+    // цель недалеко (до 48 бл.), а путь целиком не строится - сначала механизм у входа рядом (плита, кнопка), потом идти:
+    // частичный путь уводил в пещеру, а механизм искался уже там (23.11 стенд: внутрь через секретную стену)
+    if (goal.x !== undefined && !this._preMech && far() < 48 && b.pathfinder.movements) {
+      try {
+        const pr = b.pathfinder.getPathTo(b.pathfinder.movements, goal, 600);
+        if (process.env.TB_DEBUG_BACK) this.log(`проверка пути до цели: ${pr && pr.status}`);
+        if (pr && pr.status !== 'success') {
+          this._preMech = true;
+          try { const m = await this.useMechanism({ x: goal.x, y: goal.y ?? b.entity.position.y, z: goal.z }, tok); if (m) this.log(m + ' - путь к цели был закрыт'); } finally { this._preMech = false; }
+        }
+      } catch (e) { if (e instanceof Cancelled) throw e; }
+    }
     for (let attempt = 0; ; attempt++) {
       let timer, watch;
       try {
@@ -1831,6 +1866,12 @@ class TotemBot extends EventEmitter {
             if (await this.climbOut(ledge)) { this.log('вылез из воды, продолжаю путь'); continue; }
             (this.badShore = this.badShore || []).push({ v: ledge.offset(0, -1, 0), at: Date.now() });   // в следующий раз - другой уступ
           }
+        }
+        // «пути нет» - проход закрыт (плита, кнопка, стена на поршнях): механизм рядом и снова, до 3 раз (23.11 стенд: внутрь
+        // через секретную стену с плитой в канале - сдавался сразу)
+        if (/no path/i.test(e.message) && (this._npMech = attempt === 0 ? 1 : (this._npMech || 0) + 1) <= 3 && Date.now() < until && goal.x !== undefined) {
+          const m = await this.useMechanism({ x: goal.x, y: goal.y ?? b.entity.position.y, z: goal.z }, tok).catch((er) => { if (er instanceof Cancelled) throw er; return ''; });
+          if (m) { this.log(m + ' - снова к цели'); await sleep(200); continue; }
         }
         if (!/goal was changed/i.test(e.message) || attempt >= 5 || Date.now() > until) throw e;
         for (let i = 0; i < (this.travelling ? 8 : 30) && this.guard && (this.guard.fighting || this.guard.fleeing); i++) { await sleep(1000); this.check(tok); }   // в дороге бой короткий

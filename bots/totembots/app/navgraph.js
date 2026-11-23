@@ -188,7 +188,7 @@ class NavGraph {
         if (Math.hypot(t.x - q.x, t.z - q.z) < 0.6 && Math.abs(t.y - q.y) < 1.2) return true;
         await b.lookAt(t.offset(0, 1.5, 0), true);
         const wet = /water/.test((b.blockAt(q) || {}).name || ''), upy = t.y - q.y;
-        ctl('forward', true); ctl('sprint', true); ctl('jump', wet ? upy > 0.6 : upy > 0.4); ctl('sneak', wet && upy < -0.3);
+        ctl('forward', true); ctl('sprint', true); ctl('jump', wet ? upy > 0.6 : upy > 0.4); ctl('sneak', false);
         await new Promise((r) => setTimeout(r, 50));
       }
       return false;
