@@ -1528,6 +1528,23 @@ class TotemBot extends EventEmitter {
     const SEED = { wheat: 'wheat_seeds', carrots: 'carrot', potatoes: 'potato', beetroots: 'beetroot_seeds' };
     let filled = 0, noSeed = new Set();
     const fl = b.registry.blocksByName.farmland.id;
+    // вытоптанная грядка - снова земля (23.11: просил засеять пустое на морковном поле - пустые клетки были землёй, не
+    // пашней, и он их не видел). Земля посреди поля (с двух сторон культура) - вскопать мотыгой, потом засеять
+    const soilIds = ['dirt', 'grass_block', 'coarse_dirt', 'dirt_path'].map((n) => b.registry.blocksByName[n] && b.registry.blocksByName[n].id).filter((x) => x !== undefined);
+    const hoe = () => b.inventory.items().filter((x) => /_hoe$/.test(x.name)).sort((x, y) => y.type - x.type)[0];
+    let noHoe = false;
+    const cropAt = (p) => { const n = b.blockAt(p); return n && SEED[n.name] ? n.name : null; };
+    for (const sp of b.findBlocks({ matching: soilIds, maxDistance: Math.min(r, 12), count: 300 })) {
+      this.check(tok);
+      const up = b.blockAt(sp.offset(0, 1, 0)); if (!up || up.name !== 'air') continue;
+      const nb = [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dz]) => cropAt(sp.offset(dx, 1, dz))).filter(Boolean);
+      if (nb.length < 2 || (want && SEED[want] && !nb.includes(want))) continue;   // не посреди поля - не трогать (дорожки, газон)
+      const h = hoe(); if (!h) { noHoe = true; break; }
+      try {
+        if (b.entity.position.distanceTo(sp.offset(0.5, 1, 0.5)) > 4.2) await this.goto(new goals.GoalNear(sp.x, sp.y + 1, sp.z, 2), tok, 15000);
+        await b.equip(h, 'hand'); await b.lookAt(sp.offset(0.5, 1, 0.5), true); await b.activateBlock(b.blockAt(sp)); await sleep(250);
+      } catch (e) { if (e instanceof Cancelled) throw e; }
+    }
     for (const sp of b.findBlocks({ matching: fl, maxDistance: r, count: 400 }).sort((u, v) => u.distanceTo(b.entity.position) - v.distanceTo(b.entity.position))) {
       this.check(tok);
       const up = b.blockAt(sp.offset(0, 1, 0));
@@ -1543,6 +1560,7 @@ class TotemBot extends EventEmitter {
         await b.placeBlock(b.blockAt(sp), new Vec3(0, 1, 0)); filled++;
       } catch (e) { if (e instanceof Cancelled) throw e; }
     }
+    if (noHoe) noSeed.add('мотыги (вскопать вытоптанное)');
     const tail = (filled ? `, засадил пустых грядок: ${filled}` : '') + (noSeed.size ? `; нечем засадить пустое: нет ${[...noSeed].join(', ')}` : '');
     if (a.sowOnly) return filled ? `засеял пустых грядок: ${filled}` + (noSeed.size ? `; не хватило: ${[...noSeed].join(', ')}` : '') : (noSeed.size ? `нечем засеять: нет ${[...noSeed].join(', ')}` : 'пустых грядок рядом нет');
     return (done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет') + tail;
