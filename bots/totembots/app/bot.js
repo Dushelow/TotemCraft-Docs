@@ -1499,7 +1499,8 @@ class TotemBot extends EventEmitter {
     const trail = [b.entity.position.clone()];
     const rec = () => { try { const q = b.entity.position, l = trail[trail.length - 1]; if (q.distanceTo(l) >= 0.7) trail.push(q.clone()); } catch {} };
     b.on('physicsTick', rec);
-    try { return await this.goOutsideInner(a, tok); } finally { b.removeListener('physicsTick', rec); if (trail.length > 3) this._lastExit = { pts: trail, at: Date.now() }; }
+    this._inSkill = true;   // свои шаги навыка: без «механизм до начала пути» в каждом goto
+    try { return await this.goOutsideInner(a, tok); } finally { this._inSkill = false; b.removeListener('physicsTick', rec); if (trail.length > 3) this._lastExit = { pts: trail, at: Date.now() }; }
   }
 
   async goOutsideInner(a, tok) {
@@ -1706,6 +1707,8 @@ class TotemBot extends EventEmitter {
 
   async useMechanism(goal, tok) {
     const b = this.bot, me = b.entity.position;
+    // только что сработал механизм - проход открыт: не бежать к другому, а идти (23.11 стенд: после кнопки ушёл к плите в канале)
+    if (Date.now() - (this._mechAt || 0) < 3000) return '';
     // на лестнице, в лиане или в прыжке - кнопки не жать: сначала встать на пол (23.11: жал кнопку, вися на лестнице, и
     // стена закрывалась раньше, чем он вылез)
     { const fk = b.blockAt(me); if (/ladder|vine|scaffolding/.test((fk || {}).name || '') || (!b.entity.onGround && !b.entity.isInWater)) return ''; }
@@ -1774,8 +1777,10 @@ class TotemBot extends EventEmitter {
     const snap = this.solidAround(8);
     await b.activateBlock(b.blockAt(p));
     this.dashAfterMech();
-    await sleep(150);   // поршням - доли секунды; дольше нельзя: стена открыта ~1,4 с (кнопка из дерева)
-    this._opened = { at: Date.now(), cells: snap.filter((v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty'; }) };
+    // ждать, пока откроется (до 0,8 с, проверка каждые 0,05): поршни срабатывают через 0,1-0,5 с, а стена открыта ~1,4 с
+    let cellsOpen = [];
+    for (let w = 0; w < 16 && !cellsOpen.length; w++) { await sleep(50); cellsOpen = snap.filter((v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty'; }); }
+    this._opened = { at: Date.now(), cells: cellsOpen };
     if (this._opened.cells.length) this.log(`открылся проход: ${this._opened.cells.slice(0, 4).map((v) => v.x + ' ' + v.y + ' ' + v.z).join('; ')}`);
     return `нажал ${bl.name} у ${p.x} ${p.y} ${p.z}`;
   }
@@ -1792,7 +1797,7 @@ class TotemBot extends EventEmitter {
     const far = () => (gx === undefined || gx === null ? 0 : Math.hypot(b.entity.position.x - gx, b.entity.position.z - gz));
     // цель недалеко (до 48 бл.), а путь целиком не строится - сначала механизм у входа рядом (плита, кнопка), потом идти:
     // частичный путь уводил в пещеру, а механизм искался уже там (23.11 стенд: внутрь через секретную стену)
-    if (goal.x !== undefined && !this._preMech && far() < 48 && b.pathfinder.movements) {
+    if (goal.x !== undefined && !this._preMech && !this._inSkill && far() < 48 && b.pathfinder.movements) {
       try {
         const pr = b.pathfinder.getPathTo(b.pathfinder.movements, goal, 600);
         if (process.env.TB_DEBUG_BACK) this.log(`проверка пути до цели: ${pr && pr.status}`);
