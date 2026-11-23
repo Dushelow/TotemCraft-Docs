@@ -199,7 +199,9 @@ class Guard {
       const o = this.odds(foes.length ? foes : [t]);
       const ranged = foes.some((e) => RANGED.test(this.name(e)));
       const shieldOn = b.inventory.slots[45] && b.inventory.slots[45].name === 'shield';
-      outmatched = o < 0.8 || b.health <= (ranged && !shieldOn ? 10 : 6);
+      // один стрелок рядом: убегать хуже всего (стрелы в спину, 23.11 умер так от скелета) - сблизиться и бить до 4 здоровья
+      const loneRanged = foes.length <= 1 && ranged && t.position.distanceTo(me) < 10;
+      outmatched = o < (loneRanged ? 0.5 : 0.8) || b.health <= (loneRanged ? 4 : ranged && !shieldOn ? 10 : 6);
       if (outmatched && !this.retreatSaid) { this.retreatSaid = Date.now(); tb.log(`бой не по силам (${o.toFixed(2)}: здоровье ${Math.round(b.health)}, броня ${this.armorPts()}, врагов ${foes.length}${ranged ? ', стрелки' : ''}) - ухожу из-под удара`); }
       if (!outmatched) this.retreatSaid = 0;
       // мало здоровья - зелье лечения, если есть
