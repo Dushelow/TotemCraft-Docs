@@ -188,6 +188,15 @@ class Guard {
     }
     if (this.fleeing) { this.fleeing = false; b.setControlState('sprint', false); this.resume(); }
 
+    // заранее (23.11: скелет подошёл, пока здоровье было полное, а бот стоял в «мобов не трогаю» и потом погиб;
+    // крипер подходил к хозяину): враг в 10 бл. от бота или хозяина, здоровье >= 14 - защита на время, бить первым.
+    // Крипер, пока не шипит, бьётся с отбросом - отогнать от хозяина
+    if (this.mode === 'off' && b.health >= 14) {
+      const own = this.owner(), op = own && own.position;
+      const pre = Object.values(b.entities).find((e) => e !== b.entity && e.position && this.isHostile(e) && !NEUTRAL.has(this.name(e)) && this.name(e) !== 'warden'
+        && !(/^(ghast|phantom)$/.test(this.name(e))) && (e.position.distanceTo(me) < 10 || (op && e.position.distanceTo(op) < 8)));
+      if (pre) { this.mode = 'defend'; this.autoDefend = Date.now(); tb.log('враг рядом (' + this.name(pre) + ') - защищаю заранее'); if (tb.brainHook) tb.brainHook('[итог] рядом ' + this.name(pre) + ' - тело само включило защиту на время'); }
+    }
     const t = this.pick();
     // Бой по силам? (23.11: зашёл на сервер без брони, полез на скелета с мечом и за 10 с умер от стрел.) Враги в 16 бл.;
     // не тянем - уйти из-под обстрела за укрытие или к хозяину, а не стоять под стрелами до 6 здоровья

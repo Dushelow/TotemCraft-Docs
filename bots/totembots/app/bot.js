@@ -1520,7 +1520,28 @@ class TotemBot extends EventEmitter {
       } catch (e) { if (e instanceof Cancelled) throw e; this.log('урожай: ' + pos.name + ': ' + e.message); } finally { this.busyLook = false; }
     }
     await this.pickup({ radius: 6 }, tok);
-    return done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет';
+    // пустые грядки (залысины) засадить: семенами культуры, которая растёт по соседству (23.11: собирал, а пустое так и
+    // оставалось). Семена - из просьбы (crop) или от соседей; нет семян - сказать
+    const SEED = { wheat: 'wheat_seeds', carrots: 'carrot', potatoes: 'potato', beetroots: 'beetroot_seeds' };
+    let filled = 0, noSeed = new Set();
+    const fl = b.registry.blocksByName.farmland.id;
+    for (const sp of b.findBlocks({ matching: fl, maxDistance: r, count: 400 }).sort((u, v) => u.distanceTo(b.entity.position) - v.distanceTo(b.entity.position))) {
+      this.check(tok);
+      const up = b.blockAt(sp.offset(0, 1, 0));
+      if (!up || up.name !== 'air') continue;
+      let crop = want && SEED[want] ? want : null;
+      if (!crop) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) { const n = b.blockAt(sp.offset(dx, 1, dz)); if (n && SEED[n.name]) { crop = n.name; break; } }
+      if (!crop) continue;
+      const s = b.inventory.items().find((x) => x.name === SEED[crop]);
+      if (!s) { noSeed.add(SEED[crop]); continue; }
+      try {
+        if (b.entity.position.distanceTo(sp.offset(0.5, 1, 0.5)) > 4.2) await this.goto(new goals.GoalNear(sp.x, sp.y + 1, sp.z, 2), tok, 15000);
+        if (!b.heldItem || b.heldItem.name !== s.name) await b.equip(s, 'hand');
+        await b.placeBlock(b.blockAt(sp), new Vec3(0, 1, 0)); filled++;
+      } catch (e) { if (e instanceof Cancelled) throw e; }
+    }
+    const tail = (filled ? `, засадил пустых грядок: ${filled}` : '') + (noSeed.size ? `; нечем засадить пустое: нет ${[...noSeed].join(', ')}` : '');
+    return (done ? `собрал урожай: ${done}, посадил обратно: ${replanted}` : 'спелого урожая рядом нет') + tail;
   }
 
   /**
@@ -1620,12 +1641,39 @@ class TotemBot extends EventEmitter {
     this._houseAsk = st;
   }
 
+  /** Центр связного участка культуры: ближайшая к точке (или к боту) грядка, заливка по соседям (зазор до 2 бл. - дорожки, вода). */
+  cropCenter(name, near) {
+    const b = this.bot, id = b.registry.blocksByName[name] && b.registry.blocksByName[name].id;
+    if (id === undefined) return null;
+    const ps = b.findBlocks({ matching: id, maxDistance: 24, count: 2000 });
+    if (!ps.length) return null;
+    const o = near ? new Vec3(+near.x, +near.y, +near.z) : b.entity.position;
+    const set = new Map(ps.map((p) => [p.x + ',' + p.z, p]));
+    const start = ps.sort((u, v) => u.distanceTo(o) - v.distanceTo(o))[0];
+    const seen = new Set([start.x + ',' + start.z]), q = [start], got = [];
+    while (q.length) {
+      const p = q.pop(); got.push(p);
+      for (let dx = -2; dx <= 2; dx++) for (let dz = -2; dz <= 2; dz++) { const k = (p.x + dx) + ',' + (p.z + dz); if (!seen.has(k) && set.has(k)) { seen.add(k); q.push(set.get(k)); } }
+    }
+    const xs = got.map((p) => p.x), zs = got.map((p) => p.z), ys = got.map((p) => p.y).sort((u, v) => u - v);
+    return { x: Math.round((Math.min(...xs) + Math.max(...xs)) / 2), z: Math.round((Math.min(...zs) + Math.max(...zs)) / 2), y: ys[ys.length >> 1], n: got.length, w: Math.max(...xs) - Math.min(...xs) + 1, l: Math.max(...zs) - Math.min(...zs) + 1 };
+  }
+
   remember(a, by) {
     const m = this.memory;
     if (!m) return 'памяти нет';
     const who = this.opts.name + (by ? ` (${by})` : '');
     const kind = a.kind || (a.text ? 'fact' : a.note && !a.x ? 'person' : 'place');
     if (kind === 'place') {
+      // поле культуры: центр считает тело - связный участок этой культуры рядом (23.11: мозг гадал координаты, морковь и
+      // картошку перепутал, ставил метки на краях участков)
+      const CROP = [[/морков|carrot/i, 'carrots'], [/картоф|картош|potato/i, 'potatoes'], [/пшени|wheat/i, 'wheat'], [/свекл|свёкл|beet/i, 'beetroots'], [/тыкв|pumpkin/i, 'pumpkin'], [/арбуз|melon/i, 'melon'], [/тростн|cane/i, 'sugar_cane'], [/бородав|wart/i, 'nether_wart']];
+      const cr = /пол[еяю]|грядк|огород|ферм|field|farm/i.test(String(a.name || '')) && CROP.find(([re]) => re.test(String(a.name)));
+      if (cr) {
+        const c = this.cropCenter(cr[1], a.x !== undefined ? a : null);
+        if (c) { a.x = c.x; a.y = c.y; a.z = c.z; a.note = (a.note ? a.note + '; ' : '') + `участок ${c.n} грядок, ${c.w}x${c.l}`; }
+        else return `не вижу рядом поля ${cr[1]} - подойди к нему ближе (до 24 бл.), тогда отмечу центр`;
+      }
       // дом и базу называет хозяин (22.11: при входе под водой у корабля мозг сам записал «база» - на дне, и потом
       // плыл туда и тонул)
       if (a.x === undefined && this.runSource !== 'master' && /^(мой |моя |наш |наша )?(дом|база|хата|жильё)/i.test(String(a.name || ''))) return `«${a.name}» не записываю: дом и базу называет хозяин`;
