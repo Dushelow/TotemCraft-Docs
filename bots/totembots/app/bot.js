@@ -1212,6 +1212,36 @@ class TotemBot extends EventEmitter {
   isCancel(e) { return e instanceof Cancelled; }
   get skills() { return this._skills || (this._skills = new Skills(this)); }
 
+  /**
+   * Механизм рядом: кнопка, рычаг, нажимная плита (в т.ч. под водой), у которых рядом дверь, люк, поршень, калитка.
+   * Ближайший к цели, ещё не тронутый в этот раз. Возвращает, что сделано, или ''.
+   */
+  async useMechanism(goal, tok) {
+    const b = this.bot, me = b.entity.position;
+    const CTRL = /(_button|^lever|_pressure_plate)$/, GATE = /(_door|_trapdoor|_fence_gate|^piston|^sticky_piston|piston_head|^iron_bars)$/;
+    const tried = (this._mechTried = this._mechTried && Date.now() - this._mechTried.at < 60000 ? this._mechTried : { at: Date.now(), set: new Set() });
+    const gp = goal.x !== undefined ? new Vec3(goal.x, goal.y ?? me.y, goal.z) : me;
+    const near = (p) => { for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) { const k = b.blockAt(p.offset(dx, dy, dz)); if (k && GATE.test(k.name)) return true; } return false; };
+    const cands = b.findBlocks({ matching: (bl) => CTRL.test(bl.name), maxDistance: 16, count: 40 })
+      .filter((p) => !tried.set.has(p.toString()) && near(p))
+      .sort((u, v) => (u.distanceTo(me) + u.distanceTo(gp) * 0.5) - (v.distanceTo(me) + v.distanceTo(gp) * 0.5));
+    const p = cands[0];
+    if (!p) return '';
+    tried.set.add(p.toString());
+    const bl = b.blockAt(p);
+    if (/_pressure_plate$/.test(bl.name)) {
+      // плита: встать на неё (в воде - доплыть), постоять, пока откроется
+      await this.goto(new goals.GoalBlock(p.x, p.y, p.z), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
+      await sleep(600);
+      return `встал на ${bl.name} у ${p.x} ${p.y} ${p.z}`;
+    }
+    await this.goto(new goals.GoalNear(p.x, p.y, p.z, 2), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
+    if (b.entity.position.distanceTo(p.offset(0.5, 0.5, 0.5)) > 4.5) return '';
+    await b.lookAt(p.offset(0.5, 0.5, 0.5), true);
+    await b.activateBlock(b.blockAt(p));
+    return `нажал ${bl.name} у ${p.x} ${p.y} ${p.z}`;
+  }
+
   async goto(goal, tok, timeoutMs = 120000) {
     const b = this.bot;
     const until = Date.now() + timeoutMs;
@@ -1261,6 +1291,12 @@ class TotemBot extends EventEmitter {
             try { this.log(`путь пустой - разбор: ${this.movements._nav.explain(f.x, f.y, f.z)}${fb && Date.now() - fb.at < 5000 ? '; запасная ходьба: ' + fb.why + ' у ' + fb.node : ''}`); } catch (e) { this.log('путь пустой - разбор не вышел: ' + e.message); }
           }
           if (attempt < 1 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(400); continue; }
+          // путь не строится, а рядом механизм (железная дверь, поршни, скрытый проход): нажать кнопку, рычаг, встать
+          // на плиту (и в воде) - и попробовать снова (23.11, хозяин: «научи проходить скрытые двери»)
+          if (attempt < 4 && (this._mechTries = (attempt === 0 ? 0 : this._mechTries || 0)) < 3) {
+            const m = await this.useMechanism(goal, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
+            if (m) { this._mechTries++; this.log(m + ' - пробую пройти снова'); await sleep(700); continue; }
+          }
           throw new Error(`не дошёл: путь не строится, до цели ${left} бл.`);
         }
         break;
