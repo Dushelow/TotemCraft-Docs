@@ -508,15 +508,20 @@ function install(mv, bot) {
   };
   const CLIMB = /^(ladder|vine|scaffolding|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/;
   const isHatch = (c) => c && c.b && /_trapdoor$/.test(c.b.name) && !/^iron_/.test(c.b.name);
-  const passable = (c, flip) => c && !c.bad && (!c.b || c.b.boundingBox === 'empty' || CLIMB.test(c.b.name) || flip);
+  const openHatch = (c) => isHatch(c) && (c.b.getProperties().open === true || c.b.getProperties().open === 'true');
+  const passable = (c, flip) => c && !c.bad && (!c.b || c.b.boundingBox === 'empty' || CLIMB.test(c.b.name) || openHatch(c) || flip);
   /**
    * Ходы через люк: вниз - стоит на люке (или над открытым), под ним лестница или пустота до пола (с лестницей до 24 бл.,
    * без - до 3); вверх - в столбе лестницы над головой люк, над ним пол рядом: выйти на соседнюю клетку.
    * Ход помнит люк в opens (want: открыт) - тело открывает его само (physicsTick ниже).
    */
   function hatches(node) {
-    const out = [], x = node.x, z = node.z, y = node.y;
-    // вниз: люк в клетке пола под ногами (или нижний люк в своей же клетке - стоит на нём)
+    const out = [], y = node.y;
+    // вниз: люк в клетке пола под ногами (или нижний люк в своей же клетке - стоит на нём). И в соседней клетке:
+    // шагнуть на люк и спуститься (23.11: лаз сбоку от места, люки на разной высоте - бот стоял, «пути нет»)
+    for (const [ax, az] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]) {
+    const x = node.x + ax, z = node.z + az;
+    if ((ax || az) && (!passable(cell(x, y + 1, z)) || (!passable(cell(x, y, z)) && !(isHatch(cell(x, y, z)) && cell(x, y, z).b.getProperties().half === 'bottom')))) continue;
     const own = cell(x, y, z), ownHatch = isHatch(own) && own.b.getProperties().half === 'bottom';
     const ty = ownHatch ? y : y - 1, t = ownHatch ? own : cell(x, y - 1, z);
     if (isHatch(t)) {
@@ -526,15 +531,20 @@ function install(mv, bot) {
         if (c.b && CLIMB.test(c.b.name)) { ladder = true; continue; }
         if (passable(c)) continue;
         if (c.bad) break;
+        // закрытый нижний люк - стоять в его же клетке (верх у 0,19 блока), а не на блок выше
+        if (isHatch(c) && !openHatch(c) && c.b.getProperties().half === 'bottom') { land = yy; break; }
         if (c.b && c.b.boundingBox === 'block') { land = yy + 1; break; }
         break;
       }
-      if (land !== null && (ladder || y - land <= 3) && passable(cell(x, land, z)) && passable(cell(x, land + 1, z))) {
+      const landOk = (yy) => passable(cell(x, yy, z)) || (isHatch(cell(x, yy, z)) && cell(x, yy, z).b.getProperties().half === 'bottom');
+      if (land !== null && (ladder || y - land <= 3) && landOk(land) && passable(cell(x, land + 1, z))) {
         const m = new Move(x, land, z, node.remainingBlocks, 2 + (y - land) * 0.3, [], []);
         m.opens = [{ x, y: ty, z, want: true }]; m.feet = land; m.cell = [x, z]; m.hatch = 'down';
         out.push(m);
       }
     }
+    }
+    const x = node.x, z = node.z;
     // вверх: в лестнице (или под ней), над головой через 1-6 клеток люк; над люком свободно и рядом пол
     const here = cell(x, y, z), up1 = cell(x, y + 1, z);
     if ((here.b && CLIMB.test(here.b.name)) || (up1.b && CLIMB.test(up1.b.name))) {
@@ -678,6 +688,17 @@ function install(mv, bot) {
         bot._navToggle = true;
         bot.lookAt(new Vec3(d.x + 0.5, d.y + 0.5, d.z + 0.5), true).then(() => { bot._navToggle = true; return bot.activateBlock(b); }).catch(() => {});
       }
+    }));
+    // спуск по лестнице или в лаз: над клеткой следующего шага, а он ниже - отпустить «вперёд» (в лестницу «вперёд» -
+    // это лезть вверх: 23.11 бот повисал на верху лаза и не спускался; стенд test/shaft_test.js)
+    bot.on('physicsTick', safe('nav-вниз', () => {
+      const path = bot._navPath, e = bot.entity;
+      if (!path || !path.length || !e) return;
+      const m = path[0], p = e.position;
+      const onLadder = /^(ladder|vine|scaffolding)$/.test((bot.blockAt(p) || {}).name || '');
+      const tol = onLadder || !e.onGround ? 0.3 : 0.12;   // ещё стоит наверху - дойти до середины (ребро люка держит тело)
+      if (m.y >= p.y - (onLadder ? 0.05 : 0.9) || Math.abs(m.x + 0.5 - p.x) > tol || Math.abs(m.z + 0.5 - p.z) > tol) return;
+      bot.setControlState('forward', false); bot.setControlState('sprint', false); bot.setControlState('jump', false);
     }));
     bot.on('physicsTick', safe('nav-двери', () => {
       const path = bot._navPath, me = bot.entity && bot.entity.position;

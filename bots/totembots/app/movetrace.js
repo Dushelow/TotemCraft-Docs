@@ -15,7 +15,9 @@ const CHAR = (b) => {
   if (/vine|ladder|scaffolding/.test(n)) return 'v';
   if (/_slab$|_stairs$/.test(n)) return '=';
   if (/_fence|_wall$|_pane|bars/.test(n)) return '|';
-  if (/door|trapdoor|gate/.test(n)) return 'D';
+  // люк: закрытый у верха блока - T, у низа - _, открытый - t (23.11: лаз с тремя люками на разной высоте)
+  if (/trapdoor/.test(n)) { const pr = b.getProperties ? b.getProperties() : {}; const op = pr.open === true || pr.open === 'true'; return op ? 't' : pr.half === 'top' ? 'T' : '_'; }
+  if (/door|gate/.test(n)) return 'D';
   if (/leaves/.test(n)) return '*';
   if (/nether_portal/.test(n)) return 'O';
   if (b.boundingBox === 'empty') return ',';   // трава, цветы, факелы - проходимо
@@ -49,7 +51,10 @@ class MoveTrace {
     const b = this.tb.bot, e = b.entity, f = e.position.floored(), out = [];
     const ents = {};
     for (const x of Object.values(b.entities)) { if (!x.position || x === e) continue; const q = x.position.floored(); ents[`${q.x},${q.y},${q.z}`] = x.type === 'player' ? 'P' : 'M'; }
-    for (let dy = 8; dy >= -3; dy--) {
+    // цель ниже (лаз, шахта) - срез до неё, до 24 бл. вниз
+    let low = -3;
+    try { const g = b.pathfinder.goal, gy = g && (g.entity ? g.entity.position.y : g.y); if (gy !== undefined && gy < f.y - 3) low = Math.max(-24, Math.floor(gy) - f.y - 1); } catch {}
+    for (let dy = 8; dy >= low; dy--) {
       const rows = [];
       for (let dz = -4; dz <= 4; dz++) {
         let r = '';
@@ -69,7 +74,7 @@ class MoveTrace {
     try {
       const f = path.join(this.dir, `${this.tb.opts.name}.move.log`);
       const head = `Движение ${this.tb.opts.name}, последние ${this.lines.length / 4} с (раз в 0,25 с). Клавиши: f вперёд, b назад, l/r вбок, j прыжок, S бег, n присед.\n`
-        + `Мир вокруг (9x9, север сверху, восток справа): # твёрдое . воздух ~ вода % водоросли v лиана/лестница = полублок/ступени | забор D дверь/люк * листва O портал , трава и т.п. B бот P игрок M моб\n\n`;
+        + `Мир вокруг (9x9, север сверху, восток справа): # твёрдое . воздух ~ вода % водоросли v лиана/лестница = полублок/ступени | забор D дверь, T люк закрыт (верх блока), _ люк закрыт (низ), t люк открыт * листва O портал , трава и т.п. B бот P игрок M моб\n\n`;
       fs.writeFileSync(f, head + this.world() + '\n\n' + this.lines.join('\n') + '\n');
     } catch {}
   }
