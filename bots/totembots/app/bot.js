@@ -1518,8 +1518,8 @@ class TotemBot extends EventEmitter {
       const y0 = b.entity.position.y;
       // идти к месту, только если путь туда строится целиком (частичные пути к разным крышам давали рывки туда-сюда)
       let full = null;
-      for (const q of cand.slice(0, 12)) {
-        try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 400); if (r && r.status === 'success') { full = q; break; } } catch {}
+      for (const q of cand.slice(0, 6)) {
+        try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 200); if (r && r.status === 'success') { full = q; break; } } catch {}
       }
       if (full) { try { await this.goto(new goals.GoalNear(full.x, full.y, full.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
       let f = b.entity.position.floored();
@@ -1537,10 +1537,15 @@ class TotemBot extends EventEmitter {
             done.push(m); moved = true;
             // проход открыт сейчас (кнопка, плита, стена на поршнях): сначала бегом к небу, если путь целый; нет - к лестнице
             // за проходом (23.11: после кнопки полез в шахту вниз, а проход наружу был рядом)
-            let out2 = null;
-            for (const q of cand.slice(0, 12)) { try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 250); if (r && r.status === 'success') { out2 = q; break; } } catch {} }
-            if (out2) { try { await this.goto(new goals.GoalNear(out2.x, out2.y, out2.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
-            else { try { const c = await this.climbLadder({ dir: 'up', toward: { x: best.x, z: best.z } }, tok); if (/поднялся/.test(c)) done.push(c); } catch (e) { if (this.isCancel(e)) throw e; } }
+            // лестница вверх в 4 бл. - сразу на неё и бегом (23.11: после кнопки 5 с считал пути, стена закрылась);
+            // нет лестницы - коротко: путь к небу через открытый проход
+            const ladNear = b.findBlocks({ matching: (bl) => bl.name === 'ladder', maxDistance: 4, count: 10 }).some((q) => q.y >= Math.floor(b.entity.position.y) - 1);
+            if (ladNear) { try { const c = await this.climbLadder({ dir: 'up', toward: { x: best.x, z: best.z } }, tok); if (/поднялся/.test(c)) done.push(c); } catch (e) { if (this.isCancel(e)) throw e; } }
+            else {
+              let out2 = null;
+              for (const q of cand.slice(0, 4)) { try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 150); if (r && r.status === 'success') { out2 = q; break; } } catch {} }
+              if (out2) { try { await this.goto(new goals.GoalNear(out2.x, out2.y, out2.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
+            }
           }
         } catch (e) { if (this.isCancel(e)) throw e; }
       }

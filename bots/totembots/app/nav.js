@@ -720,12 +720,14 @@ function install(mv, bot) {
     const tog = new Map(), opened = new Map();
     // дверь на механизме: держит сигнал (powered) или рядом плита, кнопка, рычаг (до 2 бл.) - руками не трогать: плита сама
     // откроет и закроет, щелчок руками закрыл бы открытое плитой (23.11, владелец: плиты и кнопки перед дверями)
-    const autoDoor = (x, y, z, plateOnly) => {
+    // fromPos - откуда подходит бот: плита только с ЕГО стороны мешает открыть рукой (с той стороны - открыть и пройти, плита
+    // за ним закроет сама; 23.11: стоял перед дверью, плита была с другой стороны)
+    const autoDoor = (x, y, z, plateOnly, fromPos) => {
       const d = bot.blockAt(new Vec3(x, y, z)); if (!d) return false;
       const pr = d.getProperties ? d.getProperties() : {};
       if (pr.powered === true || pr.powered === 'true') return true;
       for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
-        const k = bot.blockAt(new Vec3(x + dx, y + dy, z + dz)); if (k && (plateOnly ? /_pressure_plate$/ : /_pressure_plate$|_button$|^lever$/).test(k.name)) return true;
+        const k = bot.blockAt(new Vec3(x + dx, y + dy, z + dz)); if (k && (plateOnly ? /_pressure_plate$/ : /_pressure_plate$|_button$|^lever$/).test(k.name)) { if (fromPos && dx * (fromPos.x - x - 0.5) + dz * (fromPos.z - z - 0.5) <= 0) continue; return true; }
       }
       return false;
     };
@@ -819,7 +821,7 @@ function install(mv, bot) {
         // уже открытая дверь или калитка на пути (открыл хозяин, 23.11 «двери не закрывает») - закрыть за собой
         if (open && o.want && !opened.has(k) && /_door$|_fence_gate$/.test(b.name)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: false, from: me.clone() });
         if (open === o.want || Date.now() - (tog.get(k) || 0) < 1500) continue;
-        if (/_door$|_fence_gate$/.test(b.name) && autoDoor(o.x, o.y, o.z, true)) continue;
+        if (/_door$|_fence_gate$/.test(b.name) && autoDoor(o.x, o.y, o.z, true, me)) continue;
         tog.set(k, Date.now());
         if (!opened.has(k)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: open, from: me.clone() });   // какой была до бота - закрыть потом
         bot._navToggle = true; bot.activateBlock(b).catch(() => {});   // эти закрывает путь сам (выше), не chores
