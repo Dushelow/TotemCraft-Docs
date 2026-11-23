@@ -700,7 +700,10 @@ class Brain {
       let rc = this.attn.replyChannel(chs, whisperFrom && whisperFrom.from);
       // Qwen может сам выбрать канал по смыслу (поле channel в JSON)
       // нейросеть просит общий, а обращались только рядом - всё равно ближний (общий - когда говорили в общем издалека)
-      if (r.channel === 'global' && chs.length && !chs.includes('global')) r.channel = 'local';
+      // кроме прямой просьбы хозяина «напиши в общий (чат)» (23.11: просил - а писал рядом)
+      const askGlobal = batch.some((x) => x.from && this.isMaster(x.from) && /(в )?(общ(ий|ем|ему)|глобальн\w*|глобал)( чат)?/i.test(x.line || ''));
+      if (r.channel === 'global' && chs.length && !chs.includes('global') && !askGlobal) r.channel = 'local';
+      if (askGlobal && r.say && r.channel !== 'whisper') r.channel = 'global';
       if (r.channel === 'global' || r.channel === 'local') {
         rc = { channel: r.channel };
         if (r.channel === 'global') this.attn.lastGlobalReply = Date.now();
