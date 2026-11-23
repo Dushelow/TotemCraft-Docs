@@ -1356,14 +1356,16 @@ class TotemBot extends EventEmitter {
     const b = this.bot, up = !/^(down|вниз)$/i.test(String(a.dir || ''));
     const CL = /^(ladder|vine|scaffolding)$/;
     const me = b.entity.position.floored();
-    const col = b.findBlocks({ matching: (bl) => CL.test(bl.name), maxDistance: 6, count: 60 })
+    // до 24 бл.: лестница бывает за дверью, в соседней комнате (23.11: «лестницы рядом не вижу», а она в 10 бл.)
+    const col = b.findBlocks({ matching: (bl) => CL.test(bl.name), maxDistance: 24, count: 400 })
       .filter((p) => up ? Math.abs(p.y - me.y) <= 2 : p.y < me.y && p.y >= me.y - 3)
       // есть цель - лестница, чей столб ближе к ней (23.11: полез по ближайшей - в автофермы, а в город вела другая)
       .sort((u, v) => a.toward ? (Math.hypot(u.x - a.toward.x, u.z - a.toward.z) + u.distanceTo(me) * 0.5) - (Math.hypot(v.x - a.toward.x, v.z - a.toward.z) + v.distanceTo(me) * 0.5) : u.distanceTo(me) - v.distanceTo(me))[0];
-    if (!col) return 'лестницы рядом не вижу (6 бл.)';
+    if (!col) return 'лестницы рядом не вижу (24 бл.)';
     const x = col.x, z = col.z;
     // встать в столб: снизу - в клетку лестницы на уровне ног, сверху - над ней
-    try { await this.goto(new goals.GoalNear(x + 0.5, up ? me.y : me.y, z + 0.5, 0.6), tok, 15000); } catch (e) { if (this.isCancel(e)) throw e; }
+    try { await this.goto(new goals.GoalNear(x + 0.5, col.y, z + 0.5, 0.6), tok, 30000); } catch (e) { if (this.isCancel(e)) throw e; }
+    if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 1.5) return `до лестницы у ${x} ${col.y} ${z} не дошёл`;
     const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
     const hatchOpen = async (yy) => {
       const h = b.blockAt(new Vec3(x, yy, z));
