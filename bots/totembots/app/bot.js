@@ -1432,7 +1432,7 @@ class TotemBot extends EventEmitter {
           if (b.entity.onGround && !CL.test((b.blockAt(new Vec3(x, fy - 1, z)) || {}).name || '') && Date.now() - t0 > 1500 && Math.abs(p.y - lastY) < 0.05) return `спустился по лестнице до ${fy}${opened ? `, открыл люков: ${opened}` : ''}`;
         }
         if (Math.abs(p.y - lastY) > 0.2) { lastY = p.y; still = Date.now(); }
-        else if (up && Date.now() - still > 1500 && !this._sideTried) {
+        else if (up && Date.now() - still > 700 && !this._sideTried) {   // наверху не ждать: 0,7 с без подъёма - выход вбок
           // вверх не лезется (люк, потолок) - выход сбоку, как игрок: с последней ступеньки прыгнуть на блок рядом
           // (23.11: поднялся до 68 и дёргался под люком, а выход был сбоку)
           this._sideTried = true;
