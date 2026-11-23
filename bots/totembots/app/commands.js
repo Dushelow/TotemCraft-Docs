@@ -89,7 +89,8 @@ const C = [
   ['look', 'inspect,view,see,check', 'что', 'посмотреть подробно: inventory, around, map, players, portals, online, memory', (a) => ({ act: 'look', what: a[0] || 'around' })],
   ['see', 'vision,watch,lookPicture', '[вопрос]', 'посмотреть глазами: картинка того, что видишь, и карта сверху -> описание словами (дорого, не чаще нужного)', (a) => ({ act: 'see', q: a[0] })],
   ['find', 'search,searchForBlock,locate', 'блок', 'просканировать чанки вокруг: где ближайшие такие блоки', (a) => ({ act: 'look', what: 'find', block: a[0] })],
-  ['rememberHere', 'remember,savePlace,setWaypoint', 'название[, заметка]', 'запомнить место, где стоишь', (a) => ({ act: 'remember', kind: 'place', name: a[0], note: a[1] })],
+  ['rememberHere', 'remember,savePlace,setWaypoint', 'название[, заметка]', 'запомнить место: где стоит хозяин или куда он смотрит под ноги (если он рядом), иначе где стоишь', (a) => ({ act: 'remember', kind: 'place', name: a[0], note: a[1] })],
+  ['rememberAt', 'savePlaceAt,markAt', 'название, x, y, z', 'запомнить место по координатам («незерхаб на нулях» - !rememberAt(незерхаб, 0, 32, 0))', (a) => ({ act: 'remember', kind: 'place', name: a[0], x: a[1], y: a[2], z: a[3] })],
   ['rememberPerson', 'person,aboutPlayer', 'ник, заметка', 'запомнить про человека', (a) => ({ act: 'remember', kind: 'person', name: a[0], note: a[1] })],
   ['note', 'fact,memo', 'текст', 'запомнить факт о сервере или мире', (a) => ({ act: 'remember', kind: 'fact', text: a[0] })],
   ['journal', 'diary,log', 'текст', 'записать в свой дневник', (a) => ({ act: 'remember', kind: 'journal', text: a[0] })],
@@ -128,6 +129,7 @@ function fixAct(name, a) {
   if (a.act === 'goto' && a.x !== undefined && !num(a.x)) return { act: 'goto_place', name: a.x };                        // !goTo(склад)
   if (a.act === 'goto' && !num(a.x)) return null;
   if (a.act === 'pickup' && a.radius !== undefined && !num(a.radius)) delete a.radius;
+  if (a.act === 'place' && /_boat$|_raft$|^boat$|лодк/.test(String(a.block || ''))) return { act: 'mount', what: 'boat' };   // !place(spruce_boat) - поставить лодку и сесть (23.11)
   if (a.act === 'give' && num(a.who)) return null;
   return a;
 }

@@ -181,6 +181,14 @@ class Travel {
     }
     // в другое измерение: портал, где сумма «до портала + от выхода до цели» меньше
     let best = null;
+    // из Незера в далёкую точку обычного мира: по Незеру до точки цели /8 и там выход (найти или построить), а не
+    // выйти у ближайшего портала и идти тысячи блоков пешком (23.11: из незерхаба к 200 -8125 пошёл обычным миром 7539 бл.)
+    if (here === 'nether' && there === 'overworld') {
+      const dn = conv(dest, 'overworld', 'nether');
+      const cost = this.legLen('nether', pos, dn) * NETHER_RISK + PORTAL_COST * 2;
+      best = { cost, steps: [{ do: 'find_portal', x: dn.x, z: dn.z, y: 64 }, { do: 'walk', ...dest }],
+        text: `по Незеру ${Math.round(dist(pos, dn))} бл. до ${dn.x} ${dn.z}, там выход в обычный мир` };
+    }
     for (const p of this.portals(here)) {
       const e = this.exitOf(p, here);
       const cost = this.legLen(here, pos, p) + PORTAL_COST + this.legLen(there, e, dest);

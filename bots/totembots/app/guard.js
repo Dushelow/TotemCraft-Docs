@@ -94,7 +94,7 @@ class Guard {
       if (/^(ghast|phantom)$/.test(n) && (e.position.y - me.y > 2.5 || n === 'ghast')) continue;
       // в дороге (поручение, дальний путь) не отвлекаться: драться только с тем, кто бьёт сейчас и стоит вплотную;
       // остальные - идти дальше (22.11: вместо путешествия стояла и дралась с мобами рядом)
-      if (this.tb.travelling && this.mode !== 'off' && !(((this.hurtBy.get(e.id) || 0) > Date.now() - 5000 && d < 4) || this.prey === e.id || this.blocking(e, d))) continue;
+      if (this.tb.travelling && this.mode !== 'off' && !(((this.hurtBy.get(e.id) || 0) > Date.now() - 5000 && d < 4) || this.prey === e.id || this.blocking(e, d) || (own && e.position.distanceTo(own.position) < 5 && d < 10))) continue;   // враг у хозяина - бить и в дороге (23.11: магма-куб рядом с хозяином, бот пробежал мимо)
       if (e.customName && !angry) continue;
       // защищаем: себя (до 8 блоков) и хозяина (моб в 6 блоках от него)
       const nearOwner = own && e.position.distanceTo(own.position) < 6;

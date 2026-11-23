@@ -652,6 +652,21 @@ class TotemBot extends EventEmitter {
     if (!b.pathfinder.isMoving() || this._waterBy === 'воздух') { this.stuck = null; return; }
     const p = b.entity.position;
     if (!this.stuck || p.distanceTo(this.stuck.at) > 1) { this.stuck = { at: p.clone(), since: Date.now(), tries: this.stuck ? this.stuck.tries : 0 }; return; }
+    // путь есть, а ни одна клавиша не нажата: модуль пути решил, что «не пройти» (тело у самого забора, фонаря, угла),
+    // и стоит минутами (23.11: у заборов с фонарями, «пройти было изи»). Как игрок: шаг к следующей точке пути руками,
+    // и путь заново - без прыжков и шагов назад
+    const keys = ['forward', 'back', 'left', 'right', 'jump'].some((k) => b.getControlState(k));
+    const nxt = ((this.lastPath || {}).path || []).find((n) => Math.hypot(n.x + 0.5 - p.x, n.z + 0.5 - p.z) > 0.6);
+    if (!keys && nxt && Date.now() - this.stuck.since > 1500 && Date.now() - (this._nudgeAt || 0) > 2500 && !b.vehicle && !this.busyLook) {
+      this._nudgeAt = Date.now();
+      this.log(`путь есть, а стою - шаг к ${Math.floor(nxt.x)} ${Math.floor(nxt.z)} сам`);
+      this.busyLook = true;
+      b.lookAt(new Vec3(nxt.x + 0.5, p.y + 1.6, nxt.z + 0.5), true).then(() => {
+        b.setControlState('forward', true);
+        setTimeout(() => { try { b.setControlState('forward', false); } catch {} this.busyLook = false; try { if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 600);   // путь заново той же цели (setGoal оборвал бы дело: «goal changed»)
+      }).catch(() => { this.busyLook = false; });
+      return;
+    }
     if (Date.now() - this.stuck.since < 5000) return;
     this.stuck.tries++;
     this.stuck.since = Date.now();
@@ -1608,7 +1623,21 @@ class TotemBot extends EventEmitter {
           a = { ...a, x: best.x, y: best.y, z: best.z };
         }
       }
-      const p = this.bot.entity.position;
+      let p = this.bot.entity.position;
+      // «вот красная ветка», «это склад» - место там, где хозяин или куда он смотрит рядом (до 10 бл.), а не где бот
+      // (23.11: все ветки метро записывались туда, где стоял бот)
+      if (a.x === undefined && this.runSource === 'master') {
+        const boss = (this.opts.masters || []).map((n) => this.player(n)).find((e) => e && e.position.distanceTo(p) < 24);
+        if (boss) {
+          let at = boss.position;
+          try {
+            const eye = boss.position.offset(0, 1.62, 0), dir = new Vec3(-Math.sin(boss.yaw) * Math.cos(boss.pitch), Math.sin(boss.pitch), -Math.cos(boss.yaw) * Math.cos(boss.pitch));
+            const hit = this.bot.world.raycast(eye, dir, 10);
+            if (hit && hit.position && boss.pitch < -0.2) at = hit.position.offset(0.5, 1, 0.5);   // смотрит вниз, на пол или знак у ног
+          } catch {}
+          p = at;
+        }
+      }
       // «это дом», а стоим на улице - метку в сам дом рядом (у кровати или за дверью), в сторону взгляда хозяина
       if (a.x === undefined && /(дом|база|хата|жиль)/i.test(String(a.name || '')) && !this.roofed(Math.floor(p.x), Math.floor(p.y), Math.floor(p.z))) {
         const boss = (this.opts.masters || []).map((n) => this.player(n)).find((e) => e && e.position.distanceTo(p) < 12);
