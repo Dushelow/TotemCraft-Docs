@@ -1505,15 +1505,19 @@ class TotemBot extends EventEmitter {
     // выходу насколько пускают; не вышел - лестница вверх рядом, кнопка у прохода, и снова; до 8 раундов
     const done = [];
     let best = cand[0];
+    this._outsideIdle = 0;
     for (let round = 0; round < 8; round++) {
       this.check(tok);
       const f0 = b.entity.position.floored();
       if (sky(f0.x, f0.y, f0.z)) return `вышел наружу: ${f0.x} ${f0.y} ${f0.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
       // к выходу: и частичный путь годится - ближе к поверхности
       const y0 = b.entity.position.y;
-      const tg = Date.now(), pg = b.entity.position.clone();
-      try { await this.goto(new goals.GoalNear(best.x, best.y, best.z, 1), tok, 25000); } catch (e) { if (this.isCancel(e)) throw e; }
-      if (Date.now() - tg < 1500 && b.entity.position.distanceTo(pg) < 1.5) { /* пути нет совсем - следующим шагом лестница или кнопка, не метаться */ }
+      // идти к месту, только если путь туда строится целиком (частичные пути к разным крышам давали рывки туда-сюда)
+      let full = null;
+      for (const q of cand.slice(0, 12)) {
+        try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 400); if (r && r.status === 'success') { full = q; break; } } catch {}
+      }
+      if (full) { try { await this.goto(new goals.GoalNear(full.x, full.y, full.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
       let f = b.entity.position.floored();
       if (sky(f.x, f.y, f.z)) return `вышел наружу: ${f.x} ${f.y} ${f.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
       let moved = b.entity.position.y > y0 + 1.5;
@@ -1534,7 +1538,7 @@ class TotemBot extends EventEmitter {
         } catch (e) { if (this.isCancel(e)) throw e; }
       }
       // ничего не сдвинулось - следующий выход
-      if (!moved) { cand.shift(); while (cand.length && cand[0].distanceTo(best) < 8) cand.shift(); if (!cand.length) break; best = cand[0]; }
+      if (!moved) { if (++this._outsideIdle >= 3) break; } else this._outsideIdle = 0;
     }
     const f = b.entity.position.floored();
     return sky(f.x, f.y, f.z) ? `вышел наружу: ${f.x} ${f.y} ${f.z}` : `наружу не вышел${done.length ? ' (' + done.join('; ') + ')' : ''}: стою на ${f.x} ${f.y} ${f.z}`;
