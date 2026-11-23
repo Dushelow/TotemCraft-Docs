@@ -1269,6 +1269,7 @@ class TotemBot extends EventEmitter {
   /** После кнопки или плиты - бегом 6 с: скрытый проход закрывается через пару секунд (23.11, владелец: «нажал, быстро
    *  поднялся и выбежал», а бот стоял и думал). */
   dashAfterMech() {
+    this._mechAt = Date.now();
     const mv = this.bot.pathfinder.movements; if (!mv) return;
     const was = mv.allowSprinting; mv.allowSprinting = true;
     clearTimeout(this._dashT); this._dashT = setTimeout(() => { try { mv.allowSprinting = was; } catch {} }, 6000);
@@ -1292,6 +1293,8 @@ class TotemBot extends EventEmitter {
     if (/_pressure_plate$/.test(bl.name)) {
       // плита: встать на неё (в воде - доплыть), постоять, пока откроется
       await this.goto(new goals.GoalBlock(p.x, p.y, p.z), tok, 20000).catch((e) => { if (e instanceof Cancelled) throw e; });
+      const fp = b.entity.position.floored();
+      if (fp.x !== p.x || fp.z !== p.z || Math.abs(fp.y - p.y) > 1) return '';   // не дошёл до плиты (течение, стена)
       await sleep(300);   // поршням - полсекунды; дольше стоять нельзя: проход закрывается быстро (23.11)
       this.dashAfterMech();
       return `встал на ${bl.name} у ${p.x} ${p.y} ${p.z}`;
@@ -1355,6 +1358,9 @@ class TotemBot extends EventEmitter {
           if (attempt < 1 && left > 2) { this.log(`путь пустой, до цели ${left} бл. - пробую ещё раз`); await sleep(400); continue; }
           // путь не строится, а рядом механизм (железная дверь, поршни, скрытый проход): нажать кнопку, рычаг, встать
           // на плиту (и в воде) - и попробовать снова (23.11, хозяин: «научи проходить скрытые двери»)
+          // только что нажал - поршням нужно время: пробовать путь каждые 0,25 с до 3 с, к другому механизму не бежать
+          // (23.11 22:08: нажал кнопку и через 0,6 с побежал к плите снаружи - проход открылся, а он ушёл)
+          if (this._mechAt && Date.now() - this._mechAt < 3000) { await sleep(250); attempt = Math.min(attempt, 1); continue; }
           if (attempt < 4 && (this._mechTries = (attempt === 0 ? 0 : this._mechTries || 0)) < 3) {
             const m = await this.useMechanism(goal, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
             if (m) { this._mechTries++; this.log(m + ' - бегом в проход'); await sleep(250); continue; }
