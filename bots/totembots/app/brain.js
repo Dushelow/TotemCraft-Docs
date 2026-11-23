@@ -649,7 +649,7 @@ class Brain {
       this.inProgress = 0;
       if (chatId && chatId !== this.botCfg.chatId) { this.botCfg.chatId = chatId; this.save(); }
       const r = parseAnswer(answer);
-      if (r.say && this.pending.some((x) => x.from && x.from !== '@self' && this.isMaster(x.from) && /^\[(чат|голос)/.test(x.line || ''))) { this.log('(устарело: хозяин уже написал новое) ' + r.say); r.say = ''; }
+      if (r.say && this.pending.some((x) => x.from && x.from !== '@self' && this.isMaster(x.from) && /^\[(чат|голос)/.test(x.line || ''))) { this.log('(устарело: хозяин уже написал новое, ответ и действия отброшены) ' + r.say); r.say = ''; r.actions = []; }
       if (this.transcript) try { this.transcript(msg, answer); } catch {}
       this.log('← ' + JSON.stringify(r));
       this.lastDecision = { at: Date.now(), say: r.say, acts: r.actions.map((a) => a && (a._cmd || a.act)).filter(Boolean), model: this.bridge.lastPick ? this.bridge.lastPick.model : '' };
