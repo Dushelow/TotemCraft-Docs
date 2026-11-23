@@ -85,10 +85,11 @@ class NavGraph {
     const last = T.pts[T.pts.length - 1];
     // как хозяин проходит: в тесноте (лаз, лестница, вода, люк, дверь рядом) - каждый блок, на просторе - через 4
     // (23.11: секретная дверь, кнопка под лестницей, лаз с люками - бот проходил «пердя скрипя», без записи хода)
-    const f = p.floored(), at = (dx, dy, dz) => (this.bot.blockAt(f.offset(dx, dy, dz)) || {}).name || '';
+    const ba = (v) => (typeof this.bot.blockAt === 'function' ? this.bot.blockAt(v) : null);
+    const f = p.floored(), at = (dx, dy, dz) => (ba(f.offset(dx, dy, dz)) || {}).name || '';
     const ladder = /ladder|vine|scaffolding/.test(at(0, 0, 0) + at(0, 1, 0));
     const wet = /water/.test(at(0, 0, 0));
-    const tight = ladder || wet || [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => { const k = this.bot.blockAt(f.offset(dx, 1, dz)); return k && k.boundingBox === 'block'; }).length >= 2
+    const tight = ladder || wet || [[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => { const k = ba(f.offset(dx, 1, dz)); return k && k.boundingBox === 'block'; }).length >= 2
       || [[1, 0], [-1, 0], [0, 1], [0, -1], [0, 0]].some(([dx, dz]) => /door|trapdoor|gate|pressure_plate|button|lever/.test(at(dx, 0, dz) + at(dx, 1, dz) + at(dx, -1, dz)));
     const step = tight ? 1 : 4;
     if (!last || last.dim !== dim || Math.hypot(last.x - p.x, last.z - p.z) >= step || Math.abs(last.y - p.y) >= (tight ? 1 : 3)) T.pts.push({ x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z), dim, ...(ladder ? { ladder: 1 } : {}), ...(tight ? { tight: 1 } : {}), ...(wet ? { wet: 1 } : {}) });
