@@ -6,8 +6,8 @@ const fs = require('fs');
 const path = require('path');
 
 // у тестов свой проект, чтобы тестовая память не попала в настоящую
-const NAME = process.env.TOTEMBOTS_PROJECT_NAME || 'TotemCraft · боты';
-const INSTRUCTIONS = 'Здесь живут боты-игроки сервера Minecraft TotemCraft. Каждый чат - один бот. Правила и вводная ' +
+const NAME = process.env.TOTEMBOTS_PROJECT_NAME || 'TotemBots';
+const INSTRUCTIONS = 'Здесь живут боты-игроки Minecraft. Каждый чат - один бот. Правила и вводная ' +
   'приходят в первом сообщении чата. Файл totemcraft-memory.md - память ботов разделами «ПАМЯТЬ БОТА ник»: читай только раздел со своим ником, чужие разделы - не твои воспоминания; ' +
   'опирайся на него, когда нужно вспомнить место или человека. Свежая часть памяти приходит в сообщениях блоком [память].';
 const FILE = 'totemcraft-memory.md';

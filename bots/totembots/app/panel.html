@@ -433,8 +433,8 @@
         <div id="siteList"></div>
       </div>
       <details class="card more">
-        <summary class="h"><i data-i="folder-open"></i>Проект Qwen<span class="grow"></span><i data-i="chevron-down" class="chev"></i></summary>
-        <p class="lead">Чаты ботов и их память лежат в проекте «TotemCraft · боты» в вашем Qwen.</p>
+        <summary class="h"><i data-i="folder-open"></i>Хранить чаты в проекте (только сайт Qwen)<span class="grow"></span><i data-i="chevron-down" class="chev"></i></summary>
+        <p class="lead">Дополнительно, по желанию: если включить, чаты ботов и их память лежат отдельным проектом на сайте Qwen. Другим нейросетям не нужно.</p>
         <label class="chk"><input type="checkbox" id="pEnabled"> Хранить чаты и память в проекте Qwen</label>
         <div id="pStatus" class="muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:var(--s3)"><button id="pOpen" class="sm"><i data-i="external-link" data-s="14"></i>Открыть проект</button><button id="pSync" class="sm"><i data-i="rotate-cw" data-s="14"></i>Обновить память</button></div>
@@ -502,7 +502,7 @@
       </div>
       <div class="card">
         <h2><i data-i="server"></i>Сервер</h2>
-        <div class="seg" id="srvSeg"><button data-h="play.totemcraft.net" data-p="20098">TotemCraft</button><button data-h="ru.totemcraft.net" data-p="20098">Российский вход</button><button data-h="127.0.0.1" data-p="25566">Тестовый</button></div>
+        <p class="lead">Любой сервер Minecraft, который пускает такого бота.</p>
         <div class="row" style="margin-top:2px;align-items:flex-end"><div class="grow"><label>Адрес</label><input id="host"></div><div style="width:110px"><label>Порт</label><input id="port"></div></div>
         <label>Хозяева: ники через запятую, первый - вы. Только их приказы с действиями бот выполняет</label><input id="masters">
       </div>
@@ -512,14 +512,15 @@
         <div id="features"></div>
       </div>
       <div class="card">
-        <h2><i data-i="sliders-horizontal"></i>Qwen</h2>
+        <h2><i data-i="sliders-horizontal"></i>Тонкая настройка сайтов нейросетей</h2>
+        <p class="lead">Действует на тех сайтах, где есть такие переключатели (сейчас Qwen). Остальные нейросети работают как есть.</p>
         <label>Режим для болтовни</label>
-        <select id="chatMode"><option value="fast">Быстро</option><option value="auto">Авто</option><option value="think">Мышление</option><option value="">Как выбрано в Qwen</option></select>
+        <select id="chatMode"><option value="fast">Быстро</option><option value="auto">Авто</option><option value="think">Мышление</option><option value="">Как выбрано на сайте</option></select>
         <label>Режим для заданий</label>
-        <select id="planMode"><option value="auto">Авто</option><option value="think">Мышление</option><option value="fast">Быстро</option><option value="">Как выбрано в Qwen</option></select>
-        <label>Модели по порядку через запятую (пусто - как выбрано в Qwen)</label><input id="models" placeholder="например Qwen3.7-Plus, Qwen3.5-Flash">
+        <select id="planMode"><option value="auto">Авто</option><option value="think">Мышление</option><option value="fast">Быстро</option><option value="">Как выбрано на сайте</option></select>
+        <label>Модели по порядку через запятую (пусто - как выбрано на сайте)</label><input id="models" placeholder="например Qwen3.7-Plus, Qwen3.5-Flash">
         <label>Модель для сжатия общего чата в новости (лучше самая лёгкая)</label><input id="serviceModels" placeholder="например Qwen3.5-Flash">
-        <label>Ваш год рождения: им программа отвечает, когда Qwen спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
+        <label>Ваш год рождения: им программа отвечает, когда сайт нейросети спрашивает возраст</label><input id="birthYear" placeholder="например 1998">
       </div>
     </section>
   </main>

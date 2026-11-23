@@ -139,7 +139,7 @@ function stIcon(ic) { return `<div class="st ${ic}">${icon(ST_ICON[ic] || 'info'
 function check(ic, title, hint, btn) {
   return `<div class="check">${stIcon(ic)}<div class="t"><b>${esc(title)}</b>${hint ? `<span>${esc(hint)}</span>` : ''}</div>${btn || ''}</div>`;
 }
-function srvName(h) { return /play\.totemcraft/.test(h) ? 'TotemCraft' : /ru\.totemcraft/.test(h) ? 'Российский вход' : /127\.0\.0\.1|localhost/.test(h) ? 'Тестовый' : h; }
+function srvName(h) { return /^(127\.0\.0\.1|localhost)$/.test(h) ? 'этот компьютер' : h; }
 function renderStart() {
   const idle = !st.running;
   $('startCard').style.display = idle ? '' : 'none';
@@ -987,7 +987,7 @@ document.addEventListener('click', (e) => {
     <label>Порт<br><input id="su-port" value="25565" style="width:100%"></label><br><br>
     <label>Ваш ник в игре (бот будет слушаться вас)<br><input id="su-master" style="width:100%"></label><br><br>
     <label>Ник бота (отдельный аккаунт; на сервере с «пиратским» входом можно любой)<br><input id="su-bot" style="width:100%"></label><br><br>
-    <label>Пароль бота для входа на сервере (AuthMe), если нужен<br><input id="su-pass" type="password" style="width:100%"></label><br><br>
+    <label>Пароль бота для входа на сервере (AuthMe), если нужен. Аккаунт бота уже есть - впишите его пароль, бот войдёт через /login; новый бот зарегистрируется с этим паролем сам<br><input id="su-pass" type="password" style="width:100%"></label><br><br>
     <label>Характер бота (по желанию)<br><textarea id="su-persona" rows="3" style="width:100%" placeholder="весёлый парень, любит рыбалку"></textarea></label><br><br>
     <label>Версия игры<br><select id="su-ver"><option value="26.1">26.1</option><option value="1.21.11">1.21.11</option></select></label>
     <p class="lead">Сервер должен пускать такого бота: у некоторых серверов белый список или вход только с лицензией. Ботом пользуйтесь по правилам сервера.</p>

@@ -190,7 +190,7 @@ class Memory {
   /** Полный текст для файла проекта Qwen. */
   markdown() {
     const d = (t) => new Date(t).toLocaleString('ru-RU');
-    const out = ['# Память ботов TotemCraft', '', `Обновлено: ${d(now())}`, '', '## Места'];
+    const out = ['# Память ботов TotemBots', '', `Обновлено: ${d(now())}`, '', '## Места'];
     for (const p of Object.values(this.data.places).sort((a, b) => a.name.localeCompare(b.name))) out.push(`- ${p.name}: ${p.x} ${p.y} ${p.z}, ${p.dim}${p.note ? ' - ' + p.note : ''} (запомнил ${p.by}, ${d(p.at)})`);
     out.push('', '## Люди');
     for (const p of Object.values(this.data.people).sort((a, b) => a.name.localeCompare(b.name))) out.push(`- ${p.name}: ${p.note}`);
