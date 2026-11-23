@@ -256,10 +256,10 @@ class TotemBot extends EventEmitter {
       // иду за хозяином, а до него прохода нет (он за скрытой дверью, в закрытой комнате): путь «частичный» уводит в
       // обход куда попало - 23.11 убежал вниз в пещеры и заблудился. Не уходить: стоять, ждать, пробовать механизм
       try {
-        if (this._mechBusy || this._trailBusy || this.mode !== 'follow' || r.status !== 'partial' || !this._followEnt || !r.path.length) return;
-        const own = this._followEnt.position, me = bot.entity.position, end = r.path[r.path.length - 1];
+        if (this._mechBusy || this._trailBusy || this.mode !== 'follow' || !/^(partial|noPath)$/.test(r.status) || !this._followEnt) return;
+        const own = this._followEnt.position, me = bot.entity.position, end = r.path.length ? r.path[r.path.length - 1] : me;
         if (!own || me.distanceTo(own) > 24 || end.distanceTo(own) <= 4) return;
-        if (end.distanceTo(own) < me.distanceTo(own) - 2) return;   // частичный, но ведёт ближе - пусть идёт
+        if (r.path.length && end.distanceTo(own) < me.distanceTo(own) - 2) return;   // частичный, но ведёт ближе - пусть идёт
         bot.pathfinder.setGoal(null);
         if (!this._trailBusy && this.walkTrail) { this._trailBusy = true; this.walkTrail(this.followName).then((m) => { if (m) this.log(m); }).catch(() => {}).finally(() => { this._trailBusy = false; }); return; }
         if (!this._waitWallSaid || Date.now() - this._waitWallSaid > 60000) { this._waitWallSaid = Date.now(); this.log(`к ${this.followName} прохода не вижу - жду здесь, не ухожу`); }
@@ -1301,6 +1301,7 @@ class TotemBot extends EventEmitter {
   async walkTrail(who) {
     const b = this.bot, T = (this._trail || []).filter((t) => t.who === who && Date.now() - t.at < 10 * 60000);
     if (T.length < 3) return '';
+    this._hOpened = new Map();
     const me = b.entity.position;
     let i = -1, best = 6;   // ближайшая точка следа рядом (до 6 бл.), с неё и идти
     T.forEach((t, k) => { const d = t.p.distanceTo(me); if (d < best) { best = d; i = k; } });
@@ -1313,6 +1314,13 @@ class TotemBot extends EventEmitter {
         while (Date.now() < until) {
           const p = b.entity.position;
           if (Math.hypot(t.x - p.x, t.z - p.z) < 0.6 && Math.abs(t.y - p.y) < 1.2) break;
+          for (const q of [t.floored(), t.floored().offset(0, 1, 0), t.floored().offset(0, -1, 0), p.floored().offset(0, -1, 0)]) {
+            const h = b.blockAt(q);
+            if (h && /_trapdoor$|_door$/.test(h.name) && !/^iron_/.test(h.name) && h.getProperties && !(h.getProperties().open === true || h.getProperties().open === 'true') && !(this._hOpened = this._hOpened || new Map()).has(q.toString())) {
+              this._hOpened.set(q.toString(), Date.now());
+              try { await b.lookAt(q.offset(0.5, 0.5, 0.5), true); await b.activateBlock(h); await new Promise((r) => setTimeout(r, 200)); } catch {}
+            }
+          }
           await b.lookAt(t.offset(0, 1.5, 0), true);
           const wet = /water/.test((b.blockAt(p) || {}).name || '');
           // в воде - вперёд под водой, не всплывать (23.11: всплывал и не проходил в проём секретной двери); прыжок -
