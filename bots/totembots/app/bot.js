@@ -533,7 +533,7 @@ class TotemBot extends EventEmitter {
     // physicsTick у mineflayer вызывается до отправки движения, поэтому tick_end здесь закрывает прошлый тик, а удар
     // (guard.combatTick) уходит синхронно внутри этого тика. Без tick_end сервер 1.21.2+ не применяет шаги; удар вне
     // тика (из async-кода) Vulcan отмечал как Kill Aura / Aim (стенд 15.11, 36 отметок; после правки - ноль).
-    this.trace = new (require('./movetrace').MoveTrace)(this, require('path').join(__dirname, '..', 'local', 'logs'));
+    this.trace = new (require('./movetrace').MoveTrace)(this, require('path').join(process.env.TOTEMBOTS_LOCAL || require('path').join(__dirname, '..', 'local'), 'logs'));
     b.on('physicsTick', () => {
       try { if (this._interactQ) this.interactTick(); } catch {}   // клик по существу - в тике, как клиент (vehicles.js)
       try { b._client.write('tick_end', {}); } catch {}
