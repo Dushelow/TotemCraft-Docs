@@ -1671,6 +1671,16 @@ class TotemBot extends EventEmitter {
       // картошку перепутал, ставил метки на краях участков)
       const CROP = [[/морков|carrot/i, 'carrots'], [/картоф|картош|potato/i, 'potatoes'], [/пшени|wheat/i, 'wheat'], [/свекл|свёкл|beet/i, 'beetroots'], [/тыкв|pumpkin/i, 'pumpkin'], [/арбуз|melon/i, 'melon'], [/тростн|cane/i, 'sugar_cane'], [/бородав|wart/i, 'nether_wart']];
       const cr = /пол[еяю]|грядк|огород|ферм|field|farm/i.test(String(a.name || '')) && CROP.find(([re]) => re.test(String(a.name)));
+      if (!cr && /пол[еяю]|грядк|огород|ферм|field|farm/i.test(String(a.name || ''))) {
+        // общее «запиши, где поля» (23.11: спрашивал, где они, а вокруг росли картошка, морковь, тыквы) - все культуры рядом
+        const RU = { carrots: 'морковь', potatoes: 'картофель', wheat: 'пшеница', beetroots: 'свёкла', pumpkin: 'тыквы', melon: 'арбузы', sugar_cane: 'тростник', nether_wart: 'незерский_нарост' };
+        const out = [];
+        for (const [, id] of CROP) {
+          const c = this.cropCenter(id, null);
+          if (c && c.n >= 3) out.push(this.memory.place({ name: 'поле_' + RU[id], x: c.x, y: c.y, z: c.z, dim: this.dimName(), note: `участок ${c.n} грядок, ${c.w}x${c.l}` }, who));
+        }
+        return out.length ? out.join('; ') : 'полей рядом не вижу (до 24 бл.)';
+      }
       if (cr) {
         const c = this.cropCenter(cr[1], a.x !== undefined ? a : null);
         if (c) { a.x = c.x; a.y = c.y; a.z = c.z; a.note = (a.note ? a.note + '; ' : '') + `участок ${c.n} грядок, ${c.w}x${c.l}`; }

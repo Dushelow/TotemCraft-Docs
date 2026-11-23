@@ -658,6 +658,8 @@ function install(mv, bot) {
         const k = `${o.x},${o.y},${o.z}`, b = bot.blockAt(new Vec3(o.x, o.y, o.z));
         if (!b || !OPENABLE.test(b.name)) continue;
         const pr = b.getProperties(), open = pr.open === true || pr.open === 'true';
+        // уже открытая дверь или калитка на пути (открыл хозяин, 23.11 «двери не закрывает») - закрыть за собой
+        if (open && o.want && !opened.has(k) && /_door$|_fence_gate$/.test(b.name)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: false, from: me.clone() });
         if (open === o.want || Date.now() - (tog.get(k) || 0) < 1500) continue;
         tog.set(k, Date.now());
         if (!opened.has(k)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: open, from: me.clone() });   // какой была до бота - закрыть потом

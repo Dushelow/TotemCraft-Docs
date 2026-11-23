@@ -94,6 +94,17 @@ class Guard {
 
   owner() { return this.tb.followName ? this.tb.player(this.tb.followName) : null; }
 
+  /** Видно ли моба: луч от глаз до его груди не упирается в твёрдый блок (дверь, стекло, стена). */
+  seen(e) {
+    const b = this.bot;
+    try {
+      const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0), to = e.position.offset(0, (e.height || 1.8) * 0.6, 0);
+      const dir = to.minus(eye), len = dir.norm();
+      const hit = b.world.raycast(eye, dir.normalize(), len, (bl) => bl.boundingBox === 'block' && !/leaves|slab|carpet|rail|flower|grass|torch/.test(bl.name));
+      return !hit;
+    } catch { return true; }
+  }
+
   pick() {
     const b = this.bot, me = b.entity.position, own = this.owner();
     let best = null, bestD = Infinity;
@@ -104,6 +115,8 @@ class Guard {
       if (d > 16) continue;
       const angry = (this.hurtBy.get(e.id) || 0) > Date.now() - 15000 || this.prey === e.id;   // prey - добыча на охоте
       const hostile = this.isHostile(e) && !NEUTRAL.has(n);
+      // за дверью, стеной, стеклом - не цель (23.11: бился со скелетом через закрытую дверь)
+      if (d > 1.5 && !this.seen(e)) continue;
       if (!hostile && !angry) continue;
       // летающих стрелков (гаст, фантом высоко) мечом не догнать: за ними не бегать, идти дальше своей дорогой
       if (/^(ghast|phantom)$/.test(n) && (e.position.y - me.y > 2.5 || n === 'ghast')) continue;
