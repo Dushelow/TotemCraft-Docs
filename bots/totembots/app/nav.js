@@ -718,6 +718,17 @@ function install(mv, bot) {
     }));
     // двери, калитки, люки на ближайших шагах: открыть (закрыть), только если сейчас не в нужном положении
     const tog = new Map(), opened = new Map();
+    // дверь на механизме: держит сигнал (powered) или рядом плита, кнопка, рычаг (до 2 бл.) - руками не трогать: плита сама
+    // откроет и закроет, щелчок руками закрыл бы открытое плитой (23.11, владелец: плиты и кнопки перед дверями)
+    const autoDoor = (x, y, z, plateOnly) => {
+      const d = bot.blockAt(new Vec3(x, y, z)); if (!d) return false;
+      const pr = d.getProperties ? d.getProperties() : {};
+      if (pr.powered === true || pr.powered === 'true') return true;
+      for (let dx = -2; dx <= 2; dx++) for (let dy = -1; dy <= 2; dy++) for (let dz = -2; dz <= 2; dz++) {
+        const k = bot.blockAt(new Vec3(x + dx, y + dy, z + dz)); if (k && (plateOnly ? /_pressure_plate$/ : /_pressure_plate$|_button$|^lever$/).test(k.name)) return true;
+      }
+      return false;
+    };
     // прошла дверь - вернуть, как было (закрыть за собой), когда отошла на 2+ бл. и она больше не на пути
     bot.on('physicsTick', safe('nav-двери-закрыть', () => {
       if (!opened.size || !bot.entity) return;
@@ -757,6 +768,7 @@ function install(mv, bot) {
         if (inWay) { d.wait = d.wait || Date.now(); if (Date.now() - d.wait < (inWay.type === 'player' ? 10000 : 1500)) continue; } else d.wait = 0;
         const b = bot.blockAt(new Vec3(d.x, d.y, d.z));
         if (!b || !OPENABLE.test(b.name)) { opened.delete(k); continue; }
+        if (/_door$|_fence_gate$/.test(b.name) && autoDoor(d.x, d.y, d.z)) { opened.delete(k); continue; }   // закроет механизм
         const pr = b.getProperties(), now = pr.open === true || pr.open === 'true';
         if (now === d.was) { opened.delete(k); continue; }   // уже как было - готово
         // щелчок не всегда доходит (взгляд не успел, сервер отверг) - проверить через 0,8 с и повторить, до 3 раз
@@ -807,6 +819,7 @@ function install(mv, bot) {
         // уже открытая дверь или калитка на пути (открыл хозяин, 23.11 «двери не закрывает») - закрыть за собой
         if (open && o.want && !opened.has(k) && /_door$|_fence_gate$/.test(b.name)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: false, from: me.clone() });
         if (open === o.want || Date.now() - (tog.get(k) || 0) < 1500) continue;
+        if (/_door$|_fence_gate$/.test(b.name) && autoDoor(o.x, o.y, o.z, true)) continue;
         tog.set(k, Date.now());
         if (!opened.has(k)) opened.set(k, { x: o.x, y: o.y, z: o.z, was: open, from: me.clone() });   // какой была до бота - закрыть потом
         bot._navToggle = true; bot.activateBlock(b).catch(() => {});   // эти закрывает путь сам (выше), не chores
