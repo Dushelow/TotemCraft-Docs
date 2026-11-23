@@ -1,7 +1,7 @@
 // TotemBots: окно программы. Слева панель ботов, справа chat.qwen.ai под входом владельца.
 // Вход в Qwen хранится в профиле программы (partition persist:qwen), не в Chrome владельца.
 // Настройки и пароли ботов лежат только на этом компьютере: %APPDATA%/totembots/config.json.
-const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu } = require('electron');
+const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -81,6 +81,7 @@ let cfg = { host: '', port: 25565, masters: [], bots: [], setupDone: false, star
   voice: { enabled: true, provider: 'qwen', fallback: true, local: true, plasmo: true, volume: 0.8 } };
 function loadCfg() {
   try { cfg = { ...cfg, ...JSON.parse(fs.readFileSync(cfgPath(), 'utf8')) }; if (cfg.host && cfg.setupDone === false && cfg.bots.length) cfg.setupDone = true; } catch {}
+  if (cfg.browserPath) process.env.TOTEMBOTS_BROWSER = cfg.browserPath;
   const b = cfg.brains = cfg.brains || {};
   if (!b.freeFirst) {
     const old = b.order || ['qwen', 'kimiweb', 'glmweb', 'mistralweb', 'grokweb', 'chatgptweb', 'copilotweb', 'gemini', 'groq', 'openrouter', 'deepseek'];
@@ -609,6 +610,12 @@ ipcMain.handle('setup-save', (_e, s) => {
   cfg.setupDone = true; saveCfg();
   try { qwen.setVisible(true); layout(); } catch {}
   return { ok: true };
+});
+ipcMain.handle('pick-browser', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер (chrome.exe или firefox.exe)', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });
+  if (r.canceled || !r.filePaths[0]) return cfg.browserPath || '';
+  cfg.browserPath = r.filePaths[0]; process.env.TOTEMBOTS_BROWSER = cfg.browserPath; saveCfg();
+  return cfg.browserPath;
 });
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });

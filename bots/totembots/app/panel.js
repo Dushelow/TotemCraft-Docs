@@ -1021,3 +1021,5 @@ function renderOrder(B) {
   box.querySelectorAll('[data-bo-up]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boUp, l = on.slice(), i = l.indexOf(k); if (i > 0) { [l[i - 1], l[i]] = [l[i], l[i - 1]]; save(l); } }; });
   box.querySelectorAll('[data-bo-down]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boDown, l = on.slice(), i = l.indexOf(k); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; save(l); } }; });
 }
+
+{ const pb = document.getElementById('pickBrowser'); if (pb && T.pickBrowser) pb.onclick = async () => { const p = await T.pickBrowser(); document.getElementById('browserPath').textContent = p ? ' ' + p : ''; }; }

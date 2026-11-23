@@ -68,8 +68,10 @@ async function sitePage(url) {
  */
 async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   const S = SITES[siteId];
-  const exe = findChrome();
-  if (!exe) { if (findFirefox()) return loginViaFirefox(profileDir + '-firefox', onStatus, S); throw new Error('не найден ни Chrome, ни Firefox: войдите без Google (почта и пароль) прямо в окне сайта'); }
+  const own = process.env.TOTEMBOTS_BROWSER;   // браузер, выбранный вручную в «Мозгах»
+  if (own && fs.existsSync(own) && /firefox/i.test(own)) return loginViaFirefox(profileDir + '-firefox', onStatus, S, own);
+  const exe = own && fs.existsSync(own) ? own : findChrome();
+  if (!exe) { if (findFirefox()) return loginViaFirefox(profileDir + '-firefox', onStatus, S); throw new Error('браузер не найден: нажмите «Выбрать браузер» в разделе «Мозги» и укажите chrome.exe или firefox.exe'); }
   const proc = spawn(exe, [`--user-data-dir=${profileDir}`, `--remote-debugging-port=${PORT}`,
     '--no-first-run', '--no-default-browser-check', '--new-window', S.url], { detached: false, stdio: 'ignore' });
   try {
@@ -109,15 +111,15 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
 
 // Нет Chrome - Firefox (23.11: у друга только Firefox). Протокол WebDriver BiDi: отдельный чистый профиль, порт
 // отладки, ждём вход, забираем куки и признак входа так же, как у Chrome.
-const FF = ['C:\Program Files\Mozilla Firefox\firefox.exe', 'C:\Program Files (x86)\Mozilla Firefox\firefox.exe',
-  path.join(process.env.LOCALAPPDATA || '', 'Mozilla Firefox\firefox.exe')];
+const FF = ['C:/Program Files/Mozilla Firefox/firefox.exe', 'C:/Program Files (x86)/Mozilla Firefox/firefox.exe',
+  path.join(process.env.LOCALAPPDATA || '', 'Mozilla Firefox/firefox.exe')];
 function findFirefox() {
   const hit = FF.find((p) => p && fs.existsSync(p));
   if (hit) return hit;
   // стоит не в обычной папке (другой диск, своя папка, 23.11 у друга) - путь из реестра Windows
   const { execSync } = require('child_process');
-  for (const k of ['HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe', 'HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe',
-    'HKLM\SOFTWARE\Clients\StartMenuInternet\FIREFOX.EXE\shell\open\command', 'HKLM\SOFTWARE\WOW6432Node\Clients\StartMenuInternet\FIREFOX.EXE\shell\open\command']) {
+  for (const k of [String.raw`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe`, String.raw`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\firefox.exe`,
+    String.raw`HKLM\SOFTWARE\Clients\StartMenuInternet\FIREFOX.EXE\shell\open\command`, String.raw`HKLM\SOFTWARE\WOW6432Node\Clients\StartMenuInternet\FIREFOX.EXE\shell\open\command`]) {
     try {
       const out = execSync(`reg query "${k}" /ve`, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] });
       const m = out.match(/REG_SZ\s+"?([^"\r\n]+?firefox\.exe)/i);
@@ -127,9 +129,9 @@ function findFirefox() {
   try { const w = require('child_process').execSync('where firefox', { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).split(/\r?\n/)[0].trim(); if (w && fs.existsSync(w)) return w; } catch {}
   return null;
 }
-async function loginViaFirefox(profileDir, onStatus, S) {
+async function loginViaFirefox(profileDir, onStatus, S, exe) {
   fs.mkdirSync(profileDir, { recursive: true });
-  const proc = spawn(findFirefox(), ['-profile', profileDir, '-no-remote', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
+  const proc = spawn(exe || findFirefox(), ['-profile', profileDir, '-no-remote', '--remote-debugging-port', String(PORT), S.url], { stdio: 'ignore' });
   try {
     onStatus(`Войдите в ${S.name} в открывшемся окне Firefox`);
     let ws;
