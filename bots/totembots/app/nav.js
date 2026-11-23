@@ -318,15 +318,19 @@ function install(mv, bot) {
         const x = node.x + ax, z = node.z + az;
         if ((ax || az) && (cell(x, node.y, z).boxes.length || cell(x, node.y + 1, z).boxes.length) && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
         let y = node.y - 1;
-        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '')) continue;
+        const isCL = (yy) => CL.test((blk(x, yy, z) || {}).name || '');
+        // люк над лестницей (лаз в полу закрыт люком, 23.11 секретная комната): открыть и спускаться
+        const hb = blk(x, y, z), hatch = hb && /_trapdoor$/.test(hb.name) && !/^iron_/.test(hb.name) && isCL(y - 1) ? y : null;
+        if (!CL.test((blk(x, y, z) || {}).name || '') && !CL.test((blk(x, node.y, z) || {}).name || '') && hatch === null) continue;
         let n = 0;
         // лестница - тонкая рамка, тоже «boxes»: считать пустой. Пол - твёрдое и не лестница
-        const isCL = (yy) => CL.test((blk(x, yy, z) || {}).name || '');
-        const free = (yy) => isCL(yy) || !cell(x, yy, z).boxes.length;
+        const free = (yy) => yy === hatch || isCL(yy) || !cell(x, yy, z).boxes.length;
         while (n < 40 && free(y) && free(y - 1)) { y--; n++; }
         if (n < 1 || !free(y) || cell(x, y - 1, z).bad || !cell(x, y - 1, z).boxes.length) continue;
         const k = `${x},${y},${z}`; if (have.has(k)) continue;
-        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.6, [], []); out.push(m);
+        have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 2 + n * 0.6 + (hatch !== null ? 1 : 0), [], []);
+        if (hatch !== null) m.opens = [{ x, y: hatch, z, want: true }];
+        out.push(m);
       }
     return out;
   }
