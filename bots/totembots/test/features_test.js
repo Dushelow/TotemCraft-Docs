@@ -66,4 +66,31 @@ function make(blockAt, pos) {
   const rd = t._scene.roads[0];
   ok('красное пятно у начала дороги - «ветка красная» на восток', rd && rd.label === 'красная' && rd.toward === 'восток', rd && `${rd.label} ${rd.toward}`);
 }
+// 4. тоннель в незерраке - без цвета и табличек, только форма: узкий длинный проход в сплошной породе
+{
+  const blockAt = world((set) => {
+    for (let x = -30; x <= 30; x++) for (let z = -30; z <= 30; z++) for (let y = 63; y <= 68; y++) set(x, y, z, 'netherrack');
+    for (let x = -1; x <= 0; x++) for (let z = -28; z <= 3; z++) { set(x, 64, z, 'air'); set(x, 65, z, 'air'); set(x, 66, z, 'air'); }   // тоннель 2x3 на север
+  });
+  const t = make(blockAt, [0, 2]);
+  t.featuresTick(true);
+  const tn = t._scene.roads.find((r) => r.kind === 'тоннель');
+  ok('тоннель найден по форме (без цвета и табличек)', tn, tn && `${tn.kind} шир. ${tn.width}, ${tn.len} бл.`);
+}
+// 5. табличка «Энд налево» у развилки подписывает проход, что уходит налево от читающего
+{
+  const W = world((set) => {
+    for (let x = -30; x <= 30; x++) for (let z = -30; z <= 30; z++) set(x, 63, z, 'grass_block');
+    for (let x = -25; x <= -2; x++) for (const z of [0, 1]) set(x, 63, z, 'stone_bricks');   // дорога на запад
+    for (let x = 2; x <= 25; x++) for (const z of [0, 1]) set(x, 63, z, 'stone_bricks');      // дорога на восток
+  });
+  const t = make(W, [0, 4]); t.dimName = () => 'обычный мир';
+  // табличка у 0 64 -1 смотрит на юг (к читающему, который стоит южнее и смотрит на север): «налево» - запад
+  t.bot.findBlocks = () => [new Vec3(0, 64, -1)];
+  const real = t.bot.blockAt;
+  t.bot.blockAt = (v, e) => (Math.floor(v.x) === 0 && Math.floor(v.y) === 64 && Math.floor(v.z) === -1 ? { name: 'oak_sign', boundingBox: 'empty', getProperties: () => ({ rotation: 0 }), getSignText: () => ['Энд налево', 'столовая направо'] } : real(v, e));
+  t.featuresTick(true);
+  const w = t._scene.roads.find((r) => r.label === 'Энд'), e = t._scene.roads.find((r) => r.label === 'столовая');
+  ok('«Энд налево» - дорога на запад, «столовая направо» - на восток', w && w.toward === 'запад' && e && e.toward === 'восток', `${w ? w.toward : '-'} / ${e ? e.toward : '-'}`);
+}
 console.log(`--- понимание местности: ${res.filter(Boolean).length} из ${res.length}`);

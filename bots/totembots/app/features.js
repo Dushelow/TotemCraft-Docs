@@ -9,7 +9,12 @@
 //   3) РАЗМЕТКА - небольшие фигуры цветных блоков (шерсть, бетон, терракота, глазурь, ковры, блоки лазурита,
 //      редстоуна, изумруда, золота), отличные от пола вокруг: цвет (по оттенку - синие разных видов в одну), форма,
 //      куда указывает (у стрелки острый конец уже тупого);
-//   4) связь: разметка у начала дороги и указывает вдоль неё - дорога получает имя по цвету («синяя ветка»).
+//   4) связь: разметка у начала дороги и указывает вдоль неё - дорога получает имя по цвету («синяя ветка»);
+//   5) ПРОХОДЫ по форме свободного места, а не по материалу: тоннель в незерраке, мост над лавой, коридор, улица
+//      между домами - узкая (до 4 бл.) и длинная полоса, где можно идти, со стенами или пустотой по бокам. Цвета и
+//      стрелки редки (владелец: «мысли шире»), а проходы есть везде;
+//   6) ТАБЛИЧКИ с направлением («Энд налево», «столовая ->», «замок прямо», «^ спавн»): куда указывает - по стороне,
+//      куда смотрит табличка, и слову; проход или дорога, что уходит в ту сторону от таблички, получает её имя.
 // Всё найденное копится в памяти (дороги и их имена переживают перезапуск), мозг получает строку [вокруг], а путь
 // дешевле по известным дорогам (bot.js navStepCost) и дальний путь выбирает подписанную дорогу к цели (travel).
 const { Vec3 } = require('vec3');
@@ -26,6 +31,27 @@ const HUE = [
 ];
 const DYED = /_(wool|concrete|concrete_powder|terracotta|glazed_terracotta|carpet|stained_glass)$|^(lapis_block|redstone_block|emerald_block|gold_block|amethyst_block|honeycomb_block|red_nether_bricks|nether_wart_block)$/;
 const hueOf = (n) => { if (!DYED.test(n)) return ''; for (const [h, re] of HUE) if (re.test(n)) return h; return ''; };
+// табличка: куда смотрит её лицо (к читающему); стоячая - rotation 0..15 (0 - юг), настенная - facing
+function signFront(bl) {
+  const pr = bl.getProperties ? bl.getProperties() : {};
+  if (pr.rotation !== undefined) { const th = (+pr.rotation) * Math.PI / 8; return { x: -Math.sin(th), z: Math.cos(th) }; }
+  return { north: { x: 0, z: -1 }, south: { x: 0, z: 1 }, west: { x: -1, z: 0 }, east: { x: 1, z: 0 } }[pr.facing] || null;
+}
+const DIRWORDS = /(налево|влево|слева|направо|вправо|справа|прямо|вперёд|вперед|назад|сзади|north|south|east|west|left|right|север|юг|запад|восток|<-+|-+>|←|→|↑|↓|\^|<|>)/gi;
+// направление из строки таблички: «налево/направо/прямо/назад» - от читающего (он смотрит на табличку, против её
+// лица), стороны света - как есть
+function signDir(t, f) {
+  const fw = { x: -f.x, z: -f.z }, left = { x: fw.z, z: -fw.x }, right = { x: -fw.z, z: fw.x };
+  if (/налево|влево|слева|left|<-|←|^\s*</i.test(t)) return left;
+  if (/направо|вправо|справа|right|->|→|>\s*$/i.test(t)) return right;
+  if (/прямо|вперёд|вперед|↑|\^/i.test(t)) return fw;
+  if (/назад|сзади|↓/i.test(t)) return f;
+  if (/север|north/i.test(t)) return { x: 0, z: -1 };
+  if (/(^|[^а-я])юг|south/i.test(t)) return { x: 0, z: 1 };
+  if (/запад|west/i.test(t)) return { x: -1, z: 0 };
+  if (/восток|east/i.test(t)) return { x: 1, z: 0 };
+  return null;
+}
 const DIR8 = ['восток', 'юго-восток', 'юг', 'юго-запад', 'запад', 'северо-запад', 'север', 'северо-восток'];
 const dirName = (dx, dz) => DIR8[((Math.round(Math.atan2(dz, dx) / (Math.PI / 4)) % 8) + 8) % 8];
 
@@ -106,6 +132,26 @@ class Features {
       const edge = (e) => Math.hypot(e.x - p.x, e.z - p.z) > 24;
       roads.push({ mat, width: Math.round(ax.width), len: Math.round(ax.len), e1, e2, y, more: edge(e1) || edge(e2), ux: ax.ux, uz: ax.uz });
     }
+    // проходы по форме: клетка в узкой (до 4) и длинной (6+) полосе свободного пола по одной из осей
+    const runs = (c, dx, dz) => { let n = 1; for (const s2 of [1, -1]) for (let k = 1; k < 14; k++) { if (!grid.has(`${c.x + dx * k * s2},${c.z + dz * k * s2}`)) break; n++; } return n; };
+    const narrow = new Map();
+    for (const [k, c] of grid) { const rx = runs(c, 1, 0), rz = runs(c, 0, 1); if ((rx <= 4 && rz >= 6) || (rz <= 4 && rx >= 6)) narrow.set(k, c); }
+    for (const r of regions(narrow, () => 'p')) {
+      if (r.cells.length < 10) continue;
+      const ax = axis(r.cells);
+      if (ax.len < 8 || ax.len / Math.max(1, ax.width) < 2.5) continue;
+      // не та же дорога, что уже найдена по материалу
+      if (roads.some((rd) => Math.hypot((rd.e1.x + rd.e2.x) / 2 - ax.mx, (rd.e1.z + rd.e2.z) / 2 - ax.mz) < 4 && Math.abs(rd.ux * ax.ux + rd.uz * ax.uz) > 0.8)) continue;
+      const mid = r.cells[Math.floor(r.cells.length / 2)], c0 = grid.get(`${mid[0]},${mid[1]}`);
+      const roof = [2, 3, 4, 5].some((dy) => { const k = this.bot.blockAt(new Vec3(c0.x, c0.y + dy, c0.z), false); return k && k.boundingBox === 'block'; });
+      const side = (sx, sz) => { const k = this.bot.blockAt(new Vec3(Math.round(c0.x + sx), c0.y - 1, Math.round(c0.z + sz)), false); return k ? k.name : ''; };
+      const sides = [side(-ax.uz * 3, ax.ux * 3), side(ax.uz * 3, -ax.ux * 3)];
+      const kind = roof ? 'тоннель' : sides.some((n) => /^(air|lava|water|void_air|cave_air)$/.test(n)) ? 'мост' : 'проход';
+      const mats = {}; for (const [x, z] of r.cells) { const n = grid.get(`${x},${z}`).name; mats[n] = (mats[n] || 0) + 1; }
+      const e1 = { x: Math.round(ax.mx + ax.ux * ax.lo), z: Math.round(ax.mz + ax.uz * ax.lo) }, e2 = { x: Math.round(ax.mx + ax.ux * ax.hi), z: Math.round(ax.mz + ax.uz * ax.hi) };
+      const edge = (e) => Math.hypot(e.x - p.x, e.z - p.z) > 24;
+      roads.push({ kind, mat: Object.entries(mats).sort((u, v) => v[1] - u[1]).slice(0, 2).map((e) => e[0]), width: Math.round(ax.width), len: Math.round(ax.len), e1, e2, y: c0.y, more: edge(e1) || edge(e2), ux: ax.ux, uz: ax.uz });
+    }
     // разметка: цветные фигуры среди пола другого цвета
     const marks = [];
     for (const r of regions(grid, (c) => hueOf(c.name))) {
@@ -132,7 +178,31 @@ class Features {
       }
       if (best) { best.rd.label = m.hue; best.rd.start = best.e; best.rd.toward = dirName(best.far.x - best.e.x, best.far.z - best.e.z); m.road = best.rd; }
     }
-    this._scene = { at: now, dim, roads, marks, pos: p.clone() };
+    // таблички с направлением: подписать проход или дорогу, что уходит в ту сторону
+    const signs = [];
+    try {
+      for (const v of this.bot.findBlocks({ matching: (bl) => /_sign$/.test(bl.name), maxDistance: 20, count: 24 })) {
+        const bl = this.bot.blockAt(v); if (!bl) continue;
+        let lines = []; try { const st = bl.getSignText(); lines = (Array.isArray(st) ? st : [st]).join('\n').split('\n').map((x) => String(x || '').replace(/\s+/g, ' ').trim()).filter(Boolean); } catch {}
+        if (!lines.length) continue;
+        const f = signFront(bl); if (!f) continue;
+        // строка - отдельное указание («Энд налево», «столовая вперёд»); плюс вся табличка целиком
+        for (const ln of lines.length > 1 ? lines.concat([lines.join(' ')]) : lines) {
+          const d = signDir(ln, f); if (!d) continue;
+          const subj = ln.replace(DIRWORDS, ' ').replace(/[<>^←→↑↓|«»"]/g, ' ').replace(/\s+/g, ' ').trim();
+          if (subj.length < 2) continue;
+          signs.push({ subj: subj.slice(0, 40), x: v.x, z: v.z, d });
+          let best = null, bs = 0.6;
+          for (const rd of roads) for (const [e, far] of [[rd.e1, rd.e2], [rd.e2, rd.e1]]) {
+            if (Math.hypot(e.x - v.x, e.z - v.z) > 12) continue;
+            const vx = far.x - v.x, vz = far.z - v.z, L = Math.hypot(vx, vz) || 1, c = (vx * d.x + vz * d.z) / L;
+            if (c > bs) { bs = c; best = { rd, e, far }; }
+          }
+          if (best && !best.rd.label) { best.rd.label = subj.slice(0, 40); best.rd.start = best.e; best.rd.toward = dirName(best.far.x - best.e.x, best.far.z - best.e.z); best.rd.bySign = true; }
+        }
+      }
+    } catch {}
+    this._scene = { at: now, dim, roads, marks, signs, pos: p.clone() };
     this.rememberFeatures(dim, roads, marks);
   }
 
@@ -146,10 +216,10 @@ class Features {
       const rec = { dim, mat: rd.mat, width: rd.width, len: rd.len, e1: rd.e1, e2: rd.e2, y: rd.y, label: rd.label || (same && same.label) || '', start: rd.start || (same && same.start) || null, toward: rd.toward || (same && same.toward) || '', at: Date.now() };
       if (same) { if (!same.label && rec.label) changed = true; Object.assign(same, rec); } else { R.push(rec); changed = true; }
       if (rd.label && rd.start) {
-        const name = `ветка ${rd.label}`;
+        const name = rd.bySign ? `${rd.label} (по табличке)` : `ветка ${rd.label}`;
         const old = m.data.places && Object.values(m.data.places).find((pl) => pl.name === name && pl.dim === dim);
         if (!old || Math.hypot(old.x - rd.start.x, old.z - rd.start.z) > 6) {
-          m.place({ name, x: rd.start.x, y: rd.y, z: rd.start.z, dim, note: `начало дороги (${rd.mat[0]}), ведёт на ${rd.toward}; метка - ${rd.label} разметка на полу` }, this.opts.name + ' (понял по разметке)');
+          m.place({ name, x: rd.start.x, y: rd.y, z: rd.start.z, dim, note: `начало: ${rd.kind || 'дорога'} (${rd.mat[0]}), ведёт на ${rd.toward}; ${rd.bySign ? 'так указывает табличка' : 'метка - ' + rd.label + ' разметка на полу'}` }, this.opts.name + (rd.bySign ? ' (понял по табличке)' : ' (понял по разметке)'));
           this.log(`понял: ${name} - дорога из ${rd.mat[0]} от ${rd.start.x} ${rd.start.z} на ${rd.toward}`);
         }
       }
@@ -163,7 +233,7 @@ class Features {
     const S = this._scene; if (!S || Date.now() - S.at > 60000) return '';
     const me = this.bot.entity.position, out = [];
     const rs = S.roads.slice().sort((a, b) => Math.min(Math.hypot(a.e1.x - me.x, a.e1.z - me.z), Math.hypot(a.e2.x - me.x, a.e2.z - me.z)) - Math.min(Math.hypot(b.e1.x - me.x, b.e1.z - me.z), Math.hypot(b.e2.x - me.x, b.e2.z - me.z))).slice(0, 4);
-    for (const r of rs) out.push(`${r.label ? 'ветка ' + r.label + ': ' : ''}дорога из ${r.mat.join('+')} шир. ${r.width}, ${r.len}${r.more ? '+' : ''} бл., ${r.e1.x} ${r.e1.z} - ${r.e2.x} ${r.e2.z}${r.toward ? ', ведёт на ' + r.toward : ''}`);
+    for (const r of rs) out.push(`${r.label ? (r.bySign ? '«' + r.label + '» по табличке: ' : 'ветка ' + r.label + ': ') : ''}${r.kind || 'дорога'} из ${r.mat.join('+')} шир. ${r.width}, ${r.len}${r.more ? '+' : ''} бл., ${r.e1.x} ${r.e1.z} - ${r.e2.x} ${r.e2.z}${r.toward ? ', ведёт на ' + r.toward : ''}`);
     const ms = S.marks.filter((m) => !m.road).slice(0, 4);
     for (const m of ms) out.push(`разметка: ${m.hue} ${m.shape}${m.dir ? ' на ' + dirName(m.dir.x, m.dir.z) : ''} у ${m.x} ${m.z} (${m.blocks.join(', ')})`);
     return out.join('; ');
@@ -182,6 +252,13 @@ class Features {
 
   /** Известная подписанная дорога, что ведёт к цели (для дальнего пути): начало и направление. */
   roadToward(dim, from, to) {
+    // у цели есть имя - сначала дорога, подписанная похожим словом («замок», «Энд», «красная»)
+    const R0 = (this.memory && this.memory.data.roads) || [];
+    if (to.name) {
+      const words = String(to.name).toLowerCase().split(/[^a-zа-яё0-9]+/i).filter((w) => w.length > 2);
+      const hit = R0.find((r) => r.dim === dim && r.start && r.label && words.some((w) => r.label.toLowerCase().includes(w)) && Math.hypot(r.start.x - from.x, r.start.z - from.z) < 300);
+      if (hit) { const far = Math.hypot(hit.e1.x - hit.start.x, hit.e1.z - hit.start.z) > Math.hypot(hit.e2.x - hit.start.x, hit.e2.z - hit.start.z) ? hit.e1 : hit.e2; const L = Math.hypot(far.x - hit.start.x, far.z - hit.start.z) || 1; return { road: hit, ux: (far.x - hit.start.x) / L, uz: (far.z - hit.start.z) / L }; }
+    }
     const R = (this.memory && this.memory.data.roads) || [];
     const tx = to.x - from.x, tz = to.z - from.z, TL = Math.hypot(tx, tz) || 1;
     let best = null, bs = 0.85;
