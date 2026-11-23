@@ -744,6 +744,7 @@ class TotemBot extends EventEmitter {
       this.log(`застрял: я ${p.x.toFixed(1)} ${p.y.toFixed(1)} ${p.z.toFixed(1)}, цель ${g ? g.constructor.name : 'нет'}${gp ? ' до неё ' + gp.distanceTo(p).toFixed(1) : ''}, путь ${lp.status || '?'} ${(lp.path || []).slice(0, 3).map((n) => `${Math.floor(n.x)},${Math.floor(n.y)},${Math.floor(n.z)}`).join(' ')}, под ногами ${(b.blockAt(fl.offset(0, -1, 0)) || {}).name}, вокруг ${around.join(' ')}, земля ${b.entity.onGround}`);
     }
     this.log('застрял, пробую выбраться (' + this.stuck.tries + ')');
+    if (this.stuck.tries >= 2) this.dumpArea('застрял');
     this.ev('застрял', { tries: this.stuck.tries, goal: b.pathfinder.goal ? b.pathfinder.goal.constructor.name : '' });
     // водоросли и трава в воде держат тело («застрял в водорослях», 15.11): срезать их вокруг - ломаются мгновенно, природное
     {
@@ -1379,7 +1380,7 @@ class TotemBot extends EventEmitter {
       } finally { ctl0('forward', false); ctl0('sprint', false); ctl0('jump', false); }
     }
     if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 0.6) { try { await this.goto(new goals.GoalNear(x + 0.5, col.y, z + 0.5, 0.6), tok, 30000); } catch (e) { if (this.isCancel(e)) throw e; } }
-    if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 1.5) return `до лестницы у ${x} ${col.y} ${z} не дошёл`;
+    if (Math.hypot(b.entity.position.x - x - 0.5, b.entity.position.z - z - 0.5) > 1.5) { this.dumpArea('до лестницы не дошёл'); return `до лестницы у ${x} ${col.y} ${z} не дошёл`; }
     const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
     const hatchOpen = async (yy) => {
       const h = b.blockAt(new Vec3(x, yy, z));
@@ -1472,7 +1473,7 @@ class TotemBot extends EventEmitter {
           if (await hatchOpen(fy + 2) || await hatchOpen(fy + 1)) { opened++; this._sideTried = false; }
           still = Date.now();
         }
-        else if (Date.now() - still > 4000) return `застрял на лестнице на ${fy} (дальше не лезется: ${(b.blockAt(new Vec3(x, fy + (up ? 2 : -1), z)) || {}).name})`;
+        else if (Date.now() - still > 4000) { this.dumpArea('застрял на лестнице'); return `застрял на лестнице на ${fy} (дальше не лезется: ${(b.blockAt(new Vec3(x, fy + (up ? 2 : -1), z)) || {}).name})`; }
         await sleep(50);
       }
       return 'лез по лестнице минуту и не долез';
@@ -1553,6 +1554,7 @@ class TotemBot extends EventEmitter {
       if (!moved) { if (++this._outsideIdle >= 3) break; } else this._outsideIdle = 0;
     }
     const f = b.entity.position.floored();
+    if (!sky(f.x, f.y, f.z)) this.dumpArea('наружу не вышел');
     return sky(f.x, f.y, f.z) ? `вышел наружу: ${f.x} ${f.y} ${f.z}` : `наружу не вышел${done.length ? ' (' + done.join('; ') + ')' : ''}: стою на ${f.x} ${f.y} ${f.z}`;
   }
 
@@ -1561,6 +1563,28 @@ class TotemBot extends EventEmitter {
     const b = this.bot, f = b.entity.position.floored();
     for (let yy = f.y + 2; yy < f.y + 40; yy++) { const k = b.blockAt(new Vec3(f.x, yy, f.z)); if (!k) return ''; if (k.boundingBox === 'block') break; if (yy === f.y + 39) return ''; }
     try { const m = await this.useMechanism({ x: f.x, y: f.y, z: f.z }, tok); return m ? m + '; ' : ''; } catch (e) { if (this.isCancel(e)) throw e; return ''; }
+  }
+
+  /**
+   * Копия блоков вокруг в файл (logs/area.<время>.json): для стенда - собрать то же место один в один и чинить по нему
+   * (23.11: лаз владельца с люками, кнопкой и секретной стеной - гадать по описанию надоело). Не чаще раза в минуту.
+   */
+  dumpArea(reason) {
+    try {
+      if (Date.now() - (this._dumpAt || 0) < 60000) return;
+      this._dumpAt = Date.now();
+      const b = this.bot, f = b.entity.position.floored(), blocks = {};
+      for (let dx = -16; dx <= 16; dx++) for (let dy = -12; dy <= 24; dy++) for (let dz = -16; dz <= 16; dz++) {
+        const k = b.blockAt(f.offset(dx, dy, dz)); if (!k || k.name === 'air' || k.name === 'cave_air') continue;
+        const pr = k.getProperties ? k.getProperties() : {};
+        blocks[`${dx},${dy},${dz}`] = Object.keys(pr).length ? [k.name, pr] : k.name;
+      }
+      const owner = (this.opts.masters || []).map((n) => this.player(n)).find(Boolean);
+      const out = { reason: String(reason || ''), at: new Date().toISOString(), version: b.version, origin: [f.x, f.y, f.z], bot: [b.entity.position.x - f.x, b.entity.position.y - f.y, b.entity.position.z - f.z], owner: owner ? [owner.position.x - f.x, owner.position.y - f.y, owner.position.z - f.z] : null, blocks };
+      const dir = require('path').join(process.env.TOTEMBOTS_LOCAL || require('path').join(__dirname, '..', 'local'), 'logs');
+      require('fs').writeFileSync(require('path').join(dir, `area.${new Date().toISOString().replace(/[:.]/g, '-')}.json`), JSON.stringify(out));
+      this.log(`копия места для разбора сохранена (${Object.keys(blocks).length} блоков): ${reason}`);
+    } catch (e) { this.log('копия места не сохранилась: ' + e.message); }
   }
 
   dashAfterMech() {
