@@ -58,7 +58,7 @@ class TotemBot extends EventEmitter {
     const { name, host, port } = this.opts;
     this.status = 'connecting';
     this.log(`захожу на ${host}:${port} как ${name}`);
-    const bot = this.bot = mineflayer.createBot({ host, port, username: name, version: VERSION, auth: 'offline', hideErrors: true });
+    const bot = this.bot = mineflayer.createBot({ host, port, username: name, version: this.opts.version || process.env.TB_VERSION || VERSION, auth: 'offline', hideErrors: true });   // версия протокола: настройка бота, иначе стабильная
     bot.loadPlugin(pathfinder);
     bot._client.on('show_dialog', (d) => this.onDialog(d));
     // Уши: аддон TotemVoiceAddon присылает речь игроков рядом по каналу totem:ears ([1]+ник, [2]+PCM 48 кГц, [3]).
