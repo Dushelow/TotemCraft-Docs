@@ -142,6 +142,7 @@ class Vehicles {
     // а бот считал, что не вышло - «Failed to place entity», стенд 23.11)
     const before = new Set(Object.keys(b.entities));
     const isNew = (x) => !before.has(String(x.id)) && /boat|raft/.test(x.name || '') && x.position.distanceTo(spot.position) < 4;
+    this.log(`ставлю лодку на ${spot.name} ${spot.position.x} ${spot.position.y} ${spot.position.z} (я у ${Math.floor(me.x)} ${Math.floor(me.y)} ${Math.floor(me.z)}, мест ${cand.length})`);
     try {
       await b.lookAt(spot.position.offset(0.5, 0.9, 0.5), true);
       await sleep(100);
@@ -208,6 +209,8 @@ class Vehicles {
     const c = (k) => !!b.getControlState(k);
     const ps = v.passengers || [];
     const driver = /boat|raft/.test(v.name || '') && (!ps.length || ps[0] === b.entity);
+    // верхом (лошадь, осёл, мул, верблюд, свинья, страйдер): правит первый седок - движение считает клиент (mechanics.js)
+    const rider = !driver && /horse|donkey|mule|camel|^pig$|strider|llama/.test(v.name || '') && ps[0] === b.entity;
     // shift - слезть (с 1.21.2 сервер высаживает по «присесть» во вводе, а не по прыжку, как шлёт mineflayer.dismount)
     try { b._client.write('player_input', { inputs: { forward: c('forward'), backward: c('back'), left: c('left'), right: c('right'), jump: false, shift: !!this._wantOff || c('sneak'), sprint: false } }); } catch {}   // присед = встать с сиденья GSit (standUp)
     if (driver) {
@@ -237,6 +240,13 @@ class Vehicles {
       b._client.write('vehicle_move', { x: p.x, y: p.y, z: p.z, yaw: R.yawDeg, pitch: 0, onGround: false });
       try { b._client.write('steer_boat', { leftPaddle: c('forward') || c('right'), rightPaddle: c('forward') || c('left') }); } catch {}
     }
+    // взгляд седока - серверу (пока сидит, физика mineflayer молчит и поворот не уходил): вагонетка толкается «вперёд»
+    // туда, куда смотрит игрок (стенд 23.11: смотрел вдоль рельсов, а сервер считал по старому взгляду - стояла)
+    if (!driver && !rider) {
+      const ny = 180 - b.entity.yaw * 180 / Math.PI, np = -b.entity.pitch * 180 / Math.PI;
+      if (R.lookYaw === undefined || Math.abs(ny - R.lookYaw) > 0.5 || Math.abs(np - R.lookPitch) > 0.5) { R.lookYaw = ny; R.lookPitch = np; try { b._client.write('look', { yaw: ny, pitch: np, onGround: false, flags: { onGround: false, hasHorizontalCollision: false } }); } catch {} }
+    }
+    if (rider && this.horseTick) { try { this.horseTick(v, c); } catch (e) { if (!this._horseErr) { this._horseErr = 1; this.log('верхом: ' + e.message); } } }
     try { b._client.write('tick_end', {}); } catch {}
   }
 
@@ -250,6 +260,19 @@ class Vehicles {
     const x = +a.x, z = +a.z;
     if (!isFinite(x) || !isFinite(z)) throw new Error('куда? нужны x и z');
     const boat = /boat|raft/.test(b.vehicle.name || '');
+    // по прямой - суша (остров, мыс, берег реки с поворотом): путь по воде, плыть по точкам поворота
+    if (boat && !a._leg && this.waterRoute) {
+      const vp = b.vehicle.position, L = Math.hypot(x - vp.x, z - vp.z);
+      let land = false;
+      for (let t = 2; t < L - 3 && !land; t += 2) { const k = b.blockAt(new Vec3(Math.floor(vp.x + (x - vp.x) * t / L), Math.floor(vp.y), Math.floor(vp.z + (z - vp.z) * t / L)), false); if (k && !/water|ice|air/.test(k.name)) land = true; }
+      if (land) {
+        const route = this.waterRoute(vp, { x, z });
+        if (route && route.length > 1) {
+          this.log(`по прямой суша - плыву в обход: ${route.length} точек`);
+          for (const pt of route.slice(0, -1)) { const r0 = await this.drive({ x: pt.x, z: pt.z, _leg: true, seconds: 60 }, tok); if (/упёрлась/.test(r0)) return r0; }
+        } else if (!route) this.log('по воде к цели не доплыть - плыву напрямик, сколько выйдет');
+      }
+    }
     const until = Date.now() + Math.min(600, +a.seconds || 180) * 1000;
     let flip = 1, lastErr = null, errAt = Date.now();
     this.busyLook = true;
@@ -275,7 +298,8 @@ class Vehicles {
         b.setControlState('forward', go);
         b.setControlState('left', turn > 0);
         b.setControlState('right', turn < 0);
-        if (!boat) { try { b.moveVehicle(turn, go ? 1 : 0); } catch {} }   // лодку ведёт rideTick по клавишам
+        // лодку и лошадь ведёт rideTick по клавишам и взгляду (mechanics.js horseTick); прочее - по-старому
+        if (!boat && !/horse|donkey|mule|camel|^pig$|strider|llama/.test(b.vehicle.name || '')) { try { b.moveVehicle(turn, go ? 1 : 0); } catch {} }
         await sleep(100);
       }
     } finally { b.clearControlStates(); try { b.moveVehicle(0, 0); } catch {} this.busyLook = false; }

@@ -505,6 +505,8 @@ class TotemBot extends EventEmitter {
     if (!b || !b.entity || b.pathfinder.isMoving() || this.busyLook || this.mode === 'task' || (this.guard && this.guard.fighting)) return;
     const t = this.lookTarget;
     if (!t) return;
+    // эндермену в глаза не смотреть - разозлится (Энд, ночь): цель взгляда у его головы - не поворачиваться
+    if (Object.values(b.entities).some((e) => e.name === 'enderman' && e.position && t.distanceTo(e.position.offset(0, 2.6, 0)) < 1.6)) return;
     const eye = b.entity.position.offset(0, b.entity.height * 0.9, 0);
     const d = t.minus(eye);
     const yaw = Math.atan2(-d.x, -d.z);
@@ -1830,6 +1832,9 @@ class TotemBot extends EventEmitter {
           case 'teachStop': r = this.teachStop(); break;
           case 'route': r = await this.routeRun(a, tok); break;
           case 'survey': r = await this.survey(a, tok); break;
+          case 'fly': r = await this.fly(a, tok); break;
+          case 'rail': r = await this.rail(a, tok); break;
+          case 'brew': r = await this.brew(a, tok); break;
           case 'link': r = this.link(a); break;
           case 'howTo': r = this.howTo(a); break;
           case 'prepare': r = await this.prepare(a, tok); break;
@@ -1914,7 +1919,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll, require('./loadout').Loadout, require('./features').Features, require('./navgraph').NavGraph, require('./survey').Survey]) {
+for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll, require('./loadout').Loadout, require('./features').Features, require('./navgraph').NavGraph, require('./survey').Survey, require('./mechanics').Mechanics]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

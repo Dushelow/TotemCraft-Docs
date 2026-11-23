@@ -12,6 +12,14 @@ const FLEE = new Set(['creeper', 'warden']);
 const COOLDOWN = { sword: 13, axe: 20, trident: 19, mace: 34, spear: 20, hand: 5 };
 const WEAPON_SCORE = { netherite_sword: 8, diamond_sword: 7, netherite_axe: 7.5, diamond_axe: 7, iron_sword: 6, iron_axe: 6.5,
   stone_sword: 5, stone_axe: 6, golden_sword: 4, wooden_sword: 4, copper_sword: 5.5, copper_axe: 6.2, trident: 6, mace: 5 };
+// зелье в предмете - номер (potion_contents.potionId), а не название (стенд 23.11: бот не узнавал свои зелья)
+const POTIONS = ['water', 'mundane', 'thick', 'awkward', 'night_vision', 'long_night_vision', 'invisibility', 'long_invisibility', 'leaping', 'long_leaping', 'strong_leaping', 'fire_resistance', 'long_fire_resistance', 'swiftness', 'long_swiftness', 'strong_swiftness', 'slowness', 'long_slowness', 'strong_slowness', 'turtle_master', 'long_turtle_master', 'strong_turtle_master', 'water_breathing', 'long_water_breathing', 'healing', 'strong_healing', 'harming', 'strong_harming', 'poison', 'long_poison', 'strong_poison', 'regeneration', 'long_regeneration', 'strong_regeneration', 'strength', 'long_strength', 'strong_strength', 'weakness', 'long_weakness', 'luck', 'slow_falling', 'long_slow_falling', 'wind_charged', 'weaving', 'oozing', 'infested'];
+function potionName(it) {
+  if (!it || !/potion/.test(it.name)) return '';
+  const raw = JSON.stringify(it.components || it.nbt || '');
+  const m = /"potionId":(\d+)/.exec(raw); if (m) return POTIONS[+m[1]] || '';
+  const n = /"(?:minecraft:)?([a-z_]+)"/.exec((/potion[^}]*/.exec(raw) || [''])[0]); return n ? n[1] : raw;
+}
 const RANGED = /^(skeleton|stray|bogged|pillager|witch|blaze)$/;
 // опасность врага (примерно: урон и живучесть) - для оценки «по силам ли бой»
 const DANGER = { creeper: 4, skeleton: 3, stray: 3, bogged: 3, pillager: 3, witch: 4, blaze: 4, vindicator: 5, evoker: 6, ravager: 8, zombie: 2, husk: 2, drowned: 2.5, spider: 2, cave_spider: 2.5, enderman: 4, piglin_brute: 6, wither_skeleton: 5, hoglin: 4, zoglin: 4, slime: 1.5, magma_cube: 2, phantom: 2.5, vex: 3, silverfish: 1, endermite: 1, guardian: 3, elder_guardian: 6, breeze: 4, warden: 99 };
@@ -307,7 +315,7 @@ class Guard {
     if ((foes >= 3 || this.prey) && !has(5)) want.push(/strength/);
     if ((foes >= 3 || this.prey) && !has(1)) want.push(/swiftness|speed/);
     for (const re of want) {
-      const it = b.inventory.items().find((i) => /potion$/.test(i.name) && !/splash|lingering/.test(i.name) && re.test(JSON.stringify(i.components || i.nbt || '')));
+      const it = b.inventory.items().find((i) => /potion$/.test(i.name) && !/splash|lingering/.test(i.name) && re.test(potionName(i)));
       if (!it) continue;
       this.buffAt = now; this.tb.eating = true;
       try { await b.equip(it, 'hand'); b.activateItem(); await new Promise((r) => setTimeout(r, 1700)); b.deactivateItem(); this.tb.log('зелье перед боем: ' + re.source); }
@@ -384,7 +392,7 @@ class Guard {
   /** Зелье лечения (питьё или взрывное под ноги) или регенерации, если есть. */
   async drinkHeal() {
     const b = this.bot;
-    const it = b.inventory.items().find((i) => /potion/.test(i.name) && /healing|regeneration|heal/.test(JSON.stringify(i.components || i.nbt || '')));
+    const it = b.inventory.items().find((i) => /potion/.test(i.name) && /healing|regeneration/.test(potionName(i)));
     if (!it) return;
     this.potAt = Date.now();
     this.tb.eating = true;
@@ -429,4 +437,4 @@ class Guard {
   }
 }
 
-module.exports = { Guard };
+module.exports = { Guard, potionName };
