@@ -241,16 +241,27 @@ class TotemBot extends EventEmitter {
       if (this.dim && this.dim !== bot.game.dimension) this.arrivedAt = Date.now();
       this.dim = bot.game.dimension; this.inPortal = null;
     });
+    // след хозяина - где он прошёл (23.11, владелец: «че он не мог научиться у меня»): если к нему нет пути, пройти
+    // его же дорогой шаг в шаг - через скрытую дверь, течение, лаз
+    bot.on('entityMoved', (e) => {
+      try {
+        if (!e || e.type !== 'player' || !(this.opts.masters || []).includes(e.username)) return;
+        const T = (this._trail = this._trail || []), last = T[T.length - 1], p = e.position;
+        if (last && last.p.distanceTo(p) < 0.5) return;
+        T.push({ p: p.clone(), at: Date.now(), who: e.username }); if (T.length > 300) T.shift();
+      } catch {}
+    });
     bot.on('path_update', (r) => {
       this.lastPath = { status: r.status, path: r.path, at: Date.now() };
       // иду за хозяином, а до него прохода нет (он за скрытой дверью, в закрытой комнате): путь «частичный» уводит в
       // обход куда попало - 23.11 убежал вниз в пещеры и заблудился. Не уходить: стоять, ждать, пробовать механизм
       try {
-        if (this._mechBusy || this.mode !== 'follow' || r.status !== 'partial' || !this._followEnt || !r.path.length) return;
+        if (this._mechBusy || this._trailBusy || this.mode !== 'follow' || r.status !== 'partial' || !this._followEnt || !r.path.length) return;
         const own = this._followEnt.position, me = bot.entity.position, end = r.path[r.path.length - 1];
         if (!own || me.distanceTo(own) > 24 || end.distanceTo(own) <= 4) return;
         if (end.distanceTo(own) < me.distanceTo(own) - 2) return;   // частичный, но ведёт ближе - пусть идёт
         bot.pathfinder.setGoal(null);
+        if (!this._trailBusy && this.walkTrail) { this._trailBusy = true; this.walkTrail(this.followName).then((m) => { if (m) this.log(m); }).catch(() => {}).finally(() => { this._trailBusy = false; }); return; }
         if (!this._waitWallSaid || Date.now() - this._waitWallSaid > 60000) { this._waitWallSaid = Date.now(); this.log(`к ${this.followName} прохода не вижу - жду здесь, не ухожу`); }
         if (!this._mechBusy) { this._mechBusy = true; this.useMechanism(own, this.token).then((m) => { if (m) this.log(m + ' - бегом к хозяину'); }).catch(() => {}).finally(() => { this._mechBusy = false; }); }
         clearTimeout(this._followRetry);
@@ -1271,6 +1282,34 @@ class TotemBot extends EventEmitter {
    */
   /** После кнопки или плиты - бегом 6 с: скрытый проход закрывается через пару секунд (23.11, владелец: «нажал, быстро
    *  поднялся и выбежал», а бот стоял и думал). */
+  async walkTrail(who) {
+    const b = this.bot, T = (this._trail || []).filter((t) => t.who === who && Date.now() - t.at < 10 * 60000);
+    if (T.length < 3) return '';
+    const me = b.entity.position;
+    let i = -1, best = 4;   // ближайшая точка следа рядом (до 4 бл.), с неё и идти
+    T.forEach((t, k) => { const d = t.p.distanceTo(me); if (d < best) { best = d; i = k; } });
+    if (i < 0) return '';
+    this.log(`к ${who} пути нет - иду его следом (${T.length - i} точек)`);
+    const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
+    try {
+      for (let k = i; k < T.length; k++) {
+        const t = T[k].p, until = Date.now() + 2500;
+        while (Date.now() < until) {
+          const p = b.entity.position;
+          if (Math.hypot(t.x - p.x, t.z - p.z) < 0.6 && Math.abs(t.y - p.y) < 1.2) break;
+          await b.lookAt(t.offset(0, 1.5, 0), true);
+          const wet = /water/.test((b.blockAt(p) || {}).name || '');
+          ctl('forward', true); ctl('sprint', true); ctl('jump', wet || t.y - p.y > 0.4);
+          await new Promise((r) => setTimeout(r, 50));
+        }
+        if (this.mode !== 'follow') break;
+        const own = this.player(who); if (own && own.position.distanceTo(b.entity.position) < 3) break;
+      }
+    } finally { ctl('forward', false); ctl('sprint', false); ctl('jump', false); }
+    try { const e = this.player(who); if (this.mode === 'follow' && e) b.pathfinder.setGoal(new goals.GoalFollow(e, this.followDist()), true); } catch {}
+    return `прошёл следом за ${who}`;
+  }
+
   dashAfterMech() {
     this._mechAt = Date.now();
     const mv = this.bot.pathfinder.movements; if (!mv) return;
