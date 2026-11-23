@@ -12,7 +12,9 @@ const SWIM_FAST = 0.21;   // блоков за тик рывком под вод
 const SWIM_SURF = 0.11;   // у поверхности (~2,2 бл./с)
 const WATER = /^(water|bubble_column|kelp|kelp_plant|seagrass|tall_seagrass)$/;
 
-function isWater(b, v) { const k = b.blockAt(v); return !!(k && (WATER.test(k.name) || (k.getProperties && k.getProperties().waterlogged))); }
+// залитые водой полублоки, ступеньки, люки, заборы - для плавания НЕ вода: сквозь них не всплыть (23.11: тонул под
+// полублоками над водой - путь наверх шёл сквозь залитый полублок, а тело упиралось в него головой)
+function isWater(b, v) { const k = b.blockAt(v); return !!(k && (WATER.test(k.name) || (k.getProperties && k.getProperties().waterlogged && k.boundingBox !== 'block'))); }
 
 /** Следующая точка пути (3D, середина клетки), хотя бы на 0,6 блока впереди. */
 function nextPoint(tb) {
