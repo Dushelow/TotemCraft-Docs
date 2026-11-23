@@ -263,12 +263,19 @@ class Features {
     const R = (this.memory && this.memory.data.roads) || [];
     const tx = to.x - from.x, tz = to.z - from.z, TL = Math.hypot(tx, tz) || 1;
     let best = null, bs = 0.85;
+    // Любая дорога или проход, а не только подписанные (23.11, владелец: «надо, чтобы он сам разобрался»): как сделал
+    // бы игрок в незерхабе - какие дороги отсюда расходятся, какая идёт в сторону цели, по ней. Начало - ближний ко мне
+    // конец; подписанная дорога при прочих равных лучше; длинная (уходит за обзор) - лучше короткой
+    let bScore = -Infinity;
     for (const r of R) {
-      if (r.dim !== dim || !r.start) continue;
-      if (Math.hypot(r.start.x - from.x, r.start.z - from.z) > 200) continue;
-      const far = Math.hypot(r.e1.x - r.start.x, r.e1.z - r.start.z) > Math.hypot(r.e2.x - r.start.x, r.e2.z - r.start.z) ? r.e1 : r.e2;
-      const vx = far.x - r.start.x, vz = far.z - r.start.z, L = Math.hypot(vx, vz) || 1, c = (vx * tx + vz * tz) / (L * TL);
-      if (c > bs) { bs = c; best = { road: r, ux: vx / L, uz: vz / L }; }
+      if (r.dim !== dim) continue;
+      const d1 = Math.hypot(r.e1.x - from.x, r.e1.z - from.z), d2 = Math.hypot(r.e2.x - from.x, r.e2.z - from.z);
+      const st = r.start || (d1 < d2 ? r.e1 : r.e2), far = st === r.e1 || (st.x === r.e1.x && st.z === r.e1.z) ? r.e2 : r.e1;
+      if (Math.hypot(st.x - from.x, st.z - from.z) > (r.start ? 200 : 60)) continue;
+      const vx = far.x - st.x, vz = far.z - st.z, L = Math.hypot(vx, vz) || 1, c = (vx * tx + vz * tz) / (L * TL);
+      if (c < bs || L < 12) continue;
+      const score = c * 2 + (r.label ? 0.3 : 0) + Math.min(1, L / 100) * 0.5 - Math.hypot(st.x - from.x, st.z - from.z) / 200;
+      if (score > bScore) { bScore = score; best = { road: { ...r, start: st }, ux: vx / L, uz: vz / L }; }
     }
     return best;
   }

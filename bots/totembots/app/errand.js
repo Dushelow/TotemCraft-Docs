@@ -104,9 +104,19 @@ class Errands {
       start: p0 ? { x: Math.floor(p0.x), y: Math.floor(p0.y), z: Math.floor(p0.z), dim: this.dimName ? this.dimName() : '' } : null };
     this.saveErrand(e);
     this.log(`поручение: ${e.steps.map((s) => s.title).join(' → ')}`);
+    // в игре, а не только в панели (её видит не каждый): план и как управлять - словами в чате
+    this.questSay(e, `Квест: ${e.steps.map((s, i) => `${i + 1}) ${s.title}`).join('; ')}. Отменить - «отбой», после остановки - «продолжай».`);
     this.ev('поручение', { steps: e.steps.map((s) => s.title) });
     setTimeout(() => this.errandLoop().catch((err) => this.log('поручение: ' + err.message)), 500);
     return `принято поручение из ${e.steps.length} шагов: ${e.steps.map((s, i) => `${i + 1}) ${s.title}`).join('; ')}. Делаю сам(а) по шагам, тебе ничего вести не надо`;
+  }
+
+  /** Сказать тому, кто дал квест: рядом - в ближний чат, далеко или в другом мире - в личку. */
+  questSay(e, text) {
+    const boss = e.from || (this.opts.masters || [])[0];
+    if (!boss || !this.bot || !this.bot.players[boss]) return;
+    const near = this.player && this.player(boss) && this.player(boss).position.distanceTo(this.bot.entity.position) < 30;
+    try { this.say(text.slice(0, 240), near ? 'local' : 'whisper', boss); } catch {}
   }
 
   /** Хозяин: «отбой» - бросить, «продолжай» - продолжить после неудачи или прерывания. */
@@ -142,6 +152,7 @@ class Errands {
         if (!s) {
           e.state = 'done'; this.saveErrand(e);
           this.log('квест выполнен');
+          this.questSay(e, 'Квест выполнен: ' + (e.text || e.steps.map((x) => x.title).join(', ')).slice(0, 120));
           this.ev('поручение_готово', {});
           if (this.brainHook) this.brainHook(`[поручение выполнено] ${e.text || e.steps.map((x) => x.title).join(', ')}. Коротко скажи хозяину, что всё сделано.`);
           return;

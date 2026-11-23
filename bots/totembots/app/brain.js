@@ -930,6 +930,26 @@ class Brain {
       this.fails.push({ key, at: Date.now() });
       if (n >= 2) result += ` (это уже ${n}-й раз подряд не выходит - НЕ повторяй, придумай другой способ или другое место)`;
     }
+    // Уроки из опыта сами (23.11, владелец: «чтобы умел находить решения, обучаться»): дело не вышло, а потом то же
+    // дело (тот же вид: дойти, торговать, добыть) получилось другим способом - записать урок «так не вышло, так вышло».
+    // Когда похожее снова не выходит - напомнить мозгу его же уроки, а не начинать с нуля
+    try {
+      const kind = (actions.find((a) => !['say', 'look', 'wait', 'gesture', 'stop', 'follow'].includes(a.act)) || {}).act || '';
+      const F = (this.failMemo = (this.failMemo || []).filter((f) => Date.now() - f.at < 30 * 60000));
+      const where = (() => { try { return this.body.dimName() + ' ' + this.body.bot.entity.position.floored().toString().replace(/[()]/g, ''); } catch { return ''; } })();
+      if (failed && kind) {
+        F.push({ kind, label, err: result.replace(/^.*не получилось: /, '').slice(0, 90), at: Date.now(), where });
+        const L = ((this.memory && this.memory.data.lessons) || []).filter((l) => l.text.includes('[' + kind + ']')).slice(-3);
+        if (L.length) result += ` (твои уроки про это: ${L.map((l) => l.text.replace(/^\[[^\]]*\]\s*/, '')).join(' | ')})`;
+      } else if (!failed && kind) {
+        const f = F.find((x) => x.kind === kind && x.label !== label);
+        if (f && this.memory) {
+          this.memory.lesson(`[${kind}] не вышло «${f.label}» (${f.err}); вышло «${label}»${f.where ? ' у ' + f.where : ''}`, this.botCfg.name + ' (опыт)');
+          this.log(`урок записан: ${kind} - не вышло «${f.label}», вышло «${label}»`);
+          this.failMemo = F.filter((x) => x.kind !== kind);
+        }
+      }
+    } catch {}
     if (!failed && from && from !== 'сам' && this.isMaster(from) && this.ownerTask && /задание выполнено/.test(result)) this.ownerTask.done = Date.now();
     this.log('итог: ' + result);
     // о долгом задании Qwen узнаёт итог и может прокомментировать; follow/stop/remember - без отчёта
