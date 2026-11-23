@@ -1545,10 +1545,12 @@ class TotemBot extends EventEmitter {
         await b.equip(h, 'hand'); await b.lookAt(sp.offset(0.5, 1, 0.5), true); await b.activateBlock(b.blockAt(sp)); await sleep(250);
       } catch (e) { if (e instanceof Cancelled) throw e; }
     }
-    for (const sp of b.findBlocks({ matching: fl, maxDistance: r, count: 400 }).sort((u, v) => u.distanceTo(b.entity.position) - v.distanceTo(b.entity.position))) {
+    let emptySeen = 0;
+    for (const sp of b.findBlocks({ matching: fl, maxDistance: r, count: 4000 }).sort((u, v) => u.distanceTo(b.entity.position) - v.distanceTo(b.entity.position))) {
       this.check(tok);
       const up = b.blockAt(sp.offset(0, 1, 0));
-      if (!up || up.name !== 'air') continue;
+      if (!up || !/^(air|cave_air|void_air)$/.test(up.name)) continue;
+      emptySeen++;
       let crop = want && SEED[want] ? want : null;
       if (!crop) for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [2, 0], [0, 2], [-2, 0], [0, -2]]) { const n = b.blockAt(sp.offset(dx, 1, dz)); if (n && SEED[n.name]) { crop = n.name; break; } }
       if (!crop) continue;
@@ -1560,6 +1562,7 @@ class TotemBot extends EventEmitter {
         await b.placeBlock(b.blockAt(sp), new Vec3(0, 1, 0)); filled++;
       } catch (e) { if (e instanceof Cancelled) throw e; }
     }
+    this.log(`засев: пустых грядок видел ${emptySeen}, засеял ${filled}`);
     if (noHoe) noSeed.add('мотыги (вскопать вытоптанное)');
     const tail = (filled ? `, засадил пустых грядок: ${filled}` : '') + (noSeed.size ? `; нечем засадить пустое: нет ${[...noSeed].join(', ')}` : '');
     if (a.sowOnly) return filled ? `засеял пустых грядок: ${filled}` + (noSeed.size ? `; не хватило: ${[...noSeed].join(', ')}` : '') : (noSeed.size ? `нечем засеять: нет ${[...noSeed].join(', ')}` : 'пустых грядок рядом нет');
