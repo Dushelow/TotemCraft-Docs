@@ -196,7 +196,9 @@ function stateForPanel() {
 let panelFull = false;
 function layout() {
   const [w, h] = win.getContentSize();
-  const r = { x: panelFull ? w + 10 : PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
+  // первый запуск: окна сайтов (любые, не только Qwen) не показывать, пока мастер не заполнен - иначе белый лист поверх него
+  const hide = !(cfg.setupDone && cfg.host);
+  const r = { x: panelFull || hide ? w + 10 : PANEL_WIDTH, y: TAB_H, width: Math.max(0, w - PANEL_WIDTH), height: Math.max(0, h - TAB_H) };
   qwen.setBounds(r);
   for (const v of Object.values(webViews)) v.setBounds(r);
   for (const v of Object.values(myViews)) v.setBounds(r);
@@ -605,7 +607,7 @@ ipcMain.handle('setup-save', (_e, s) => {
   if (s.version === '26.1' || s.version === '1.21.11') cfg.mcVersion = s.version;
   if (name && !cfg.bots.some((x) => x.name === name)) cfg.bots.push({ name, password: String(s.password || ''), persona: String(s.persona || '').slice(0, 600) });
   cfg.setupDone = true; saveCfg();
-  try { qwen.setVisible(true); } catch {}
+  try { qwen.setVisible(true); layout(); } catch {}
   return { ok: true };
 });
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
