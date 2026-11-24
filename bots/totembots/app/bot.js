@@ -1509,6 +1509,32 @@ class TotemBot extends EventEmitter {
   }
 
   /** Выйти наружу, под открытое небо (23.11: «вылезти в город» - вылез из лаза в комнату и решил, что на улице). */
+  /** В воду: ближайшая открытая вода под небом (до 40 бл.), дойти и поплавать a.seconds (3 с). Путь пишется - назад им же. */
+  async goSwim(a, tok) {
+    const b = this.bot, me = b.entity.position.floored();
+    const sky = (x, y, z) => { for (let yy = y + 1; yy < y + 30; yy++) { const k = b.blockAt(new Vec3(x, yy, z)); if (!k) return true; if (k.boundingBox === 'block') return false; } return true; };
+    const cand = b.findBlocks({ matching: (bl) => bl.name === 'water', maxDistance: 40, count: 600 })
+      .filter((q) => { const up = b.blockAt(q.offset(0, 1, 0)); return up && up.name === 'air' && sky(q.x, q.y, q.z); })
+      .sort((u, v) => u.distanceTo(me) - v.distanceTo(me));
+    if (!cand.length) return 'открытой воды рядом не вижу (40 бл.)';
+    const trail = [b.entity.position.clone()];
+    const rec = () => { try { const q = b.entity.position, l = trail[trail.length - 1]; if (q.distanceTo(l) >= 0.7) trail.push(q.clone()); } catch {} };
+    b.on('physicsTick', rec);
+    try {
+      let ok = null;
+      for (const q of cand.filter((q, i) => i < 40 && i % 3 === 0).slice(0, 8)) {
+        try { await this.goto(new goals.GoalNear(q.x, q.y, q.z, 1), tok, 30000); } catch (e) { if (this.isCancel(e)) throw e; }
+        if (b.entity.isInWater) { ok = q; break; }
+      }
+      if (!ok) return 'до открытой воды не дошёл';
+      const secs = Math.min(60, +a.seconds || 3), t0 = Date.now();
+      while (Date.now() - t0 < secs * 1000) { this.check(tok); b.setControlState('jump', true); await sleep(200); }   // держаться на плаву
+      b.setControlState('jump', false);
+      const p = b.entity.position;
+      return `в воде: ${Math.floor(p.x)} ${Math.floor(p.y)} ${Math.floor(p.z)}, поплавал ${secs} с`;
+    } finally { b.removeListener('physicsTick', rec); b.setControlState('jump', false); if (trail.length > 3) this._lastExit = { pts: trail, at: Date.now() }; }
+  }
+
   async goOutside(a, tok) {
     const b = this.bot;
     // свой путь наружу - шаг в шаг: обратно к хозяину по нему же (через секретную стену, лаз; 23.11: вернуться пошёл в
@@ -2598,6 +2624,8 @@ class TotemBot extends EventEmitter {
           case 'harvest': r = await this.harvest(a, tok); break;
           case 'climb': r = await this.climbLadder(a, tok); break;
           case 'outside': r = await this.goOutside(a, tok); break;
+          case 'swim': r = await this.goSwim(a, tok); break;
+          case 'back': r = this._lastExit ? await this.walkBack(this._lastExit.pts, tok) : 'обратного пути не помню'; break;
           case 'remember': r = this.remember(a, label); break;
           case 'forget': r = this.memory ? this.memory.forget(a) : 'памяти нет'; break;
           case 'travel': r = await this.travelTo(a, tok); break;
