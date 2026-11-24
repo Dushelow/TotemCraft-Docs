@@ -1753,12 +1753,14 @@ class TotemBot extends EventEmitter {
             await b.lookAt(new Vec3(p.x + 0.5, p.y + 0.3, p.z + 0.5), true);
             const hd = Math.hypot(p.x + 0.5 - q.x, p.z + 0.5 - q.z), wetQ = b.entity.isInWater;
             // в воде - шагом по дну, без бега и прыжка (всплыл бы); выше плиты - не идти, пока не опустился (голова в потолок)
-            const high = q.y > p.y + 0.7;
+            const high = q.y > p.y + 0.25;   // под низким потолком над плитой голова не пройдёт, пока не опустился почти до неё
             // течение держит: 0,8 с не ближе - рывок бегом (как «нырнуть» у владельца)
             if (hd < (this._plBest ?? Infinity) - 0.1) { this._plBest = hd; this._plAt = Date.now(); }
             const stall = Date.now() - (this._plAt || Date.now()) > 800;
             // ямка на блок ниже у плиты: прыжок наверх, когда ниже её уровня и рядом
             ctl('forward', hd > 0.25 && !(wetQ && high)); ctl('sprint', hd > 1 && (!wetQ || stall)); ctl('jump', q.y < p.y - 0.15 && hd < 1.8);
+            // над плитой в воде - нырнуть вниз (своя физика бота не опускает: висел на 72,9 при плите на 71, стекающая вода)
+            if (high && hd < 2.2) { const e = b.entity; e.velocity.y = Math.min(e.velocity.y, -0.12); }
             await sleep(50);
           }
         } finally { for (const k of ['forward', 'sprint', 'sneak', 'jump']) ctl(k, false); this._trailBusy = false; }
