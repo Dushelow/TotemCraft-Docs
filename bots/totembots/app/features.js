@@ -216,7 +216,8 @@ class Features {
       const same = R.find((q) => q.dim === dim && q.mat[0] === rd.mat[0] && Math.min(Math.hypot(q.e1.x - rd.e1.x, q.e1.z - rd.e1.z) + Math.hypot(q.e2.x - rd.e2.x, q.e2.z - rd.e2.z), Math.hypot(q.e1.x - rd.e2.x, q.e1.z - rd.e2.z) + Math.hypot(q.e2.x - rd.e1.x, q.e2.z - rd.e1.z)) < 12);
       const rec = { dim, mat: rd.mat, width: rd.width, len: rd.len, e1: rd.e1, e2: rd.e2, y: rd.y, label: rd.label || (same && same.label) || '', start: rd.start || (same && same.start) || null, toward: rd.toward || (same && same.toward) || '', at: Date.now() };
       if (same) { if (!same.label && rec.label) changed = true; Object.assign(same, rec); } else { R.push(rec); changed = true; }
-      if (rd.label && rd.start) {
+      // метки веток на карту - только по просьбе (23.11: отметил раз - и стал метить все ветки подряд); знание о дорогах для ходьбы остаётся
+      if (rd.label && rd.start && this.opts.markRoads === true) {
         const name = rd.bySign ? `${rd.label} (по табличке)` : `ветка ${rd.label}`;
         const old = m.data.places && Object.values(m.data.places).find((pl) => pl.name === name && pl.dim === dim);
         if (!old || Math.hypot(old.x - rd.start.x, old.z - rd.start.z) > 6) {

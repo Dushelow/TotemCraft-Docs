@@ -324,6 +324,8 @@ class Gestures {
         if (/_stairs$/.test(bl.name) && pr.half !== 'bottom') continue;
         const up = b.blockAt(v.offset(0, 1, 0)), up2 = b.blockAt(v.offset(0, 2, 0));
         if (!up || up.boundingBox !== 'empty' || (up2 && up2.boundingBox !== 'empty')) continue;
+        // сиденье - как лавка или стул: хотя бы с 2 сторон на его уровне пусто (утопленная в пол ступенька - не сиденье, 23.11)
+        if ([[1, 0], [-1, 0], [0, 1], [0, -1]].filter(([dx, dz]) => { const n = b.blockAt(v.offset(dx, 0, dz)); return n && n.boundingBox === 'empty'; }).length < 2) continue;
         // узор пола, а не сиденье: вокруг на той же высоте сплошной пол (23.11: сел в полублок-узор посреди комнаты).
         // Сиденье - у края: хотя бы с одной стороны на уровне ног пусто, а пол ниже
         if ([[1, 0], [-1, 0], [0, 1], [0, -1]].every(([dx, dz]) => { const n = b.blockAt(v.offset(dx, 0, dz)); return n && n.boundingBox === 'block' && !SEAT.test(n.name) || (n && SEAT.test(n.name) && b.blockAt(v.offset(dx, -1, dz)) && b.blockAt(v.offset(dx, -1, dz)).boundingBox === 'block'); }) && b.blockAt(v.offset(0, -1, 0)) && b.blockAt(v.offset(0, -1, 0)).boundingBox === 'block') {
