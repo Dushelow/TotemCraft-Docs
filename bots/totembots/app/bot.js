@@ -1718,7 +1718,7 @@ class TotemBot extends EventEmitter {
     const near = (p) => { for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) { const k = b.blockAt(p.offset(dx, dy, dz)); if (k && GATE.test(k.name)) return true; } return false; };
     if ((this._mechBudget = (this._mechBudget && Date.now() - this._mechBudget.at < 60000 ? this._mechBudget : { at: Date.now(), n: 0 })).n >= 4) return '';   // не больше 4 механизмов в минуту (23.11: жал кнопки по всему городу)
     const cands = b.findBlocks({ matching: (bl) => CTRL.test(bl.name), maxDistance: 10, count: 40 })
-      .filter((p) => !tried.set.has(p.toString()) && near(p) && (p.distanceTo(gp) < 12 || p.distanceTo(me) < 6))
+      .filter((p) => !tried.set.has(p.toString()) && near(p) && (p.distanceTo(gp) < 12 || p.distanceTo(me) < 10))
       .sort((u, v) => (u.distanceTo(me) + u.distanceTo(gp) * 0.5) - (v.distanceTo(me) + v.distanceTo(gp) * 0.5));
     // сначала - то, что недавно нажимал хозяин (скрытая дверь: механизм может быть далеко от поршней)
     const own = (this._ownerMech || []).filter((x) => !tried.set.has(x.k) && x.p.distanceTo(me) < 32).sort((u, v) => u.p.distanceTo(me) - v.p.distanceTo(me)).map((x) => x.p);
@@ -1746,7 +1746,7 @@ class TotemBot extends EventEmitter {
         this._plBest = Infinity; this._plAt = Date.now();
         const t1 = Date.now(); this._trailBusy = true;   // «держать над водой» тела - не мешать опуститься к плите
         try {
-          while (Date.now() - t1 < 8000) {
+          while (Date.now() - t1 < 15000) {
             this.check(tok);
             const q = b.entity.position;
             if (Math.floor(q.x) === p.x && Math.floor(q.z) === p.z && Math.abs(q.y - p.y) < 0.6) break;
@@ -1758,7 +1758,7 @@ class TotemBot extends EventEmitter {
             if (hd < (this._plBest ?? Infinity) - 0.1) { this._plBest = hd; this._plAt = Date.now(); }
             const stall = Date.now() - (this._plAt || Date.now()) > 800;
             // ямка на блок ниже у плиты: прыжок наверх, когда ниже её уровня и рядом
-            ctl('forward', hd > 0.25 && !(wetQ && high)); ctl('sprint', hd > 1 && (!wetQ || stall)); ctl('jump', q.y < p.y - 0.15 && hd < 1.8);
+            ctl('forward', hd > 0.25 && !(wetQ && high)); ctl('sprint', hd > 1 && (!wetQ || stall)); ctl('jump', (q.y < p.y - 0.15 && (hd < 1.8 || wetQ)) || (stall && !high && Date.now() % 1000 < 500));   // ниже плиты в воде - выпрыгнуть из ямки (у входа ямка в 3 бл. от плиты, 23.11 игра)
             // над плитой в воде - нырнуть вниз (своя физика бота не опускает: висел на 72,9 при плите на 71, стекающая вода)
             if (high && hd < 2.2) { const e = b.entity; e.velocity.y = Math.min(e.velocity.y, -0.12); }
             await sleep(50);
