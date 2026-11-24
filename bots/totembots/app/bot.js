@@ -1411,8 +1411,8 @@ class TotemBot extends EventEmitter {
         if (dc > 0.35 && !this._ladFix) this._ladFix = true;
         if (this._ladFix && dc < 0.15) { this._ladFix = false; ctl('forward', false); }
         if (this._ladFix) { if (Date.now() - (this._ladLook || 0) > 300) { this._ladLook = Date.now(); await b.lookAt(new Vec3(x + 0.5, p.y + 1.6, z + 0.5), true); } ctl('forward', true); }
-        else if (up) {
-          // вверх - прижаться к стене, на которой лестница или лианы (как игрок: из воды так выталкивает на лианы, по
+        else if (up && b.entity.isInWater) {
+          // вверх из воды - прижаться к стене, на которой лестница или лианы (как игрок: из воды так выталкивает на лианы, по
           // лестнице лезут быстрее; 23.11 стенд корабля - висел в воде под лианами, держась посередине)
           let W = null;
           const fy0 = Math.floor(p.y + 0.01);
@@ -1481,7 +1481,7 @@ class TotemBot extends EventEmitter {
               if (Math.floor(q.x) !== x || Math.floor(q.z) !== z) return (await this.afterClimb(tok)) + `поднялся по лестнице и вышел на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
             }
           }
-          for (const dy of [0, 1, -1, -2]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          for (const dy of [0, 1, -1]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const fl = b.blockAt(new Vec3(x + ax, fy + dy, z + az)), s1 = b.blockAt(new Vec3(x + ax, fy + dy + 1, z + az)), s2 = b.blockAt(new Vec3(x + ax, fy + dy + 2, z + az));
             if (!fl || fl.boundingBox !== 'block' || CL.test(fl.name) || !(roomy(s1) || (s1 && /_trapdoor$/.test(s1.name))) || !roomy(s2)) continue;
             this.log(`наверх не лезется - выхожу сбоку на ${x + ax} ${fy + dy + 1} ${z + az}`);
@@ -1582,6 +1582,9 @@ class TotemBot extends EventEmitter {
       for (const q of cand.slice(0, 6)) {
         try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 200); if (r && r.status === 'success' && !(PS && r.path.some((n) => PS.has(n.x + ',' + n.y + ',' + n.z)))) { full = q; break; } } catch {}
       }
+      // только что прошёл в проход (стена сзади закрылась) - к ближайшему выходу и по неполному пути: назад всё равно не
+      // пустит, а стоять на месте - не выйти (23.11 стенд: прошёл стену и встал)
+      if (!full && PS) full = cand.find((q) => q.distanceTo(b.entity.position) > 3) || null;
       if (full) { try { await this.goto(new goals.GoalNear(full.x, full.y, full.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
       let f = b.entity.position.floored();
       if (sky(f.x, f.y, f.z)) return `вышел наружу: ${f.x} ${f.y} ${f.z}${done.length ? ' (' + done.join('; ') + ')' : ''}`;
