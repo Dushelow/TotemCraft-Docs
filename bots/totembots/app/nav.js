@@ -608,7 +608,7 @@ function install(mv, bot) {
       }
       const landOk = (yy) => passable(cell(x, yy, z)) || (isHatch(cell(x, yy, z)) && cell(x, yy, z).b.getProperties().half === 'bottom');
       if (land !== null && (ladder || y - land <= 3) && landOk(land) && passable(cell(x, land + 1, z))) {
-        const m = new Move(x, land, z, node.remainingBlocks, 2 + (y - land) * 0.3, [], []);
+        const m = new Move(x, land, z, node.remainingBlocks, 6 + (y - land) * 0.3, [], []);   // через люк - дороже лестниц и лиан: люки не теребить без нужды (23.11)
         m.opens = [{ x, y: ty, z, want: true }]; m.feet = land; m.cell = [x, z]; m.hatch = 'down';
         out.push(m);
       }
@@ -626,7 +626,7 @@ function install(mv, bot) {
           // над люком лаз продолжается (лестница или пусто в столбе) - открыть и лезть в него (23.11: три люка на разной
           // высоте - наверх «путь есть, а стою»)
           if (passable(cell(x, yt + 1, z)) && ((cell(x, yt + 1, z).b && CLIMB.test(cell(x, yt + 1, z).b.name)) || (cell(x, yt + 2, z).b && CLIMB.test(cell(x, yt + 2, z).b.name)))) {
-            const m = new Move(x, yt + 1, z, node.remainingBlocks, 2 + h * 0.4, [], []);
+            const m = new Move(x, yt + 1, z, node.remainingBlocks, 6 + h * 0.4, [], []);
             m.opens = [{ x, y: yt, z, want: true }]; m.feet = yt + 1; m.cell = [x, z]; m.hatch = 'up';
             out.push(m);
             break;
@@ -636,7 +636,7 @@ function install(mv, bot) {
             const fl = cell(x + dx, yt, z + dz);
             if (!fl.b || fl.b.boundingBox !== 'block' || isHatch(fl)) continue;
             if (!passable(cell(x + dx, yt + 1, z + dz)) || !passable(cell(x + dx, yt + 2, z + dz))) continue;
-            const m = new Move(x + dx, yt + 1, z + dz, node.remainingBlocks, 2 + h * 0.4, [], []);
+            const m = new Move(x + dx, yt + 1, z + dz, node.remainingBlocks, 6 + h * 0.4, [], []);
             m.opens = [{ x, y: yt, z, want: true }]; m.feet = yt + 1; m.cell = [x + dx, z + dz]; m.hatch = 'up';
             out.push(m);
           }
