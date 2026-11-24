@@ -1430,7 +1430,7 @@ class TotemBot extends EventEmitter {
         }
         const fy = Math.floor(p.y + 0.01);
         if (up) {
-          ctl('jump', true);   // люки над головой не открывать заранее: открытый встаёт стенкой и закрывает выход вбок (23.11)
+          ctl('jump', !(a.stopY !== undefined && fy >= Math.floor(a.stopY)));   // на высоте цели - не выше; люки над головой не открывать заранее: открытый встаёт стенкой и закрывает выход вбок (23.11)
           const here = b.blockAt(new Vec3(x, fy, z)), above = b.blockAt(new Vec3(x, fy + 1, z));
           const climbable = (k) => k && (CL.test(k.name) || /_trapdoor$/.test(k.name));
           // наверху: лестницы под ногами и выше нет - шаг на соседний пол
@@ -1457,7 +1457,8 @@ class TotemBot extends EventEmitter {
           if (b.entity.onGround && !CL.test((b.blockAt(new Vec3(x, fy - 1, z)) || {}).name || '') && Date.now() - t0 > 1500 && Math.abs(p.y - lastY) < 0.05) return `спустился по лестнице до ${fy}${opened ? `, открыл люков: ${opened}` : ''}`;
         }
         if (Math.abs(p.y - lastY) > 0.2) { lastY = p.y; still = Date.now(); }
-        else if (up && Date.now() - still > 700 && !this._sideTried) {   // наверху не ждать: 0,7 с без подъёма - выход вбок
+        // на высоте цели (хозяин на палубе, а лестница - на мачту выше) - не лезть дальше, сойти вбок (23.11: лез до верха мачты)
+        else if (up && (Date.now() - still > 700 || (a.stopY !== undefined && fy >= Math.floor(a.stopY))) && !this._sideTried) {   // наверху не ждать: 0,7 с без подъёма - выход вбок
           // вверх не лезется (люк, потолок) - выход сбоку, как игрок: с последней ступеньки прыгнуть на блок рядом
           // (23.11: поднялся до 68 и дёргался под люком, а выход был сбоку)
           this._sideTried = true;
@@ -1931,7 +1932,7 @@ class TotemBot extends EventEmitter {
               const lad = b.findBlocks({ matching: (bl) => /^(ladder|vine|scaffolding)$/.test(bl.name), maxDistance: 6, count: 20 }).filter((q) => gy > me2.y ? Math.abs(q.y - me2.y) <= 2 : q.y < me2.y && q.y >= me2.y - 3);
               if (lad.length) {
                 AC.n[gk] = (AC.n[gk] || 0) + 1; this._autoClimbAt = Date.now();
-                const m = await this.climbLadder({ dir: gy > me2.y ? 'up' : 'down', toward: { x: goal.x ?? me2.x, z: goal.z ?? me2.z } }, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
+                const m = await this.climbLadder({ dir: gy > me2.y ? 'up' : 'down', toward: { x: goal.x ?? me2.x, z: goal.z ?? me2.z }, stopY: gy > me2.y ? gy : undefined }, tok).catch((e) => { if (e instanceof Cancelled) throw e; return ''; });
                 this.log('путь не строится, цель ' + (gy > me2.y ? 'выше' : 'ниже') + ' - по лестнице: ' + m);
                 if (m && !/не вижу|застрял/.test(m)) { attempt = 0; continue; }
               }
