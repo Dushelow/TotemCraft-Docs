@@ -1411,6 +1411,23 @@ class TotemBot extends EventEmitter {
         if (dc > 0.35 && !this._ladFix) this._ladFix = true;
         if (this._ladFix && dc < 0.15) { this._ladFix = false; ctl('forward', false); }
         if (this._ladFix) { if (Date.now() - (this._ladLook || 0) > 300) { this._ladLook = Date.now(); await b.lookAt(new Vec3(x + 0.5, p.y + 1.6, z + 0.5), true); } ctl('forward', true); }
+        else if (up) {
+          // вверх - прижаться к стене, на которой лестница или лианы (как игрок: из воды так выталкивает на лианы, по
+          // лестнице лезут быстрее; 23.11 стенд корабля - висел в воде под лианами, держась посередине)
+          let W = null;
+          const fy0 = Math.floor(p.y + 0.01);
+          for (const yy of [fy0, fy0 + 1, fy0 + 2, fy0 - 1]) {
+            const k = b.blockAt(new Vec3(x, yy, z)); if (!k || !CL.test(k.name)) continue;
+            const pr = k.getProperties ? k.getProperties() : {};
+            if (k.name === 'ladder') W = { north: [0, 1], south: [0, -1], east: [-1, 0], west: [1, 0] }[pr.facing];
+            else { const d = [['north', 0, -1], ['south', 0, 1], ['east', 1, 0], ['west', -1, 0]].find(([n]) => pr[n] === true || pr[n] === 'true'); if (d) W = [d[1], d[2]]; }
+            if (W) break;
+          }
+          if (W) {
+            if (Date.now() - (this._ladLook || 0) > 400) { this._ladLook = Date.now(); await b.lookAt(new Vec3(x + 0.5 + W[0] * 2, p.y + 1.6, z + 0.5 + W[1] * 2), true); }
+            ctl('forward', true);
+          }
+        }
         const fy = Math.floor(p.y + 0.01);
         if (up) {
           ctl('jump', true);   // люки над головой не открывать заранее: открытый встаёт стенкой и закрывает выход вбок (23.11)
@@ -1464,7 +1481,7 @@ class TotemBot extends EventEmitter {
               if (Math.floor(q.x) !== x || Math.floor(q.z) !== z) return (await this.afterClimb(tok)) + `поднялся по лестнице и вышел на ${Math.floor(q.x)} ${Math.floor(q.y)} ${Math.floor(q.z)}${opened ? `, открыл люков: ${opened}` : ''}`;
             }
           }
-          for (const dy of [0, 1, -1]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          for (const dy of [0, 1, -1, -2]) for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const fl = b.blockAt(new Vec3(x + ax, fy + dy, z + az)), s1 = b.blockAt(new Vec3(x + ax, fy + dy + 1, z + az)), s2 = b.blockAt(new Vec3(x + ax, fy + dy + 2, z + az));
             if (!fl || fl.boundingBox !== 'block' || CL.test(fl.name) || !(roomy(s1) || (s1 && /_trapdoor$/.test(s1.name))) || !roomy(s2)) continue;
             this.log(`наверх не лезется - выхожу сбоку на ${x + ax} ${fy + dy + 1} ${z + az}`);

@@ -255,6 +255,23 @@ class Vehicles {
     try { b._client.write('tick_end', {}); } catch {}
   }
 
+  /** Впереди по курсу лодки (до 6 бл.): первая твёрдая клетка на уровне борта - { d, k }. */
+  boatAhead(yaw) {
+    const b = this.bot, v = b.vehicle ? b.vehicle.position : b.entity.position, fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+    for (let t = 1; t <= 6; t += 0.5) for (const dy of [0, 1]) { const k = b.blockAt(new Vec3(Math.floor(v.x + fx * t), Math.floor(v.y) + dy, Math.floor(v.z + fz * t))); if (k && k.boundingBox === 'block') return { d: t, k }; }
+    return null;
+  }
+  /** Чем назвать преграду: постройка (корабль, причал) или берег. */
+  obstacleName(k) {
+    if (!k) return 'берег или стену';
+    if (/_planks$|_log$|_wood$|_stairs$|_slab$|_fence|_wall$|wool|_door$|trapdoor|glass|bricks?$|terracotta|concrete|barrel|chest/.test(k.name)) {
+      // много дерева и досок рядом над водой - корабль
+      const b = this.bot, wood = b.findBlocks({ point: k.position, matching: (bl) => /_planks$|_log$|_stairs$|_slab$/.test(bl.name), maxDistance: 8, count: 60 }).length;
+      return wood >= 40 ? 'корабль' : 'постройку';
+    }
+    return 'берег';
+  }
+
   async drive(a, tok) {
     const b = this.bot;
     if (!b.vehicle) throw new Error('я ни на чём не сижу - сначала !boardBoat');
@@ -288,7 +305,7 @@ class Vehicles {
         const v = b.vehicle.position, d = Math.hypot(x - v.x, z - v.z);
         if (d < 3) break;
         // упёрлись (берег, борт) и стоим 1,5 с - дальше не жать: выйти, сказать, где
-        if (this._ride && this._ride.blockedAt && Date.now() - this._ride.blockedAt > 1500) { const left = Math.round(d); b.clearControlStates(); return `упёрлась в берег или стену в ${left} бл. от цели - дальше по воде не проплыть`; }
+        if (this._ride && this._ride.blockedAt && Date.now() - this._ride.blockedAt > 1500) { const left = Math.round(d); b.clearControlStates(); const ob = this.boatAhead(b.vehicle.yaw || 0); if (left < 12) return `приплыла: упёрлась в ${this.obstacleName(ob && ob.k)} у цели (${left} бл.)`; return `упёрлась в ${this.obstacleName(ob && ob.k)} в ${left} бл. от цели - дальше по воде не проплыть`; }
         const want = Math.atan2(-(x - v.x), -(z - v.z));
         await b.look(want, 0, true);
         let err = want - (b.vehicle.yaw || 0); while (err > Math.PI) err -= 2 * Math.PI; while (err < -Math.PI) err += 2 * Math.PI;
@@ -299,7 +316,9 @@ class Vehicles {
         // у цели - отпустить «вперёд» заранее: лодка катится по инерции ~3-4 бл. (22.11: плыл, пока не упрётся в борт);
         // упёрлись у цели - приплыли
         if (boat && d < 10 && this._ride && this._ride.blockedAt) break;
-        const go = (!boat || Math.abs(err) < 1.6) && !(boat && d < 4);
+        const ahead = boat ? this.boatAhead(b.vehicle.yaw || 0) : null;
+        if (boat && ahead && ahead.d <= 4 && d < 12) { b.clearControlStates(); await sleep(600); return `приплыла к цели: у борта - ${this.obstacleName(ahead.k)} (${Math.round(d)} бл. до точки)`; }
+        const go = (!boat || Math.abs(err) < 1.6) && !(boat && d < 4) && !(ahead && ahead.d <= 3 && Math.abs(err) < 0.5);   // преграда в 3 бл. по курсу - не таранить, накатом
         b.setControlState('forward', go);
         b.setControlState('left', turn > 0);
         b.setControlState('right', turn < 0);

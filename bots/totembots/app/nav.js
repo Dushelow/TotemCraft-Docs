@@ -795,6 +795,12 @@ function install(mv, bot) {
     }));
     bot.on('physicsTick', safe('nav-лианы', () => {
       const e = bot.entity; if (!e) return;
+      // в воде под лианами или лестницей (начинаются над водой): прыжок выталкивает на них, как у игрока (своя физика
+      // бота этот толчок не делает; 23.11 стенд корабля - висел в воде под лианами)
+      if (e.isInWater && bot.getControlState('jump')) {
+        const up1 = bot.blockAt(e.position.offset(0, 1, 0)), up0 = bot.blockAt(e.position);
+        if ((up1 && /^(vine|ladder|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(up1.name)) || (up0 && /^(vine|ladder)$/.test(up0.name))) e.velocity.y = Math.max(e.velocity.y, 0.25);
+      }
       const k = bot.blockAt(e.position); if (!k) return;
       // и открытый люк над лестницей, повёрнутый как она (в игре по нему лезут, своя физика бота этого не знает)
       const hatchLad = /_trapdoor$/.test(k.name) && (k.getProperties().open === true || k.getProperties().open === 'true') && (() => { const l = bot.blockAt(e.position.offset(0, -1, 0)); return l && l.name === 'ladder' && l.getProperties().facing === k.getProperties().facing; })();
