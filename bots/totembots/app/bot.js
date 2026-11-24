@@ -799,9 +799,9 @@ class TotemBot extends EventEmitter {
       const nx = ((this.lastPath || {}).path || []).find((n) => Math.hypot(n.x + 0.5 - p.x, n.z + 0.5 - p.z) > 0.6);
       if (nx) {
         // точка пути не выше ног - не прыгать (прыжок в воде = всплыть, течение сносит): вперёд, ниже - с приседом
-        const lower = nx.y <= p.y - 0.3;
+        const lower = nx.y <= p.y - 1.2;   // ямка у уступа: точка на том же уровне - тоже прыгать (23.11: 215 69 у входа)
         try { b.lookAt(new Vec3(nx.x + 0.5, nx.y + 0.5, nx.z + 0.5), true); } catch {}
-        b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('sneak', lower); b.setControlState('jump', !lower && nx.y > p.y + 0.4);
+        b.setControlState('sprint', true); b.setControlState('forward', true); b.setControlState('sneak', lower); b.setControlState('jump', !lower && nx.y > p.y - 0.6);
         setTimeout(() => { try { for (const k of ['sprint', 'forward', 'sneak', 'jump']) b.setControlState(k, false); if (b.pathfinder.goal) b.pathfinder.setMovements(b.pathfinder.movements); } catch {} }, 1200);
         return;
       }
@@ -1480,7 +1480,7 @@ class TotemBot extends EventEmitter {
           // стоит ребром поперёк) - переключить, до 2 раз (23.11 стенд: люк над лестницей в разном положении)
           if (await hatchOpen(fy + 2) || await hatchOpen(fy + 1)) { opened++; this._sideTried = false; }
           else if ((this._hatchFlips = (this._hatchFlips || 0) + 1) <= 2) {
-            for (const yy of [fy + 2, fy + 1]) { const h = b.blockAt(new Vec3(x, yy, z)); if (h && /_trapdoor$/.test(h.name) && !/^iron_/.test(h.name)) { ctl('jump', false); await b.lookAt(new Vec3(x + 0.5, yy + 0.5, z + 0.5), true); await b.activateBlock(h); await sleep(250); this._sideTried = false; this.log(`люк над головой мешает - переключил (${h.getProperties().open ? 'закрыл' : 'открыл'})`); break; } }
+            for (const yy of [fy + 2, fy + 1]) { const h = b.blockAt(new Vec3(x, yy, z)); if (h && /_trapdoor$/.test(h.name) && !/^iron_/.test(h.name) && !(h.getProperties().open === true || h.getProperties().open === 'true')) { ctl('jump', false); await b.lookAt(new Vec3(x + 0.5, yy + 0.5, z + 0.5), true); await b.activateBlock(h); await sleep(250); this._sideTried = false; this.log(`люк над головой мешает - переключил (${h.getProperties().open ? 'закрыл' : 'открыл'})`); break; } }
           }
           still = Date.now();
         }
@@ -1504,6 +1504,24 @@ class TotemBot extends EventEmitter {
   }
 
   async goOutsideInner(a, tok) {
+    const r = await this.goOutsideCore(a, tok);
+    if (/^вышел наружу/.test(r)) {
+      // у самого выхода (вода, проход) не стоять: шаг на сухое место под небом в 4-10 бл. (23.11 игра: стоял на воде у входа)
+      const b = this.bot, me = b.entity.position.floored();
+      const wet = (v) => /water/.test((b.blockAt(v) || {}).name || '');
+      if (wet(me) || wet(me.offset(0, -1, 0))) {
+        let best = null;
+        for (let r2 = 4; r2 <= 10 && !best; r2++) for (let dx = -r2; dx <= r2 && !best; dx++) for (let dz = -r2; dz <= r2 && !best; dz++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r2) continue;
+          for (let dy = 3; dy >= -3; dy--) { const v = me.offset(dx, dy, dz), fl = b.blockAt(v.offset(0, -1, 0)), a1 = b.blockAt(v), a2 = b.blockAt(v.offset(0, 1, 0)); if (fl && fl.boundingBox === 'block' && !wet(fl.position) && a1 && a1.boundingBox === 'empty' && !wet(v) && a2 && a2.boundingBox === 'empty') { best = v; break; } }
+        }
+        if (best) { try { await this.goto(new goals.GoalNear(best.x, best.y, best.z, 1), tok, 20000); } catch (e) { if (this.isCancel(e)) throw e; } }
+      }
+    }
+    return r;
+  }
+
+  async goOutsideCore(a, tok) {
     const b = this.bot;
     const sky = (x, y, z) => { for (let yy = y + 2; yy < y + 40; yy++) { const k = b.blockAt(new Vec3(x, yy, z)); if (!k) return true; if (k.boundingBox === 'block' || /water|lava/.test(k.name)) return false; } return true; };
     const p0 = b.entity.position.floored();
