@@ -216,9 +216,15 @@ class Features {
       const same = R.find((q) => q.dim === dim && q.mat[0] === rd.mat[0] && Math.min(Math.hypot(q.e1.x - rd.e1.x, q.e1.z - rd.e1.z) + Math.hypot(q.e2.x - rd.e2.x, q.e2.z - rd.e2.z), Math.hypot(q.e1.x - rd.e2.x, q.e1.z - rd.e2.z) + Math.hypot(q.e2.x - rd.e1.x, q.e2.z - rd.e1.z)) < 12);
       const rec = { dim, mat: rd.mat, width: rd.width, len: rd.len, e1: rd.e1, e2: rd.e2, y: rd.y, label: rd.label || (same && same.label) || '', start: rd.start || (same && same.start) || null, toward: rd.toward || (same && same.toward) || '', at: Date.now() };
       if (same) { if (!same.label && rec.label) changed = true; Object.assign(same, rec); } else { R.push(rec); changed = true; }
+      // один раз: убрать метки «ветка ...», которые тело ставило само (23.11, владелец: «зачем ветки, это нейросеть решает»)
+      if (!(m.data.migr || {}).roads23) {
+        m.data.migr = { ...(m.data.migr || {}), roads23: 1 };
+        for (const [k, pl] of Object.entries(m.data.places || {})) if (/^начало: /.test(pl.note || '') && (/^ветка /.test(pl.name) || /\(по табличке\)$/.test(pl.name))) delete m.data.places[k];
+        m.save();
+      }
       // метки веток на карту - только по просьбе (23.11: отметил раз - и стал метить все ветки подряд); знание о дорогах для ходьбы остаётся
       if (rd.label && rd.start && this.opts.markRoads === true) {
-        const name = rd.bySign ? `${rd.label} (по табличке)` : `ветка ${rd.label}`;
+        const name = rd.bySign ? `${rd.label} (по табличке)` : `разметка ${rd.label}`;
         const old = m.data.places && Object.values(m.data.places).find((pl) => pl.name === name && pl.dim === dim);
         if (!old || Math.hypot(old.x - rd.start.x, old.z - rd.start.z) > 6) {
           m.place({ name, x: rd.start.x, y: rd.y, z: rd.start.z, dim, note: `начало: ${rd.kind || 'дорога'} (${rd.mat[0]}), ведёт на ${rd.toward}; ${rd.bySign ? 'так указывает табличка' : 'метка - ' + rd.label + ' разметка на полу'}` }, this.opts.name + (rd.bySign ? ' (понял по табличке)' : ' (понял по разметке)'));
@@ -235,7 +241,7 @@ class Features {
     const S = this._scene; if (!S || Date.now() - S.at > 60000) return '';
     const me = this.bot.entity.position, out = [];
     const rs = S.roads.slice().sort((a, b) => Math.min(Math.hypot(a.e1.x - me.x, a.e1.z - me.z), Math.hypot(a.e2.x - me.x, a.e2.z - me.z)) - Math.min(Math.hypot(b.e1.x - me.x, b.e1.z - me.z), Math.hypot(b.e2.x - me.x, b.e2.z - me.z))).slice(0, 4);
-    for (const r of rs) out.push(`${r.label ? (r.bySign ? '«' + r.label + '» по табличке: ' : 'ветка ' + r.label + ': ') : ''}${r.kind || 'дорога'} из ${r.mat.join('+')} шир. ${r.width}, ${r.len}${r.more ? '+' : ''} бл., ${r.e1.x} ${r.e1.z} - ${r.e2.x} ${r.e2.z}${r.toward ? ', ведёт на ' + r.toward : ''}`);
+    for (const r of rs) out.push(`${r.label ? (r.bySign ? '«' + r.label + '» по табличке: ' : 'разметка ' + r.label + ': ') : ''}${r.kind || 'дорога'} из ${r.mat.join('+')} шир. ${r.width}, ${r.len}${r.more ? '+' : ''} бл., ${r.e1.x} ${r.e1.z} - ${r.e2.x} ${r.e2.z}${r.toward ? ', ведёт на ' + r.toward : ''}`);
     const ms = S.marks.filter((m) => !m.road).slice(0, 4);
     for (const m of ms) out.push(`разметка: ${m.hue} ${m.shape}${m.dir ? ' на ' + dirName(m.dir.x, m.dir.z) : ''} у ${m.x} ${m.z} (${m.blocks.join(', ')})`);
     return out.join('; ');
