@@ -261,6 +261,13 @@ class TotemBot extends EventEmitter {
         if (!own || me.distanceTo(own) > 24 || end.distanceTo(own) <= 4) return;
         if (r.path.length && end.distanceTo(own) < me.distanceTo(own) - 2) return;   // частичный, но ведёт ближе - пусть идёт
         bot.pathfinder.setGoal(null);
+        // сначала механизм у входа (плита в воде, кнопка) - с подходом по дну и нырком; после него снова за хозяином
+        // (23.11 у друга: «за мной» через секретный вход - шёл следом руками и всплывал, плиту не нажал)
+        if (!this._mechBusy && Date.now() - (this._followMechAt || 0) > 15000) {
+          this._followMechAt = Date.now(); this._mechBusy = true;
+          this.useMechanism(own, this.token).then((m) => { if (m) { this.log(m + ' - за хозяином'); try { bot.pathfinder.setGoal(new goals.GoalFollow(this._followEnt, this.followDist()), true); } catch {} } }).catch(() => {}).finally(() => { this._mechBusy = false; });
+          return;
+        }
         if (!this._trailBusy && this.walkTrail) { this._trailBusy = true; this.walkTrail(this.followName).then((m) => { if (m) this.log(m); }).catch(() => {}).finally(() => { this._trailBusy = false; }); return; }
         if (!this._waitWallSaid || Date.now() - this._waitWallSaid > 60000) { this._waitWallSaid = Date.now(); this.log(`к ${this.followName} прохода не вижу - жду здесь, не ухожу`); }
         if (!this._mechBusy) { this._mechBusy = true; this.useMechanism(own, this.token).then((m) => { if (m) this.log(m + ' - бегом к хозяину'); }).catch(() => {}).finally(() => { this._mechBusy = false; }); }
