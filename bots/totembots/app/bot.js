@@ -1408,8 +1408,8 @@ class TotemBot extends EventEmitter {
         // держаться в столбе без дёрганья: поправка, только если ушёл от середины дальше 0,35, до 0,15; голову - не
         // каждый такт (23.11: «дёргался как читер» - взгляд и «вперёд» переключались 20 раз в секунду)
         const dc = Math.hypot(x + 0.5 - p.x, z + 0.5 - p.z);
-        if (dc > 0.35 && !this._ladFix) this._ladFix = true;
-        if (this._ladFix && dc < 0.15) { this._ladFix = false; ctl('forward', false); }
+        if (dc > 0.2 && !this._ladFix) this._ladFix = true;   // 0,2: сдвинутому на 0,2 створка открытого люка бьёт по голове (застревал на 66)
+        if (this._ladFix && dc < 0.08) { this._ladFix = false; ctl('forward', false); }
         if (this._ladFix) { if (Date.now() - (this._ladLook || 0) > 300) { this._ladLook = Date.now(); await b.lookAt(new Vec3(x + 0.5, p.y + 1.6, z + 0.5), true); } ctl('forward', true); }
         else if (up && b.entity.isInWater) {
           // вверх из воды - прижаться к стене, на которой лестница или лианы (как игрок: из воды так выталкивает на лианы, по
