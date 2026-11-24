@@ -1516,6 +1516,8 @@ class TotemBot extends EventEmitter {
     const cand = b.findBlocks({ matching: (bl) => bl.name === 'water', maxDistance: 40, count: 600 })
       .filter((q) => { const up = b.blockAt(q.offset(0, 1, 0)); return up && up.name === 'air' && sky(q.x, q.y, q.z); })
       .sort((u, v) => u.distanceTo(me) - v.distanceTo(me));
+    // край к воде рядом (палуба, причал) - просто спрыгнуть, как игрок (23.11: «с корабля мог просто спрыгнуть»)
+    try { const S = this.sceneNow(true); const w = S && S.waterEdges[0]; if (w) cand.unshift(new Vec3(w.ex, w.wy, w.ez)); } catch {}
     if (!cand.length) return 'открытой воды рядом не вижу (40 бл.)';
     const trail = [b.entity.position.clone()];
     const rec = () => { try { const q = b.entity.position, l = trail[trail.length - 1]; if (q.distanceTo(l) >= 0.7) trail.push(q.clone()); } catch {} };
@@ -1586,6 +1588,8 @@ class TotemBot extends EventEmitter {
       }
       if (cand.length >= 400) break;
     }
+    // выходы, которые видно (проём под небо рядом) - первыми
+    try { const S = this.sceneNow(true); for (const e of (S ? S.exits : []).filter((e) => e.kind === 'проём наружу').reverse()) cand.unshift(new Vec3(e.x, e.y, e.z)); } catch {}
     // ближе по горизонтали и по высоте - раньше
     cand.sort((u, v) => (Math.hypot(u.x - p0.x, u.z - p0.z) + Math.abs(u.y - p0.y) * 0.5) - (Math.hypot(v.x - p0.x, v.z - p0.z) + Math.abs(v.y - p0.y) * 0.5));
     if (!cand.length) return 'наружу не вышел: поверхности рядом не вижу (48 бл.)';
@@ -2747,7 +2751,7 @@ class TotemBot extends EventEmitter {
 }
 
 // методы из отдельных модулей (разбивка bot.js): транспорт, дом
-for (const M of [require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll, require('./loadout').Loadout, require('./features').Features, require('./navgraph').NavGraph, require('./survey').Survey, require('./mechanics').Mechanics]) {
+for (const M of [require('./scene').Scene, require('./vehicles').Vehicles, require('./house').House, require('./perception').Perception, require('./water').Water, require('./containers').Containers, require('./errand').Errands, require('./atlas').Atlas, require('./trade').Trade, require('./hearing').Hearing, require('./senses').Senses, require('./marks').Marks, require('./health').Health, require('./portals').Portals, require('./steer').Steer, require('./obtain').Obtain, require('./companion').Companion, require('./gestures').Gestures, require('./presence').Presence, require('./lifeview').LifeView, require('./placesense').PlaceSense, require('./mood').Mood, require('./zones').Zones, require('./chores').Chores, require('./stroll').Stroll, require('./loadout').Loadout, require('./features').Features, require('./navgraph').NavGraph, require('./survey').Survey, require('./mechanics').Mechanics]) {
   for (const k of Object.getOwnPropertyNames(M.prototype)) if (k !== 'constructor') Object.defineProperty(TotemBot.prototype, k, Object.getOwnPropertyDescriptor(M.prototype, k));
 }
 

@@ -530,7 +530,7 @@ class Brain {
     // [квест]: план из шагов, который ведёт тело (✓ сделано, ▶ сейчас) - видно в каждом сообщении
     let quest = ''; try { const q = this.body.errandText && this.body.errandText(); if (q) quest = '\n[квест] ' + q.replace(/^квест /, ''); } catch {}
     // [вокруг]: дороги и разметка, которые тело распознало (features.js) - устройство места, а не клетки
-    try { const sc = this.body.sceneText && this.body.sceneText(); if (sc && (sc !== this._sceneSent || Date.now() - (this._sceneAt || 0) > 120000)) { quest += '\n[вокруг] ' + sc; this._sceneSent = sc; this._sceneAt = Date.now(); } } catch {}
+    try { const sc = this.body.sceneNowText && this.body.sceneNowText(); if (sc) s += '\n[место сейчас] ' + sc; } catch {}   // понимание места: внутри или снаружи, выходы, края
     let s = `${task}${quest}${uns.length ? '\n[не ушло в чат] ' + uns.join('; ') + ' (люди этого не видели)' : ''}\n[я] ${P.core}; ${P.near}${goal ? '; твоя цель: ' + goal.text + (gAge > 6 * 3600000 ? ` (поставлена ${Math.round(gAge / 3600000)} ч назад; не выходит - отложи и займись другим, не спрашивай об одном и том же)` : '') : ''}\n[вижу] ${P.sees}`;
     // «на спавн» - точка спавна мира от сервера (у каждого сервера своя), а не догадка (22.11: поплыл к 0 1000)
     try { const sp = this.body.bot && this.body.bot.spawnPoint; if (sp && (sp.x || sp.z) && /спавн|spawn|точк[уа] появлен/.test(said)) s += `
