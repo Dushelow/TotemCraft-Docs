@@ -12,6 +12,14 @@ const [SX, SY, SZ] = process.argv.length >= 5 ? process.argv.slice(2, 5).map(Num
   rcon('forceload add 180 -610 240 -550');
   const tb = new TotemBot({ name: 'TbAlex', password: 'Tb12345x', host: '127.0.0.1', port: 25566, combat: 'off', version: '26.1' });
   { const { Memory } = require('../app/memory'); const d = require('fs').mkdtempSync(require('path').join(require('os').tmpdir(), 'tbmem-')); tb.memory = new Memory(d); }
+  // OBST="x y z" - второй игрок стоит на пути (как владелец в проходе)
+  let obst = null;
+  if (process.env.OBST) {
+    try { rcon('authme register TbOwner Tb12345x'); } catch {}
+    obst = new TotemBot({ name: 'TbOwner', password: 'Tb12345x', host: '127.0.0.1', port: 25566, combat: 'off', version: '26.1' });
+    obst.start(); for (let i = 0; i < 160 && !(obst.bot && obst.bot.entity && obst.bot.player); i++) await sleep(250);
+    await sleep(4500); obst.mode = 'hold'; obst.bot.physicsEnabled = false;
+  }
   const t0 = Date.now();
   tb.on('log', (t) => console.log(((Date.now() - t0) / 1000).toFixed(1).padStart(6), t.slice(0, 200)));
   tb.start();
@@ -21,6 +29,7 @@ const [SX, SY, SZ] = process.argv.length >= 5 ? process.argv.slice(2, 5).map(Num
   rcon('gamemode survival TbAlex'); rcon('effect give TbAlex minecraft:resistance 600 4 true');
   for (let i = 0; i < 10; i++) { rcon(`execute in minecraft:overworld run tp TbAlex ${SX + 0.5} ${SY} ${SZ + 0.5}`); await sleep(1000); const p = tb.bot.entity.position; if (Math.abs(p.x - SX - 0.5) < 1 && Math.abs(p.z - SZ - 0.5) < 1) break; }
   await sleep(3000);
+  if (obst) { const [ox, oy, oz] = process.env.OBST.split(' ').map(Number); rcon(`gamemode creative TbOwner`); rcon(`execute in minecraft:overworld run tp TbOwner ${ox + 0.5} ${oy} ${oz + 0.5}`); await sleep(1500); }
   console.log('старт', tb.bot.entity.position.toString());
   let r;
   const ACT = process.env.ACT ? JSON.parse(process.env.ACT) : [{ act: 'outside' }];

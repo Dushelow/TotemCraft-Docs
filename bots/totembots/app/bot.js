@@ -1541,8 +1541,11 @@ class TotemBot extends EventEmitter {
       const y0 = b.entity.position.y;
       // идти к месту, только если путь туда строится целиком (частичные пути к разным крышам давали рывки туда-сюда)
       let full = null;
+      // путь назад через проход, который сейчас закроется (стена на поршнях), - не годится (23.11 игра: прошёл стену,
+      // следующий выход повёл обратно через неё - застрял на лестнице, дёргался)
+      const PS = this._passed && Date.now() - this._passed.at < 60000 ? this._passed.keys : null;
       for (const q of cand.slice(0, 6)) {
-        try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 200); if (r && r.status === 'success') { full = q; break; } } catch {}
+        try { const r = b.pathfinder.getPathTo(b.pathfinder.movements, new goals.GoalNear(q.x, q.y, q.z, 1), 200); if (r && r.status === 'success' && !(PS && r.path.some((n) => PS.has(n.x + ',' + n.y + ',' + n.z)))) { full = q; break; } } catch {}
       }
       if (full) { try { await this.goto(new goals.GoalNear(full.x, full.y, full.z, 1), tok, 45000); } catch (e) { if (this.isCancel(e)) throw e; } }
       let f = b.entity.position.floored();
@@ -1626,6 +1629,7 @@ class TotemBot extends EventEmitter {
     const c = cells[0], dir = c.minus(me.floored()), L = Math.hypot(dir.x, dir.z) || 1;
     const far = c.offset(Math.round(dir.x / L * 2), 0, Math.round(dir.z / L * 2));
     this._opened = null;
+    this._passed = { at: Date.now(), keys: new Set(O.cells.map((v) => v.x + ',' + v.y + ',' + v.z)) };   // назад через них не планировать - закроются
     // руками, сразу: лицом в проём, вперёд бегом, прыжок (ступенька лестницы под проёмом, вода в проёме) - поиск пути
     // через только что открытый проход с затёкшей водой не строился (23.11 стенд, копия лаза владельца)
     const ctl = (k, v) => { try { b.setControlState(k, v); } catch {} };
