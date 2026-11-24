@@ -395,7 +395,7 @@ function install(mv, bot) {
       while (n < 40 && !cell(x, y, z).boxes.length && !waterAt(x, y, z)) { y--; n++; }
       if (n < 4 || !waterAt(x, y, z)) continue;   // до 3 бл. - обычный спуск модуля пути
       const k = `${x},${y},${z}`; if (have.has(k)) continue;
-      have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 3 + n * 0.2, [], []); m.swim = true; out.push(m);
+      have.add(k); const m = new Move(x, y, z, node.remainingBlocks, 1.5 + n * 0.1, [], []); m.swim = true; out.push(m);   // спрыгнуть в воду - дёшево: с борта корабля прыгают, а не лезут по лианам (23.11)
     }
     return out;
   }

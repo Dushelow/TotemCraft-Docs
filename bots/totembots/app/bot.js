@@ -1780,7 +1780,7 @@ class TotemBot extends EventEmitter {
     // на лестнице, в лиане или в прыжке - кнопки не жать: сначала встать на пол (23.11: жал кнопку, вися на лестнице, и
     // стена закрывалась раньше, чем он вылез)
     { const fk = b.blockAt(me); if (/ladder|vine|scaffolding/.test((fk || {}).name || '') || (!b.entity.onGround && !b.entity.isInWater)) return ''; }
-    const CTRL = /(_button|^lever|_pressure_plate)$/, GATE = /(_door|_trapdoor|_fence_gate|^piston|^sticky_piston|piston_head|^iron_bars)$/;
+    const CTRL = /(_button|^lever|_pressure_plate)$/, GATE = /(_door|^piston|^sticky_piston|piston_head|^iron_bars)$/;   // люки и калитки кнопками почти не открывают - кнопки у них не жать (23.11: жал кнопки на корабле)
     const tried = (this._mechTried = this._mechTried && Date.now() - this._mechTried.at < 60000 ? this._mechTried : { at: Date.now(), set: new Set() });
     const gp = goal.x !== undefined ? new Vec3(goal.x, goal.y ?? me.y, goal.z) : me;
     const near = (p) => { for (let dx = -4; dx <= 4; dx++) for (let dy = -3; dy <= 3; dy++) for (let dz = -4; dz <= 4; dz++) { const k = b.blockAt(p.offset(dx, dy, dz)); if (k && GATE.test(k.name)) return true; } return false; };
