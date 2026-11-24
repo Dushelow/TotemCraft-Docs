@@ -185,6 +185,8 @@ class Companion {
     if ((o.lay || /присел|присяд|отдохн|прилег|прилёг/.test(o.what || '')) && (Date.now() - (this.ownerAskAt || 0) < 5 * 60000 || (q && /run|stuck|pause/.test(q.state)))) return;
     const spot = o.spot || (o.ent ? o.ent.position.clone() : null);
     if (!spot) return;
+    // занятие рядом с хозяином - на его ярусе (±1,5): не уходить в трюм или с палубы вниз (23.11)
+    if (owner && owner.position && Math.abs(spot.y - owner.position.y) > 1.5) return;
     C.spots.push(o.key); if (C.spots.length > 5) C.spots.shift();
     this.sandbox = { phase: 'go', spot, look: o.look, what: o.what, hand: o.hand, token: this.token, at: Date.now(), until: Date.now() + (o.looks ? rnd(14000, 24000) : /костр|рыбач|присела/.test(o.what) ? rnd(14000, 28000) : /верстак|наковальн|печ|варочн/.test(o.what) ? rnd(4000, 8000) : rnd(6000, 12000)), hops: 0, center: (owner ? owner.position : this.bot.entity.position).clone(), ent: o.ent || null, water: o.water || null, chest: o.chest || null, lay: !!o.lay, looks: o.looks || null };
     try { b.pathfinder.setGoal(o.ent ? new goals.GoalFollow(o.ent, 1.5) : new goals.GoalNear(spot.x, spot.y, spot.z, 0.6), !!o.ent); } catch { this.sandbox = null; }

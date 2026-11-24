@@ -14,7 +14,8 @@ const LOOK_BLOCKS = /^(campfire|soul_campfire|lantern|torch|wall_torch|water|flo
 /** Встать можно: под ногами твёрдое, на уровне ног и головы пусто, не вода, не лава, не огонь. */
 function standY(b, x, z, y0) {
   const V = b.entity.position.constructor;
-  for (let y = Math.floor(y0) + 3; y >= Math.floor(y0) - 4; y--) {
+  // на своём уровне (±1): прогулка и дела рядом с хозяином не уводят на ярус ниже (23.11: с палубы спускался в трюм)
+  for (let y = Math.floor(y0) + 1; y >= Math.floor(y0) - 1; y--) {
     const f = b.blockAt(new V(x, y - 1, z)), a = b.blockAt(new V(x, y, z)), h = b.blockAt(new V(x, y + 1, z));
     if (!f || !a || !h) continue;
     if (f.boundingBox !== 'block' || /lava|magma|fire|cactus|farmland|water|powder_snow|sweet_berry|chest|barrel|_bed$|crafting|furnace|smoker|anvil|lectern|composter|cauldron|_table$|leaves|hay_block|_fence|_wall$|_stairs$|trapdoor|shulker|bookshelf|loom|stonecutter|grindstone|bell|beehive|melon|pumpkin|_head$|_skull$|pot$/.test(f.name)) continue;   // только пол: на сундуки и мебель не вставать (23.11)
