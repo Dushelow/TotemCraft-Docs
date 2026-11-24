@@ -1362,6 +1362,8 @@ class TotemBot extends EventEmitter {
    */
   async climbLadder(a, tok) {
     const b = this.bot, up = !/^(down|вниз)$/i.test(String(a.dir || ''));
+    // «лезь ко мне»: хозяин рядом выше - лезть до его высоты и сойти вбок, а не до верха мачты (23.11)
+    if (up && a.stopY === undefined) { const own = (this.opts.masters || []).map((n) => this.player(n)).find((e) => e && e.position.distanceTo(b.entity.position) < 32 && e.position.y > b.entity.position.y + 1.5); if (own) a = { ...a, stopY: Math.floor(own.position.y + 0.01) }; }
     // место для тела: пусто или то, сквозь что проходят (лестница над кнопкой - 23.11 копия лаза владельца)
     const roomy = (k) => k && (k.boundingBox === 'empty' || /ladder|vine|_button$|torch|_sign$|carpet|pressure_plate|^lever$|scaffolding/.test(k.name));
     const CL = /^(ladder|vine|scaffolding)$/;
@@ -1789,6 +1791,7 @@ class TotemBot extends EventEmitter {
     const b = this.bot, me = b.entity.position;
     // только что сработал механизм - проход открыт: не бежать к другому, а идти (23.11 стенд: после кнопки ушёл к плите в канале)
     if (Date.now() - (this._mechAt || 0) < 3000) return '';
+    if (goal && goal.y !== undefined && goal.y > me.y + 1.5 && b.findBlocks({ matching: (bl) => /^(ladder|vine|scaffolding)$/.test(bl.name), maxDistance: 8, count: 1 }).length) return '';   // наверх ведёт лестница - не ловушка, кнопки не жать (23.11)
     // на лестнице, в лиане или в прыжке - кнопки не жать: сначала встать на пол (23.11: жал кнопку, вися на лестнице, и
     // стена закрывалась раньше, чем он вылез)
     { const fk = b.blockAt(me); if (/ladder|vine|scaffolding/.test((fk || {}).name || '') || (!b.entity.onGround && !b.entity.isInWater)) return ''; }
