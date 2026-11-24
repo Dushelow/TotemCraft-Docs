@@ -344,7 +344,7 @@ function install(mv, bot) {
         // сойти вбок - не только с верха, а с любой ступеньки, где рядом пол (палуба посередине мачты, 23.11)
         const topHere = !(above && CL.test(above.name));
         if (true) {
-          for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ly of [node.y + 1, node.y + 2]) {
+          for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ly of [node.y, node.y + 1, node.y + 2]) {   // и на том же уровне - шаг с лестницы на палубу
             const x = node.x + ax, z = node.z + az;
             const fl = cell(x, ly - 1, z);
             const roomy = (c) => !c.boxes.length || /ladder|vine|_button$|torch|_sign$|carpet|pressure_plate|^lever$/.test((c.b || {}).name || '');
