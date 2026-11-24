@@ -341,13 +341,15 @@ function install(mv, bot) {
       const here = blk(node.x, node.y, node.z);
       if (here && /^(ladder|vine|twisting_vines|twisting_vines_plant|weeping_vines|weeping_vines_plant|cave_vines|cave_vines_plant)$/.test(here.name)) {
         const above = blk(node.x, node.y + 1, node.z);
-        if (!(above && CL.test(above.name)) && (!cell(node.x, node.y + 1, node.z).boxes.length || openHatch(cell(node.x, node.y + 1, node.z)))) {
+        // сойти вбок - не только с верха, а с любой ступеньки, где рядом пол (палуба посередине мачты, 23.11)
+        const topHere = !(above && CL.test(above.name));
+        if (true) {
           for (const [ax, az] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) for (const ly of [node.y + 1, node.y + 2]) {
             const x = node.x + ax, z = node.z + az;
             const fl = cell(x, ly - 1, z);
             const roomy = (c) => !c.boxes.length || /ladder|vine|_button$|torch|_sign$|carpet|pressure_plate|^lever$/.test((c.b || {}).name || '');
             if (!fl.boxes.length || fl.bad || CL.test((fl.b || {}).name || '') || !roomy(cell(x, ly, z)) || !roomy(cell(x, ly + 1, z))) continue;
-            if (ly === node.y + 2 && cell(node.x, node.y + 2, node.z).boxes.length && !openHatch(cell(node.x, node.y + 2, node.z))) continue;   // низко над головой - не прыгнуть
+            if (ly === node.y + 2 && (!topHere || (cell(node.x, node.y + 2, node.z).boxes.length && !openHatch(cell(node.x, node.y + 2, node.z))))) continue;   // +2 - только прыжком с верха   // низко над головой - не прыгнуть
             const k = `${x},${ly},${z}`; if (have.has(k)) continue;
             have.add(k); const m = new Move(x, ly, z, node.remainingBlocks, 2.5, [], []); m.ladderTop = true; out.push(m);
             break;
