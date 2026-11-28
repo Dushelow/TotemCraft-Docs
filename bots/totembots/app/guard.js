@@ -208,6 +208,10 @@ class Guard {
       const own = this.owner(), op = own && own.position;
       const pre = Object.values(b.entities).find((e) => e !== b.entity && e.position && this.isHostile(e) && !NEUTRAL.has(this.name(e)) && this.name(e) !== 'warden'
         && !(/^(ghast|phantom)$/.test(this.name(e))) && (e.position.distanceTo(me) < 10 || (op && e.position.distanceTo(op) < 8)));
+      // крипер подходит к хозяину (до 6 бл.), ещё не шипит - отбросить его ударами и в режиме «не трогать» (24.11, владелец:
+      // «не мог заранее ебнуть его?»): защита хозяина, а не нападение
+      { const cr = op && Object.values(b.entities).find((e) => e.position && this.name(e) === 'creeper' && e.position.distanceTo(op) < 6 && !swelling(e) && e.position.distanceTo(me) < 10);
+        if (cr && b.health >= 8) { this.mode = 'defend'; this.autoDefend = Date.now(); tb.log('крипер у хозяина - отгоняю'); } }
       // режим «не трогать» значит не трогать: не нападать, а отойти от врага заранее, к хозяину (не ждать ударов)
       if (pre && pre.position.distanceTo(me) < 8 && (!this.dodgeAt || Date.now() - this.dodgeAt > 1500)) {
         this.dodgeAt = Date.now();

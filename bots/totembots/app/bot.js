@@ -1988,6 +1988,14 @@ class TotemBot extends EventEmitter {
         }
         // «пути нет» - проход закрыт (плита, кнопка, стена на поршнях): механизм рядом и снова, до 3 раз (23.11 стенд: внутрь
         // через секретную стену с плитой в канале - сдавался сразу)
+        // «пути нет», цель выше или ниже на 3+, рядом лестница - лезть к высоте цели (трюм -> палуба по мачте, 24.11)
+        if (/no path/i.test(e.message) && goal.y !== undefined && Math.abs(goal.y - b.entity.position.y) >= 3 && Date.now() < until && (this._npClimb = attempt === 0 ? 1 : (this._npClimb || 0) + 1) <= 2) {
+          const upw = goal.y > b.entity.position.y;
+          if (b.findBlocks({ matching: (bl) => /^(ladder|vine|scaffolding)$/.test(bl.name), maxDistance: 12, count: 1 }).length) {
+            const m = await this.climbLadder({ dir: upw ? 'up' : 'down', toward: { x: goal.x, z: goal.z }, stopY: upw ? goal.y : undefined }, tok).catch((er) => { if (er instanceof Cancelled) throw er; return ''; });
+            if (/поднялся|спустился/.test(m)) { this.log('пути не было - ' + m + ', снова к цели'); continue; }
+          }
+        }
         if (/no path/i.test(e.message) && (this._npMech = attempt === 0 ? 1 : (this._npMech || 0) + 1) <= 3 && Date.now() < until && goal.x !== undefined) {
           const m = await this.useMechanism({ x: goal.x, y: goal.y ?? b.entity.position.y, z: goal.z }, tok).catch((er) => { if (er instanceof Cancelled) throw er; return ''; });
           if (m) { this.log(m + ' - снова к цели'); await sleep(200); continue; }
