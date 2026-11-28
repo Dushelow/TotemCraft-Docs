@@ -250,9 +250,11 @@ async function fetchLogo(site) {
   if (!links.length) {
     try {
       const r = await ses.fetch(x.home); base = r.url || x.home;
-      const html = (await r.text()).slice(0, 300000);
+      // значки - в <head>, а он бывает огромным (у Gemini страница ~0,9 МБ, ссылка дальше 300 тыс. символов, 28.11)
+      const all = await r.text(), he = all.search(/<\/head>/i);
+      const html = he > 0 ? all.slice(0, he) : all.slice(0, 3000000);
       for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
-        const at = (n) => (new RegExp(`\b${n}\s*=\s*["']([^"']*)["']`, 'i').exec(tag) || [])[1] || '';
+        const at = (n) => (new RegExp(`\\b${n}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag) || [])[1] || '';
         if (!/icon/i.test(at('rel')) || !at('href')) continue;
         links.push({ rel: at('rel'), href: new URL(at('href'), base).href, size: parseInt(at('sizes')) || 0 });
       }
