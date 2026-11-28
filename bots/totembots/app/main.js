@@ -232,25 +232,49 @@ function loginStatus(t) {
   try { win.webContents.send('qwen-login-status', t); } catch {}
   try { if (overlay && overlayOn) overlay.webContents.send('overlay-status', t); } catch {}
 }
+// окно входа готово заранее (загрузка его страницы - доли секунды, но заметно при первом показе)
+let overlayReady = null;
+function ensureOverlay() {
+  if (!overlayReady) {
+    overlay = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'login-overlay-preload.js') } });
+    overlay.setBackgroundColor('#111214');
+    overlayReady = overlay.webContents.loadFile(path.join(__dirname, 'login-overlay.html')).catch(() => {});
+  }
+  return overlayReady;
+}
+// снимок страницы под размытие (пустой, пока сайт не нарисовался - тогда просто тёмный фон)
+async function siteShot(site) {
+  try { const img = await viewOf('work', site).webContents.capturePage(); if (!img.isEmpty()) return img.resize({ width: 640 }).toDataURL(); } catch {}
+  return '';
+}
+// Вход на сайте: проверен (siteLogged) или, пока проверки не было, - «входил ли когда-нибудь» (cfg.webLogged).
+// Ни разу не входил - окно входа сразу, не дожидаясь проверки раз в 10 с: раньше сайт успевал показаться (28.11).
+function loggedGuess(site) {
+  if (siteLogged[site] !== undefined) return siteLogged[site];
+  if (site === 'qwen' || site === 'deepseek') return undefined;
+  return (cfg.webLogged || {})[site] ? undefined : false;
+}
 async function updateOverlay() {
   if (!win || !qwen) return;
   const site = view.site;
-  const want = view.mode === 'work' && !panelFull && !!(cfg.setupDone && cfg.host) && siteLogged[site] === false
+  const want = view.mode === 'work' && !panelFull && !!(cfg.setupDone && cfg.host) && loggedGuess(site) === false
     && !(webChats[site] && webChats[site].busy);   // бот работает в окне (страница грузится) - это не «нет входа»
   if (!want) { if (overlayOn) { overlayOn = false; overlaySite = ''; layout(); } return; }
   if (overlayOn && overlaySite === site) return;
-  if (!overlay) {
-    overlay = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'login-overlay-preload.js') } });
-    overlay.setBackgroundColor('#111214');
-    await overlay.webContents.loadFile(path.join(__dirname, 'login-overlay.html'));
-  }
-  let shot = '';
-  try { const img = await viewOf('work', site).webContents.capturePage(); if (!img.isEmpty()) shot = img.resize({ width: 640 }).toDataURL(); } catch {}
-  const x = siteOf(site);
   overlayOn = true; overlaySite = site;
-  overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: favicons[site] || '', shot });
+  await ensureOverlay();
+  if (overlaySite !== site) return;   // пока грузилось, переключили вкладку
+  const x = siteOf(site);
+  overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: favicons[site] || '', shot: await siteShot(site) });
   win.contentView.addChildView(overlay);   // поверх окна сайта
   layout();
+}
+// сайт догрузился: проверить вход сразу (а не через 10 с) и обновить размытый снимок под окном входа
+async function siteLoaded(site) {
+  try { const v = await Promise.race([site === 'qwen' ? qwen.webContents.executeJavaScript('!!localStorage.getItem("token")') : webChat(site).loggedIn(), new Promise((r) => setTimeout(() => r(undefined), 3000))]); if (v !== undefined) siteLogged[site] = v; } catch {}
+  if (siteLogged[site] && !(cfg.webLogged || {})[site] && site !== 'qwen') { cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg(); }
+  await updateOverlay().catch(() => {});
+  if (overlay && overlayOn && overlaySite === site) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: favicons[site] || '', shot, keepStatus: true }); }
 }
 ipcMain.handle('overlay-login', async (_e, site) => {
   const r = await (site === 'qwen' ? loginQwen() : site === 'deepseek' ? loginDeepseek() : loginSite(site));
@@ -298,6 +322,13 @@ async function checkLogins() {
   updateOverlay().catch(() => {});
 }
 setInterval(checkLogins, 10000);
+setTimeout(() => { if (app.isReady()) try { ensureOverlay(); } catch {} }, 3000);
+// сайты, где владелец уже входил, открыть заранее в фоне по одному: первое нажатие на вкладку - сразу готовая
+// страница, а не загрузка с нуля (28.11). Без входа сайты не грузим заранее: их всё равно закрывает окно входа
+setTimeout(() => {
+  const ids = Object.keys(cfg.webLogged || {}).filter((id) => cfg.webLogged[id] && SITES[id] && !webViews[id]);
+  ids.forEach((id, i) => setTimeout(() => { try { if (win && !webViews[id]) webView(id); } catch {} }, i * 1500));
+}, 6000);
 setTimeout(checkLogins, 2500);   // сразу после загрузки страниц, а не через 10 с («сайты загрузились, а пишет - нет мозгов»)
 
 const webViews = {}, webChats = {};
@@ -310,6 +341,7 @@ function webView(site) {
   v.webContents.setAudioMuted(true);
   v.webContents.loadURL(SITES[site].home);
   v.webContents.on('page-favicon-updated', (_e, f) => setFavicon(site, f));
+  v.webContents.on('did-finish-load', () => setTimeout(() => siteLoaded(site), 800));   // SPA дорисовывает поле ввода
   v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
   webViews[site] = v;
   layout();
