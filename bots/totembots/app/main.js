@@ -14,7 +14,7 @@ const { loginViaChrome } = require('./chrome-login');
 const { QwenBridge } = require('./qwen-bridge');
 const { TotemBot } = require('./bot');
 const { Brain, DEFAULT_PERSONA } = require('./brain');
-const { Voice, PIPER_VOICES } = require('./voice');
+const { Voice, PIPER_VOICES, EDGE_VOICES, RH_VOICES } = require('./voice');
 const { Memory } = require('./memory');
 const { WorldMap } = require('./worldmap');
 const { Travel } = require('./travel');
@@ -192,7 +192,7 @@ function stateForPanel() {
       choices: [{ id: 'qwen', name: 'Qwen' }, ...Object.entries(SITES).map(([k, x]) => ({ id: k + 'web', name: x.name.replace(/ \(сайт\)$/, '') })),
         ...Object.entries(PRESETS).filter(([k]) => ((cfg.brains || {}).keys || {})[k]).map(([k, p]) => ({ id: k, name: p.name + ' (ключ)' }))],
       now: router ? (router.order().find((b) => b.id === router.lastBrain) || {}).name || '' : '', active: router ? router.order().map((b) => b.name + (router.isResting(b.id) ? ' (отдыхает)' : '')) : [] }, birthYear: cfg.birthYear || '', qwen: cfg.qwen || {}, botBusy: !!(bridge && bridge.busy), captcha: !!(bridge && bridge.captcha),
-    voice: voice ? { ...voice.settings(), piper: voice.piperState(), silero: voice.sileroState() } : {},
+    voice: voice ? { ...voice.settings(), piper: voice.piperState(), silero: voice.sileroState(), edge: voice.edgeState() } : {},
     background: { waiting: background.lines.length, status: background.status, news: ([...memories.values()][0] ? [...memories.values()][0].data.news || [] : []).slice(-3).map((n) => n.text) },
     project: { enabled: projectEnabled(), id: project ? project.id : '', name: PROJECT_NAME, status: projectState.status },
     bots: cfg.bots.map((b) => {
@@ -214,7 +214,51 @@ function layout() {
   qwen.setBounds(r);
   for (const v of Object.values(webViews)) v.setBounds(r);
   for (const v of Object.values(myViews)) v.setBounds(r);
+  if (overlay) overlay.setBounds(overlayOn ? r : { ...r, x: w + 10 });
 }
+
+// --- окно входа поверх сайта без входа (login-overlay.html): размытый снимок страницы, логотип, «Войти через браузер».
+// Новичку не нужно искать вход в «Мозгах». «Войти прямо в этом окне» убирает его для этого сайта до перезапуска.
+let overlay = null, overlayOn = false, overlaySite = '';
+const overlayHere = new Set(), favicons = {};
+// логотип сайта для окна входа: картинка PNG, если есть (SVG бывают тёмными без фона); пришёл позже окна - обновить
+function setFavicon(site, list) {
+  const f = (list || []).find((u) => /\.png(\?|$)/i.test(u)) || (list || [])[0];
+  if (!f || favicons[site] === f) return;
+  favicons[site] = f;
+  if (overlay && overlayOn && overlaySite === site) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: f, keepStatus: true });
+}
+function loginStatus(t) {
+  try { win.webContents.send('qwen-login-status', t); } catch {}
+  try { if (overlay && overlayOn) overlay.webContents.send('overlay-status', t); } catch {}
+}
+async function updateOverlay() {
+  if (!win || !qwen) return;
+  const site = view.site;
+  const want = view.mode === 'work' && !panelFull && !!(cfg.setupDone && cfg.host) && siteLogged[site] === false && !overlayHere.has(site)
+    && !(webChats[site] && webChats[site].busy);   // бот работает в окне (страница грузится) - это не «нет входа»
+  if (!want) { if (overlayOn) { overlayOn = false; overlaySite = ''; layout(); } return; }
+  if (overlayOn && overlaySite === site) return;
+  if (!overlay) {
+    overlay = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'login-overlay-preload.js') } });
+    overlay.setBackgroundColor('#111214');
+    await overlay.webContents.loadFile(path.join(__dirname, 'login-overlay.html'));
+  }
+  let shot = '';
+  try { const img = await viewOf('work', site).webContents.capturePage(); if (!img.isEmpty()) shot = img.resize({ width: 640 }).toDataURL(); } catch {}
+  const x = siteOf(site);
+  overlayOn = true; overlaySite = site;
+  overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: favicons[site] || '', shot });
+  win.contentView.addChildView(overlay);   // поверх окна сайта
+  layout();
+}
+ipcMain.handle('overlay-login', async (_e, site) => {
+  const r = await (site === 'qwen' ? loginQwen() : site === 'deepseek' ? loginDeepseek() : loginSite(site));
+  await checkLogins();
+  return r;
+});
+ipcMain.handle('overlay-here', (_e, site) => { overlayHere.add(site); updateOverlay(); return true; });
+ipcMain.handle('overlay-recheck', async () => { await checkLogins(); return !overlayOn; });
 
 // Окна лежат друг на друге: показанное - сверху, остальные продолжают работать (бот отвечает и в скрытом окне).
 // «Моё окно» сайта - отдельная страница с тем же входом: там владелец меняет настройки, голос, пишет сам, а бот
@@ -237,7 +281,9 @@ function showView(mode, site) {
   if (!siteOf(site)) site = 'qwen';
   view = { mode: mode === 'mine' ? 'mine' : 'work', site };
   win.contentView.addChildView(viewOf(view.mode, site));   // уже добавленное окно переносится наверх
+  if (overlayOn) { overlayOn = false; overlaySite = ''; }
   layout();
+  updateOverlay();
   return view;
 }
 // старые названия вкладок: bot - окно бота Qwen, mine - моё окно Qwen, имя сайта - окно бота на сайте
@@ -248,6 +294,7 @@ function brainOrder() { return (cfg.brains && cfg.brains.order) || ['deepseekweb
 async function checkLogins() {
   try { if (qwen) siteLogged.qwen = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")'); } catch {}
   for (const id of Object.keys(webViews)) { try { siteLogged[id] = await webChat(id).loggedIn(); } catch {} }
+  updateOverlay().catch(() => {});
 }
 setInterval(checkLogins, 10000);
 setTimeout(checkLogins, 2500);   // сразу после загрузки страниц, а не через 10 с («сайты загрузились, а пишет - нет мозгов»)
@@ -261,6 +308,7 @@ function webView(site) {
   win.contentView.addChildView(v, 0);
   v.webContents.setAudioMuted(true);
   v.webContents.loadURL(SITES[site].home);
+  v.webContents.on('page-favicon-updated', (_e, f) => setFavicon(site, f));
   v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
   webViews[site] = v;
   layout();
@@ -268,7 +316,7 @@ function webView(site) {
 }
 function webChat(site) {
   if (webChats[site]) return webChats[site];
-  const w = new WebChat(webView(site).webContents, site, (t) => { try { win.webContents.send('qwen-login-status', t); } catch {} });
+  const w = new WebChat(webView(site).webContents, site, (t) => { try { loginStatus(t); } catch {} });
   w.inUse = () => view.mode === 'work' && view.site === site;
   return (webChats[site] = w);
 }
@@ -284,6 +332,7 @@ function createWindow() {
   const qs = session.fromPartition('persist:qwen');
   qs.setUserAgent((cfg.siteUA && cfg.siteUA.qwen) || CHROME_UA);
   qwen = new WebContentsView({ webPreferences: { session: qs, backgroundThrottling: false } });
+  qwen.webContents.on('page-favicon-updated', (_e, f) => setFavicon('qwen', f));
   win.contentView.addChildView(qwen);
   // первый запуск: окно сайта лежит поверх панели и закрывало мастер настройки (23.11, установка у друга) - спрятать до «Готово»
   if (!(cfg.setupDone && cfg.host)) qwen.setVisible(false);
@@ -299,7 +348,7 @@ function createWindow() {
   ipcMain.handle('deepseek-test', async () => { try { const r = await dsChat.ask('', 'Это проверка связи. Ответь одним словом: работает'); return 'ответ: ' + r.answer + ' (чат ' + r.chatId + ')'; } catch (e) { return 'ошибка: ' + e.message; } });
   router = new Router({ qwen: bridge, cfg: () => cfg, webs: {}, save: () => saveCfg(), log: (t) => { for (const name of live.keys()) logTo(name, t); } });
   project = new QwenProject({ bridge, cfg: () => cfg, save: saveCfg, dir: path.join(dataDir(), 'project'),
-    log: (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); } });
+    log: (t) => { for (const name of live.keys()) logTo(name, t); loginStatus(t); } });
   // новые чаты - вне проекта Qwen: создание чата в проекте висело по 40-80 с, а потом Qwen не отвечал (23.11)
   bridge.projectId = () => (cfg.qwenProject && cfg.qwenProject.enabled === true ? project.id : '');
   bridge.beforeNewChat = async () => {
@@ -316,7 +365,7 @@ function createWindow() {
     const l = live.get(name);
     if (l && l.body) l.body.sendVoice(pcm, rate).then((ok) => logTo(name, ok ? 'голос отправлен в Plasmo Voice' : 'голос в Plasmo Voice: бот не на сервере')).catch((e) => logTo(name, 'голос в Plasmo Voice: ' + e.message));
   };
-  bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); win.webContents.send('qwen-login-status', t); };
+  bridge.onAttention = (t) => { for (const name of live.keys()) logTo(name, t); loginStatus(t); };
   router.onAttention = bridge.onAttention;
   router.webFor = (site) => (site === 'deepseek' || (cfg.webLogged || {})[site]) && SITES[site] ? webChat(site) : null;
 
@@ -429,7 +478,7 @@ ipcMain.handle('bot-eye', (_e, name) => {
   if (!eyes.has(name)) eyes.set(name, new (require('./eyeview').EyeView)(mcTex));
   return eyes.get(name).frame(l.body);
 });
-ipcMain.handle('panel-full', (_e, on) => { panelFull = !!on; layout(); return panelFull; });
+ipcMain.handle('panel-full', (_e, on) => { panelFull = !!on; layout(); updateOverlay(); return panelFull; });
 ipcMain.handle('view-show', (_e, { mode, site }) => showView(mode, site));
 ipcMain.handle('view-nav', (_e, what) => {
   const wc = viewOf(view.mode, view.site).webContents;
@@ -631,18 +680,27 @@ ipcMain.handle('bot-combat', (_e, { name, combat }) => {
   return true;
 });
 ipcMain.handle('voice-save', (_e, v) => {
-  const PROVIDERS = ['qwen', 'silero', 'piper', 'system'];
+  const PROVIDERS = ['qwen', 'silero', 'edge', 'piper', 'rhvoice', 'system'];
+  const num = (x, lo, hi) => Math.max(lo, Math.min(hi, Math.round(+x || 0)));
   cfg.voice = {
     enabled: !!v.enabled, fallback: !!v.fallback, local: !!v.local, plasmo: !!v.plasmo, echo: v.echo !== false,
     provider: PROVIDERS.includes(v.provider) ? v.provider : 'qwen',
     volume: Math.max(0, Math.min(1, +v.volume || 0)),
     piperVoice: PIPER_VOICES[v.piperVoice] ? v.piperVoice : 'ru_RU-denis-medium',
     sileroVoice: /^(xenia|baya|kseniya|aidar|eugene)$/.test(v.sileroVoice) ? v.sileroVoice : 'xenia',
+    edgeVoice: EDGE_VOICES[v.edgeVoice] ? v.edgeVoice : 'en-US-BrianMultilingualNeural',
+    edgeRate: num(v.edgeRate, -50, 50), edgePitch: num(v.edgePitch, -30, 30),
+    rhVoice: RH_VOICES[v.rhVoice] ? v.rhVoice : 'Aleksandr',
+    systemVoice: String(v.systemVoice || '').slice(0, 200), sapiRate: num(v.sapiRate, -10, 10),
   };
   saveCfg();
   return true;
 });
 ipcMain.handle('voice-install-piper', async () => voice.installPiper((t) => win.webContents.send('voice-status', t)));
+ipcMain.handle('voice-install-edge', async () => voice.installEdge((t) => win.webContents.send('voice-status', t)));
+ipcMain.handle('voice-install-rh', async (_e, name) => voice.installRh(name, (t) => win.webContents.send('voice-status', t)));
+// голоса Windows и RHVoice (спрашивать у Windows ~1-2 с, поэтому отдельно от state, по открытию раздела «Голос»)
+ipcMain.handle('voice-sapi', async () => { voice.sapiList = await voice.sapiVoices(); return { list: voice.sapiList, rh: voice.rhState(voice.sapiList) }; });
 ipcMain.handle('voice-install-silero', async () => voice.installSilero((t) => win.webContents.send('voice-status', t)));
 ipcMain.handle('voice-test', async (_e, name) => {
   const b = cfg.bots.find((x) => x.name === name) || { name: name || 'проверка', chatId: '' };
@@ -799,7 +857,7 @@ function freshProfile(dir) {
   return dir;
 }
 async function loginSite(site) {
-  const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
+  const status = (t) => { loginStatus(t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   if (!SITES[site]) return { ok: false };
   try {
     const { cookies, token, ua } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-' + site)), status, site);
@@ -827,7 +885,7 @@ ipcMain.handle('site-test', async (_e, site) => { try { const r = await webChat(
 // Вход в DeepSeek через настоящий Chrome (встроенное окно Google не пускает): куки и userToken - в окно DeepSeek
 ipcMain.handle('deepseek-login-chrome', () => loginDeepseek());
 async function loginDeepseek() {
-  const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
+  const status = (t) => { loginStatus(t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   try {
     const { cookies, token } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login-deepseek')), status, 'deepseek');
     const ds = dsView.webContents.session;
@@ -848,7 +906,7 @@ async function loginDeepseek() {
 const SAME_SITE = { Strict: 'strict', Lax: 'lax', None: 'no_restriction' };
 ipcMain.handle('qwen-login-chrome', () => loginQwen());
 async function loginQwen() {
-  const status = (t) => { win.webContents.send('qwen-login-status', t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
+  const status = (t) => { loginStatus(t); try { fs.mkdirSync(path.join(LOCAL, 'logs'), { recursive: true }); fs.appendFileSync(path.join(LOCAL, 'logs', 'login.log'), new Date().toISOString() + ' ' + t + String.fromCharCode(10)); } catch {} };
   try {
     const { cookies, token, ua } = await loginViaChrome(freshProfile(path.join(app.getPath('userData'), 'chrome-login')), status);
     const qs = qwen.webContents.session;

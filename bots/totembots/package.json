@@ -24,6 +24,7 @@
   "build": {
     "appId": "net.totemcraft.totembots",
     "productName": "TotemBots",
+    "asarUnpack": ["app/*.py"],
     "files": [
       "app/**/*",
       "package.json",

@@ -16,11 +16,75 @@ const PIPER_VOICES = {
 };
 const VOICE_URL = (name) => `https://huggingface.co/rhasspy/piper-voices/resolve/main/${PIPER_VOICES[name]}/${name}`;
 
-const ORDER = ['qwen', 'silero', 'piper', 'system'];
+const ORDER = ['qwen', 'silero', 'edge', 'piper', 'rhvoice', 'system'];
 // Silero: русская нейросеть на этом компьютере (Python + torch CPU, модель v4_ru ~ 60 МБ). Голоса: женские xenia,
 // baya, kseniya; мужские aidar, eugene. Ставится кнопкой в разделе «Голос» в папку программы local/silero.
 const SILERO_VOICES = { xenia: 'Ксения (женский)', baya: 'Байя (женский)', kseniya: 'Ксения 2 (женский)', aidar: 'Айдар (мужской)', eugene: 'Евгений (мужской)' };
 const SILERO_MODEL = 'https://models.silero.ai/models/tts/ru/v4_ru.pt';
+// Edge TTS: голоса Microsoft через интернет (пакет edge-tts, ставится кнопкой в local/edge). 28.11: русские голоса
+// Дмитрий и Светлана русский текст не читают («No audio received», английский читают); русский читают многоязычные:
+const EDGE_VOICES = {
+  'en-US-BrianMultilingualNeural': 'Брайан (мужской)', 'fr-FR-RemyMultilingualNeural': 'Реми (мужской)',
+  'en-US-EmmaMultilingualNeural': 'Эмма (женский)', 'en-US-AvaMultilingualNeural': 'Ава (женский)', 'fr-FR-VivienneMultilingualNeural': 'Вивьен (женский)',
+};
+// RHVoice: лёгкие русские голоса без интернета, ставятся в Windows (SAPI) их установщиком с GitHub RHVoice
+const RH = 'https://github.com/RHVoice';
+const RH_VOICES = {
+  Aleksandr: { name: 'Александр (мужской)', url: `${RH}/aleksandr-rus/releases/download/4.2/RHVoice-voice-Russian-Aleksandr-v4.2.2017.22-setup.exe` },
+  Irina: { name: 'Ирина (женский)', url: `${RH}/irina-rus/releases/download/4.1/RHVoice-voice-Russian-Irina-v4.1.2017.22-setup.exe` },
+  Anna: { name: 'Анна (женский)', url: `${RH}/anna-rus/releases/download/4.1/RHVoice-voice-Russian-Anna-v4.1.2017.22-setup.exe` },
+  Elena: { name: 'Елена (женский)', url: `${RH}/elena-rus/releases/download/v4.3/RHVoice-voice-Russian-Elena-v4.3.2017.22-setup.exe` },
+};
+// голоса Windows (SAPI) в файл WAV через System.Speech: так звук уходит и в игру, а не только в колонки
+const PS_LIST = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer; $s.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name + '|' + $_.VoiceInfo.Culture.Name + '|' + $_.VoiceInfo.Gender }`;
+const PS_SAY = `Add-Type -AssemblyName System.Speech; $s = New-Object System.Speech.Synthesis.SpeechSynthesizer;
+if ($env:TB_VOICE) { $s.SelectVoice($env:TB_VOICE) }; $s.Rate = [int]$env:TB_RATE;
+$f = New-Object System.Speech.AudioFormat.SpeechAudioFormatInfo(24000, [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen, [System.Speech.AudioFormat.AudioChannel]::Mono);
+$s.SetOutputToWaveFile($env:TB_OUT, $f); $s.Speak([IO.File]::ReadAllText($env:TB_IN, [Text.Encoding]::UTF8)); $s.Dispose()`;
+// скрипты Python в установленной программе лежат рядом с архивом app.asar (asarUnpack): изнутри архива Python их не прочтёт
+const pyScript = (f) => path.join(__dirname, f).replace(/app\.asar([\\/])/,'app.asar.unpacked$1');
+const PS32 = path.join(process.env.SystemRoot || 'C:\\Windows', 'SysWOW64', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
+
+/** Процесс Python, который держится запущенным: строка JSON на вход, кадр «4 байта длины + данные» на выход. */
+class PyWorker {
+  constructor(script, env, label) { Object.assign(this, { script, env, label }); }
+  ask(req, ms = 30000) {
+    if (!this.p || this.p.exitCode !== null) {
+      this.p = spawn('python', [this.script], { windowsHide: true, env: { ...process.env, PYTHONIOENCODING: 'utf-8', ...this.env } });
+      this.buf = Buffer.alloc(0); this.wait = []; this.err = '';
+      this.p.stderr.on('data', (c) => { this.err = (this.err + c).slice(-500); });
+      this.p.stdout.on('data', (c) => {
+        this.buf = Buffer.concat([this.buf, c]);
+        while (this.buf.length >= 4) {
+          const n = this.buf.readUInt32LE(0);
+          if (this.buf.length < 4 + n) break;
+          const d = Buffer.from(this.buf.subarray(4, 4 + n)); this.buf = this.buf.subarray(4 + n);
+          const w = this.wait.shift(); if (w) (n ? w.ok(d) : w.fail(new Error(`${this.label}: ${(this.err.trim().split('\n').pop() || 'не вышло').replace(/^\w+: /, '')}`)));
+        }
+      });
+      this.p.on('error', (e) => { for (const w of this.wait.splice(0)) w.fail(new Error(`${this.label}: нет Python (${e.message})`)); });
+      this.p.on('exit', () => { for (const w of this.wait.splice(0)) w.fail(new Error(`${this.label} остановился`)); });
+    }
+    return new Promise((ok, fail) => {
+      const t = setTimeout(() => fail(new Error(`${this.label} не ответил за ${ms / 1000} с`)), ms);
+      this.wait.push({ ok: (r) => { clearTimeout(t); ok(r); }, fail: (e) => { clearTimeout(t); fail(e); } });
+      this.p.stdin.write(JSON.stringify(req) + '\n');
+    });
+  }
+}
+
+/** WAV-файл -> { pcm, rate } (кусок data, 16 бит моно). */
+function readWav(file) {
+  const b = fs.readFileSync(file);
+  let rate = 24000, off = 12;
+  while (off + 8 <= b.length) {
+    const id = b.toString('ascii', off, off + 4), n = b.readUInt32LE(off + 4);
+    if (id === 'fmt ') rate = b.readUInt32LE(off + 12);
+    if (id === 'data') return { pcm: b.subarray(off + 8, off + 8 + n), rate };
+    off += 8 + n + (n & 1);
+  }
+  throw new Error('пустой звук');
+}
 
 async function download(url, file) {
   const res = await fetch(url);
@@ -38,7 +102,7 @@ class Voice {
   }
 
   settings() {
-    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', sileroVoice: 'xenia', echo: true, ...(this.cfg().voice || {}) };
+    return { enabled: false, provider: 'qwen', fallback: true, local: true, plasmo: false, volume: 0.9, piperVoice: 'ru_RU-denis-medium', sileroVoice: 'xenia', echo: true, edgeVoice: 'en-US-BrianMultilingualNeural', edgeRate: 0, edgePitch: 0, rhVoice: 'Aleksandr', systemVoice: '', sapiRate: 0, ...(this.cfg().voice || {}) };
   }
 
   // --- Silero
@@ -71,7 +135,7 @@ class Voice {
     const st = this.sileroState();
     if (!st.program || !st.voice) throw new Error('Silero не установлен (кнопка «Скачать Silero» в разделе «Голос»)');
     if (!this.sp || this.sp.exitCode !== null) {
-      this.sp = spawn('python', [path.join(__dirname, 'silero_tts.py')], { windowsHide: true, env: { ...process.env, SILERO_DIR: this.sileroDir(), PYTHONIOENCODING: 'utf-8' } });
+      this.sp = spawn('python', [pyScript('silero_tts.py')], { windowsHide: true, env: { ...process.env, SILERO_DIR: this.sileroDir(), PYTHONIOENCODING: 'utf-8' } });
       this.spBuf = Buffer.alloc(0); this.spWait = [];
       this.sp.stdout.on('data', (c) => {
         this.spBuf = Buffer.concat([this.spBuf, c]);
@@ -137,6 +201,73 @@ class Voice {
     });
   }
 
+  // --- Edge TTS
+  edgeDir() { return path.join(process.env.TOTEMBOTS_LOCAL || path.join(__dirname, '..', 'local'), 'edge'); }
+  edgeState() { return { program: fs.existsSync(path.join(this.edgeDir(), 'py', 'edge_tts')), voices: EDGE_VOICES }; }
+  async installEdge(status = () => {}) {
+    const d = path.join(this.edgeDir(), 'py');
+    fs.mkdirSync(d, { recursive: true });
+    status('ставлю Edge TTS (пакеты edge-tts и miniaudio, ~10 МБ)...');
+    await new Promise((ok, fail) => {
+      // --upgrade: Microsoft меняет подпись запросов, свежий edge-tts за этим следит - кнопка же и обновляет
+      const p = spawn('python', ['-m', 'pip', 'install', '--quiet', '--upgrade', '--target', d, 'edge-tts', 'miniaudio'], { windowsHide: true });
+      let err = ''; p.stderr.on('data', (c) => { err += c; });
+      p.on('error', (e) => fail(new Error('нет Python на компьютере: ' + e.message)));
+      p.on('close', (code) => (code === 0 ? ok() : fail(new Error('pip: ' + (err.trim().split('\n').filter((l) => !/notice|WARNING/.test(l)).pop() || 'код ' + code)))));
+    });
+    if (this.ew) { try { this.ew.p.kill(); } catch {} this.ew = null; }
+    status('Edge TTS готов');
+    return this.edgeState();
+  }
+  async edge(text) {
+    if (!this.edgeState().program) throw new Error('Edge TTS не установлен (кнопка «Скачать» у Edge в разделе «Голос»)');
+    this.ew = this.ew || new PyWorker(pyScript('edge_tts_pcm.py'), { EDGE_DIR: this.edgeDir() }, 'Edge TTS');
+    const s = this.settings();
+    const pct = (v, unit) => `${v >= 0 ? '+' : ''}${Math.round(v)}${unit}`;
+    return { pcm: await this.ew.ask({ text: String(text).replace(/\s+/g, ' '), voice: s.edgeVoice, rate: pct(+s.edgeRate || 0, '%'), pitch: pct(+s.edgePitch || 0, 'Hz') }), rate: 24000 };
+  }
+
+  // --- голоса Windows (SAPI): свои голоса Windows и RHVoice
+  /** Установленные голоса Windows: [{ name, lang, gender, x86 }] (RHVoice бывает только в 32-битной части). */
+  async sapiVoices() {
+    const run = (exe) => new Promise((ok) => execFile(exe, ['-NoProfile', '-Command', PS_LIST], { windowsHide: true, timeout: 20000 }, (e, out) => ok(e ? [] : String(out).split(/\r?\n/).filter(Boolean).map((l) => { const [name, lang, gender] = l.split('|'); return { name, lang, gender }; }))));
+    const a = await run('powershell.exe');
+    const b = fs.existsSync(PS32) ? await run(PS32) : [];
+    return [...a, ...b.filter((x) => !a.some((y) => y.name === x.name)).map((x) => ({ ...x, x86: true }))];
+  }
+  async sapi(text, voiceName) {
+    const list = this.sapiList || (this.sapiList = await this.sapiVoices());
+    // «по умолчанию» - первый русский голос: голос Windows по умолчанию бывает английским и русский текст не читает (28.11)
+    if (!voiceName) voiceName = (list.find((x) => /^ru/i.test(x.lang)) || {}).name || '';
+    const v = voiceName ? list.find((x) => x.name === voiceName) : null;
+    if (voiceName && !v) { this.sapiList = null; throw new Error(`голос «${voiceName}» не установлен в Windows`); }
+    const tmp = path.join(require('os').tmpdir(), `tb-say-${process.pid}-${Date.now()}`);
+    fs.writeFileSync(tmp + '.txt', String(text), 'utf8');
+    try {
+      await new Promise((ok, fail) => execFile(v && v.x86 ? PS32 : 'powershell.exe', ['-NoProfile', '-Command', PS_SAY], { windowsHide: true, timeout: 30000,
+        env: { ...process.env, TB_VOICE: voiceName || '', TB_RATE: String(Math.max(-10, Math.min(10, Math.round(+this.settings().sapiRate || 0)))), TB_IN: tmp + '.txt', TB_OUT: tmp + '.wav' } },
+      (e, _o, err) => (e ? fail(new Error('голос Windows: ' + (String(err).trim().split('\n')[0] || e.message))) : ok())));
+      const a = readWav(tmp + '.wav');
+      if (a.pcm.length < 4800) throw new Error(`голос Windows «${voiceName || 'по умолчанию'}» не прочёл текст (не русский голос?)`);
+      return a;
+    } finally { for (const x of ['.txt', '.wav']) try { fs.unlinkSync(tmp + x); } catch {} }
+  }
+  // голос RHVoice в списке Windows: «Aleksandr», а не «Microsoft Irina Desktop» (свой голос Windows с тем же именем)
+  rhFind(list, k) { return (list || []).find((v) => !/microsoft/i.test(v.name) && new RegExp(`(^|\W)${k}(\W|$)`, 'i').test(v.name)); }
+  rhState(list) { return { voices: Object.fromEntries(Object.entries(RH_VOICES).map(([k, x]) => [k, { name: x.name, installed: !!this.rhFind(list, k) }])) }; }
+  /** Скачать установщик голоса RHVoice с GitHub RHVoice и открыть его: дальше «Далее» нажимает владелец. */
+  async installRh(name, status = () => {}) {
+    const r = RH_VOICES[name];
+    if (!r) throw new Error('нет такого голоса RHVoice');
+    const dir = path.join(this.dir, 'rhvoice'); fs.mkdirSync(dir, { recursive: true });
+    const file = path.join(dir, path.basename(r.url));
+    if (!fs.existsSync(file)) { status(`скачиваю голос RHVoice ${r.name}...`); await download(r.url, file); }
+    status(`открыт установщик RHVoice (${r.name}): нажмите в нём «Далее» и «Установить», потом здесь «Обновить список»`);
+    spawn(file, [], { detached: true, stdio: 'ignore' }).unref();
+    this.sapiList = null;
+    return true;
+  }
+
   // --- озвучить реплику бота
   async speak(text, botCfg, o = {}) {
     const s = this.settings();
@@ -169,12 +300,17 @@ class Voice {
           this.play(a, botCfg.name, how);
         } else if (how === 'silero') {
           this.play(await this.silero(text), botCfg.name, how);
+        } else if (how === 'edge') {
+          this.play(await this.edge(text), botCfg.name, how);
+        } else if (how === 'rhvoice') {
+          const list = this.sapiList || (this.sapiList = await this.sapiVoices());
+          const v = this.rhFind(list, s.rhVoice || 'Aleksandr');
+          if (!v) throw new Error(`RHVoice ${s.rhVoice} не установлен (кнопка «Установить» у RHVoice в разделе «Голос»)`);
+          this.play(await this.sapi(text, v.name), botCfg.name, how);
         } else if (how === 'piper') {
           this.play(await this.piper(text), botCfg.name, how);
         } else if (how === 'system') {
-          if (!s.local) throw new Error('голоса Windows звучат только в колонках (в Plasmo Voice их не передать), а колонки выключены');
-          this.toPanel('voice-system', { text, volume: s.volume });
-          this.log(botCfg.name, `голос (Windows): ${text}`);
+          this.play(await this.sapi(text, s.systemVoice || ''), botCfg.name, how);
         }
         if (how === s.provider) this.fails[how] = 0;
         return;
@@ -203,4 +339,4 @@ class Voice {
   }
 }
 
-module.exports = { Voice, PIPER_VOICES, SILERO_VOICES };
+module.exports = { Voice, PIPER_VOICES, SILERO_VOICES, EDGE_VOICES, RH_VOICES };

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:">
+<title>Вход</title>
+<!-- Окно поверх сайта, на котором не выполнен вход: размытый снимок самой страницы, логотип, кнопка входа.
+     Цвета - те же токены, что в panel.html (UI.md). -->
+<style>
+  :root {
+    --bg: #111214; --surface: #1e1f23; --surface-2: #25272c; --line: #2c2e34; --line-2: #3a3d44;
+    --text: #ececee; --text-2: #b6bac1; --text-3: #959aa2;
+    --acc: #5a5fe0; --acc-text: #b9bcff; --bad: #f0575c; --ok: #3fbf6f;
+    --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --r1: 6px; --r3: 14px;
+    --f-xs: 12px; --f-sm: 13px; --f-md: 14px; --f-lg: 18px;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: var(--f-sm)/1.5 "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  #shot { position: fixed; inset: -24px; background: center top / cover no-repeat; filter: blur(14px) saturate(.8) brightness(.55); transform: scale(1.03); }
+  #veil { position: fixed; inset: 0; background: radial-gradient(ellipse at center, rgba(17,18,20,.35), rgba(17,18,20,.85)); }
+  .card { position: relative; width: min(380px, calc(100% - 32px)); margin: 0 auto; top: 50%; transform: translateY(-50%);
+    background: rgba(30,31,35,.92); border: 1px solid var(--line-2); border-radius: var(--r3); padding: var(--s6);
+    box-shadow: 0 16px 48px rgba(0,0,0,.5); text-align: center; animation: in .18s ease; }
+  @keyframes in { from { opacity: 0; transform: translateY(calc(-50% + 6px)); } }
+  .logo { width: 56px; height: 56px; margin: 0 auto var(--s4); border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-2);
+    display: grid; place-items: center; overflow: hidden; font: 600 24px/1 "Segoe UI", system-ui; color: var(--acc-text); }
+  .logo img { width: 36px; height: 36px; object-fit: contain; }
+  .logo.img { background: #f4f4f6; border-color: transparent; }
+  h1 { margin: 0 0 6px; font-size: var(--f-lg); font-weight: 600; }
+  p { margin: 0 0 var(--s5); color: var(--text-2); }
+  button { display: flex; width: 100%; align-items: center; justify-content: center; gap: var(--s2); height: 38px; border: 1px solid transparent;
+    border-radius: var(--r1); font: 500 var(--f-md) "Segoe UI", system-ui; cursor: pointer; transition: background .12s ease; }
+  button.pri { background: var(--acc); color: #fff; } button.pri:hover { background: #6a6ff0; }
+  button.ghost { background: transparent; color: var(--text-2); border-color: var(--line-2); margin-top: var(--s2); } button.ghost:hover { background: var(--surface-2); color: var(--text); }
+  button:disabled { opacity: .55; cursor: default; }
+  .link { margin-top: var(--s4); font-size: var(--f-xs); color: var(--text-3); }
+  .link a { color: var(--acc-text); cursor: pointer; text-decoration: none; } .link a:hover { text-decoration: underline; }
+  #status { min-height: 18px; margin-top: var(--s3); font-size: var(--f-xs); color: var(--text-3); }
+  #status.bad { color: var(--bad); } #status.ok { color: var(--ok); }
+  .spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  :focus-visible { outline: 2px solid var(--acc-text); outline-offset: 2px; }
+</style>
+</head>
+<body>
+<div id="shot"></div><div id="veil"></div>
+<div class="card" role="dialog" aria-labelledby="title">
+  <div class="logo" id="logo"></div>
+  <h1 id="title">Войдите в сайт</h1>
+  <p id="lead">Бот пишет нейросети от вашего аккаунта. Без входа этот сайт ему недоступен.</p>
+  <button class="pri" id="login">Войти через браузер</button>
+  <button class="ghost" id="here">Войти прямо в этом окне</button>
+  <div id="status" role="status" aria-live="polite"></div>
+  <div class="link"><a id="recheck">Я уже вошёл, проверить</a></div>
+</div>
+<script src="login-overlay.js"></script>
+</body>
+</html>

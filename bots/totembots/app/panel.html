@@ -461,21 +461,48 @@
         <label class="chk"><input type="checkbox" id="vEnabled"> Озвучивать реплики ботов</label>
         <label>Чем озвучивать</label>
         <select id="vProvider">
-          <option value="qwen">Qwen: голос из настроек Qwen</option>
           <option value="silero">Silero: русская нейросеть на компьютере, без интернета</option>
+          <option value="edge">Edge TTS: голоса Microsoft через интернет, самые живые</option>
           <option value="piper">Piper: нейросеть на компьютере, без интернета</option>
-          <option value="system">Голоса Windows (только колонки)</option>
+          <option value="rhvoice">RHVoice: лёгкие русские голоса, без интернета</option>
+          <option value="system">Голоса Windows</option>
+          <option value="qwen">Qwen: голос из настроек сайта Qwen</option>
         </select>
-        <label class="chk"><input type="checkbox" id="vEcho"> Голос Qwen и для ответов других нейросетей (+1 короткий запрос, 3-8 с)</label>
-        <label class="chk"><input type="checkbox" id="vFallback"> Если не вышло, пробовать остальные способы</label>
+        <div class="veng" data-eng="silero">
+          <label>Голос Silero</label>
+          <div class="row"><select id="vSileroVoice" class="grow"></select><button id="vInstallSilero"><i data-i="plus" data-s="14"></i>Скачать</button></div>
+          <p class="muted">Около 260 МБ один раз. Нужен Python на компьютере.</p>
+        </div>
+        <div class="veng" data-eng="edge">
+          <label>Голос Edge</label>
+          <div class="row"><select id="vEdgeVoice" class="grow"></select><button id="vInstallEdge"><i data-i="plus" data-s="14"></i>Скачать</button></div>
+          <label>Скорость: <span id="vEdgeRateV"></span></label><input type="range" id="vEdgeRate" min="-50" max="50" step="5">
+          <label>Высота голоса: <span id="vEdgePitchV"></span></label><input type="range" id="vEdgePitch" min="-30" max="30" step="2">
+          <p class="muted">Многоязычные голоса Microsoft читают и по-русски. Русские Дмитрий и Светлана сейчас русский текст не читают. Кнопка «Скачать» также обновляет пакет, если Microsoft что-то поменял.</p>
+        </div>
+        <div class="veng" data-eng="piper">
+          <label>Голос Piper</label>
+          <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall"><i data-i="plus" data-s="14"></i>Скачать</button></div>
+        </div>
+        <div class="veng" data-eng="rhvoice">
+          <label>Голос RHVoice</label>
+          <div class="row"><select id="vRhVoice" class="grow"></select><button id="vInstallRh"><i data-i="plus" data-s="14"></i>Установить</button><button id="vSapiRe" class="ghost" title="Спросить у Windows установленные голоса"><i data-i="refresh-cw" data-s="14"></i></button></div>
+          <label>Скорость: <span id="vSapiRateV"></span></label><input type="range" id="vSapiRate" min="-10" max="10" step="1">
+          <p class="muted">Голос ставится в Windows своим установщиком с GitHub RHVoice: в нём нажать «Далее» и «Установить».</p>
+        </div>
+        <div class="veng" data-eng="system">
+          <label>Голос Windows</label>
+          <div class="row"><select id="vSystemVoice" class="grow"></select><button id="vSapiRe2" class="ghost" title="Спросить у Windows установленные голоса"><i data-i="refresh-cw" data-s="14"></i></button></div>
+          <label>Скорость: <span id="vSapiRateV2"></span></label><input type="range" id="vSapiRate2" min="-10" max="10" step="1">
+        </div>
+        <div class="veng" data-eng="qwen">
+          <label class="chk"><input type="checkbox" id="vEcho"> Голос Qwen и для ответов других нейросетей (+1 короткий запрос, 3-8 с)</label>
+        </div>
+        <label class="chk"><input type="checkbox" id="vFallback"> Если выбранный голос не работает, пробовать остальные</label>
         <label>Где звучит</label>
         <label class="chk"><input type="checkbox" id="vLocal"> В колонках этого компьютера</label>
         <label class="chk"><input type="checkbox" id="vPlasmo"> В игре через Plasmo Voice (слышат игроки рядом с ботом)</label>
         <label>Громкость</label><input type="range" id="vVolume" min="0" max="1" step="0.05">
-        <label>Голос Silero</label>
-        <div class="row"><select id="vSileroVoice" class="grow"></select><button id="vInstallSilero"><i data-i="plus" data-s="14"></i>Скачать</button></div>
-        <label>Голос Piper</label>
-        <div class="row"><select id="vPiperVoice" class="grow"></select><button id="vInstall"><i data-i="plus" data-s="14"></i>Скачать</button></div>
         <div id="vStatus" class="muted" style="margin-top:6px"></div>
         <div class="row" style="margin-top:var(--s4)"><button id="vTest" class="pri"><i data-i="volume-2"></i>Проверить голос</button></div>
       </div>

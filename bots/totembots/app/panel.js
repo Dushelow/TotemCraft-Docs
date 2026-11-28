@@ -87,7 +87,7 @@ function paintStrip() {
   if (v.mode === 'mine') text = `Ваше окно ${cur.name}: тот же вход, бот сюда не заходит. Здесь можно писать, менять настройки и голос.`;
   else if (cur.captcha) { text = `${cur.name} просит пройти проверку «не робот»: пройдите её прямо здесь, программа ждёт и ничего не нажимает.`; cls = 'bad'; }
   else if (cur.busy) { text = `Бот сейчас работает в этом окне: листать можно, нажимать и печатать нельзя. Писать самому - «Моё окно».`; cls = 'busy'; }
-  else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Войдите здесь или кнопкой «Войти через браузер» в разделе «Мозги».`; cls = 'bad'; }
+  else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Кнопка «Войти через браузер» - в окне сайта справа.`; cls = 'bad'; }
   else text = `Окно бота ${cur.name}: бот может начать работу в любой момент. Писать самому - «Моё окно».`;
   $('stripText').textContent = text;
   if ($('stripHint').className !== 'r2 ' + cls) {
@@ -514,15 +514,56 @@ function fillVoice(v) {
     $('vLocal').checked = !!v.local; $('vPlasmo').checked = !!v.plasmo; $('vVolume').value = v.volume;
     $('vPiperVoice').innerHTML = v.piper.voices.map((n) => `<option value="${n}">${VOICE_NAMES[n] || n}</option>`).join('');
     $('vPiperVoice').value = v.piperVoice;
+    if (v.edge) { $('vEdgeVoice').innerHTML = Object.entries(v.edge.voices).map(([k, n]) => `<option value="${k}">${n}</option>`).join(''); $('vEdgeVoice').value = v.edgeVoice; }
+    $('vEdgeRate').value = v.edgeRate || 0; $('vEdgePitch').value = v.edgePitch || 0; $('vSapiRate').value = $('vSapiRate2').value = v.sapiRate || 0;
+    voiceSaved = v; loadSapi();
     if (v.silero) { $('vSileroVoice').innerHTML = Object.entries(v.silero.voices).map(([k, n]) => `<option value="${k}">${n}</option>`).join(''); $('vSileroVoice').value = v.sileroVoice || 'xenia'; }
     voiceFilled = true;
   }
-  if (!$('vStatus').dataset.busy) $('vStatus').textContent = piperText(v.piper) + (v.silero ? (v.silero.program && v.silero.voice ? ' · Silero готов' : ' · Silero не установлен') : '');
+  showEng();
+  if (!$('vStatus').dataset.busy) $('vStatus').textContent = engText(v);
+}
+// состояние выбранного способа одной строкой
+function engText(v) {
+  const p = $('vProvider').value;
+  if (p === 'silero') return v.silero && v.silero.program && v.silero.voice ? 'Silero установлен' : 'Silero не установлен: «Скачать»';
+  if (p === 'edge') return v.edge && v.edge.program ? 'Edge TTS установлен' : 'Edge TTS не установлен: «Скачать» (около 10 МБ)';
+  if (p === 'piper') return piperText(v.piper);
+  if (p === 'rhvoice') return sapiInfo ? (sapiInfo.rh.voices[$('vRhVoice').value] || {}).installed ? 'этот голос RHVoice установлен' : 'этот голос RHVoice не установлен: «Установить»' : 'спрашиваю Windows о голосах...';
+  if (p === 'system') return sapiInfo ? `голосов в Windows: ${sapiInfo.list.length}` : '';
+  return '';
+}
+// под выбранным способом - только его настройки
+function showEng() { for (const d of document.querySelectorAll('.veng')) d.hidden = d.dataset.eng !== $('vProvider').value;
+  const pc = (x, u) => `${+x > 0 ? '+' : ''}${x}${u}`;
+  $('vEdgeRateV').textContent = pc($('vEdgeRate').value, '%'); $('vEdgePitchV').textContent = pc($('vEdgePitch').value, ' Гц');
+  $('vSapiRateV').textContent = $('vSapiRateV2').textContent = pc($('vSapiRate').value, ''); }
+let voiceSaved = null, sapiInfo = null;
+// голоса Windows и RHVoice: Windows отвечает 1-2 с, спрашиваем отдельно
+async function loadSapi() {
+  try { sapiInfo = await T.voiceSapi(); } catch { return; }
+  const v = voiceSaved || {};
+  $('vRhVoice').innerHTML = Object.entries(sapiInfo.rh.voices).map(([k, x]) => `<option value="${k}">${x.name}${x.installed ? '' : ' - не установлен'}</option>`).join('');
+  $('vRhVoice').value = v.rhVoice || 'Aleksandr';
+  $('vSystemVoice').innerHTML = '<option value="">Голос Windows по умолчанию</option>' + sapiInfo.list.map((x) => `<option value="${esc(x.name)}">${esc(x.name)} (${esc(x.lang)})</option>`).join('');
+  $('vSystemVoice').value = v.systemVoice || '';
+  if (!$('vStatus').dataset.busy) $('vStatus').textContent = engText(v);
 }
 const voiceForm = () => ({ enabled: $('vEnabled').checked, provider: $('vProvider').value, fallback: $('vFallback').checked, echo: $('vEcho').checked,
-  local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value, sileroVoice: $('vSileroVoice').value });
+  local: $('vLocal').checked, plasmo: $('vPlasmo').checked, volume: $('vVolume').value, piperVoice: $('vPiperVoice').value, sileroVoice: $('vSileroVoice').value,
+  edgeVoice: $('vEdgeVoice').value, edgeRate: $('vEdgeRate').value, edgePitch: $('vEdgePitch').value,
+  rhVoice: $('vRhVoice').value || (voiceSaved || {}).rhVoice, systemVoice: $('vSystemVoice').options.length ? $('vSystemVoice').value : (voiceSaved || {}).systemVoice,
+  sapiRate: $('vSapiRate').value });
 // сохранение сразу при изменении - без кнопки «Сохранить»
-$('sec-voice').addEventListener('change', (e) => { if (e.target.closest('input,select')) act(() => T.voiceSave(voiceForm()), null, 'сохранено'); });
+$('sec-voice').addEventListener('change', (e) => { if (e.target.closest('input,select')) { if (e.target.id === 'vSapiRate2') $('vSapiRate').value = e.target.value; showEng(); if (voiceSaved) $('vStatus').textContent = engText(voiceSaved); act(() => T.voiceSave(voiceForm()), null, 'сохранено'); } });
+$('sec-voice').addEventListener('input', (e) => { if (e.target.type === 'range') { if (e.target.id === 'vSapiRate2') $('vSapiRate').value = e.target.value; if (e.target.id === 'vSapiRate') $('vSapiRate2').value = e.target.value; showEng(); } });
+$('vInstallEdge').onclick = () => act(async () => {
+  await T.voiceSave(voiceForm());
+  $('vStatus').dataset.busy = '1';
+  try { voiceSaved = { ...voiceSaved, edge: await T.voiceInstallEdge() }; } finally { delete $('vStatus').dataset.busy; }
+}, $('vInstallEdge'), 'Edge TTS установлен');
+$('vInstallRh').onclick = () => act(async () => { await T.voiceSave(voiceForm()); await T.voiceInstallRh($('vRhVoice').value); }, $('vInstallRh'));
+$('vSapiRe').onclick = $('vSapiRe2').onclick = () => act(() => loadSapi(), null, 'список голосов обновлён');
 $('vInstall').onclick = () => act(async () => {
   await T.voiceSave(voiceForm());
   $('vStatus').dataset.busy = '1';
