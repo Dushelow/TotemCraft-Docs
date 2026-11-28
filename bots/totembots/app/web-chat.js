@@ -111,8 +111,11 @@ Object.assign(SITES, {
   copilot: GEN('Copilot (сайт)', 'https://copilot.com/', 'textarea#userInput, textarea, div[contenteditable=true]', 'button[data-testid=submit-button]',
     '[data-content=ai-message], [class*=ai-message]'),
   // 28.11: HuggingChat (открытые модели, бесплатно), Perplexity (поиск с ответом), Poe (много моделей), Character AI
+  // поле ввода у HuggingChat есть и без входа (вход просит только после «Start chatting», 28.11): вход = виден
+  // свой аватар или выход из аккаунта. Со входом владельца **не проверено**
   hugging: GEN('HuggingChat (сайт)', 'https://huggingface.co/chat/', 'textarea, div[contenteditable=true]', 'button[aria-label="Send message"], button[name=submit]',
-    '[data-message-role=assistant] .prose, [data-message-type=assistant] .prose, .prose'),
+    '[data-message-role=assistant] .prose, [data-message-type=assistant] .prose, .prose',
+    { loggedIn: `(() => { ${HELP} return !!__tb.input('textarea') && !__tb.loginWall() && !!document.querySelector('a[href*="logout"], form[action*="logout"], img[src*="avatars"]'); })()` }),
   perplexity: GEN('Perplexity (сайт)', 'https://www.perplexity.ai/', '#ask-input, textarea, div[contenteditable=true]', 'button[data-testid=submit-button], button[aria-label=Submit]',
     '[id^=markdown-content], .prose'),
   // у Poe номер чата короткий (chat/2xq9k...)

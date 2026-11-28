@@ -220,13 +220,36 @@ function layout() {
 // --- окно входа поверх сайта без входа (login-overlay.html): размытый снимок страницы, логотип, «Войти через браузер».
 // Новичку не нужно искать вход в «Мозгах».
 let overlay = null, overlayOn = false, overlaySite = '';
-const favicons = {};
 // логотип сайта для окна входа: картинка PNG, если есть (SVG бывают тёмными без фона); пришёл позже окна - обновить
-function setFavicon(site, list) {
-  const f = (list || []).find((u) => /\.png(\?|$)/i.test(u)) || (list || [])[0];
-  if (!f || favicons[site] === f) return;
-  favicons[site] = f;
-  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: f, keepStatus: true });
+// Логотип сайта для окна входа - сам файл, скачанный сессией сайта (свои куки: Perplexity за Cloudflare не отдаёт
+// картинку чужому запросу, 28.11), в data: URL. Лучше всего apple-touch-icon: крупный и с собственным фоном.
+const logos = {};
+function setFavicon(site) { if (!logos[site]) fetchLogo(site).catch(() => {}); }
+async function fetchLogo(site) {
+  if (logos[site]) return logos[site];
+  const wc = (site === 'qwen' ? qwen : webViews[site] || myViews[site] || {}).webContents;
+  if (!wc) return '';
+  const links = await wc.executeJavaScript(`[...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]')]
+    .map((l) => ({ rel: l.rel, href: l.href, size: parseInt(String(l.sizes || '').split('x')[0]) || 0 }))`).catch(() => []);
+  const score = (l) => (/apple/i.test(l.rel) ? 1000 : 0) + (/\.svg(\?|$)/i.test(l.href) ? 500 : 0) + Math.min(l.size, 256) + (/\.png(\?|$)/i.test(l.href) ? 50 : 0) - (/\.ico(\?|$)/i.test(l.href) ? 100 : 0);
+  const cand = [...links.sort((a, b) => score(b) - score(a)).map((l) => l.href), new URL('/favicon.ico', wc.getURL()).href];
+  for (const url of cand) {
+    try {
+      const r = await wc.session.fetch(url);
+      if (!r.ok) continue;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length < 100 || buf.length > 400000) continue;
+      // тип - по самому файлу: Kimi отдаёт картинки без content-type (28.11)
+      const head = buf.subarray(0, 12), txt = buf.subarray(0, 200).toString('utf8');
+      const type = head[0] === 0x89 && head[1] === 0x50 ? 'image/png' : head[0] === 0 && head[2] === 1 ? 'image/x-icon' : head[0] === 0xff && head[1] === 0xd8 ? 'image/jpeg'
+        : head.toString('ascii', 0, 4) === 'RIFF' ? 'image/webp' : head.toString('ascii', 0, 3) === 'GIF' ? 'image/gif' : /<svg|<\?xml/i.test(txt) ? 'image/svg+xml' : '';
+      if (!type) continue;
+      logos[site] = `data:${type};base64,${buf.toString('base64')}`;
+      if (overlay && overlayOn && overlaySite.endsWith(':' + site)) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: logos[site], keepStatus: true });
+      return logos[site];
+    } catch (e) { console.log(`логотип ${site} ${url}: ${e.message}`); }
+  }
+  return '';
 }
 function loginStatus(t) {
   try { win.webContents.send('qwen-login-status', t); } catch {}
@@ -238,7 +261,7 @@ function ensureOverlay() {
   if (!overlayReady) {
     overlay = new WebContentsView({ webPreferences: { preload: path.join(__dirname, 'login-overlay-preload.js') } });
     overlay.setBackgroundColor('#111214');
-    overlayReady = overlay.webContents.loadFile(path.join(__dirname, 'login-overlay.html')).catch(() => {});
+    overlayReady = overlay.webContents.loadFile(path.join(__dirname, 'login-overlay.html')).catch(() => {}).then(() => { overlayLoaded = true; });
   }
   return overlayReady;
 }
@@ -254,29 +277,38 @@ function loggedGuess(site) {
   if (site === 'qwen' || site === 'deepseek') return undefined;
   return (cfg.webLogged || {})[site] ? undefined : false;
 }
-async function updateOverlay() {
-  if (!win || !qwen) return;
-  const site = view.site;
+let overlayLoaded = false;
+function overlayWanted(site) {
   // и в «Моём окне»: вход у него общий с окном бота (одна сессия сайта), без входа оно так же пустое
-  const want = !panelFull && !!(cfg.setupDone && cfg.host) && loggedGuess(site) === false
+  return !panelFull && !!(cfg.setupDone && cfg.host) && loggedGuess(site) === false
     && !(webChats[site] && webChats[site].busy);   // бот работает в окне (страница грузится) - это не «нет входа»
-  if (!want) { if (overlayOn) { overlayOn = false; overlaySite = ''; layout(); } return; }
+}
+// Показать окно входа - синхронно, в том же такте, что и окно сайта: раньше оно ложилось поверх после снимка
+// страницы, и сайт мелькал (28.11). Снимок под размытие и логотип приходят следом.
+function updateOverlay() {
+  if (!win || !qwen) return Promise.resolve();
+  const site = view.site;
+  if (!overlayWanted(site)) { if (overlayOn) { overlayOn = false; overlaySite = ''; layout(); try { overlay.webContents.send('overlay-hide'); } catch {} } return Promise.resolve(); }
   const key = view.mode + ':' + site;
-  if (overlayOn && overlaySite === key) return;
+  if (overlayOn && overlaySite === key) return Promise.resolve();
   overlayOn = true; overlaySite = key;
-  await ensureOverlay();
-  if (overlaySite !== key) return;   // пока грузилось, переключили вкладку
-  const x = siteOf(site);
-  overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: favicons[site] || '', shot: await siteShot(site) });
-  win.contentView.addChildView(overlay);   // поверх окна сайта
-  layout();
+  const show = () => {
+    if (overlaySite !== key) return;   // пока грузилось, переключили вкладку
+    const x = siteOf(site);
+    overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: logos[site] || '', shot: '' });
+    win.contentView.addChildView(overlay);   // поверх окна сайта
+    layout();
+    siteShot(site).then((shot) => { if (shot && overlaySite === key) overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: logos[site] || '', shot, keepStatus: true }); });
+    if (!logos[site]) fetchLogo(site).catch(() => {});
+  };
+  if (overlayLoaded) { show(); return Promise.resolve(); }
+  return ensureOverlay().then(() => { overlayLoaded = true; show(); });
 }
 // сайт догрузился: проверить вход сразу (а не через 10 с) и обновить размытый снимок под окном входа
 async function siteLoaded(site) {
   try { const v = await Promise.race([site === 'qwen' ? qwen.webContents.executeJavaScript('!!localStorage.getItem("token")') : webChat(site).loggedIn(), new Promise((r) => setTimeout(() => r(undefined), 3000))]); if (v !== undefined) siteLogged[site] = v; } catch {}
-  if (siteLogged[site] && !(cfg.webLogged || {})[site] && site !== 'qwen') { cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg(); }
   await updateOverlay().catch(() => {});
-  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: favicons[site] || '', shot, keepStatus: true }); }
+  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: logos[site] || '', shot, keepStatus: true }); fetchLogo(site).catch(() => {}); }
 }
 ipcMain.handle('overlay-login', async (_e, site) => {
   const r = await (site === 'qwen' ? loginQwen() : site === 'deepseek' ? loginDeepseek() : loginSite(site));
@@ -295,7 +327,7 @@ function myView(site) {
   const v = new WebContentsView({ webPreferences: { session: ses } });
   win.contentView.addChildView(v, 0);
   v.webContents.loadURL(x.home);
-  v.webContents.on('page-favicon-updated', (_e, f) => setFavicon(site, f));
+  v.webContents.on('page-favicon-updated', () => setFavicon(site));
   v.webContents.on('did-finish-load', () => setTimeout(() => siteLoaded(site), 800));
   v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
   myViews[site] = v;
@@ -307,7 +339,7 @@ function showView(mode, site) {
   if (!siteOf(site)) site = 'qwen';
   view = { mode: mode === 'mine' ? 'mine' : 'work', site };
   win.contentView.addChildView(viewOf(view.mode, site));   // уже добавленное окно переносится наверх
-  if (overlayOn) { overlayOn = false; overlaySite = ''; }
+  if (overlayOn) { overlayOn = false; overlaySite = ''; try { overlay.webContents.send('overlay-hide'); } catch {} }
   layout();
   updateOverlay();
   return view;
@@ -344,7 +376,7 @@ function webView(site) {
   win.contentView.addChildView(v, 0);
   v.webContents.setAudioMuted(true);
   v.webContents.loadURL(SITES[site].home);
-  v.webContents.on('page-favicon-updated', (_e, f) => setFavicon(site, f));
+  v.webContents.on('page-favicon-updated', () => setFavicon(site));
   v.webContents.on('did-finish-load', () => setTimeout(() => siteLoaded(site), 800));   // SPA дорисовывает поле ввода
   v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
   webViews[site] = v;
@@ -369,7 +401,7 @@ function createWindow() {
   const qs = session.fromPartition('persist:qwen');
   qs.setUserAgent((cfg.siteUA && cfg.siteUA.qwen) || CHROME_UA);
   qwen = new WebContentsView({ webPreferences: { session: qs, backgroundThrottling: false } });
-  qwen.webContents.on('page-favicon-updated', (_e, f) => setFavicon('qwen', f));
+  qwen.webContents.on('page-favicon-updated', () => setFavicon('qwen'));
   win.contentView.addChildView(qwen);
   // первый запуск: окно сайта лежит поверх панели и закрывало мастер настройки (23.11, установка у друга) - спрятать до «Готово»
   if (!(cfg.setupDone && cfg.host)) qwen.setVisible(false);

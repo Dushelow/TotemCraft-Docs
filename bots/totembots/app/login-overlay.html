@@ -26,8 +26,13 @@
   @keyframes in { from { opacity: 0; transform: translateY(calc(-50% + 6px)); } }
   .logo { width: 56px; height: 56px; margin: 0 auto var(--s4); border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-2);
     display: grid; place-items: center; overflow: hidden; font: 600 24px/1 "Segoe UI", system-ui; color: var(--acc-text); }
-  .logo img { width: 36px; height: 36px; object-fit: contain; }
-  .logo.img { background: #f4f4f6; border-color: transparent; }
+  .logo img { width: 34px; height: 34px; object-fit: contain; }
+  /* логотип со своим фоном (квадрат без прозрачности) - как есть, во всю плитку, без нашей подложки */
+  .logo.full { background: transparent; border-color: transparent; }
+  .logo.full img { width: 56px; height: 56px; object-fit: cover; }
+  /* прозрачный тёмный логотип на тёмной карточке не виден - светлая подложка; светлый - на тёмной */
+  .logo.light { background: #f4f4f6; border-color: transparent; }
+  .card.blank > * { visibility: hidden; }
   h1 { margin: 0 0 var(--s5); font-size: var(--f-lg); font-weight: 600; }
   button { display: flex; width: 100%; align-items: center; justify-content: center; gap: var(--s2); height: 38px; border: 1px solid transparent;
     border-radius: var(--r1); font: 500 var(--f-md) "Segoe UI", system-ui; cursor: pointer; transition: background .12s ease; }

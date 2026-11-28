@@ -11,11 +11,39 @@ window.overlay.onShow((d) => {
   site = d.site; name = d.name;
   if (d.shot) $('shot').style.backgroundImage = `url("${d.shot}")`;
   $('title').textContent = `Войдите в ${name}`;
+  document.querySelector('.card').classList.remove('blank');
   const logo = $('logo');
-  if (!d.keepStatus) { logo.textContent = name.slice(0, 1).toUpperCase(); logo.classList.remove('img'); }
-  if (d.icon) { const img = new Image(); img.alt = ''; img.onload = () => { logo.classList.add('img'); logo.replaceChildren(img); }; img.src = d.icon; }
+  if (!d.keepStatus) { logo.textContent = name.slice(0, 1).toUpperCase(); logo.className = 'logo'; }
+  if (d.icon && logo.dataset.src !== d.icon) placeLogo(logo, d.icon);
   if (!d.keepStatus) { busy(false, ''); showBrowser(); }   // браузер могли сменить в «Мозгах»
 });
+// окно спрятано (переключили на сайт со входом) - очистить, чтобы при следующем показе не мелькнул прошлый сайт
+window.overlay.onHide(() => { document.querySelector('.card').classList.add('blank'); $('shot').style.backgroundImage = ''; $('logo').dataset.src = ''; });
+// Логотип: смотрим саму картинку. Углы непрозрачные - у логотипа свой фон, показываем как есть во всю плитку.
+// Прозрачный - подложка по яркости рисунка: тёмный рисунок на светлой, светлый на тёмной (28.11: чёрный квадрат
+// на белой подложке выглядел уродливо).
+function placeLogo(logo, src) {
+  const img = new Image(); img.alt = '';
+  img.onload = () => {
+    let full = false, light = false;
+    try {
+      const n = 48, c = document.createElement('canvas'); c.width = c.height = n;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0, n, n);
+      const px = g.getImageData(0, 0, n, n).data, a = (x, y) => px[(y * n + x) * 4 + 3];
+      // свой фон: углы непрозрачные или почти вся картинка залита (скруглённый квадрат Grok, Poe, Perplexity)
+      let op = 0; for (let i = 3; i < px.length; i += 4) if (px[i] > 200) op++;
+      full = [[1, 1], [n - 2, 1], [1, n - 2], [n - 2, n - 2]].every(([x, y]) => a(x, y) > 230) || op / (n * n) > 0.72;
+      if (!full) {
+        let sum = 0, cnt = 0;
+        for (let i = 0; i < px.length; i += 4) if (px[i + 3] > 128) { sum += 0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]; cnt++; }
+        light = cnt > 0 && sum / cnt < 110;   // тёмный рисунок
+      }
+    } catch {}
+    logo.className = 'logo' + (full ? ' full' : light ? ' light' : '');
+    logo.dataset.src = src; logo.replaceChildren(img);
+  };
+  img.src = src;
+}
 window.overlay.onStatus((t) => {
   $('status').textContent = t;
   $('status').className = /не вышло|ошибка|нужен вход/i.test(t) ? 'bad' : /готово|вошёл/i.test(t) ? 'ok' : '';
