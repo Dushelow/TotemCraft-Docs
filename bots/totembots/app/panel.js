@@ -1093,10 +1093,29 @@ function renderOrder(B) {
   box.querySelectorAll('[data-bo-down]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boDown, l = on.slice(), i = l.indexOf(k); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; save(l); } }; });
 }
 
-// браузер для «Войти через браузер»: кнопка с его названием, по нажатию - меню найденных браузеров
-async function showBrowser() {
+// браузер для «Войти через браузер»: строка «Браузер для входа», справа выбранный, по нажатию своё меню
+let browsersNow = null;
+async function showBrowser(r) {
   const b = $('browserBtn'); if (!b || !T.browsers) return;
-  const r = await T.browsers();
-  b.innerHTML = (r.icon ? `<img src="${r.icon}" alt="" width="16" height="16">` : icon('globe', 14)) + `<span>Входить через ${esc(r.short || 'браузер')}</span>` + icon('chevron-down', 14);
+  browsersNow = r || await T.browsers();
+  b.firstElementChild.textContent = browsersNow.short || 'не найден';
 }
-if ($('browserBtn')) { $('browserBtn').onclick = async () => { await T.browserMenu(); showBrowser(); }; showBrowser(); }
+function browserMenu(open) {
+  const m = $('browserMenu'), b = $('browserBtn');
+  if (!open) { m.hidden = true; b.setAttribute('aria-expanded', 'false'); return; }
+  const r = browsersNow || { list: [], current: '' };
+  m.innerHTML = r.list.map((x) => `<button role="menuitemradio" aria-checked="${x.exe === r.current}" class="${x.exe === r.current ? 'on' : ''}" data-exe="${esc(x.exe)}"><span>${esc(x.name)}</span>${x.exe === r.current ? icon('check', 14) : ''}</button>`).join('')
+    + (r.list.length ? '<hr>' : '') + '<button role="menuitem" class="mu" data-pick="1">Указать другой...</button>';
+  m.hidden = false; b.setAttribute('aria-expanded', 'true');
+}
+if ($('browserBtn')) {
+  $('browserBtn').onclick = (e) => { e.stopPropagation(); browserMenu($('browserMenu').hidden); };
+  $('browserMenu').onclick = async (e) => {
+    const it = e.target.closest('button'); if (!it) return;
+    browserMenu(false);
+    showBrowser(it.dataset.pick ? await T.browserPick() : await T.browserSet(it.dataset.exe));
+  };
+  document.addEventListener('click', (e) => { if (!e.target.closest('#browserMenu')) browserMenu(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') browserMenu(false); });
+  showBrowser();
+}

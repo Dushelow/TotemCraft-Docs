@@ -290,8 +290,11 @@ function openMine(url) { showView('mine', 'qwen'); myViews.qwen.webContents.load
 function brainOrder() { return (cfg.brains && cfg.brains.order) || ['deepseekweb', 'geminiweb', 'arenaweb', 'qwen']; }
 // вошёл ли владелец на сайтах (по окнам бота, которые уже открыты)
 async function checkLogins() {
-  try { if (qwen) siteLogged.qwen = await qwen.webContents.executeJavaScript('!!localStorage.getItem("token")'); } catch {}
-  for (const id of Object.keys(webViews)) { try { siteLogged[id] = await webChat(id).loggedIn(); } catch {} }
+  // страница может не отвечать (грузится, проверка «не робот»): ждать её не больше 3 с, иначе зависала вся проверка
+  // и окно входа поверх сайта не появлялось (28.11)
+  const within = (p, ms) => Promise.race([p, new Promise((r) => setTimeout(() => r(undefined), ms))]);
+  try { if (qwen) { const v = await within(qwen.webContents.executeJavaScript('!!localStorage.getItem("token")'), 3000); if (v !== undefined) siteLogged.qwen = v; } } catch {}
+  await Promise.all(Object.keys(webViews).map(async (id) => { try { const v = await within(webChat(id).loggedIn(), 3000); if (v !== undefined) siteLogged[id] = v; } catch {} }));
   updateOverlay().catch(() => {});
 }
 setInterval(checkLogins, 10000);
@@ -737,35 +740,31 @@ ipcMain.handle('setup-save', (_e, s) => {
   return { ok: true };
 });
 // браузер для «Войти через браузер»: список найденных на компьютере, «сам» (пусто) или выбрать файл
-// короткое имя для кнопки: «Google Chrome» -> «Chrome», «Zen Browser» -> «Zen»
+// Браузер для «Войти через браузер». Список браузеров компьютера (реестр Windows, ~0,5 с) - один раз при запуске,
+// а не при каждом нажатии: меню открывалось с задержкой (28.11). Имена короткие: «Chrome», «Zen».
 const browserShort = (n) => String(n || '').replace(/^(google|mozilla|microsoft)\s+/i, '').replace(/\s+browser$/i, '').trim() || n;
-ipcMain.handle('browsers', async () => {
-  const list = listBrowsers();
-  if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath) && fs.existsSync(cfg.browserPath)) list.push({ name: path.basename(cfg.browserPath, '.exe'), exe: cfg.browserPath });
+let browsersCache = null;
+function browsersInfo() {
+  if (!browsersCache) browsersCache = listBrowsers().map((b) => ({ ...b, name: browserShort(b.name) }));
+  const list = browsersCache.slice();
+  if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath) && fs.existsSync(cfg.browserPath)) list.push({ name: browserShort(path.basename(cfg.browserPath, '.exe')), exe: cfg.browserPath });
   const a = findChrome();   // без выбора: Chrome, нет его - Firefox
-  const auto = a ? ((list.find((b) => b.exe.toLowerCase() === a.toLowerCase()) || {}).name || path.basename(a, '.exe')) : '';
-  const cur = cfg.browserPath ? ((list.find((b) => b.exe === cfg.browserPath) || {}).name || path.basename(cfg.browserPath, '.exe')) : auto;
-  // значок самого браузера из его программы: Zen выглядит как Zen, а не как общий глобус
-  const exe = cfg.browserPath || a || '';
-  let icon = '';
-  try { if (exe) icon = (await app.getFileIcon(exe, { size: 'normal' })).toDataURL(); } catch {}
-  return { list, current: cfg.browserPath || '', auto, currentName: cur || 'не найден', short: cur ? browserShort(cur) : '', icon };
+  const cur = cfg.browserPath || (a ? (list.find((b) => b.exe.toLowerCase() === a.toLowerCase()) || { exe: a }).exe : '');
+  const b = list.find((x) => x.exe === cur);
+  return { list, current: cur, short: b ? b.name : cur ? browserShort(path.basename(cur, '.exe')) : '' };
+}
+setTimeout(() => { try { browsersInfo(); } catch {} }, 4000);   // заранее, пока владелец не нажал
+ipcMain.handle('browsers', () => browsersInfo());
+ipcMain.handle('browser-set', (_e, exe) => {
+  if (exe && fs.existsSync(String(exe))) { cfg.browserPath = String(exe); process.env.TOTEMBOTS_BROWSER = cfg.browserPath; saveCfg(); }
+  return browsersInfo();
 });
-// меню выбора браузера («Другой браузер» в окне входа, кнопка в «Мозгах»): найденные на компьютере и «Другой...»
-ipcMain.handle('browser-menu', () => new Promise((done) => {
-  const list = listBrowsers();
-  let picking = false;   // «Другой...»: ждать окна выбора файла, а не закрытия меню
-  const set = (exe) => { cfg.browserPath = exe; saveCfg(); if (exe) process.env.TOTEMBOTS_BROWSER = exe; else delete process.env.TOTEMBOTS_BROWSER; };
-  const items = list.map((b) => ({ label: b.name, type: 'radio', checked: cfg.browserPath === b.exe, click: () => set(b.exe) }));
-  if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath)) items.push({ label: path.basename(cfg.browserPath, '.exe'), type: 'radio', checked: true, click: () => {} });
-  items.push({ type: 'separator' }, { label: 'Другой браузер...', click: async () => {
-    picking = true;
-    const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });
-    if (!r.canceled && r.filePaths[0]) set(r.filePaths[0]);
-    done(true);
-  } });
-  Menu.buildFromTemplate(items).popup({ window: win, callback: () => setTimeout(() => { if (!picking) done(true); }, 150) });
-}));
+// «Указать другой...»: выбрать программу браузера файлом
+ipcMain.handle('browser-pick', async () => {
+  const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });
+  if (!r.canceled && r.filePaths[0]) { cfg.browserPath = r.filePaths[0]; process.env.TOTEMBOTS_BROWSER = cfg.browserPath; saveCfg(); }
+  return browsersInfo();
+});
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон

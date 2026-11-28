@@ -44,6 +44,17 @@
   button:hover { background: var(--hover); }
   button:active { transform: translateY(1px); }
   button.pri { background: var(--acc); color: #fff; } button.pri:hover { background: #6a6ff0; }
+  /* строка настройки: подпись слева, выбор справа, своё меню (меню Windows выглядело чужим, 28.11) */
+  .setrow { position: relative; display: flex; align-items: center; justify-content: space-between; gap: var(--s3); padding: var(--s2) 0; margin-bottom: var(--s3); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .setrow > span { color: var(--text); }
+  button.pick { height: 28px; padding: 0 var(--s2); background: transparent; color: var(--text-2); gap: 4px; }
+  button.pick:hover { background: var(--hover); color: var(--text); }
+  .pop { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; min-width: 190px; padding: 4px; background: var(--surface-2); border: 1px solid var(--line-2); border-radius: var(--r2); box-shadow: var(--shadow); animation: fadein .1s ease; }
+  .pop button { display: flex; width: 100%; justify-content: space-between; height: 30px; padding: 0 var(--s3); background: transparent; color: var(--text); font-weight: 400; }
+  .pop button:hover { background: var(--hover); }
+  .pop button.on { background: var(--acc-soft); color: var(--acc-text); }
+  .pop button.mu { color: var(--text-2); }
+  .pop hr { border: 0; height: 1px; background: var(--line-2); margin: 4px 6px; }
   button.go { background: var(--ok-btn); color: #fff; } button.go:hover { background: #24904f; }
   button.ghost { background: transparent; color: var(--text-2); border-color: var(--line-2); } button.ghost:hover { color: var(--text); background: var(--surface-2); }
   button.quiet { background: transparent; color: var(--text-2); } button.quiet:hover { color: var(--text); background: var(--surface-2); }
@@ -432,7 +443,7 @@
       </div>
       <div class="card">
         <h2 style="display:flex;align-items:center;gap:8px"><i data-i="globe"></i>Сайты нейросетей</h2>
-        <div class="row" style="margin-bottom:var(--s3)"><button id="browserBtn" class="ghost" title="Браузер для кнопок «Войти через браузер»"><i data-i="globe" data-s="14"></i><span>Браузер</span></button></div>
+        <div class="setrow"><span>Браузер для входа</span><button id="browserBtn" class="pick" aria-haspopup="menu" aria-expanded="false"><span>...</span><i data-i="chevron-down" data-s="14"></i></button><div id="browserMenu" class="pop" role="menu" hidden></div></div>
         <div id="siteList"></div>
       </div>
       <details class="card more">

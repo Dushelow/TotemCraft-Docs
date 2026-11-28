@@ -14,7 +14,7 @@ window.overlay.onShow((d) => {
   const logo = $('logo');
   if (!d.keepStatus) { logo.textContent = name.slice(0, 1).toUpperCase(); logo.classList.remove('img'); }
   if (d.icon) { const img = new Image(); img.alt = ''; img.onload = () => { logo.classList.add('img'); logo.replaceChildren(img); }; img.src = d.icon; }
-  if (!d.keepStatus) busy(false, '');
+  if (!d.keepStatus) { busy(false, ''); showBrowser(); }   // браузер могли сменить в «Мозгах»
 });
 window.overlay.onStatus((t) => {
   $('status').textContent = t;
@@ -26,15 +26,26 @@ $('login').onclick = async () => {
   busy(false);
 };
 
-// главная кнопка называет браузер и показывает его значок; «Другой браузер» - меню найденных
-let br = {};
-function paintLogin() {
-  const b = $('login'); b.textContent = '';
-  if (br.icon) { const img = new Image(); img.alt = ''; img.src = br.icon; b.appendChild(img); }
-  b.appendChild(document.createTextNode(br.short ? `Войти через ${br.short}` : 'Войти через браузер'));
+// главная кнопка называет браузер; «Другой браузер» - своё меню (как в «Мозгах»)
+let br = { list: [], current: '' };
+function paintLogin() { $('login').textContent = br.short ? `Войти через ${br.short}` : 'Войти через браузер'; }
+async function showBrowser(r) { br = r || await window.overlay.browsers(); if (!$('login').disabled) paintLogin(); }
+function menu(open) {
+  const m = $('menu');
+  if (!open) { m.hidden = true; return; }
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const check = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  m.innerHTML = br.list.map((x) => `<button role="menuitemradio" aria-checked="${x.exe === br.current}" class="${x.exe === br.current ? 'on' : ''}" data-exe="${esc(x.exe)}"><span>${esc(x.name)}</span>${x.exe === br.current ? check : ''}</button>`).join('')
+    + (br.list.length ? '<hr>' : '') + '<button role="menuitem" class="mu" data-pick="1">Указать другой...</button>';
+  m.hidden = false;
 }
-async function showBrowser() { br = await window.overlay.browsers(); if (!$('login').disabled) paintLogin(); }
-const pick = async () => { await window.overlay.browserMenu(); showBrowser(); };
-$('browser').onclick = pick;
-$('browser').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } };
+$('browser').onclick = (e) => { e.stopPropagation(); menu($('menu').hidden); };
+$('browser').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); menu($('menu').hidden); } };
+$('menu').onclick = async (e) => {
+  const it = e.target.closest('button'); if (!it) return;
+  e.stopPropagation(); menu(false);
+  showBrowser(it.dataset.pick ? await window.overlay.browserPick() : await window.overlay.browserSet(it.dataset.exe));
+};
+document.addEventListener('click', () => menu(false));
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menu(false); });
 showBrowser();
