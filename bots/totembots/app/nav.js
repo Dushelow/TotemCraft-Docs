@@ -789,6 +789,8 @@ function install(mv, bot) {
     // плавание рывком (как у игрока: бег в воде - быстрее), своей физики бота нет: против течения в канале у секретного
     // входа бот стоял на месте шагом и бегом (23.11 стенд). В воде, жмёт вперёд с бегом, а скорость мала - подгрести
     // вдоль взгляда (до 0,1 бл./такт - медленнее плавания игрока, чтобы не выглядеть читом)
+    // еда: бег держать выключенным, что бы ни жали модуль пути и плавание (в игре на бегу не едят; 25.11 Bad Packets M)
+    bot.on('physicsTick', safe('nav-еда', () => { if (bot._tb && bot._tb._eating && Date.now() - bot._tb._eating < 3500 && bot.getControlState('sprint')) bot.setControlState('sprint', false); }));
     bot.on('physicsTick', safe('nav-гребок', () => {
       const e = bot.entity; if (!e || !e.isInWater || !bot.getControlState('forward') || !bot.getControlState('sprint')) return;
       const hv = Math.hypot(e.velocity.x, e.velocity.z); if (hv > 0.1) return;

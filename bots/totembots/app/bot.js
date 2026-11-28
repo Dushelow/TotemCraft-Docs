@@ -512,6 +512,7 @@ class TotemBot extends EventEmitter {
     if (channel === 'whisper' && to) t = `/msg ${to} ${t}`;
     else if (channel === 'local') t = '!' + t;
     else if (channel === 'global') t = '/g ' + t;
+    else if (channel === 'clan') t = '/. ' + t;   // клановый чат (SimpleClans на сервере: «/. текст»)
     this.bot.chat(t);
   }
 
@@ -680,10 +681,22 @@ class TotemBot extends EventEmitter {
     // появился снова - опять следом (новый объект игрока - новая цель).
     if (this.mode === 'follow') {
       if (owner) {
-        this.lastSeen = { name: this.followName, pos: owner.position.clone(), at: Date.now() };
+        this.lastSeen = { name: this.followName, pos: owner.position.clone(), at: Date.now(), dim: b.game.dimension };
         if (this.lostReported || this._followEnt !== owner) { this.lostReported = false; this._seekLast = false; this._followEnt = owner; b.pathfinder.setGoal(new goals.GoalFollow(owner, this.followDist()), true); }
       } else {
         const L = this.lastSeen;
+        // исчез у портала - ушёл в портал: за ним, в тот же портал (24.11: «я в портал зашёл, ты не видел?» - бот бежал
+        // туда, где видел его последний раз, и терялся)
+        if (L && L.name === this.followName && L.dim === b.game.dimension && Date.now() - L.at < 8000 && !this._portalChase) {
+          const portal = b.findBlocks({ point: L.pos, matching: (bl) => bl.name === 'nether_portal' || bl.name === 'end_portal', maxDistance: 3, count: 1 })[0];
+          if (portal) {
+            this._portalChase = true; this.log(`${this.followName} ушёл в портал - иду следом`);
+            this.run([{ act: 'portal', x: portal.x, y: portal.y, z: portal.z }, { act: 'follow', who: this.followName }], 'за хозяином в портал', 'master').catch(() => {}).finally(() => { this._portalChase = false; });
+            return;
+          }
+        }
+        // последнее место из другого мира - не годится (после портала бежал туда «куда глаза глядят», 24.11): ждать у портала
+        if (L && L.name === this.followName && L.dim !== b.game.dimension) { if (!this.lostReported) { this.lostReported = true; this._seekLast = false; try { b.pathfinder.setGoal(null); } catch {} this.event(`${this.followName} не видно в этом мире - жду его здесь, у портала`, true); } return; }
         if (L && L.name === this.followName && Date.now() - L.at < 60000) {
           if (!this._seekLast) { this._seekLast = true; this.log(`${this.followName} не видно - иду, где видно было последний раз: ${Math.floor(L.pos.x)} ${Math.floor(L.pos.y)} ${Math.floor(L.pos.z)}`); b.pathfinder.setGoal(new goals.GoalNear(L.pos.x, L.pos.y, L.pos.z, 1.5)); }
         } else if (!this.lostReported) { this.lostReported = true; this._seekLast = false; this.event(`${this.followName} пропал из виду (далеко или в другом измерении)`, true); }
@@ -965,6 +978,8 @@ class TotemBot extends EventEmitter {
     for (let t = 0; t < 2; t++) {
       const before = count(), food = b.food;
       await b.equip(it, 'hand');
+      // во время еды не бежать (в игре на бегу не едят - античит ловил «Bad Packets», 25.11): бег выключить на время еды
+      this._eating = Date.now(); try { b.setControlState('sprint', false); } catch {}
       await sleep(100);
       b.activateItem(false);
       const long = it.name === 'dried_kelp' ? 1000 : 1700;
@@ -1012,8 +1027,9 @@ class TotemBot extends EventEmitter {
     const b = this.bot, kind = String(a.mob || '').toLowerCase().replace(/^minecraft:/, '');
     const me = b.entity.position;
     const t = Object.values(b.entities).filter((e) => e.type !== 'player' && e.isValid && e !== b.entity && (!kind || (e.name || '') === kind || (e.name || '').includes(kind)) && e.position.distanceTo(me) < 32)
+      .filter((e) => kind || !this.guard || this.guard.isHostile(e))   // без названия - только враждебных (не корову и не жителя)
       .sort((x, y) => x.position.distanceTo(me) - y.position.distanceTo(me))[0];
-    if (!t) throw new Error(`рядом нет ${kind || 'мобов'}`);
+    if (!t) throw new Error(`рядом нет ${kind || 'врагов'}`);
     if (!this.guard) throw new Error('бой выключен');
     const was = this.guard.mode; if (was === 'off') this.guard.mode = 'defend';
     this.guard.prey = t.id;
@@ -1700,13 +1716,13 @@ class TotemBot extends EventEmitter {
 
   /** Сразу после кнопки - в открывшийся проход и на 2 бл. дальше, бегом (стена на поршнях закрывается через 1-2 с). */
   async intoOpening(tok) {
-    const b = this.bot, O = this._opened;
+    const b = this.bot, O = this._mechOpened;
     if (!O || Date.now() - O.at > 4000 || !O.cells.length) return '';
     const me = b.entity.position;
     const cells = O.cells.slice().sort((u, v) => u.y - v.y || u.distanceTo(me) - v.distanceTo(me));
     const c = cells[0], dir = c.minus(me.floored()), L = Math.hypot(dir.x, dir.z) || 1;
     const far = c.offset(Math.round(dir.x / L * 2), 0, Math.round(dir.z / L * 2));
-    this._opened = null;
+    this._mechOpened = null;
     this._passed = { at: Date.now(), keys: new Set(O.cells.map((v) => v.x + ',' + v.y + ',' + v.z)) };   // назад через них не планировать - закроются
     // руками, сразу: лицом в проём, вперёд бегом, прыжок (ступенька лестницы под проёмом, вода в проёме) - поиск пути
     // через только что открытый проход с затёкшей водой не строился (23.11 стенд, копия лаза владельца)
@@ -1865,8 +1881,8 @@ class TotemBot extends EventEmitter {
     // ждать, пока откроется (до 0,8 с, проверка каждые 0,05): поршни срабатывают через 0,1-0,5 с, а стена открыта ~1,4 с
     let cellsOpen = [];
     for (let w = 0; w < 16 && !cellsOpen.length; w++) { await sleep(50); cellsOpen = snap.filter((v) => { const k = b.blockAt(v); return k && k.boundingBox === 'empty'; }); }
-    this._opened = { at: Date.now(), cells: cellsOpen };
-    if (this._opened.cells.length) this.log(`открылся проход: ${this._opened.cells.slice(0, 4).map((v) => v.x + ' ' + v.y + ' ' + v.z).join('; ')}`);
+    this._mechOpened = { at: Date.now(), cells: cellsOpen };
+    if (this._mechOpened.cells.length) this.log(`открылся проход: ${this._mechOpened.cells.slice(0, 4).map((v) => v.x + ' ' + v.y + ' ' + v.z).join('; ')}`);
     return `нажал ${bl.name} у ${p.x} ${p.y} ${p.z}`;
   }
 
@@ -1990,7 +2006,7 @@ class TotemBot extends EventEmitter {
     const e = this.player(name);
     this.cancel();
     const L = this.lastSeen;
-    if (!e && !(L && L.name === name && Date.now() - L.at < 60000)) return `не вижу ${name} рядом`;
+    if (!e && !(L && L.name === name && Date.now() - L.at < 60000 && (!L.dim || L.dim === this.bot.game.dimension))) return `не вижу ${name} рядом (жду здесь)`;
     this.mode = 'follow';
     this.followName = name;
     this.lostReported = false;
@@ -2637,6 +2653,7 @@ class TotemBot extends EventEmitter {
           case 'pickup': r = await this.pickup(a, tok); break;
           case 'recover': r = await this.recover(tok); break;
           case 'harvest': r = await this.harvest(a, tok); break;
+          case 'getOut': r = this.bot.vehicle ? await this.dismount() : await this.climbLadder({ dir: 'up' }, tok); break;
           case 'climb': r = await this.climbLadder(a, tok); break;
           case 'outside': r = await this.goOutside(a, tok); break;
           case 'swim': r = await this.goSwim(a, tok); break;

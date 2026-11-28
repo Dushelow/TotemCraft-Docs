@@ -241,8 +241,18 @@ class Vehicles {
       else if (Math.abs(R.vz) > 0.02 && !hits(p.x, nz)) { p.z = nz; R.vx = 0; R.blockedAt = R.blockedAt || Date.now(); }
       else { R.vx = 0; R.vz = 0; R.blockedAt = R.blockedAt || Date.now(); }
       R.vx *= inv; R.vz *= inv; R.dRot *= inv;
+      // высота, как у лодки в игре: под ней пусто (съехала с края ледяной дороги, обрыв) - падает; встала на лёд, землю,
+      // воду - стоит на них. Раньше высота не менялась никогда: лодка висела в воздухе, античит кикнул за Boat Fly
+      // (25.11, ледяная дорога в аду)
+      {
+        const solidUnder = (yy) => { const k = b.blockAt(new V(Math.floor(p.x), Math.floor(yy), Math.floor(p.z))); return k && (k.boundingBox === 'block' || /water|lava/.test(k.name)); };
+        const topOf = (yy) => { const k = b.blockAt(new V(Math.floor(p.x), Math.floor(yy), Math.floor(p.z))); if (!k) return Math.floor(yy) + 1; if (/water/.test(k.name)) return Math.floor(yy) + 0.9; const sh = k.shapes && k.shapes.length ? Math.max(...k.shapes.map((q) => q[4])) : 1; return Math.floor(yy) + sh; };
+        R.vy = R.vy || 0;
+        if (!solidUnder(p.y - 0.05)) { R.vy = Math.max(-3.9, (R.vy - 0.04) * 0.98); const ny = p.y + R.vy; if (solidUnder(ny)) { p.y = topOf(ny); R.vy = 0; } else p.y = ny; }
+        else { R.vy = 0; const t = topOf(p.y - 0.05); if (t > p.y - 0.06 && t <= p.y + 0.01) p.y = t; }
+      }
       v.yaw = (180 - R.yawDeg) * Math.PI / 180;
-      b._client.write('vehicle_move', { x: p.x, y: p.y, z: p.z, yaw: R.yawDeg, pitch: 0, onGround: false });
+      b._client.write('vehicle_move', { x: p.x, y: p.y, z: p.z, yaw: R.yawDeg, pitch: 0, onGround: R.vy === 0 && !/water/.test(((b.blockAt(new V(Math.floor(p.x), Math.floor(p.y - 0.05), Math.floor(p.z))) || {}).name) || '') });
       try { b._client.write('steer_boat', { leftPaddle: c('forward') || c('right'), rightPaddle: c('forward') || c('left') }); } catch {}
     }
     // взгляд седока - серверу (пока сидит, физика mineflayer молчит и поворот не уходил): вагонетка толкается «вперёд»
