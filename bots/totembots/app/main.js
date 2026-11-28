@@ -235,53 +235,85 @@ function cachePut(kind, site, mem, v) {
 }
 const logoOf = (site) => cacheGet('logo', site, logos);
 const shotOf = (site) => cacheGet('shot', site, shots);
-function setFavicon(site) { if (!logoOf(site)) fetchLogo(site).catch(() => {}); }
-// Логотип - сам файл, скачанный сессией сайта (свои куки: Perplexity за Cloudflare не отдаёт картинку чужому
-// запросу), в data: URL. Ссылки на значки - со страницы, если окно сайта открыто, иначе из HTML главной (для
-// заранее, без окна). Лучше всего apple-touch-icon: крупный и с собственным фоном.
-async function fetchLogo(site) {
-  if (logoOf(site)) return logos[site];
-  const x = siteOf(site); if (!x) return '';
-  const view = site === 'qwen' ? qwen : webViews[site] || myViews[site];
-  const ses = view ? view.webContents.session : session.fromPartition(x.part);
+// Логотип обновляется, как значки в Chrome: показывается сохранённый сразу, а в фоне - проверка.
+//  - открылась страница сайта: адрес лучшего значка на ней сменился - скачать новый (сеть только при смене);
+//  - раз в неделю - условный запрос (If-None-Match / If-Modified-Since): не изменился - сайт отвечает 304 без
+//    картинки, запоминаем только время проверки.
+// Рядом с картинкой - logo-<сайт>.json: { url, etag, modified, at }.
+const LOGO_TTL = 7 * 24 * 3600 * 1000;
+const logoMeta = {};
+function metaOf(site) {
+  if (logoMeta[site] === undefined) { try { logoMeta[site] = JSON.parse(fs.readFileSync(path.join(UI_CACHE, `logo-${site}.json`), 'utf8')); } catch { logoMeta[site] = {}; } }
+  return logoMeta[site];
+}
+function metaPut(site, m) { logoMeta[site] = m; try { fs.mkdirSync(UI_CACHE, { recursive: true }); fs.writeFileSync(path.join(UI_CACHE, `logo-${site}.json`), JSON.stringify(m)); } catch {} }
+const iconScore = (l) => (/apple/i.test(l.rel) ? 1000 : 0) + (/\.svg(\?|$)/i.test(l.href) ? 500 : 0) + Math.min(l.size, 256) + (/\.png(\?|$)/i.test(l.href) ? 50 : 0) - (/\.ico(\?|$)/i.test(l.href) ? 100 : 0);
+// ссылки на значки: со страницы (окно открыто) или из заголовка HTML главной (заранее, без окна)
+async function logoLinks(site, x, view, ses, fromPage) {
   let base = view ? view.webContents.getURL() : x.home;
   let links = view ? await view.webContents.executeJavaScript(`[...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]')]
     .map((l) => ({ rel: l.rel, href: l.href, size: parseInt(String(l.sizes || '').split('x')[0]) || 0 }))`).catch(() => []) : [];
-  if (!links.length) {
+  if (!links.length && !fromPage) {
     try {
       const r = await ses.fetch(x.home); base = r.url || x.home;
       // значки - в <head>, а он бывает огромным (у Gemini страница ~0,9 МБ, ссылка дальше 300 тыс. символов, 28.11)
       const all = await r.text(), he = all.search(/<\/head>/i);
       const html = he > 0 ? all.slice(0, he) : all.slice(0, 3000000);
       for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
-        const at = (n) => (new RegExp(`\\b${n}\\s*=\\s*["']([^"']*)["']`, 'i').exec(tag) || [])[1] || '';
+        const at = (n) => (new RegExp(`\b${n}\s*=\s*["']([^"']*)["']`, 'i').exec(tag) || [])[1] || '';
         if (!/icon/i.test(at('rel')) || !at('href')) continue;
         links.push({ rel: at('rel'), href: new URL(at('href'), base).href, size: parseInt(at('sizes')) || 0 });
       }
     } catch {}
   }
-  const score = (l) => (/apple/i.test(l.rel) ? 1000 : 0) + (/\.svg(\?|$)/i.test(l.href) ? 500 : 0) + Math.min(l.size, 256) + (/\.png(\?|$)/i.test(l.href) ? 50 : 0) - (/\.ico(\?|$)/i.test(l.href) ? 100 : 0);
-  const cand = [...links.sort((a, b) => score(b) - score(a)).map((l) => l.href), new URL('/favicon.ico', base).href];
-  for (const url of cand) {
+  return { links: links.sort((a, b) => iconScore(b) - iconScore(a)).map((l) => l.href), base };
+}
+const imgType = (buf) => {
+  // тип - по самому файлу: Kimi отдаёт картинки без content-type (28.11)
+  const head = buf.subarray(0, 12), txt = buf.subarray(0, 200).toString('utf8');
+  return head[0] === 0x89 && head[1] === 0x50 ? 'image/png' : head[0] === 0 && head[2] === 1 ? 'image/x-icon' : head[0] === 0xff && head[1] === 0xd8 ? 'image/jpeg'
+    : head.toString('ascii', 0, 4) === 'RIFF' ? 'image/webp' : head.toString('ascii', 0, 3) === 'GIF' ? 'image/gif' : /<svg|<\?xml/i.test(txt) ? 'image/svg+xml' : '';
+};
+/**
+ * Логотип сайта для окна входа - сам файл, скачанный сессией сайта (свои куки: Perplexity за Cloudflare не отдаёт
+ * картинку чужому запросу), в data: URL. mode: '' - только если нет; 'page' - открылась страница: сменился адрес
+ * значка - скачать; 'stale' - старше недели: условный запрос.
+ */
+async function fetchLogo(site, mode = '') {
+  const x = siteOf(site); if (!x) return '';
+  const have = logoOf(site), m = metaOf(site);
+  if (have && !mode) return have;
+  if (have && mode === 'stale' && Date.now() - (m.at || 0) < LOGO_TTL) return have;
+  const view = site === 'qwen' ? qwen : webViews[site] || myViews[site];
+  const ses = view ? view.webContents.session : session.fromPartition(x.part);
+  const { links, base } = await logoLinks(site, x, view, ses, mode === 'page');
+  if (have && mode === 'page' && (!links.length || links[0] === m.url)) return have;   // адрес тот же - сеть не нужна
+  // запасной /favicon.ico (мелкий) - только когда логотипа ещё нет: хороший сохранённый им не заменять (28.11:
+  // Poe без открытой страницы отдаёт в HTML только его, и крупный значок сменился мелким)
+  const fallback = new URL('/favicon.ico', base).href;
+  for (const url of have && m.url !== fallback ? links : [...links, fallback]) {
     try {
-      const r = await ses.fetch(url);
+      const same = have && url === m.url;
+      const headers = same ? { ...(m.etag ? { 'If-None-Match': m.etag } : {}), ...(m.modified ? { 'If-Modified-Since': m.modified } : {}) } : {};
+      const r = await ses.fetch(url, { headers, cache: 'no-cache' });
+      if (r.status === 304) { metaPut(site, { ...m, at: Date.now() }); return have; }   // не изменился
       if (!r.ok) continue;
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length < 100 || buf.length > 400000) continue;
-      // тип - по самому файлу: Kimi отдаёт картинки без content-type (28.11)
-      const head = buf.subarray(0, 12), txt = buf.subarray(0, 200).toString('utf8');
-      const type = head[0] === 0x89 && head[1] === 0x50 ? 'image/png' : head[0] === 0 && head[2] === 1 ? 'image/x-icon' : head[0] === 0xff && head[1] === 0xd8 ? 'image/jpeg'
-        : head.toString('ascii', 0, 4) === 'RIFF' ? 'image/webp' : head.toString('ascii', 0, 3) === 'GIF' ? 'image/gif' : /<svg|<\?xml/i.test(txt) ? 'image/svg+xml' : '';
-      if (!type) continue;
+      const type = imgType(buf); if (!type) continue;
       cachePut('logo', site, logos, `data:${type};base64,${buf.toString('base64')}`);
+      metaPut(site, { url, etag: r.headers.get('etag') || '', modified: r.headers.get('last-modified') || '', at: Date.now() });
       if (overlay && overlayOn && overlaySite.endsWith(':' + site)) overlay.webContents.send('overlay-show', { site, name: x.name, icon: logos[site], keepStatus: true });
       return logos[site];
     } catch {}
   }
-  return '';
+  if (have) metaPut(site, { ...m, at: Date.now() });   // сеть не ответила - старый остаётся, проверим через неделю
+  return have;
 }
-// логотипы всех сайтов - заранее, по одному, пока владелец ничего не открыл (уже скачанные - с диска)
-setTimeout(() => { siteList().filter((x) => !logoOf(x.id)).forEach((x, i) => setTimeout(() => fetchLogo(x.id).catch(() => {}), i * 700)); }, 5000);
+// открылась страница сайта - сверить адрес значка (без сети, если не сменился)
+function setFavicon(site) { fetchLogo(site, logoOf(site) ? 'page' : '').catch(() => {}); }
+// при запуске, по одному в фоне: нет логотипа - скачать, старше недели - проверить условным запросом
+setTimeout(() => { siteList().forEach((x, i) => setTimeout(() => fetchLogo(x.id, 'stale').catch(() => {}), i * 700)); }, 5000);
 function loginStatus(t) {
   try { win.webContents.send('qwen-login-status', t); } catch {}
   try { if (overlay && overlayOn) overlay.webContents.send('overlay-status', t); } catch {}
