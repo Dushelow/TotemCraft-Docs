@@ -67,6 +67,7 @@ contextBridge.exposeInMainWorld('totem', {
   browsers: call('browsers'),
   browserSet: call('browser-set'),
   browserPick: call('browser-pick'),
+  onBrowserChanged: (cb) => ipcRenderer.on('browser-changed', (_e, r) => cb(r)),
   setupState: call('setup-state'),
   setupSave: call('setup-save'),
   resetChats: call('reset-chats'),

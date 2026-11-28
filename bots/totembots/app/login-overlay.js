@@ -46,6 +46,7 @@ $('menu').onclick = async (e) => {
   e.stopPropagation(); menu(false);
   showBrowser(it.dataset.pick ? await window.overlay.browserPick() : await window.overlay.browserSet(it.dataset.exe));
 };
+window.overlay.onBrowserChanged((r) => showBrowser(r));   // сменили в «Мозгах»
 document.addEventListener('click', () => menu(false));
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menu(false); });
 showBrowser();

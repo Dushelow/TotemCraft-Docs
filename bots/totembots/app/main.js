@@ -755,15 +755,22 @@ function browsersInfo() {
 }
 setTimeout(() => { try { browsersInfo(); } catch {} }, 4000);   // заранее, пока владелец не нажал
 ipcMain.handle('browsers', () => browsersInfo());
+// одна настройка на всю программу: сменили в «Мозгах» - окно входа поверх сайта видит сразу, и наоборот
+function browserChanged() {
+  const r = browsersInfo();
+  try { win.webContents.send('browser-changed', r); } catch {}
+  try { if (overlay) overlay.webContents.send('browser-changed', r); } catch {}
+  return r;
+}
 ipcMain.handle('browser-set', (_e, exe) => {
   if (exe && fs.existsSync(String(exe))) { cfg.browserPath = String(exe); process.env.TOTEMBOTS_BROWSER = cfg.browserPath; saveCfg(); }
-  return browsersInfo();
+  return browserChanged();
 });
 // «Указать другой...»: выбрать программу браузера файлом
 ipcMain.handle('browser-pick', async () => {
   const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });
   if (!r.canceled && r.filePaths[0]) { cfg.browserPath = r.filePaths[0]; process.env.TOTEMBOTS_BROWSER = cfg.browserPath; saveCfg(); }
-  return browsersInfo();
+  return browserChanged();
 });
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });

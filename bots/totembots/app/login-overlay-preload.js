@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('overlay', {
   browsers: () => ipcRenderer.invoke('browsers'),
   browserSet: (exe) => ipcRenderer.invoke('browser-set', exe),
   browserPick: () => ipcRenderer.invoke('browser-pick'),
+  onBrowserChanged: (cb) => ipcRenderer.on('browser-changed', (_e, r) => cb(r)),
   onShow: (cb) => ipcRenderer.on('overlay-show', (_e, d) => cb(d)),
   onStatus: (cb) => ipcRenderer.on('overlay-status', (_e, t) => cb(t)),
 });

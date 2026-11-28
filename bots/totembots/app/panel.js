@@ -1118,4 +1118,5 @@ if ($('browserBtn')) {
   document.addEventListener('click', (e) => { if (!e.target.closest('#browserMenu')) browserMenu(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') browserMenu(false); });
   showBrowser();
+  T.onBrowserChanged((r) => showBrowser(r));   // сменили в окне входа поверх сайта
 }
