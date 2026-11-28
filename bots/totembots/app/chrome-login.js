@@ -72,8 +72,21 @@ async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   if (own && fs.existsSync(own) && (isGecko(own) || (listBrowsers().find((b) => b.exe === own) || {}).gecko)) return loginViaFirefox(profileDir + '-firefox', onStatus, S, own);
   const exe = own && fs.existsSync(own) ? own : findChrome();
   if (!exe) { if (findFirefox()) return loginViaFirefox(profileDir + '-firefox', onStatus, S); throw new Error('браузер не найден: нажмите «Выбрать браузер» в разделе «Мозги» и укажите chrome.exe или firefox.exe'); }
+  // свой профиль входа без навязчивых окон Chrome (28.11, владелец): «Sign in to Chrome?», предложение войти в сам
+  // Chrome после входа через Google, окно «входить через Google» (FedCM), «сохранить пароль?». Обычный Chrome не трогаем
+  try {
+    const pf = path.join(profileDir, 'Default', 'Preferences');
+    fs.mkdirSync(path.dirname(pf), { recursive: true });
+    let p = {}; try { p = JSON.parse(fs.readFileSync(pf, 'utf8')); } catch {}
+    p.signin = { ...(p.signin || {}), allowed: false };
+    p.credentials_enable_service = false;
+    p.profile = { ...(p.profile || {}), password_manager_enabled: false };
+    fs.writeFileSync(pf, JSON.stringify(p));
+  } catch {}
   const proc = spawn(exe, [`--user-data-dir=${profileDir}`, `--remote-debugging-port=${PORT}`,
-    '--no-first-run', '--no-default-browser-check', '--new-window', S.url], { detached: false, stdio: 'ignore' });
+    '--no-first-run', '--no-default-browser-check', '--disable-sync', '--disable-search-engine-choice-screen',
+    '--disable-features=FedCm,SigninInterceptBubbleV2,ExplicitBrowserSigninUIOnDesktop',
+    '--new-window', S.url], { detached: false, stdio: 'ignore' });
   try {
     onStatus(`Войдите в ${S.name} в открывшемся окне Chrome`);
     const until = Date.now() + 10 * 60 * 1000;
