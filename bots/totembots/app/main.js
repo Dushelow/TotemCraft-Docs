@@ -95,6 +95,8 @@ function loadCfg() {
   }
   // Claude по ключу - первым (если ключа нет, он просто пропускается)
   if (!b.claudeAdded) { b.order = ['claude', ...(b.order || []).filter((x) => x !== 'claude')]; b.claudeAdded = true; }
+  // новые сайты (28.11: HuggingChat, Perplexity, Poe, Character AI) - в конец порядка; без входа они пропускаются
+  for (const k of Object.keys(SITES)) if (!b.order.includes(k + 'web')) b.order.push(k + 'web');
   // 28.11: старая панель сохраняла и модель «по умолчанию» - она так и оставалась, когда у сервиса её уже не было
   // (OpenRouter убрал deepseek-chat-v3-0324:free). Модель «как в программе» не храним: берётся из PRESETS
   const OLD_DEFAULT = { openrouter: 'deepseek/deepseek-chat-v3-0324:free' };

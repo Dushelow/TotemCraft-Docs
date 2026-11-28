@@ -1036,7 +1036,7 @@ document.addEventListener('click', (e) => {
 })();
 
 // Порядок мозгов - списком с кнопками: выше - спрашивается первым; галочка - включён (выключенные не спрашиваются)
-const BRAIN_NAMES = { qwen: 'Qwen (сайт)', deepseekweb: 'DeepSeek (сайт)', geminiweb: 'Gemini (сайт)', arenaweb: 'LM Arena (сайт)', kimiweb: 'Kimi (сайт)', glmweb: 'GLM (сайт)', mistralweb: 'Mistral (сайт)', grokweb: 'Grok (сайт)', chatgptweb: 'ChatGPT (сайт)', copilotweb: 'Copilot (сайт)', claude: 'Claude (ключ)', gemini: 'Gemini (ключ)', groq: 'Groq (ключ)', openrouter: 'OpenRouter (ключ)', deepseek: 'DeepSeek (ключ)' };
+const BRAIN_NAMES = { qwen: 'Qwen (сайт)', deepseekweb: 'DeepSeek (сайт)', geminiweb: 'Gemini (сайт)', arenaweb: 'LM Arena (сайт)', kimiweb: 'Kimi (сайт)', glmweb: 'GLM (сайт)', mistralweb: 'Mistral (сайт)', grokweb: 'Grok (сайт)', chatgptweb: 'ChatGPT (сайт)', copilotweb: 'Copilot (сайт)', huggingweb: 'HuggingChat (сайт)', perplexityweb: 'Perplexity (сайт)', poeweb: 'Poe (сайт)', characteraiweb: 'Character AI (сайт)', claude: 'Claude (ключ)', gemini: 'Gemini (ключ)', groq: 'Groq (ключ)', openrouter: 'OpenRouter (ключ)', deepseek: 'DeepSeek (ключ)' };
 function renderOrder(B) {
   const box = $('brainOrderList'); if (!box) return;
   const on = B.order.filter((x) => !String(x).startsWith('-'));

@@ -110,6 +110,19 @@ Object.assign(SITES, {
   // 28.11: copilot.microsoft.com ведёт на copilot.com
   copilot: GEN('Copilot (сайт)', 'https://copilot.com/', 'textarea#userInput, textarea, div[contenteditable=true]', 'button[data-testid=submit-button]',
     '[data-content=ai-message], [class*=ai-message]'),
+  // 28.11: HuggingChat (открытые модели, бесплатно), Perplexity (поиск с ответом), Poe (много моделей), Character AI
+  hugging: GEN('HuggingChat (сайт)', 'https://huggingface.co/chat/', 'textarea, div[contenteditable=true]', 'button[aria-label="Send message"], button[name=submit]',
+    '[data-message-role=assistant] .prose, [data-message-type=assistant] .prose, .prose'),
+  perplexity: GEN('Perplexity (сайт)', 'https://www.perplexity.ai/', '#ask-input, textarea, div[contenteditable=true]', 'button[data-testid=submit-button], button[aria-label=Submit]',
+    '[id^=markdown-content], .prose'),
+  // у Poe номер чата короткий (chat/2xq9k...)
+  poe: GEN('Poe (сайт)', 'https://poe.com/', 'textarea, div[contenteditable=true]', 'button[data-button-send=true], button[class*=sendButton]',
+    '[class*=Message_botMessageBubble] [class*=Markdown], [class*=botMessageBubble], [class*=Markdown_markdownContainer]',
+    { chatIdFrom: (url) => { try { const p = new URL(url).pathname.replace(/^\/+|\/+$/g, ''); return /^chat\/[0-9a-z]{6,}$/i.test(p) ? p : ''; } catch { return ''; } } }),
+  // чат = персонаж (chat/<id персонажа>), продолжение того же разговора - тот же адрес
+  characterai: GEN('Character AI (сайт)', 'https://character.ai/', 'textarea, div[contenteditable=true]', 'button[aria-label*=Send i], button[type=submit]',
+    '[data-testid=completed-message] [class*=prose], [class*=swiper-no-swiping] p, [class*=prose]',
+    { keepPage: /character\.ai\/chat\/[\w-]{10,}/ }),
 });
 
 const LOGIN_ASK = /sign (up|in) to continue|log ?in to continue|sign up to|войдите|войти, чтобы|зарегистрируйтесь|login required/i;
@@ -157,12 +170,20 @@ class WebChat {
     for (let i = 0; i < 30 && this.inUse && this.inUse() && await this.js(`(() => { const t = document.activeElement; return !!(t && (t.value || t.innerText || '').trim() && /TEXTAREA|DIV/.test(t.tagName)); })()`).catch(() => false); i++) await sleep(1000);
     for (let i = 0; i < 40 && !(await this.loggedIn()); i++) await sleep(400);   // окно могло только что открыться
     if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через браузер»`);
+    // Character AI: нового чата «вообще» нет, только с выбранным персонажем - остаёмся в его чате, открытом владельцем
+    const keep = !chatId && s.keepPage && s.keepPage.test(this.wc.getURL());
+    if (!chatId && s.keepPage && !keep) throw new Error(`${s.name}: откройте во вкладке чат с персонажем (свой или готовый), бот будет писать туда`);
     const want = chatId && s.chatUrl ? s.chatUrl(chatId) : s.home;
-    if (!chatId || !this.wc.getURL().startsWith(want)) { await this.wc.loadURL(want); await sleep(1500); }
+    if (!keep && (!chatId || !this.wc.getURL().startsWith(want))) { await this.wc.loadURL(want); await sleep(1500); }
     if (await this.captcha()) { this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке, жду до 3 мин`); let ok = false; for (let w = 0; w < 90; w++) { await sleep(2000); if (!(await this.captcha().catch(() => false))) { ok = true; break; } } if (!ok) { await this.js(LOCK_OFF).catch(() => {}); throw new Error(`${s.name}: проверка «не робот» не пройдена за 3 мин`); } }
+    // приветственное окно поверх чата (HuggingChat «Start chatting», 28.11) - закрыть, как закрыл бы человек
+    if (s.generic) await this.tb(`const d = [...document.querySelectorAll('[role=dialog], dialog[open], [class*=modal]')].filter(__tb.vis);
+      for (const x of d) { const b = [...x.querySelectorAll('button')].find((b) => __tb.vis(b) && /^(start chatting|get started|got it|continue|okay|ok|понятно|начать)$/i.test(__tb.norm(b.innerText))); if (b) { b.click(); return 1; } }
+      return 0;`).then((n) => n && sleep(800)).catch(() => {});
     // поле ввода
     let ok = false;
     for (let i = 0; i < 40 && !ok; i++) { ok = await this.tb(`return !!__tb.input(${IN});`).catch(() => false); if (!ok) await sleep(250); }
+    if (!ok && await this.tb('return __tb.loginWall() || __tb.loginBtn();').catch(() => false)) throw new Error(`${s.name}: сайт просит войти - «Мозги» в панели, «Войти через браузер»`);
     if (!ok) throw new Error(`${s.name}: нет поля ввода (сайт изменился?)`);
     // хвост вопроса - по нему ищем ответ на странице, если ответ не нашёлся по названию элемента
     const tail = (String(text).split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean).pop() || '').slice(-40);
