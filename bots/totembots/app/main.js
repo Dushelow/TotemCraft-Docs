@@ -226,7 +226,7 @@ function setFavicon(site, list) {
   const f = (list || []).find((u) => /\.png(\?|$)/i.test(u)) || (list || [])[0];
   if (!f || favicons[site] === f) return;
   favicons[site] = f;
-  if (overlay && overlayOn && overlaySite === site) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: f, keepStatus: true });
+  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: f, keepStatus: true });
 }
 function loginStatus(t) {
   try { win.webContents.send('qwen-login-status', t); } catch {}
@@ -244,7 +244,7 @@ function ensureOverlay() {
 }
 // снимок страницы под размытие (пустой, пока сайт не нарисовался - тогда просто тёмный фон)
 async function siteShot(site) {
-  try { const img = await viewOf('work', site).webContents.capturePage(); if (!img.isEmpty()) return img.resize({ width: 640 }).toDataURL(); } catch {}
+  try { const img = await viewOf(view.mode, site).webContents.capturePage(); if (!img.isEmpty()) return img.resize({ width: 640 }).toDataURL(); } catch {}
   return '';
 }
 // Вход на сайте: проверен (siteLogged) или, пока проверки не было, - «входил ли когда-нибудь» (cfg.webLogged).
@@ -257,13 +257,15 @@ function loggedGuess(site) {
 async function updateOverlay() {
   if (!win || !qwen) return;
   const site = view.site;
-  const want = view.mode === 'work' && !panelFull && !!(cfg.setupDone && cfg.host) && loggedGuess(site) === false
+  // и в «Моём окне»: вход у него общий с окном бота (одна сессия сайта), без входа оно так же пустое
+  const want = !panelFull && !!(cfg.setupDone && cfg.host) && loggedGuess(site) === false
     && !(webChats[site] && webChats[site].busy);   // бот работает в окне (страница грузится) - это не «нет входа»
   if (!want) { if (overlayOn) { overlayOn = false; overlaySite = ''; layout(); } return; }
-  if (overlayOn && overlaySite === site) return;
-  overlayOn = true; overlaySite = site;
+  const key = view.mode + ':' + site;
+  if (overlayOn && overlaySite === key) return;
+  overlayOn = true; overlaySite = key;
   await ensureOverlay();
-  if (overlaySite !== site) return;   // пока грузилось, переключили вкладку
+  if (overlaySite !== key) return;   // пока грузилось, переключили вкладку
   const x = siteOf(site);
   overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: favicons[site] || '', shot: await siteShot(site) });
   win.contentView.addChildView(overlay);   // поверх окна сайта
@@ -274,7 +276,7 @@ async function siteLoaded(site) {
   try { const v = await Promise.race([site === 'qwen' ? qwen.webContents.executeJavaScript('!!localStorage.getItem("token")') : webChat(site).loggedIn(), new Promise((r) => setTimeout(() => r(undefined), 3000))]); if (v !== undefined) siteLogged[site] = v; } catch {}
   if (siteLogged[site] && !(cfg.webLogged || {})[site] && site !== 'qwen') { cfg.webLogged = { ...(cfg.webLogged || {}), [site]: true }; saveCfg(); }
   await updateOverlay().catch(() => {});
-  if (overlay && overlayOn && overlaySite === site) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: favicons[site] || '', shot, keepStatus: true }); }
+  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: favicons[site] || '', shot, keepStatus: true }); }
 }
 ipcMain.handle('overlay-login', async (_e, site) => {
   const r = await (site === 'qwen' ? loginQwen() : site === 'deepseek' ? loginDeepseek() : loginSite(site));
@@ -293,6 +295,8 @@ function myView(site) {
   const v = new WebContentsView({ webPreferences: { session: ses } });
   win.contentView.addChildView(v, 0);
   v.webContents.loadURL(x.home);
+  v.webContents.on('page-favicon-updated', (_e, f) => setFavicon(site, f));
+  v.webContents.on('did-finish-load', () => setTimeout(() => siteLoaded(site), 800));
   v.webContents.setWindowOpenHandler(() => ({ action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 700, webPreferences: { session: ses } } }));
   myViews[site] = v;
   layout();

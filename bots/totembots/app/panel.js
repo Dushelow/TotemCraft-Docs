@@ -79,14 +79,15 @@ function paintStrip() {
     $('siteTabs').innerHTML = st.siteList.map((s) => {
       const dot = s.captcha ? 'bad' : s.busy ? 'ok pulse' : s.logged ? 'ok' : '';
       const tip = s.captcha ? 'просит пройти проверку' : s.busy ? 'бот сейчас работает здесь' : s.logged ? 'вход выполнен' : 'вход не выполнен';
-      return `<button data-site="${s.id}" class="${s.id === v.site ? 'on' : ''} ${!s.logged && v.mode === 'work' ? 'off' : ''}" title="${esc(s.name)}: ${tip}">${s.captcha ? icon('triangle-alert', 14).replace('class="i ', 'style="color:var(--bad)" class="i ') : `<span class="dot ${dot}"></span>`}${esc(s.name)}</button>`;
+      return `<button data-site="${s.id}" class="${s.id === v.site ? 'on' : ''} ${!s.logged ? 'off' : ''}" title="${esc(s.name)}: ${tip}">${s.captcha ? icon('triangle-alert', 14).replace('class="i ', 'style="color:var(--bad)" class="i ') : `<span class="dot ${dot}"></span>`}${esc(s.name)}</button>`;
     }).join('');
     const on = $('siteTabs').querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     tabArrows();
   }
   const cur = st.siteList.find((s) => s.id === v.site) || {};
   let text, cls = '';
-  if (v.mode === 'mine') text = `Ваше окно ${cur.name}: тот же вход, бот сюда не заходит. Здесь можно писать, менять настройки и голос.`;
+  if (v.mode === 'mine' && !cur.logged) { text = `Ваше окно ${cur.name}: вход не выполнен. Кнопка «Войти через браузер» - в окне сайта справа.`; cls = 'bad'; }
+  else if (v.mode === 'mine') text = `Ваше окно ${cur.name}: тот же вход, бот сюда не заходит. Здесь можно писать, менять настройки и голос.`;
   else if (cur.captcha) { text = `${cur.name} просит пройти проверку «не робот»: пройдите её прямо здесь, программа ждёт и ничего не нажимает.`; cls = 'bad'; }
   else if (cur.busy) { text = `Бот сейчас работает в этом окне: листать можно, нажимать и печатать нельзя. Писать самому - «Моё окно».`; cls = 'busy'; }
   else if (!cur.logged) { text = `Окно бота ${cur.name}: вход не выполнен. Кнопка «Войти через браузер» - в окне сайта справа.`; cls = 'bad'; }
