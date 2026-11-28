@@ -220,22 +220,49 @@ function layout() {
 // --- окно входа поверх сайта без входа (login-overlay.html): размытый снимок страницы, логотип, «Войти через браузер».
 // Новичку не нужно искать вход в «Мозгах».
 let overlay = null, overlayOn = false, overlaySite = '';
-// логотип сайта для окна входа: картинка PNG, если есть (SVG бывают тёмными без фона); пришёл позже окна - обновить
-// Логотип сайта для окна входа - сам файл, скачанный сессией сайта (свои куки: Perplexity за Cloudflare не отдаёт
-// картинку чужому запросу, 28.11), в data: URL. Лучше всего apple-touch-icon: крупный и с собственным фоном.
-const logos = {};
-function setFavicon(site) { if (!logos[site]) fetchLogo(site).catch(() => {}); }
+// Логотип и снимок страницы для окна входа запоминаются (в памяти и на диске, local/ui-cache): окно входа
+// показывается сразу целиком, а не пустым тёмным фоном, на который через долю секунды ложится картинка (28.11).
+const UI_CACHE = path.join(LOCAL, 'ui-cache');
+const logos = {}, shots = {};
+function cacheGet(kind, site, mem) {
+  if (mem[site] === undefined) { try { mem[site] = fs.readFileSync(path.join(UI_CACHE, `${kind}-${site}.txt`), 'utf8'); } catch { mem[site] = ''; } }
+  return mem[site];
+}
+function cachePut(kind, site, mem, v) {
+  if (!v || mem[site] === v) return;
+  mem[site] = v;
+  try { fs.mkdirSync(UI_CACHE, { recursive: true }); fs.writeFileSync(path.join(UI_CACHE, `${kind}-${site}.txt`), v); } catch {}
+}
+const logoOf = (site) => cacheGet('logo', site, logos);
+const shotOf = (site) => cacheGet('shot', site, shots);
+function setFavicon(site) { if (!logoOf(site)) fetchLogo(site).catch(() => {}); }
+// Логотип - сам файл, скачанный сессией сайта (свои куки: Perplexity за Cloudflare не отдаёт картинку чужому
+// запросу), в data: URL. Ссылки на значки - со страницы, если окно сайта открыто, иначе из HTML главной (для
+// заранее, без окна). Лучше всего apple-touch-icon: крупный и с собственным фоном.
 async function fetchLogo(site) {
-  if (logos[site]) return logos[site];
-  const wc = (site === 'qwen' ? qwen : webViews[site] || myViews[site] || {}).webContents;
-  if (!wc) return '';
-  const links = await wc.executeJavaScript(`[...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]')]
-    .map((l) => ({ rel: l.rel, href: l.href, size: parseInt(String(l.sizes || '').split('x')[0]) || 0 }))`).catch(() => []);
+  if (logoOf(site)) return logos[site];
+  const x = siteOf(site); if (!x) return '';
+  const view = site === 'qwen' ? qwen : webViews[site] || myViews[site];
+  const ses = view ? view.webContents.session : session.fromPartition(x.part);
+  let base = view ? view.webContents.getURL() : x.home;
+  let links = view ? await view.webContents.executeJavaScript(`[...document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]')]
+    .map((l) => ({ rel: l.rel, href: l.href, size: parseInt(String(l.sizes || '').split('x')[0]) || 0 }))`).catch(() => []) : [];
+  if (!links.length) {
+    try {
+      const r = await ses.fetch(x.home); base = r.url || x.home;
+      const html = (await r.text()).slice(0, 300000);
+      for (const tag of html.match(/<link\b[^>]*>/gi) || []) {
+        const at = (n) => (new RegExp(`\b${n}\s*=\s*["']([^"']*)["']`, 'i').exec(tag) || [])[1] || '';
+        if (!/icon/i.test(at('rel')) || !at('href')) continue;
+        links.push({ rel: at('rel'), href: new URL(at('href'), base).href, size: parseInt(at('sizes')) || 0 });
+      }
+    } catch {}
+  }
   const score = (l) => (/apple/i.test(l.rel) ? 1000 : 0) + (/\.svg(\?|$)/i.test(l.href) ? 500 : 0) + Math.min(l.size, 256) + (/\.png(\?|$)/i.test(l.href) ? 50 : 0) - (/\.ico(\?|$)/i.test(l.href) ? 100 : 0);
-  const cand = [...links.sort((a, b) => score(b) - score(a)).map((l) => l.href), new URL('/favicon.ico', wc.getURL()).href];
+  const cand = [...links.sort((a, b) => score(b) - score(a)).map((l) => l.href), new URL('/favicon.ico', base).href];
   for (const url of cand) {
     try {
-      const r = await wc.session.fetch(url);
+      const r = await ses.fetch(url);
       if (!r.ok) continue;
       const buf = Buffer.from(await r.arrayBuffer());
       if (buf.length < 100 || buf.length > 400000) continue;
@@ -244,13 +271,15 @@ async function fetchLogo(site) {
       const type = head[0] === 0x89 && head[1] === 0x50 ? 'image/png' : head[0] === 0 && head[2] === 1 ? 'image/x-icon' : head[0] === 0xff && head[1] === 0xd8 ? 'image/jpeg'
         : head.toString('ascii', 0, 4) === 'RIFF' ? 'image/webp' : head.toString('ascii', 0, 3) === 'GIF' ? 'image/gif' : /<svg|<\?xml/i.test(txt) ? 'image/svg+xml' : '';
       if (!type) continue;
-      logos[site] = `data:${type};base64,${buf.toString('base64')}`;
-      if (overlay && overlayOn && overlaySite.endsWith(':' + site)) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: logos[site], keepStatus: true });
+      cachePut('logo', site, logos, `data:${type};base64,${buf.toString('base64')}`);
+      if (overlay && overlayOn && overlaySite.endsWith(':' + site)) overlay.webContents.send('overlay-show', { site, name: x.name, icon: logos[site], keepStatus: true });
       return logos[site];
-    } catch (e) { console.log(`логотип ${site} ${url}: ${e.message}`); }
+    } catch {}
   }
   return '';
 }
+// логотипы всех сайтов - заранее, по одному, пока владелец ничего не открыл (уже скачанные - с диска)
+setTimeout(() => { siteList().filter((x) => !logoOf(x.id)).forEach((x, i) => setTimeout(() => fetchLogo(x.id).catch(() => {}), i * 700)); }, 5000);
 function loginStatus(t) {
   try { win.webContents.send('qwen-login-status', t); } catch {}
   try { if (overlay && overlayOn) overlay.webContents.send('overlay-status', t); } catch {}
@@ -267,7 +296,11 @@ function ensureOverlay() {
 }
 // снимок страницы под размытие (пустой, пока сайт не нарисовался - тогда просто тёмный фон)
 async function siteShot(site) {
-  try { const img = await viewOf(view.mode, site).webContents.capturePage(); if (!img.isEmpty()) return img.resize({ width: 640 }).toDataURL(); } catch {}
+  try {
+    const img = await viewOf(view.mode, site).webContents.capturePage();
+    // почти одноцветный кадр - страница ещё не нарисовалась: не запоминать, оставить прошлый снимок
+    if (!img.isEmpty()) { const sm = img.resize({ width: 32 }).toBitmap(); let mn = 255, mx = 0; for (let k = 0; k < sm.length; k += 4) { const v = sm[k + 1]; if (v < mn) mn = v; if (v > mx) mx = v; } if (mx - mn > 12) { const d = img.resize({ width: 480 }).toJPEG(70); const u = 'data:image/jpeg;base64,' + d.toString('base64'); cachePut('shot', site, shots, u); return u; } }
+  } catch {}
   return '';
 }
 // Вход на сайте: проверен (siteLogged) или, пока проверки не было, - «входил ли когда-нибудь» (cfg.webLogged).
@@ -295,11 +328,11 @@ function updateOverlay() {
   const show = () => {
     if (overlaySite !== key) return;   // пока грузилось, переключили вкладку
     const x = siteOf(site);
-    overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: logos[site] || '', shot: '' });
+    overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: logoOf(site), shot: shotOf(site) });   // запомненные - сразу
     win.contentView.addChildView(overlay);   // поверх окна сайта
     layout();
-    siteShot(site).then((shot) => { if (shot && overlaySite === key) overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: logos[site] || '', shot, keepStatus: true }); });
-    if (!logos[site]) fetchLogo(site).catch(() => {});
+    siteShot(site).then((shot) => { if (shot && overlaySite === key) overlay.webContents.send('overlay-show', { site, name: x ? x.name : site, icon: logoOf(site), shot, keepStatus: true }); });
+    if (!logoOf(site)) fetchLogo(site).catch(() => {});
   };
   if (overlayLoaded) { show(); return Promise.resolve(); }
   return ensureOverlay().then(() => { overlayLoaded = true; show(); });
@@ -308,7 +341,7 @@ function updateOverlay() {
 async function siteLoaded(site) {
   try { const v = await Promise.race([site === 'qwen' ? qwen.webContents.executeJavaScript('!!localStorage.getItem("token")') : webChat(site).loggedIn(), new Promise((r) => setTimeout(() => r(undefined), 3000))]); if (v !== undefined) siteLogged[site] = v; } catch {}
   await updateOverlay().catch(() => {});
-  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: logos[site] || '', shot, keepStatus: true }); fetchLogo(site).catch(() => {}); }
+  if (overlay && overlayOn && overlaySite.endsWith(':' + site)) { const shot = await siteShot(site); if (shot) overlay.webContents.send('overlay-show', { site, name: (siteOf(site) || {}).name || site, icon: logoOf(site), shot, keepStatus: true }); fetchLogo(site).catch(() => {}); }
 }
 ipcMain.handle('overlay-login', async (_e, site) => {
   const r = await (site === 'qwen' ? loginQwen() : site === 'deepseek' ? loginDeepseek() : loginSite(site));

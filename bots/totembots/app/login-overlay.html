@@ -32,7 +32,9 @@
   .logo.full img { width: 56px; height: 56px; object-fit: cover; }
   /* прозрачный тёмный логотип на тёмной карточке не виден - светлая подложка; светлый - на тёмной */
   .logo.light { background: #f4f4f6; border-color: transparent; }
-  .card.blank > * { visibility: hidden; }
+  /* прячется и появляется целиком и плавно: снимок, логотип и надписи - одновременно */
+  .card, #shot { transition: opacity .12s ease; }
+  .card.blank, #shot.blank { opacity: 0; transition: none; }
   h1 { margin: 0 0 var(--s5); font-size: var(--f-lg); font-weight: 600; }
   button { display: flex; width: 100%; align-items: center; justify-content: center; gap: var(--s2); height: 38px; border: 1px solid transparent;
     border-radius: var(--r1); font: 500 var(--f-md) "Segoe UI", system-ui; cursor: pointer; transition: background .12s ease; }

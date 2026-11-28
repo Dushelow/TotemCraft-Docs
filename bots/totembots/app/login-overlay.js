@@ -7,24 +7,29 @@ const busy = (on, text) => {
   if (on) $('login').innerHTML = '<span class="spin"></span>Войдите в открывшемся браузере'; else paintLogin();
   if (text !== undefined) { $('status').textContent = text; $('status').className = ''; }
 };
-window.overlay.onShow((d) => {
+// картинка готова к показу (раскодирована), но не дольше 150 мс - иначе показываем без неё
+const ready = (src) => new Promise((ok) => { if (!src) return ok(null); const img = new Image(); img.alt = ''; img.src = src; const t = setTimeout(() => ok(null), 150); img.decode().then(() => { clearTimeout(t); ok(img); }, () => { clearTimeout(t); ok(null); }); });
+let showSeq = 0;
+window.overlay.onShow(async (d) => {
+  const seq = ++showSeq;
   site = d.site; name = d.name;
-  if (d.shot) $('shot').style.backgroundImage = `url("${d.shot}")`;
+  const [shotImg, logoImg] = await Promise.all([ready(d.shot), $('logo').dataset.src === d.icon ? null : ready(d.icon)]);
+  if (seq !== showSeq) return;   // пришёл более новый показ
+  if (d.shot && shotImg) $('shot').style.backgroundImage = `url("${d.shot}")`;
   $('title').textContent = `Войдите в ${name}`;
-  document.querySelector('.card').classList.remove('blank');
   const logo = $('logo');
-  if (!d.keepStatus) { logo.textContent = name.slice(0, 1).toUpperCase(); logo.className = 'logo'; }
-  if (d.icon && logo.dataset.src !== d.icon) placeLogo(logo, d.icon);
+  if (!d.keepStatus && !logoImg && logo.dataset.src !== d.icon) { logo.textContent = name.slice(0, 1).toUpperCase(); logo.className = 'logo'; logo.dataset.src = ''; }
+  if (logoImg) placeLogo(logo, d.icon, logoImg);
   if (!d.keepStatus) { busy(false, ''); showBrowser(); }   // браузер могли сменить в «Мозгах»
+  document.querySelector('.card').classList.remove('blank'); $('shot').classList.remove('blank');
 });
 // окно спрятано (переключили на сайт со входом) - очистить, чтобы при следующем показе не мелькнул прошлый сайт
-window.overlay.onHide(() => { document.querySelector('.card').classList.add('blank'); $('shot').style.backgroundImage = ''; $('logo').dataset.src = ''; });
+window.overlay.onHide(() => { showSeq++; document.querySelector('.card').classList.add('blank'); $('shot').classList.add('blank'); $('shot').style.backgroundImage = ''; });
 // Логотип: смотрим саму картинку. Углы непрозрачные - у логотипа свой фон, показываем как есть во всю плитку.
 // Прозрачный - подложка по яркости рисунка: тёмный рисунок на светлой, светлый на тёмной (28.11: чёрный квадрат
 // на белой подложке выглядел уродливо).
-function placeLogo(logo, src) {
-  const img = new Image(); img.alt = '';
-  img.onload = () => {
+function placeLogo(logo, src, img) {
+  {
     let full = false, light = false;
     try {
       const n = 48, c = document.createElement('canvas'); c.width = c.height = n;
@@ -41,8 +46,7 @@ function placeLogo(logo, src) {
     } catch {}
     logo.className = 'logo' + (full ? ' full' : light ? ' light' : '');
     logo.dataset.src = src; logo.replaceChildren(img);
-  };
-  img.src = src;
+  }
 }
 window.overlay.onStatus((t) => {
   $('status').textContent = t;
