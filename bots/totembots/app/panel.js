@@ -81,6 +81,8 @@ function paintStrip() {
       const tip = s.captcha ? 'просит пройти проверку' : s.busy ? 'бот сейчас работает здесь' : s.logged ? 'вход выполнен' : 'вход не выполнен';
       return `<button data-site="${s.id}" class="${s.id === v.site ? 'on' : ''} ${!s.logged && v.mode === 'work' ? 'off' : ''}" title="${esc(s.name)}: ${tip}">${s.captcha ? icon('triangle-alert', 14).replace('class="i ', 'style="color:var(--bad)" class="i ') : `<span class="dot ${dot}"></span>`}${esc(s.name)}</button>`;
     }).join('');
+    const on = $('siteTabs').querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    tabArrows();
   }
   const cur = st.siteList.find((s) => s.id === v.site) || {};
   let text, cls = '';
@@ -95,6 +97,18 @@ function paintStrip() {
     $('stripHint').firstElementChild.outerHTML = icon(cls === 'bad' ? 'triangle-alert' : cls === 'busy' ? 'loader-circle' : 'info', 14, cls === 'busy' ? 'spin' : '');
   }
 }
+// стрелки полосы сайтов: нажатие листает на 2/3 ширины, колёсико мыши листает без Shift
+function tabArrows() {
+  const t = $('siteTabs'), fits = t.scrollWidth <= t.clientWidth + 1;
+  $('tabsLeft').hidden = $('tabsRight').hidden = fits;
+  $('tabsLeft').disabled = t.scrollLeft <= 1;
+  $('tabsRight').disabled = t.scrollLeft + t.clientWidth >= t.scrollWidth - 1;
+}
+$('tabsLeft').onclick = () => $('siteTabs').scrollBy({ left: -$('siteTabs').clientWidth * 0.66, behavior: 'smooth' });
+$('tabsRight').onclick = () => $('siteTabs').scrollBy({ left: $('siteTabs').clientWidth * 0.66, behavior: 'smooth' });
+$('siteTabs').addEventListener('scroll', tabArrows, { passive: true });
+$('siteTabs').addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { e.preventDefault(); $('siteTabs').scrollBy({ left: e.deltaY }); } }, { passive: false });
+new ResizeObserver(tabArrows).observe($('siteTabs'));
 $('siteTabs').onclick = (e) => { const b = e.target.closest('[data-site]'); if (b) T.viewShow({ mode: (st.view || {}).mode || 'work', site: b.dataset.site }).then((v) => { st.view = v; paintStrip(); }); };
 document.querySelectorAll('#modeSeg button').forEach((b) => { b.onclick = () => T.viewShow({ mode: b.dataset.mode, site: (st.view || {}).site || 'qwen' }).then((v) => { st.view = v; paintStrip(); }); });
 for (const [id, what] of [['navBack', 'back'], ['navReload', 'reload'], ['navHome', 'home']]) $(id).onclick = async () => { const r = await T.viewNav(what); if (r) toast(r); };

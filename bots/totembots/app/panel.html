@@ -228,6 +228,10 @@
   #siteTabs button:hover { background: var(--surface); color: var(--text); }
   #siteTabs button.on { background: var(--surface-2); color: var(--text); box-shadow: inset 0 -2px 0 var(--acc); }
   #siteTabs button.off { opacity: .6; }
+  /* стрелки полосы сайтов (как в Chrome): тусклая - в ту сторону листать некуда; все сайты влезли - стрелок нет */
+  .tabarr { flex: none; width: 26px; height: 26px; padding: 0; }
+  .tabarr:disabled { color: var(--line-2); background: transparent; cursor: default; }
+  .tabarr[hidden] { display: none; }
   #nav2 { display: flex; gap: 2px; }
   .mapw { display: flex; flex-direction: column; gap: var(--s2); }
   .mapbar { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
@@ -370,7 +374,9 @@
     <div class="seg" id="modeSeg" title="«Окно бота» - сайт, через который думает бот (смотреть можно, мешать нельзя). «Моё окно» - тот же сайт для вас: писать самому, менять настройки">
       <button data-mode="work"><i data-i="bot" data-s="14"></i>Окно бота</button><button data-mode="mine"><i data-i="user" data-s="14"></i>Моё окно</button>
     </div>
+    <button id="tabsLeft" class="quiet icon tabarr" aria-label="Листать сайты влево" title="Листать влево"><i data-i="chevron-left" data-s="16"></i></button>
     <div id="siteTabs"></div>
+    <button id="tabsRight" class="quiet icon tabarr" aria-label="Листать сайты вправо" title="Листать вправо"><i data-i="chevron-right" data-s="16"></i></button>
     <div id="nav2">
       <button id="navBack" class="quiet icon" title="Назад" aria-label="Назад"><i data-i="arrow-left"></i></button>
       <button id="navReload" class="quiet icon" title="Обновить страницу" aria-label="Обновить страницу"><i data-i="rotate-cw"></i></button>
