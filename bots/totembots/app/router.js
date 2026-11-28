@@ -10,7 +10,8 @@ const PRESETS = {
   claude: { name: 'Claude', claude: true, model: 'claude-haiku-5-5', keyUrl: 'https://platform.claude.com/settings/keys' },
   gemini: { name: 'Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions', model: 'gemini-2.5-flash', keyUrl: 'https://aistudio.google.com/apikey' },
   groq: { name: 'Groq', url: 'https://api.groq.com/openai/v1/chat/completions', model: 'llama-3.3-70b-versatile', keyUrl: 'https://console.groq.com/keys' },
-  openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'deepseek/deepseek-chat-v3-0324:free', keyUrl: 'https://openrouter.ai/keys' },
+  // 28.11: deepseek-chat-v3-0324:free у OpenRouter больше нет; openrouter/free - их же выбор из бесплатных моделей
+  openrouter: { name: 'OpenRouter', url: 'https://openrouter.ai/api/v1/chat/completions', model: 'openrouter/free', keyUrl: 'https://openrouter.ai/keys' },
   deepseek: { name: 'DeepSeek', url: 'https://api.deepseek.com/chat/completions', model: 'deepseek-chat', keyUrl: 'https://platform.deepseek.com/api_keys' },
 };
 const LIMITED = /\blimit\b|quota|\b429\b|exceeded|лимит|captcha|не робот/i;

@@ -22,22 +22,97 @@ const SITES = {
   },
 };
 
-// Остальные сайты - по общему образцу: поле ввода, кнопка отправки, последний ответ на странице.
-// Названия элементов - лучшие известные; после входа владельца проверяются и правятся (сайты меняются).
+// Помощник в странице сайта (вставляется в каждый вызов): поиск поля, кнопки отправки, ответа, признака «ещё пишет».
+const HELP = `if (!window.__tb || window.__tb.v !== 5) window.__tb = (() => {
+  const vis = (e) => { if (!e || !e.getBoundingClientRect) return false; const r = e.getBoundingClientRect(); const st = getComputedStyle(e); return r.width > 0 && r.height > 0 && st.visibility !== 'hidden' && st.display !== 'none'; };
+  const norm = (t) => String(t || '').replace(/\\s+/g, ' ').trim();
+  const label = (b) => [b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-testid'), b.id, String(b.className && b.className.baseVal !== undefined ? b.className.baseVal : b.className || ''), (b.innerText || '').slice(0, 40)].filter(Boolean).join(' ');
+  const SEND = /send|submit|отправ|发送|送信/i, NOT_SEND = /attach|voice|micro|\\bmic|upload|file|файл|голос|search|поиск|stop|стоп|останов|cancel|отмен|model|модел|tool|инструм|plus|add/i;
+  const enabled = (b) => b && vis(b) && !b.disabled && b.getAttribute('aria-disabled') !== 'true' && !/(^|\\s)disabled(\\s|$)/.test(String(b.className || ''));
+  const input = (sel) => { const all = [...document.querySelectorAll(sel)].filter((e) => !e.closest('[aria-hidden=true]')); return all.find(vis) || all[0] || null; };
+  const sendBtn = (ta, sel) => {
+    let box = ta;
+    for (let i = 0; i < 8 && box; i++) {
+      box = box.parentElement; if (!box) break;
+      const bs = [...box.querySelectorAll('button, [role=button]' + (sel ? ', ' + sel : ''))];
+      const hit = (sel ? bs.filter((b) => b.matches(sel)) : []).find(enabled) || bs.find((b) => enabled(b) && SEND.test(label(b)) && !NOT_SEND.test(label(b)));
+      if (hit) return hit;
+    }
+    if (sel) { const b = [...document.querySelectorAll(sel)].find(enabled); if (b) return b; }
+    return null;
+  };
+  // сайт ещё пишет: видна кнопка «стоп»
+  const busy = () => [...document.querySelectorAll('button, [role=button]')].some((b) => vis(b) && /stop|останов|прервать|停止/i.test([b.getAttribute('aria-label'), b.getAttribute('title'), b.getAttribute('data-testid')].join(' ')));
+  // вход не сделан: страница входа или окно входа поверх
+  const loginWall = () => [...document.querySelectorAll('[class*=login-modal]')].some(vis) || /login|sign[-_]?in|signin|\\/auth/i.test(location.pathname) || [...document.querySelectorAll('[role=dialog], dialog[open]')].some((d) => vis(d) && /log ?in|sign ?in|войти|вход|continue with google/i.test((d.innerText || '').slice(0, 2000)));
+  // видна кнопка «Войти» - вход не сделан (без входа часть сайтов пишет «войдите, чтобы продолжить» вместо ответа)
+  const loginBtn = () => [...document.querySelectorAll('a, button, [role=button]')].some((b) => vis(b) && /^(log ?in|sign ?in|войти|вход|login|sign up|sign up free|зарегистрироваться)$/i.test(norm(b.innerText)));
+  // служебные строки сайтов, которые не надо считать ответом (кнопки под сообщением, подписи)
+  const UI = /^(copy|edit|share|retry|regenerate|like|dislike|good response|bad response|read aloud|more|sources?|копировать|изменить|поделиться|повторить|ещё|источники|\\d+ ?\\/ ?\\d+|\\d+(\\.\\d+)?s|thought for .{0,20}|думал.{0,20})$/i;
+  const DISCLAIM = /can make mistakes|may (display|produce) inaccurate|check important|может ошибаться|проверяйте важн|AI-generated|сгенерировано ИИ/i;
+  // ход мыслей модели (Z.ai «Thought Process», Gemini «Show thinking») - не ответ
+  const THINK = '[class*=think], [class*=reason], [class*=thought], model-thoughts, details, .not-prose';
+  const read = (sel, tail, inSel) => {
+    let n = 0, t = '';
+    if (sel) {
+      const a = [...document.querySelectorAll(sel)].filter((e) => norm(e.innerText) && !e.closest(THINK));
+      const inner = a.filter((e) => !a.some((o) => o !== e && e.contains(o)));
+      n = inner.length; t = n ? inner[n - 1].innerText.trim() : '';
+      if (tail && norm(t).includes(tail)) t = '';   // это наш вопрос, а не ответ
+    }
+    // запасной путь: текст страницы после нашего вопроса (без служебных строк)
+    let after = '';
+    const ta = inSel ? input(inSel) : null;
+    if (tail && !(ta && norm(ta.value || ta.innerText))) {   // вопрос ещё в поле ввода - не ушёл, ответа нет
+      const lines = ((document.querySelector('main') || document.body).innerText || '').split('\\n');
+      let at = -1; for (let i = lines.length - 1; i >= 0; i--) if (norm(lines[i]).includes(tail)) { at = i; break; }
+      if (at >= 0) {
+        const rest = lines.slice(at + 1).map((x) => x.trimEnd()).filter((x) => norm(x) && !UI.test(norm(x)));
+        while (rest.length && DISCLAIM.test(rest[rest.length - 1])) rest.pop();
+        after = rest.join('\\n').trim();
+      }
+    }
+    return { n, t, after, busy: busy(), done: false };
+  };
+  return { v: 5, vis, norm, label, input, sendBtn, busy, loginWall, loginBtn, read };
+})();`;
+
+// Остальные сайты - по общему образцу (28.11, владелец: «другие пока заглушки - приведи в рабочий вид»).
+// Сайты часто меняют вёрстку, поэтому не держимся за одно название элемента:
+// - поле ввода: первое видимое из списка;
+// - отправка: кнопка рядом с полем по смыслу (aria-label/title/data-testid «send/submit/отправить»), потом по
+//   названию сайта, иначе Enter;
+// - ответ: последний ответ нейросети по названию сайта; не нашёлся - текст страницы после нашего вопроса;
+// - готово: текст 3 с не меняется и нет кнопки «стоп» (сайт ещё пишет).
+// chatId сайта = путь страницы чата («c/<id>»), так продолжаем тот же чат без знания устройства адресов сайта.
 const GEN = (name, home, input, send, answers, extra = {}) => ({
-  name, home, chatUrl: null, chatIdFrom: (url) => { const m = /\/([0-9a-z][0-9a-z-]{15,})\/?$/i.exec(url); return m ? m[1] : ''; },
-  loggedIn: `(() => !!document.querySelector(${JSON.stringify(input)}))()`, input, send, answers, insert: true, ...extra,
+  name, home, input, send, answers, insert: true, generic: true,
+  chatUrl: (id) => new URL(home).origin + '/' + String(id).replace(/^\/+/, ''),
+  chatIdFrom: (url) => { try { const p = new URL(url).pathname.replace(/^\/+|\/+$/g, ''); return /[0-9a-z][0-9a-z_-]{15,}$/i.test(p) ? p : ''; } catch { return ''; } },
+  loggedIn: `(() => { ${HELP} return !!__tb.input(${JSON.stringify(input)}) && !__tb.loginWall() && !__tb.loginBtn(); })()`, ...extra,
 });
 Object.assign(SITES, {
-  kimi: GEN('Kimi (сайт)', 'https://www.kimi.com/', '.chat-input-editor, div[contenteditable=true], textarea', '.send-button, button[class*=send]', '.segment-assistant .markdown, [class*=assistant] .markdown, .markdown'),
-  glm: GEN('Z.ai GLM (сайт)', 'https://chat.z.ai/', 'textarea#chat-input, textarea', 'button#send-message-button, button[type=submit]', '.chat-assistant .markdown-prose, [class*=assistant] [class*=markdown], .markdown-prose'),
-  mistral: GEN('Mistral (сайт)', 'https://chat.mistral.ai/chat', 'textarea, div[contenteditable=true]', 'button[aria-label*=Send i], button[type=submit]', '[data-message-author-role=assistant], .prose'),
-  grok: GEN('Grok (сайт)', 'https://grok.com/', 'textarea, div[contenteditable=true]', 'button[aria-label=Submit], button[type=submit]', '.response-content-markdown, .message-bubble .markdown'),
-  chatgpt: GEN('ChatGPT (сайт)', 'https://chatgpt.com/', '#prompt-textarea, textarea[name=prompt], div[contenteditable=true]', '#composer-submit-button, button[data-testid=send-button], button[aria-label="Send message"]', '[data-message-author-role=assistant] .markdown, [data-message-author-role=assistant]'),
-  gemini: GEN('Gemini (сайт)', 'https://gemini.google.com/app', 'rich-textarea .ql-editor, div[contenteditable=true]', 'button.send-button, button[aria-label*=Send i], button[aria-label*=Отправ]', 'model-response .markdown, message-content .markdown'),
-  arena: GEN('LMArena (сайт)', 'https://lmarena.ai/?mode=direct', 'textarea[name=message], textarea', 'button[type=submit], button[aria-label*=Send i]', '.prose, [class*=message] [class*=markdown]'),
-  copilot: GEN('Copilot (сайт)', 'https://copilot.microsoft.com/', 'textarea#userInput, textarea', 'button[aria-label*=Submit i], button[type=submit]', '[data-content=ai-message], [class*=ai-message]'),
+  kimi: GEN('Kimi (сайт)', 'https://www.kimi.com/', '.chat-input-editor, div[contenteditable=true], textarea', '.send-button-container, .send-button, [class*=send-button]',
+    '.segment-assistant .markdown, .chat-content-item-assistant .markdown, [class*=assistant] .markdown'),
+  glm: GEN('Z.ai GLM (сайт)', 'https://chat.z.ai/', 'textarea#chat-input, textarea', 'button#send-message-button',
+    '.chat-assistant .chat-markdown, .chat-assistant .markdown-prose, [class*=assistant] .markdown-prose'),
+  mistral: GEN('Mistral (сайт)', 'https://chat.mistral.ai/chat', 'div.ProseMirror, textarea, div[contenteditable=true]', 'button[type=submit]',
+    '[data-message-author-role=assistant] [data-message-part-type=answer], [data-message-author-role=assistant] .markdown-container-style, [data-message-author-role=assistant]'),
+  grok: GEN('Grok (сайт)', 'https://grok.com/', 'div.tiptap.ProseMirror, textarea, div[contenteditable=true]', 'button[type=submit]',
+    '.message-bubble:not(.bg-surface-l1) .response-content-markdown, .response-content-markdown'),
+  chatgpt: GEN('ChatGPT (сайт)', 'https://chatgpt.com/', '#prompt-textarea, div.ProseMirror, textarea[name=prompt]', '#composer-submit-button, button[data-testid=send-button]',
+    '[data-message-author-role=assistant] .markdown, [data-message-author-role=assistant]'),
+  gemini: GEN('Gemini (сайт)', 'https://gemini.google.com/app', 'rich-textarea .ql-editor, div.ql-editor, div[contenteditable=true]', 'button.send-button',
+    'model-response message-content .markdown, model-response .markdown, message-content .markdown'),
+  // 28.11: lmarena.ai переехал на arena.ai, прямой чат с одной моделью - /text/direct
+  arena: GEN('LMArena (сайт)', 'https://arena.ai/text/direct', 'div.tiptap.ProseMirror, textarea[name=message], textarea', 'button[type=submit]',
+    '[data-sentry-component*=Assistant] .prose, [class*=assistant] .prose, .prose'),
+  // 28.11: copilot.microsoft.com ведёт на copilot.com
+  copilot: GEN('Copilot (сайт)', 'https://copilot.com/', 'textarea#userInput, textarea, div[contenteditable=true]', 'button[data-testid=submit-button]',
+    '[data-content=ai-message], [class*=ai-message]'),
 });
+
+const LOGIN_ASK = /sign (up|in) to continue|log ?in to continue|sign up to|войдите|войти, чтобы|зарегистрируйтесь|login required/i;
 
 class WebChat {
   constructor(wc, siteId, onAttention = () => {}) {
@@ -58,13 +133,16 @@ class WebChat {
   }
 
   js(code) { return this.wc.executeJavaScript(code); }
+  // код в странице с помощником __tb (поле ввода, кнопка отправки, «пишет ли ещё»)
+  tb(code) { return this.js(`(() => { ${HELP} ${code} })()`); }
 
   async captcha() {
     return this.js(`(() => { const t = (document.body && document.body.innerText || '').slice(0, 20000);
-      return /slide to verify|drag the slider|verify you are human|подтвердите, что вы человек|cloudflare/i.test(t) || !!document.querySelector('iframe[src*="captcha"], iframe[src*="challenges.cloudflare"]'); })()`).catch(() => false);
+      return /slide to verify|drag the slider|verify you are human|подтвердите, что вы человек|cloudflare/i.test(t) || !!document.querySelector('iframe[src*="captcha"], iframe[src*="challenges.cloudflare"]'); })()`).catch(() => false)
   }
 
-  async loggedIn() { return this.js(this.site.loggedIn).catch(() => false); }
+  // TB_WEB_ANON=1 - для проверки разработчиком без своих аккаунтов: «вошёл» = есть поле ввода (часть сайтов отвечает и так)
+  async loggedIn() { return (process.env.TB_WEB_ANON && this.site.generic ? this.tb(`return !!__tb.input(${JSON.stringify(this.site.input)}) && !__tb.loginWall();`) : this.js(this.site.loggedIn)).catch(() => false); }
 
   ask(chatId, text) { return this.exclusive(() => this._ask(chatId, text)); }
 
@@ -73,73 +151,90 @@ class WebChat {
     if (gap > 0) await sleep(gap);
     this.lastSend = Date.now();
     this._r1 = this._r2 = false;
-    const s = this.site;
+    const s = this.site, IN = JSON.stringify(s.input), SEND = JSON.stringify(s.send || ''), ANS = JSON.stringify(s.answers || '');
     // окно открыто у владельца (вход, своё) или вход не сделан - страницу не трогаем вообще
     // владелец печатает в этом окне (поле в фокусе и не пустое) - подождать, а не отказывать
     for (let i = 0; i < 30 && this.inUse && this.inUse() && await this.js(`(() => { const t = document.activeElement; return !!(t && (t.value || t.innerText || '').trim() && /TEXTAREA|DIV/.test(t.tagName)); })()`).catch(() => false); i++) await sleep(1000);
     for (let i = 0; i < 40 && !(await this.loggedIn()); i++) await sleep(400);   // окно могло только что открыться
     if (!(await this.loggedIn())) throw new Error(`${s.name}: нужен вход - «Мозги» в панели, «Войти через браузер»`);
-    const want = chatId && s.chatUrl ? s.chatUrl(chatId) : (chatId && this.wc.getURL().includes(chatId) ? this.wc.getURL() : s.home);
-    if (!this.wc.getURL().startsWith(want) || !chatId) { await this.wc.loadURL(want); await sleep(1500); }
+    const want = chatId && s.chatUrl ? s.chatUrl(chatId) : s.home;
+    if (!chatId || !this.wc.getURL().startsWith(want)) { await this.wc.loadURL(want); await sleep(1500); }
     if (await this.captcha()) { this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке, жду до 3 мин`); let ok = false; for (let w = 0; w < 90; w++) { await sleep(2000); if (!(await this.captcha().catch(() => false))) { ok = true; break; } } if (!ok) { await this.js(LOCK_OFF).catch(() => {}); throw new Error(`${s.name}: проверка «не робот» не пройдена за 3 мин`); } }
     // поле ввода
     let ok = false;
-    for (let i = 0; i < 40 && !ok; i++) { ok = await this.js(`!!document.querySelector(${JSON.stringify(s.input)})`).catch(() => false); if (!ok) await sleep(250); }
+    for (let i = 0; i < 40 && !ok; i++) { ok = await this.tb(`return !!__tb.input(${IN});`).catch(() => false); if (!ok) await sleep(250); }
     if (!ok) throw new Error(`${s.name}: нет поля ввода (сайт изменился?)`);
-    const readNow = () => (s.history ? this.js(s.history) : this.js(`(() => { const a = document.querySelectorAll(${JSON.stringify(s.answers)}); return { n: a.length, t: a.length ? a[a.length - 1].innerText : '', done: false }; })()`)).catch(() => null);
+    // хвост вопроса - по нему ищем ответ на странице, если ответ не нашёлся по названию элемента
+    const tail = (String(text).split('\n').map((x) => x.replace(/\s+/g, ' ').trim()).filter(Boolean).pop() || '').slice(-40);
+    const readNow = () => (s.history ? this.js(s.history) : this.tb(`return __tb.read(${ANS}, ${JSON.stringify(tail)}, ${IN});`)).catch(() => null);
     const before = s.history ? (chatId ? ((await readNow()) || { n: 0 }).n : 0) : ((await readNow()) || { n: 0 }).n;
-    await this.js(`(() => {
-      const ta = document.querySelector(${JSON.stringify(s.input)}); ta.focus();
+    await this.tb(`const ta = __tb.input(${IN}); ta.focus();
       if (${!!s.insert} || ta.tagName !== 'TEXTAREA') { document.execCommand('selectAll', false); document.execCommand('insertText', false, ${JSON.stringify(text)}); }
       else { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(ta, ${JSON.stringify(text)}); }
       ta.dispatchEvent(new Event('input', { bubbles: true }));
-      return 1; })()`);
-    await sleep(300);
-    // отправить кнопкой (Enter в скрытое окно не доходит)
-    const sent = await this.js(`(() => { const ta = document.querySelector(${JSON.stringify(s.input)}); let box = ta; for (let i = 0; i < 6 && box; i++) box = box.parentElement;
-      const b = (box || document).querySelector(${JSON.stringify(s.send)}) || document.querySelector(${JSON.stringify(s.send)});
-      if (b) { b.click(); return true; }
-      ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true })); return true; })()`).catch(() => false);
-    if (!sent) throw new Error(`${s.name}: нет кнопки отправки (сайт изменился?)`);
-    // ответ: новое сообщение появилось и 2,5 с не меняется
+      return 1;`);
+    await sleep(400);
+    // отправить кнопкой (Enter в скрытое окно не всегда доходит); кнопка не нашлась - Enter
+    const sendNow = () => this.tb(`const ta = __tb.input(${IN}); if (!ta) return '';
+      const b = __tb.sendBtn(ta, ${SEND});
+      if (b) { b.click(); return 'кнопка'; }
+      ta.focus(); for (const t of ['keydown', 'keypress', 'keyup']) ta.dispatchEvent(new KeyboardEvent(t, { key: 'Enter', code: 'Enter', keyCode: 13, which: 13, bubbles: true, cancelable: true }));
+      return 'enter';`).catch(() => '');
+    const how = await sendNow();
+    if (!how) throw new Error(`${s.name}: нет поля ввода (сайт изменился?)`);
+    // поле не очистилось - не ушло: настоящее нажатие Enter (окно в фокусе страницы)
+    const leftText = () => this.tb(`const ta = __tb.input(${IN}); return ta ? (ta.value || ta.innerText || '').trim().length : 0;`).catch(() => 0);
+    await sleep(1200);
+    if ((await leftText()) > 0) {
+      try { this.wc.focus(); await this.tb(`const ta = __tb.input(${IN}); if (ta) ta.focus(); return 1;`); for (const type of ['keyDown', 'char', 'keyUp']) this.wc.sendInputEvent({ type, keyCode: type === 'char' ? '\r' : 'Enter' }); } catch {}
+      await sleep(800);
+    }
+    // ответ: новое сообщение появилось, 3 с не меняется и сайт больше не пишет (нет кнопки «стоп»)
     const t0 = Date.now();
     let last = '', stableSince = 0;
-    while (Date.now() - t0 < 120000) {
+    while (Date.now() - t0 < 180000) {
       await sleep(500);
       if (await this.captcha()) { await this.js(LOCK_OFF).catch(() => {}); this.onAttention(`${s.name}: проверка «не робот» - пройдите её во вкладке`); throw new Error(`${s.name}: проверка «не робот»`); }
       const r = (await readNow()) || { n: 0, t: '' };
       // сайт просит не частить («Messages too frequent. Try again later», DeepSeek 23.11) - не жать «повтор», а отдохнуть
       if (Date.now() - t0 > 1500 && Date.now() - (this._freqChk || 0) > 2000) {
         this._freqChk = Date.now();
-        const freq = await this.js(`(() => /too frequent|try again later|слишком часто|请稍后|频繁/i.test(document.body.innerText.slice(-4000)))()`).catch(() => false);
-        if (freq) throw new Error(`${s.name}: слишком частые сообщения (rate limit) - подождать`);
+        const freq = await this.js(`(() => /too frequent|try again later|слишком часто|请稍后|频繁|rate limit|usage limit|limit reached|reached (your|the) .{0,20}limit|лимит/i.test(document.body.innerText.slice(-4000)))()`).catch(() => false);
+        if (freq && !(r.t && r.n > before)) throw new Error(`${s.name}: лимит или слишком частые сообщения (rate limit) - подождать`);
       }
-      if (r.n <= before + (s.history ? 1 : 0) || !r.t) {
-        // не ушло или сайт показал ошибку - как человек: нажать «повторить» (у DeepSeek - значок повторной отправки),
-        // а если сообщения нет совсем - отправить ещё раз; на 12-й и 30-й секунде
+      // ответ по названию элемента (новый, после нашего вопроса), иначе - текст после вопроса
+      const got = s.history ? (r.n > before + 1 ? r.t : '') : (r.n > before && r.t ? r.t : r.after || '');
+      // вместо ответа сайт просит войти (Grok без входа: «Sign up to continue», 28.11)
+      if (got && got.length < 400 && LOGIN_ASK.test(got)) throw new Error(`${s.name}: сайт просит войти - «Мозги» в панели, «Войти через браузер»`);
+      if (!got) {
+        // не ушло или сайт показал ошибку - как человек: нажать «повторить», а если сообщения нет совсем - отправить
+        // ещё раз; на 12-й и 30-й секунде
         const el = Date.now() - t0;
+        // после отправки сайт открыл окно входа (Kimi без входа, 28.11) - ждать нечего
+        if (el > 2500 && s.generic && await this.tb('return __tb.loginWall();').catch(() => false)) throw new Error(`${s.name}: сайт просит войти - «Мозги» в панели, «Войти через браузер»`);
         if ((el > 12000 && !this._r1) || (el > 30000 && !this._r2)) {
           if (el > 30000) this._r2 = true; else this._r1 = true;
-          const how = await this.js(`(() => {
-            const vis = (e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0; };
+          const how2 = await this.tb(`
             const re = /retry|regenerate|resend|try again|повтор|ещё раз|重试|重新/i;
-            const btn = [...document.querySelectorAll('button, [role=button], .ds-icon-button')].reverse().find((b) => vis(b) && re.test((b.getAttribute('aria-label') || '') + ' ' + (b.getAttribute('title') || '') + ' ' + (b.innerText || '')));
+            const btn = [...document.querySelectorAll('button, [role=button], .ds-icon-button')].reverse().find((b) => __tb.vis(b) && re.test(__tb.label(b)));
             if (btn) { btn.click(); return 'повтор'; }
-            const ta = document.querySelector(${JSON.stringify(s.input)});
-            if (ta && (ta.value || ta.innerText || '').trim()) { let box = ta; for (let i = 0; i < 6 && box; i++) box = box.parentElement; const b = (box || document).querySelector(${JSON.stringify(s.send)}); if (b) { b.click(); return 'отправил снова'; } }
-            return ''; })()`).catch(() => '');
-          if (how) this.onAttention(`${s.name}: сообщение не ушло - ${how}`);
+            const ta = __tb.input(${IN});
+            if (ta && (ta.value || ta.innerText || '').trim()) { const b = __tb.sendBtn(ta, ${SEND}); if (b) { b.click(); return 'отправил снова'; } }
+            return '';`).catch(() => '');
+          if (how2) this.onAttention(`${s.name}: сообщение не ушло - ${how2}`);
         }
         if (el > 60000) throw new Error(`${s.name}: не начал отвечать`);
         continue;
       }
-      if (r.done) { last = r.t; break; }
-      if (r.t !== last) { last = r.t; stableSince = Date.now(); continue; }
-      if (Date.now() - stableSince > 3000) break;
+      if (r.done) { last = got; break; }
+      if (got !== last) { last = got; stableSince = Date.now(); continue; }
+      if (Date.now() - stableSince > 3000 && !r.busy) break;
+      if (Date.now() - stableSince > 30000) break;   // «стоп» висит, а текст 30 с не меняется - хватит
     }
+    last = String(last || '').trim();
     if (!last) throw new Error(`${s.name}: пустой ответ`);
     return { answer: last, chatId: s.chatIdFrom(this.wc.getURL()) || chatId };
   }
 }
 
-module.exports = { WebChat, SITES };
+module.exports = { WebChat, SITES, HELP };

@@ -424,9 +424,11 @@
         <h2><i data-i="cpu"></i>Какой мозг думает</h2>
         <p class="lead" id="pinLead" style="margin:0"></p>
         <div class="row" id="pinRow" style="margin-top:var(--s3)">
-          <input id="pinModel" class="grow" placeholder="модель (для Qwen и мозгов по ключу)" title="У сайтов модель выбирается на самом сайте: «Моё окно»">
+          <select id="pinModel" class="grow" title="Модели, которые есть у этого сервиса сейчас. У сайтов модель выбирается на самом сайте: «Моё окно»"></select>
+          <button id="pinModelRe" class="sm" title="Спросить у сервиса список моделей заново">Обновить список</button>
           <label class="chk" style="margin:0" title="Только выбранный: без перехода на запасные"><input type="checkbox" id="pinOnly">только он</label>
         </div>
+        <p class="muted" id="pinModelNote" style="margin:4px 0 0"></p>
       </div>
       <div class="card">
         <h2 style="display:flex;align-items:center;gap:8px"><i data-i="globe"></i>Сайты нейросетей<span class="grow" style="flex:1"></span><button id="pickBrowser" class="sm" title="Браузер для кнопок «Войти через браузер»: chrome.exe или firefox.exe. Без выбора - найдётся сам">Выбрать браузер</button></h2>

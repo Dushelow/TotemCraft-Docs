@@ -182,18 +182,18 @@ function paintPin() {
   $('pinSel').innerHTML = `<option value="">Авто (по порядку)</option>` + B.choices.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join('');
   $('pinSel').value = B.pin || '';
   $('pinOnly').checked = !!B.pinOnly;
-  $('pinModel').value = B.pinModel || '';
-  paintPinModel();
+  $('pinModel').innerHTML = `<option value="${esc(B.pinModel || '')}">${esc(B.pinModel || '...')}</option>`; $('pinModel').value = B.pinModel || '';
+  paintPinModel(); loadPinModels();
 }
 function paintPinModel() {
   const id = $('pinSel').value, withModel = id === 'qwen' || (id && !/web$/.test(id));
-  $('pinModel').disabled = !withModel; $('pinModel').style.display = withModel ? '' : 'none'; $('pinOnly').disabled = !id;
+  $('pinModel').disabled = !withModel; $('pinModel').style.display = $('pinModelRe').style.display = withModel ? '' : 'none'; if (!withModel) $('pinModelNote').textContent = ''; $('pinOnly').disabled = !id;
   $('pinRow').style.display = id ? '' : 'none';
   $('pinLead').textContent = id ? `Выбран: ${$('pinSel').selectedOptions[0].textContent}. ${withModel ? 'Можно указать модель. ' : 'Модель меняется на самом сайте («Моё окно»). '}«Только он» - не переходить на запасные при лимите.`
     : 'Сейчас «авто»: бот спрашивает мозги по порядку ниже, при лимите или сбое - следующий. Выбрать один - в списке вверху.';
 }
 $('pinSel').onchange = () => {
-  paintPinModel();
+  paintPinModel(); loadPinModels();
   const B = st.brains || {}, prev = { id: B.pin || '', only: !!B.pinOnly, model: B.pinModel };
   act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').disabled ? undefined : $('pinModel').value }), null,
     $('pinSel').value ? 'мозг: ' + $('pinSel').selectedOptions[0].textContent : 'мозг: авто, по порядку', { fn: () => { pinFilled = ''; return T.brainPin(prev); }, done: 'мозг как был' });
@@ -201,6 +201,7 @@ $('pinSel').onchange = () => {
 };
 $('pinOnly').onchange = () => savePin();
 $('pinModel').onchange = () => savePin();
+$('pinModelRe').onclick = () => loadPinModels(true);
 function savePin() {
   const B = st.brains || {}, prev = { id: B.pin || '', only: !!B.pinOnly, model: B.pinModel };
   act(() => T.brainPin({ id: $('pinSel').value, only: $('pinOnly').checked, model: $('pinModel').disabled ? undefined : $('pinModel').value }), null,
@@ -447,6 +448,30 @@ $('siteList').addEventListener('click', (e) => {
     toast(r, /ошибка|нужен/.test(r) ? 'bad' : 'ok');
   }, t);
 });
+// Заполнить выпадающий список моделей ответом 'brain-models'. Сохранённой модели нет у сервиса - оставить её с пометкой,
+// чтобы человек видел и выбрал другую (молча подменять нельзя: бот вдруг станет думать иначе)
+function fillModels(sel, r, keep) {
+  const cur = keep !== undefined ? keep : r.model, list = r.list || [];
+  const opts = (r.auto !== undefined ? [{ id: '', name: r.auto }] : []).concat(list);
+  if (cur && !opts.some((m) => m.id === cur)) opts.unshift({ id: cur, name: cur + (list.length ? ' - такой модели у сервиса нет, выберите другую' : '') });
+  sel.innerHTML = opts.map((m) => `<option value="${esc(m.id)}">${esc(m.name)}</option>`).join('');
+  sel.value = cur || (opts[0] || {}).id || '';
+}
+async function loadKeyModels(k, key) {
+  const sel = document.querySelector(`[data-model="${k}"]`), note = document.querySelector(`[data-mnote="${k}"]`); if (!sel) return;
+  if (note) note.textContent = 'спрашиваю список моделей...';
+  const r = await T.brainModels({ id: k, key: key || '' }).catch((e) => ({ list: [], note: e.message }));
+  fillModels(sel, r, sel.value || r.model);
+  if (note) { note.textContent = r.note || ('моделей у сервиса: ' + (r.list || []).length); note.style.color = r.bad ? 'var(--bad, #c33)' : ''; }
+}
+async function loadPinModels(refresh) {
+  const id = $('pinSel').value, sel = $('pinModel'); if (!id || sel.disabled) { $('pinModelNote').textContent = ''; return; }
+  $('pinModelNote').textContent = 'спрашиваю список моделей...';
+  const r = await T.brainModels({ id, refresh: !!refresh }).catch((e) => ({ list: [], note: e.message }));
+  if ($('pinSel').value !== id) return;
+  fillModels(sel, r, (st.brains || {}).pin === id ? st.brains.pinModel : r.model);
+  $('pinModelNote').textContent = r.note || '';
+}
 function renderBrains() {
   renderSites();
   const B = st.brains; if (!B) return;
@@ -456,9 +481,13 @@ function renderBrains() {
   $('brainOrder').value = B.order.join(', ');
   renderOrder(B);
   $('brainKeys').innerHTML = Object.entries(B.presets).map(([k, p]) => `<label style="display:flex;align-items:center;gap:6px">${esc(p.name)} ${B.has[k] ? `<span class="pill ok">${icon('check', 12)}ключ вставлен</span>` : ''}<span class="grow"></span><a href="#" data-url="${esc(p.keyUrl)}" class="keylink">где взять ${icon('external-link', 12)}</a></label>
-    <div class="row"><input class="grow" data-key="${k}" placeholder="${B.has[k] ? 'пусто - оставить, «-» - удалить' : 'вставьте ключ'}"><input style="width:42%" data-model="${k}" value="${esc(B.models[k])}" title="модель"></div>`).join('')
+    <div class="row"><input class="grow" data-key="${k}" placeholder="${B.has[k] ? 'пусто - оставить, «-» - удалить' : 'вставьте ключ'}"><select style="width:42%" data-model="${k}" title="модель: список берётся у сервиса по ключу"><option value="${esc(B.models[k])}">${esc(B.models[k])}</option></select></div><div class="muted" data-mnote="${k}" style="margin:2px 0 6px"></div>`).join('')
     + `<div class="row" style="margin-top:var(--s3)"><button id="keysSave" class="pri">${icon('check')}Сохранить ключи</button></div>`;
   document.querySelectorAll('.keylink').forEach((a) => { a.onclick = (e) => { e.preventDefault(); T.openExternal(a.dataset.url); }; });
+  // 28.11: модель - только из списка сервиса (текстом легко ошибиться в символе). Вставил ключ - сразу спросить список,
+  // заодно видно, подходит ли ключ
+  document.querySelectorAll('[data-key]').forEach((i) => { i.onchange = () => loadKeyModels(i.dataset.key, i.value.trim() === '-' ? '' : i.value); });
+  for (const k of Object.keys(B.presets)) loadKeyModels(k);
   $('keysSave').onclick = () => saveBrains($('keysSave'));
 }
 function saveBrains(btn) {

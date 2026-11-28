@@ -3,6 +3,11 @@
 // Настройки и пароли ботов лежат только на этом компьютере: %APPDATA%/totembots/config.json.
 const { app, BrowserWindow, WebContentsView, ipcMain, session, Menu, dialog } = require('electron');
 const path = require('path');
+// 28.11: окна сайтов лежат друг на друге, и Windows считала нижние «закрытыми» - страница не дорисовывала ответ
+// (Gemini: ответ пришёл, а на странице пусто, пока окно не показать). Пусть все окна сайтов рисуются всегда
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 const fs = require('fs');
 const crypto = require('crypto');
 const { loginViaChrome } = require('./chrome-login');
@@ -90,6 +95,10 @@ function loadCfg() {
   }
   // Claude по ключу - первым (если ключа нет, он просто пропускается)
   if (!b.claudeAdded) { b.order = ['claude', ...(b.order || []).filter((x) => x !== 'claude')]; b.claudeAdded = true; }
+  // 28.11: старая панель сохраняла и модель «по умолчанию» - она так и оставалась, когда у сервиса её уже не было
+  // (OpenRouter убрал deepseek-chat-v3-0324:free). Модель «как в программе» не храним: берётся из PRESETS
+  const OLD_DEFAULT = { openrouter: 'deepseek/deepseek-chat-v3-0324:free' };
+  for (const [k, m] of Object.entries(b.models || {})) if (!PRESETS[k] || m === PRESETS[k].model || m === OLD_DEFAULT[k]) delete b.models[k];
 }
 function saveCfg() {
   // история чатов каждого бота: новые сверху, до 30
@@ -445,11 +454,67 @@ ipcMain.handle('brain-pin', (_e, { id, only, model }) => {
   const b = cfg.brains = cfg.brains || {};
   b.pin = id || ''; b.pinOnly = !!only;
   if (id && router) router.rest[id] = 0;   // выбрал сам - не ждать, пока он «отдохнёт»
-  if (model !== undefined && id === 'qwen') { const m = String(model).trim(); cfg.qwen = cfg.qwen || {}; cfg.qwen.models = m ? [m, ...(cfg.qwen.models || []).filter((x) => x !== m)] : (cfg.qwen.models || []); if (bridge) { bridge.limitedBy = {}; bridge.goodModel = ''; } }
-  if (model !== undefined && PRESETS[id] && String(model).trim()) { b.models = b.models || {}; b.models[id] = String(model).trim(); }
+  if (model !== undefined && id === 'qwen') { const m = String(model).trim(); cfg.qwen = cfg.qwen || {}; cfg.qwen.models = m ? [m, ...(cfg.qwen.models || []).filter((x) => x !== m)] : []; if (bridge) { bridge.limitedBy = {}; bridge.goodModel = ''; } }   // пусто в списке = «как выбрано на сайте»
+  if (model !== undefined && PRESETS[id] && String(model).trim()) { b.models = b.models || {}; const m = String(model).trim(); if (m === PRESETS[id].model) delete b.models[id]; else b.models[id] = m; }
   saveCfg();
   logAll(id ? `мозг выбран вручную: ${id}${only ? ' (только он)' : ' (остальные - запасные)'}` : 'мозг: автоматически по порядку');
   return true;
+});
+// Список моделей для выпадающего списка (28.11, владелец: «опасно, что модель вводится текстом - ошибка в символе,
+// и выбрана не та»). Модели спрашиваем у самого сервиса по ключу (тот же ключ, что для ответов), Qwen - из меню
+// сайта. Ответ: { list: [{ id, name, free }], model, note }. Сохранённая модель, которой у сервиса нет, остаётся в
+// списке с пометкой - чтобы было видно, что её надо поменять, а не молча подменять.
+const modelCache = {};
+const MODEL_SKIP = /embed|lyria|music|tts|whisper|imagen|veo|aqa|guard|moderat|transcri|speech|audio|image-generation|vision-preview|learnlm|playai|orpheus|compound/i;
+async function providerModels(id, key) {
+  const p = PRESETS[id];
+  const get = async (url, headers) => {
+    const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 12000);
+    try {
+      const r = await fetch(url, { headers, signal: ctl.signal });
+      const body = r.ok ? '' : await r.text().catch(() => '');
+      if (r.status === 401 || r.status === 403 || /api.?key|unauthori[sz]ed|invalid.{0,20}key/i.test(body)) throw new Error('ключ не подходит (сервис ответил ' + r.status + ')');
+      if (!r.ok) throw new Error('сервис ответил ' + r.status);
+      return await r.json();
+    } finally { clearTimeout(t); }
+  };
+  if (p.claude) {
+    const j = await get('https://api.anthropic.com/v1/models?limit=100', { 'x-api-key': key, 'anthropic-version': '2023-06-01' });
+    return (j.data || []).map((m) => ({ id: m.id, name: m.display_name ? `${m.display_name} (${m.id})` : m.id }));
+  }
+  const base = p.url.replace(/\/chat\/completions$/, '');
+  const j = await get(base + '/models', key ? { Authorization: 'Bearer ' + key } : {});   // OpenRouter отдаёт список и без ключа
+  // OpenRouter: только модели, которые пишут текст (там же музыка и картинки)
+  let list = (j.data || j.models || []).filter((m) => !(m.architecture && m.architecture.output_modalities) || m.architecture.output_modalities.includes('text')).map((m) => {
+    const mid = String(m.id || m.name || '').replace(/^models\//, '');
+    const free = id === 'openrouter' ? /:free$/.test(mid) || (m.pricing && Number(m.pricing.prompt) === 0 && Number(m.pricing.completion) === 0) : undefined;
+    return { id: mid, name: (m.name && m.name !== m.id && id === 'openrouter' ? `${String(m.name).replace(/\s*\(free\)\s*$/i, '')} (${mid})` : mid) + (free ? ' - бесплатно' : ''), free };
+  }).filter((m) => m.id && !MODEL_SKIP.test(m.id));
+  if (id === 'gemini') list = list.filter((m) => /^(gemini|gemma)/.test(m.id));
+  if (id === 'openrouter') list.sort((a, b) => (b.free ? 1 : 0) - (a.free ? 1 : 0) || a.id.localeCompare(b.id));
+  else list.sort((a, b) => a.id.localeCompare(b.id));
+  return list;
+}
+ipcMain.handle('brain-models', async (_e, { id, key, refresh } = {}) => {
+  const b = cfg.brains || {};
+  if (id === 'qwen') {
+    const model = ((cfg.qwen || {}).models || [])[0] || '';
+    let list = modelCache.qwen;
+    if ((!list || refresh) && bridge && !bridge.busy && siteLogged.qwen) { const names = await bridge.menuModels().catch(() => []); if (names.length) list = modelCache.qwen = names.map((n) => ({ id: n, name: n })); }
+    const note = list ? '' : (bridge && bridge.busy ? 'Qwen сейчас отвечает боту - список моделей откроется чуть позже' : 'список моделей появится, когда выполнен вход на Qwen');
+    return { list: list || [], model, note, auto: 'как выбрано на сайте Qwen' };
+  }
+  const p = PRESETS[id]; if (!p) return { list: [], model: '', note: 'у сайтов модель выбирается на самом сайте' };
+  const model = (b.models || {})[id] || p.model;
+  const k = String(key || '').trim() || (b.keys || {})[id];
+  if (!k && id !== 'openrouter') return { list: [{ id: p.model, name: p.model + ' (обычная)' }], model, note: 'вставьте ключ - тогда покажу все модели этого сервиса' };
+  const ck = id + ':' + String(k || '').slice(-6);
+  try {
+    if (!modelCache[ck] || refresh) modelCache[ck] = await providerModels(id, k);
+    return { list: modelCache[ck], model, note: modelCache[ck].length ? '' : 'сервис не дал ни одной модели' };
+  } catch (e) {
+    return { list: [{ id: model, name: model }], model, note: 'список не получен: ' + (e.name === 'AbortError' ? 'сервис не ответил за 12 с' : e.message), bad: /ключ не подходит/.test(e.message) };
+  }
 });
 // мозги: ключи (только на этом компьютере, local/config.json), модели, порядок
 // переписка бота с нейросетью дословно (logs/<имя>.qwen.log) - открыть в блокноте для разбора
@@ -476,7 +541,7 @@ ipcMain.handle('brains-save', (_e, v) => {
   for (const k of Object.keys(PRESETS)) {
     const key = String((v.keys || {})[k] || '').trim();
     if (key === '-') delete b.keys[k]; else if (key) b.keys[k] = key;   // пусто - оставить прежний, «-» - удалить
-    const m = String((v.models || {})[k] || '').trim(); if (m) b.models[k] = m;
+    const m = String((v.models || {})[k] || '').trim(); if (m && m !== PRESETS[k].model) b.models[k] = m; else if (m) delete b.models[k];
   }
   const ord = String(v.order || '').split(/[\s,>]+/).map((x) => x.trim().toLowerCase()).filter((x) => x === 'qwen' || (/web$/.test(x) && SITES[x.replace(/web$/, '')]) || PRESETS[x]);
   if (ord.length) b.order = [...new Set(ord)];
