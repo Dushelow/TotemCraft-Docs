@@ -370,8 +370,18 @@ function myView(site) {
 function viewOf(mode, site) { return mode === 'mine' ? myView(site) : site === 'qwen' ? qwen : webView(site); }
 function showView(mode, site) {
   if (!siteOf(site)) site = 'qwen';
-  view = { mode: mode === 'mine' ? 'mine' : 'work', site };
+  mode = mode === 'mine' ? 'mine' : 'work';
+  // та же вкладка ещё раз (нажимают подряд) - ничего не трогать: раньше окно входа пряталось и показывалось
+  // заново, и мерцало всё (28.11)
+  if (view.mode === mode && view.site === site && win.contentView.children.includes(viewOf(mode, site))) return view;
+  view = { mode, site };
   win.contentView.addChildView(viewOf(view.mode, site));   // уже добавленное окно переносится наверх
+  if (overlayOn && overlayWanted(site)) {
+    // с сайта без входа на другой без входа: окно входа не прятать, а сразу поверх с новым содержимым
+    overlaySite = '';
+    updateOverlay();
+    return view;
+  }
   if (overlayOn) { overlayOn = false; overlaySite = ''; try { overlay.webContents.send('overlay-hide'); } catch {} }
   layout();
   updateOverlay();
