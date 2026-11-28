@@ -33,3 +33,21 @@ $('recheck').onclick = async () => {
   $('status').textContent = ok ? 'вход есть' : 'вход пока не найден';
   $('status').className = ok ? 'ok' : 'bad';
 };
+
+// браузер для входа: найденные на компьютере, «выбрать сам» (пусто) и «другой...» (файл)
+async function fillBrowsers() {
+  const { list, current, auto } = await window.overlay.browsers();
+  const sel = $('browser');
+  sel.innerHTML = '';
+  const add = (value, text) => { const o = document.createElement('option'); o.value = value; o.textContent = text; sel.appendChild(o); };
+  add('', auto ? `Автоматически (${auto})` : 'Автоматически');
+  for (const b of list) add(b.exe, b.name);
+  add('?', 'Другой браузер...');
+  sel.value = current;
+}
+$('browser').onchange = async (e) => {
+  const v = e.target.value;
+  if (v === '?') await window.overlay.pickBrowser(); else await window.overlay.browserSet(v);
+  await fillBrowsers();
+};
+fillBrowsers();

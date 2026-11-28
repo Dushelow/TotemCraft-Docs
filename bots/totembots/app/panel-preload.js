@@ -65,6 +65,8 @@ contextBridge.exposeInMainWorld('totem', {
   fullReset: call('full-reset'),
   mcVersion: call('mc-version'),
   pickBrowser: call('pick-browser'),
+  browsers: call('browsers'),
+  browserSet: call('browser-set'),
   setupState: call('setup-state'),
   setupSave: call('setup-save'),
   resetChats: call('reset-chats'),

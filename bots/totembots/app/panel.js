@@ -1093,4 +1093,11 @@ function renderOrder(B) {
   box.querySelectorAll('[data-bo-down]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boDown, l = on.slice(), i = l.indexOf(k); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; save(l); } }; });
 }
 
-{ const pb = document.getElementById('pickBrowser'); if (pb && T.pickBrowser) pb.onclick = async () => { const p = await T.pickBrowser(); document.getElementById('browserPath').textContent = p ? 'вход через: ' + p : ''; }; }
+// браузер для «Войти через браузер»: найденные на компьютере, автоматически или другой (файл)
+async function fillBrowsers() {
+  const sel = $('browserSel'); if (!sel || !T.browsers) return;
+  const { list, current, auto } = await T.browsers();
+  sel.innerHTML = `<option value="">${esc(auto ? `Автоматически (${auto})` : 'Автоматически')}</option>` + list.map((b) => `<option value="${esc(b.exe)}">${esc(b.name)}</option>`).join('') + '<option value="?">Другой браузер...</option>';
+  sel.value = current;
+}
+if ($('browserSel')) { $('browserSel').onchange = async (e) => { if (e.target.value === '?') await T.pickBrowser(); else await T.browserSet(e.target.value); fillBrowsers(); }; fillBrowsers(); }

@@ -10,7 +10,7 @@ app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 const fs = require('fs');
 const crypto = require('crypto');
-const { loginViaChrome } = require('./chrome-login');
+const { loginViaChrome, listBrowsers, findChrome } = require('./chrome-login');
 const { QwenBridge } = require('./qwen-bridge');
 const { TotemBot } = require('./bot');
 const { Brain, DEFAULT_PERSONA } = require('./brain');
@@ -737,6 +737,19 @@ ipcMain.handle('setup-save', (_e, s) => {
   cfg.setupDone = true; saveCfg();
   try { qwen.setVisible(true); layout(); } catch {}
   return { ok: true };
+});
+// браузер для «Войти через браузер»: список найденных на компьютере, «сам» (пусто) или выбрать файл
+ipcMain.handle('browsers', () => {
+  const list = listBrowsers();
+  if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath) && fs.existsSync(cfg.browserPath)) list.push({ name: path.basename(cfg.browserPath, '.exe'), exe: cfg.browserPath });
+  const a = findChrome();   // без выбора: Chrome, нет его - Firefox
+  return { list, current: cfg.browserPath || '', auto: a ? ((list.find((b) => b.exe.toLowerCase() === a.toLowerCase()) || {}).name || path.basename(a, '.exe')) : '' };
+});
+ipcMain.handle('browser-set', (_e, exe) => {
+  if (exe && !fs.existsSync(String(exe))) return cfg.browserPath || '';
+  cfg.browserPath = exe ? String(exe) : ''; saveCfg();
+  if (cfg.browserPath) process.env.TOTEMBOTS_BROWSER = cfg.browserPath; else delete process.env.TOTEMBOTS_BROWSER;
+  return cfg.browserPath;
 });
 ipcMain.handle('pick-browser', async () => {
   const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер (chrome.exe или firefox.exe)', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });

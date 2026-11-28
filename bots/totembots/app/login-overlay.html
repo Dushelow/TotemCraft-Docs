@@ -35,6 +35,11 @@
   button.pri { background: var(--acc); color: #fff; } button.pri:hover { background: #6a6ff0; }
   button.ghost { background: transparent; color: var(--text-2); border-color: var(--line-2); margin-top: var(--s2); } button.ghost:hover { background: var(--surface-2); color: var(--text); }
   button:disabled { opacity: .55; cursor: default; }
+  .via { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font-size: var(--f-xs); color: var(--text-3); text-align: left; }
+  .via select { flex: 1; min-width: 0; height: 28px; padding: 0 6px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line-2); border-radius: var(--r1); font: var(--f-xs) "Segoe UI", system-ui; }
+  .or { display: flex; align-items: center; gap: var(--s2); margin: var(--s4) 0 var(--s2); color: var(--text-3); font-size: var(--f-xs); }
+  .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line-2); }
+  .hint { margin-top: 6px; font-size: var(--f-xs); color: var(--text-3); }
   .link { margin-top: var(--s4); font-size: var(--f-xs); color: var(--text-3); }
   .link a { color: var(--acc-text); cursor: pointer; text-decoration: none; } .link a:hover { text-decoration: underline; }
   #status { min-height: 18px; margin-top: var(--s3); font-size: var(--f-xs); color: var(--text-3); }
@@ -51,7 +56,10 @@
   <h1 id="title">Войдите в сайт</h1>
   <p id="lead">Бот пишет нейросети от вашего аккаунта. Без входа этот сайт ему недоступен.</p>
   <button class="pri" id="login">Войти через браузер</button>
-  <button class="ghost" id="here">Войти прямо в этом окне</button>
+  <label class="via">Браузер<select id="browser" aria-label="Браузер для входа"></select></label>
+  <div class="or">или</div>
+  <button class="ghost" id="here">Войти почтой и паролем здесь</button>
+  <div class="hint">Вход через Google, Apple или Microsoft здесь не пустят: для них нужен браузер.</div>
   <div id="status" role="status" aria-live="polite"></div>
   <div class="link"><a id="recheck">Я уже вошёл, проверить</a></div>
 </div>

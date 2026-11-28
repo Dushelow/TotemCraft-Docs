@@ -69,7 +69,7 @@ async function sitePage(url) {
 async function loginViaChrome(profileDir, onStatus, siteId = 'qwen') {
   const S = SITES[siteId];
   const own = process.env.TOTEMBOTS_BROWSER;   // браузер, выбранный вручную в «Мозгах»
-  if (own && fs.existsSync(own) && /firefox/i.test(own)) return loginViaFirefox(profileDir + '-firefox', onStatus, S, own);
+  if (own && fs.existsSync(own) && (isGecko(own) || (listBrowsers().find((b) => b.exe === own) || {}).gecko)) return loginViaFirefox(profileDir + '-firefox', onStatus, S, own);
   const exe = own && fs.existsSync(own) ? own : findChrome();
   if (!exe) { if (findFirefox()) return loginViaFirefox(profileDir + '-firefox', onStatus, S); throw new Error('браузер не найден: нажмите «Выбрать браузер» в разделе «Мозги» и укажите chrome.exe или firefox.exe'); }
   const proc = spawn(exe, [`--user-data-dir=${profileDir}`, `--remote-debugging-port=${PORT}`,
@@ -129,6 +129,45 @@ function findFirefox() {
   try { const w = require('child_process').execSync('where firefox', { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }).split(/\r?\n/)[0].trim(); if (w && fs.existsSync(w)) return w; } catch {}
   return null;
 }
+// браузеры на движке Firefox (Gecko): у них свой способ забрать вход (WebDriver BiDi), у остальных - Chromium
+const isGecko = (exe) => /firefox|zen|librewolf|waterfox|floorp|mercury/i.test(path.basename(String(exe || '')));
+
+/**
+ * Браузеры этого компьютера для списка «войти через»: Windows записывает их в реестр (StartMenuInternet), плюс
+ * обычные папки Edge и Яндекса. [{ name, exe, gecko }]
+ */
+function listBrowsers() {
+  const { execSync } = require('child_process');
+  const out = [];
+  const roots = [String.raw`HKLM\SOFTWARE\Clients\StartMenuInternet`, String.raw`HKCU\SOFTWARE\Clients\StartMenuInternet`, String.raw`HKLM\SOFTWARE\WOW6432Node\Clients\StartMenuInternet`];
+  for (const root of roots) {
+    let txt = '';
+    try { txt = execSync(`reg query "${root}" /s /ve`, { encoding: 'utf8', windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }); } catch { continue; }
+    const names = {};
+    let key = '';
+    for (const line of txt.split(/\r?\n/)) {
+      if (/^HKEY_/.test(line)) { key = line.trim(); continue; }
+      const m = /REG_SZ\s+(.*)$/.exec(line); if (!m) continue;
+      const rel = key.split(/StartMenuInternet\\?/i)[1] || '';
+      const [id, ...rest] = rel.split('\\');
+      if (!id) continue;
+      if (!rest.length) names[id] = m[1].trim();
+      if (rest.join('\\').toLowerCase() === String.raw`shell\open\command`) {
+        const v = m[1].trim();
+        const exe = (/^"([^"]+)"/.exec(v) || [null, v.split(/\s+-/)[0]])[1];
+        if (/iexplore/i.test(exe) || !fs.existsSync(exe)) continue;
+        out.push({ name: names[id] || id, exe, gecko: isGecko(exe) || /^firefox/i.test(id) });
+      }
+    }
+  }
+  const L = process.env.LOCALAPPDATA || '';
+  const known = [['Microsoft Edge', String.raw`C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe`], ['Microsoft Edge', String.raw`C:\Program Files\Microsoft\Edge\Application\msedge.exe`],
+    ['Яндекс Браузер', path.join(L, 'Yandex', 'YandexBrowser', 'Application', 'browser.exe')], ...CANDIDATES.map((x) => ['Google Chrome', x]), ...FF.map((x) => ['Firefox', x])];
+  for (const [name, exe] of known) if (exe && fs.existsSync(exe)) out.push({ name, exe, gecko: isGecko(exe) });
+  const seen = new Set();
+  return out.filter((b) => { const k = path.resolve(b.exe).toLowerCase(); if (seen.has(k)) return false; seen.add(k); return true; });
+}
+
 async function loginViaFirefox(profileDir, onStatus, S, exe) {
   fs.mkdirSync(profileDir, { recursive: true });
   exe = exe || findFirefox();
@@ -180,4 +219,4 @@ async function loginViaFirefox(profileDir, onStatus, S, exe) {
   } finally { proc.kill(); }
 }
 
-module.exports = { loginViaChrome, findChrome: () => findChrome() || findFirefox(), SITES };
+module.exports = { loginViaChrome, findChrome: () => findChrome() || findFirefox(), listBrowsers, SITES };
