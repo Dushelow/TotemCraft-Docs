@@ -28,21 +28,16 @@
     display: grid; place-items: center; overflow: hidden; font: 600 24px/1 "Segoe UI", system-ui; color: var(--acc-text); }
   .logo img { width: 36px; height: 36px; object-fit: contain; }
   .logo.img { background: #f4f4f6; border-color: transparent; }
-  h1 { margin: 0 0 6px; font-size: var(--f-lg); font-weight: 600; }
-  p { margin: 0 0 var(--s5); color: var(--text-2); }
+  h1 { margin: 0 0 var(--s5); font-size: var(--f-lg); font-weight: 600; }
   button { display: flex; width: 100%; align-items: center; justify-content: center; gap: var(--s2); height: 38px; border: 1px solid transparent;
     border-radius: var(--r1); font: 500 var(--f-md) "Segoe UI", system-ui; cursor: pointer; transition: background .12s ease; }
   button.pri { background: var(--acc); color: #fff; } button.pri:hover { background: #6a6ff0; }
   button.ghost { background: transparent; color: var(--text-2); border-color: var(--line-2); margin-top: var(--s2); } button.ghost:hover { background: var(--surface-2); color: var(--text); }
   button:disabled { opacity: .55; cursor: default; }
-  .via { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); font-size: var(--f-xs); color: var(--text-3); text-align: left; }
-  .via select { flex: 1; min-width: 0; height: 28px; padding: 0 6px; background: var(--surface-2); color: var(--text); border: 1px solid var(--line-2); border-radius: var(--r1); font: var(--f-xs) "Segoe UI", system-ui; }
-  .or { display: flex; align-items: center; gap: var(--s2); margin: var(--s4) 0 var(--s2); color: var(--text-3); font-size: var(--f-xs); }
-  .or::before, .or::after { content: ''; flex: 1; height: 1px; background: var(--line-2); }
-  .hint { margin-top: 6px; font-size: var(--f-xs); color: var(--text-3); }
   .link { margin-top: var(--s4); font-size: var(--f-xs); color: var(--text-3); }
   .link a { color: var(--acc-text); cursor: pointer; text-decoration: none; } .link a:hover { text-decoration: underline; }
   #status { min-height: 18px; margin-top: var(--s3); font-size: var(--f-xs); color: var(--text-3); }
+  #status:empty { display: none; }
   #status.bad { color: var(--bad); } #status.ok { color: var(--ok); }
   .spin { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.35); border-top-color: #fff; border-radius: 50%; animation: sp .8s linear infinite; }
   @keyframes sp { to { transform: rotate(360deg); } }
@@ -54,12 +49,8 @@
 <div class="card" role="dialog" aria-labelledby="title">
   <div class="logo" id="logo"></div>
   <h1 id="title">Войдите в сайт</h1>
-  <p id="lead">Бот пишет нейросети от вашего аккаунта. Без входа этот сайт ему недоступен.</p>
   <button class="pri" id="login">Войти через браузер</button>
-  <label class="via">Браузер<select id="browser" aria-label="Браузер для входа"></select></label>
-  <div class="or">или</div>
-  <button class="ghost" id="here">Войти почтой и паролем здесь</button>
-  <div class="hint">Вход через Google, Apple или Microsoft здесь не пустят: для них нужен браузер.</div>
+  <button class="ghost" id="browser" title="Выбрать браузер для входа">Браузер</button>
   <div id="status" role="status" aria-live="polite"></div>
   <div class="link"><a id="recheck">Я уже вошёл, проверить</a></div>
 </div>

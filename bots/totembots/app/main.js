@@ -218,9 +218,9 @@ function layout() {
 }
 
 // --- окно входа поверх сайта без входа (login-overlay.html): размытый снимок страницы, логотип, «Войти через браузер».
-// Новичку не нужно искать вход в «Мозгах». «Войти прямо в этом окне» убирает его для этого сайта до перезапуска.
+// Новичку не нужно искать вход в «Мозгах».
 let overlay = null, overlayOn = false, overlaySite = '';
-const overlayHere = new Set(), favicons = {};
+const favicons = {};
 // логотип сайта для окна входа: картинка PNG, если есть (SVG бывают тёмными без фона); пришёл позже окна - обновить
 function setFavicon(site, list) {
   const f = (list || []).find((u) => /\.png(\?|$)/i.test(u)) || (list || [])[0];
@@ -235,7 +235,7 @@ function loginStatus(t) {
 async function updateOverlay() {
   if (!win || !qwen) return;
   const site = view.site;
-  const want = view.mode === 'work' && !panelFull && !!(cfg.setupDone && cfg.host) && siteLogged[site] === false && !overlayHere.has(site)
+  const want = view.mode === 'work' && !panelFull && !!(cfg.setupDone && cfg.host) && siteLogged[site] === false
     && !(webChats[site] && webChats[site].busy);   // бот работает в окне (страница грузится) - это не «нет входа»
   if (!want) { if (overlayOn) { overlayOn = false; overlaySite = ''; layout(); } return; }
   if (overlayOn && overlaySite === site) return;
@@ -257,7 +257,6 @@ ipcMain.handle('overlay-login', async (_e, site) => {
   await checkLogins();
   return r;
 });
-ipcMain.handle('overlay-here', (_e, site) => { overlayHere.add(site); updateOverlay(); return true; });
 ipcMain.handle('overlay-recheck', async () => { await checkLogins(); return !overlayOn; });
 
 // Окна лежат друг на друге: показанное - сверху, остальные продолжают работать (бот отвечает и в скрытом окне).
@@ -743,20 +742,25 @@ ipcMain.handle('browsers', () => {
   const list = listBrowsers();
   if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath) && fs.existsSync(cfg.browserPath)) list.push({ name: path.basename(cfg.browserPath, '.exe'), exe: cfg.browserPath });
   const a = findChrome();   // без выбора: Chrome, нет его - Firefox
-  return { list, current: cfg.browserPath || '', auto: a ? ((list.find((b) => b.exe.toLowerCase() === a.toLowerCase()) || {}).name || path.basename(a, '.exe')) : '' };
+  const auto = a ? ((list.find((b) => b.exe.toLowerCase() === a.toLowerCase()) || {}).name || path.basename(a, '.exe')) : '';
+  const cur = cfg.browserPath ? ((list.find((b) => b.exe === cfg.browserPath) || {}).name || path.basename(cfg.browserPath, '.exe')) : auto;
+  return { list, current: cfg.browserPath || '', auto, currentName: cur || 'не найден' };
 });
-ipcMain.handle('browser-set', (_e, exe) => {
-  if (exe && !fs.existsSync(String(exe))) return cfg.browserPath || '';
-  cfg.browserPath = exe ? String(exe) : ''; saveCfg();
-  if (cfg.browserPath) process.env.TOTEMBOTS_BROWSER = cfg.browserPath; else delete process.env.TOTEMBOTS_BROWSER;
-  return cfg.browserPath;
-});
-ipcMain.handle('pick-browser', async () => {
-  const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер (chrome.exe или firefox.exe)', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });
-  if (r.canceled || !r.filePaths[0]) return cfg.browserPath || '';
-  cfg.browserPath = r.filePaths[0]; process.env.TOTEMBOTS_BROWSER = cfg.browserPath; saveCfg();
-  return cfg.browserPath;
-});
+// меню выбора браузера (кнопка «Браузер: ...» в окне входа и в «Мозгах»): найденные на компьютере и «Другой...»
+ipcMain.handle('browser-menu', () => new Promise((done) => {
+  const list = listBrowsers();
+  let picking = false;   // «Другой...»: ждать окна выбора файла, а не закрытия меню
+  const set = (exe) => { cfg.browserPath = exe; saveCfg(); if (exe) process.env.TOTEMBOTS_BROWSER = exe; else delete process.env.TOTEMBOTS_BROWSER; };
+  const items = list.map((b) => ({ label: b.name, type: 'radio', checked: cfg.browserPath === b.exe, click: () => set(b.exe) }));
+  if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath)) items.push({ label: path.basename(cfg.browserPath, '.exe'), type: 'radio', checked: true, click: () => {} });
+  items.push({ type: 'separator' }, { label: 'Другой браузер...', click: async () => {
+    picking = true;
+    const r = await dialog.showOpenDialog(win, { title: 'Где ваш браузер', properties: ['openFile'], filters: [{ name: 'Программа', extensions: ['exe'] }] });
+    if (!r.canceled && r.filePaths[0]) set(r.filePaths[0]);
+    done(true);
+  } });
+  Menu.buildFromTemplate(items).popup({ window: win, callback: () => setTimeout(() => { if (!picking) done(true); }, 150) });
+}));
 ipcMain.handle('mc-version', (_e, v) => { if (v === '26.1' || v === '1.21.11') { cfg.mcVersion = v; saveCfg(); } return cfg.mcVersion || '26.1'; });
 ipcMain.handle('start-on-launch', (_e, on) => { cfg.startOnLaunch = !!on; saveCfg(); return cfg.startOnLaunch; });
 // проверка ушей без игрока с Plasmo Voice: подать боту фразу из WAV (48 кГц моно 16 бит), как её прислал бы аддон

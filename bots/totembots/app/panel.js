@@ -1093,11 +1093,6 @@ function renderOrder(B) {
   box.querySelectorAll('[data-bo-down]').forEach((btn) => { btn.onclick = () => { const k = btn.dataset.boDown, l = on.slice(), i = l.indexOf(k); if (i >= 0 && i < l.length - 1) { [l[i + 1], l[i]] = [l[i], l[i + 1]]; save(l); } }; });
 }
 
-// браузер для «Войти через браузер»: найденные на компьютере, автоматически или другой (файл)
-async function fillBrowsers() {
-  const sel = $('browserSel'); if (!sel || !T.browsers) return;
-  const { list, current, auto } = await T.browsers();
-  sel.innerHTML = `<option value="">${esc(auto ? `Автоматически (${auto})` : 'Автоматически')}</option>` + list.map((b) => `<option value="${esc(b.exe)}">${esc(b.name)}</option>`).join('') + '<option value="?">Другой браузер...</option>';
-  sel.value = current;
-}
-if ($('browserSel')) { $('browserSel').onchange = async (e) => { if (e.target.value === '?') await T.pickBrowser(); else await T.browserSet(e.target.value); fillBrowsers(); }; fillBrowsers(); }
+// браузер для «Войти через браузер»: кнопка с его названием, по нажатию - меню найденных браузеров
+async function showBrowser() { const b = $('browserBtn'); if (!b || !T.browsers) return; b.querySelector('span').textContent = 'Браузер: ' + (await T.browsers()).currentName; }
+if ($('browserBtn')) { $('browserBtn').onclick = async () => { await T.browserMenu(); showBrowser(); }; showBrowser(); }
