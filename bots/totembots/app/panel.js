@@ -1094,5 +1094,9 @@ function renderOrder(B) {
 }
 
 // браузер для «Войти через браузер»: кнопка с его названием, по нажатию - меню найденных браузеров
-async function showBrowser() { const b = $('browserBtn'); if (!b || !T.browsers) return; b.querySelector('span').textContent = 'Браузер: ' + (await T.browsers()).currentName; }
+async function showBrowser() {
+  const b = $('browserBtn'); if (!b || !T.browsers) return;
+  const r = await T.browsers();
+  b.innerHTML = (r.icon ? `<img src="${r.icon}" alt="" width="16" height="16">` : icon('globe', 14)) + `<span>Входить через ${esc(r.short || 'браузер')}</span>` + icon('chevron-down', 14);
+}
 if ($('browserBtn')) { $('browserBtn').onclick = async () => { await T.browserMenu(); showBrowser(); }; showBrowser(); }

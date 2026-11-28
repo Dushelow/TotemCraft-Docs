@@ -257,7 +257,6 @@ ipcMain.handle('overlay-login', async (_e, site) => {
   await checkLogins();
   return r;
 });
-ipcMain.handle('overlay-recheck', async () => { await checkLogins(); return !overlayOn; });
 
 // Окна лежат друг на друге: показанное - сверху, остальные продолжают работать (бот отвечает и в скрытом окне).
 // «Моё окно» сайта - отдельная страница с тем же входом: там владелец меняет настройки, голос, пишет сам, а бот
@@ -738,15 +737,21 @@ ipcMain.handle('setup-save', (_e, s) => {
   return { ok: true };
 });
 // браузер для «Войти через браузер»: список найденных на компьютере, «сам» (пусто) или выбрать файл
-ipcMain.handle('browsers', () => {
+// короткое имя для кнопки: «Google Chrome» -> «Chrome», «Zen Browser» -> «Zen»
+const browserShort = (n) => String(n || '').replace(/^(google|mozilla|microsoft)\s+/i, '').replace(/\s+browser$/i, '').trim() || n;
+ipcMain.handle('browsers', async () => {
   const list = listBrowsers();
   if (cfg.browserPath && !list.some((b) => b.exe === cfg.browserPath) && fs.existsSync(cfg.browserPath)) list.push({ name: path.basename(cfg.browserPath, '.exe'), exe: cfg.browserPath });
   const a = findChrome();   // без выбора: Chrome, нет его - Firefox
   const auto = a ? ((list.find((b) => b.exe.toLowerCase() === a.toLowerCase()) || {}).name || path.basename(a, '.exe')) : '';
   const cur = cfg.browserPath ? ((list.find((b) => b.exe === cfg.browserPath) || {}).name || path.basename(cfg.browserPath, '.exe')) : auto;
-  return { list, current: cfg.browserPath || '', auto, currentName: cur || 'не найден' };
+  // значок самого браузера из его программы: Zen выглядит как Zen, а не как общий глобус
+  const exe = cfg.browserPath || a || '';
+  let icon = '';
+  try { if (exe) icon = (await app.getFileIcon(exe, { size: 'normal' })).toDataURL(); } catch {}
+  return { list, current: cfg.browserPath || '', auto, currentName: cur || 'не найден', short: cur ? browserShort(cur) : '', icon };
 });
-// меню выбора браузера (кнопка «Браузер: ...» в окне входа и в «Мозгах»): найденные на компьютере и «Другой...»
+// меню выбора браузера («Другой браузер» в окне входа, кнопка в «Мозгах»): найденные на компьютере и «Другой...»
 ipcMain.handle('browser-menu', () => new Promise((done) => {
   const list = listBrowsers();
   let picking = false;   // «Другой...»: ждать окна выбора файла, а не закрытия меню

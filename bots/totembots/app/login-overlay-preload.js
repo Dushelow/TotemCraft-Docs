@@ -3,7 +3,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('overlay', {
   login: (site) => ipcRenderer.invoke('overlay-login', site),
-  recheck: (site) => ipcRenderer.invoke('overlay-recheck', site),
   browsers: () => ipcRenderer.invoke('browsers'),
   browserMenu: () => ipcRenderer.invoke('browser-menu'),
   onShow: (cb) => ipcRenderer.on('overlay-show', (_e, d) => cb(d)),

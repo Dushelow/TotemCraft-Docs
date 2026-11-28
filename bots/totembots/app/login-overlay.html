@@ -27,6 +27,7 @@
   .logo { width: 56px; height: 56px; margin: 0 auto var(--s4); border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line-2);
     display: grid; place-items: center; overflow: hidden; font: 600 24px/1 "Segoe UI", system-ui; color: var(--acc-text); }
   .logo img { width: 36px; height: 36px; object-fit: contain; }
+  button img { width: 18px; height: 18px; }
   .logo.img { background: #f4f4f6; border-color: transparent; }
   h1 { margin: 0 0 var(--s5); font-size: var(--f-lg); font-weight: 600; }
   button { display: flex; width: 100%; align-items: center; justify-content: center; gap: var(--s2); height: 38px; border: 1px solid transparent;
@@ -50,9 +51,8 @@
   <div class="logo" id="logo"></div>
   <h1 id="title">Войдите в сайт</h1>
   <button class="pri" id="login">Войти через браузер</button>
-  <button class="ghost" id="browser" title="Выбрать браузер для входа">Браузер</button>
+  <div class="link"><a id="browser" role="button" tabindex="0">Другой браузер</a></div>
   <div id="status" role="status" aria-live="polite"></div>
-  <div class="link"><a id="recheck">Я уже вошёл, проверить</a></div>
 </div>
 <script src="login-overlay.js"></script>
 </body>

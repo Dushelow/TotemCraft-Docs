@@ -4,7 +4,7 @@ const $ = (id) => document.getElementById(id);
 let site = '', name = '';
 const busy = (on, text) => {
   $('login').disabled = on;
-  $('login').innerHTML = on ? '<span class="spin"></span>Войдите в открывшемся браузере' : 'Войти через браузер';
+  if (on) $('login').innerHTML = '<span class="spin"></span>Войдите в открывшемся браузере'; else paintLogin();
   if (text !== undefined) { $('status').textContent = text; $('status').className = ''; }
 };
 window.overlay.onShow((d) => {
@@ -25,14 +25,16 @@ $('login').onclick = async () => {
   try { const r = await window.overlay.login(site); if (r && r.ok === false) busy(false); } catch (e) { busy(false, 'не вышло: ' + e.message); }
   busy(false);
 };
-$('recheck').onclick = async () => {
-  $('status').textContent = 'проверяю...'; $('status').className = '';
-  const ok = await window.overlay.recheck(site);
-  $('status').textContent = ok ? 'вход есть' : 'вход пока не найден';
-  $('status').className = ok ? 'ok' : 'bad';
-};
 
-// браузер для входа: кнопка с его названием, по нажатию - меню найденных браузеров
-async function showBrowser() { const r = await window.overlay.browsers(); $('browser').textContent = `Браузер: ${r.currentName}`; }
-$('browser').onclick = async () => { await window.overlay.browserMenu(); showBrowser(); };
+// главная кнопка называет браузер и показывает его значок; «Другой браузер» - меню найденных
+let br = {};
+function paintLogin() {
+  const b = $('login'); b.textContent = '';
+  if (br.icon) { const img = new Image(); img.alt = ''; img.src = br.icon; b.appendChild(img); }
+  b.appendChild(document.createTextNode(br.short ? `Войти через ${br.short}` : 'Войти через браузер'));
+}
+async function showBrowser() { br = await window.overlay.browsers(); if (!$('login').disabled) paintLogin(); }
+const pick = async () => { await window.overlay.browserMenu(); showBrowser(); };
+$('browser').onclick = pick;
+$('browser').onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(); } };
 showBrowser();
